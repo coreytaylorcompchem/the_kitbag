@@ -48,6 +48,8 @@ Available Workflows:
  - default: Performs structure optimisation only.
 ```
 
+If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
+
 ## TODO
 
 * Implement XTB and Orca API to give further options.
