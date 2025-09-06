@@ -1,0 +1,30 @@
+input_pdb: "input.pdb"
+platform: "CUDA"  # CPU, if you're crazy
+forcefield:
+  - "amber14-all.xml"
+  - "amber14/tip3pfb.xml"
+
+add_missing_residues: true
+add_missing_atoms: true
+add_hydrogens: true
+add_solvent: true
+solvent_box: [6.0, 6.0, 6.0]  # in nanometers
+ionic_strength: 0.15
+pH: 7.0
+timestep: 2.0  # fs
+temperature: 300  # K
+friction: 1.0
+
+heating:
+  n_steps: 6
+  target_temp: 300
+  steps_per_temp: 5000
+  restraint_schedule: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
+
+equilibration:
+  steps: 10000
+
+production:
+  length_ns: 1.0
+  output_dcd: "trajectory.dcd"
+  output_log: "log.txt"
