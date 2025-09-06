@@ -20,7 +20,7 @@ If the calculation runs correctly, you should see output (`log.log`) and a `resu
 
 Not much - yet.
 
-The frame workwork to build workflows is there, so it should be a matter of implmenting the specific calculations so workflows can actually run them. The framework is currently implmented in such a way that it will eventually be possible to stack calculations with checkpointing at each step so if there's a psi4 crash, it won't need to re-run steps. So you could run a quick opt with XTB, run some other structural steps, another optimisation with a DFT method then more advanced calculations on the DFT geometry (e.g. sapt0).
+The framework to build workflows is there, so it should be a matter of implmenting the specific calculations so workflows can actually run them. The framework is currently implmented in such a way that it will eventually be possible to stack calculations with checkpointing at each step so if there's a psi4 crash, it won't need to re-run steps. So you could run a quick opt with XTB, run some other structural steps, another optimisation with a DFT method then more advanced calculations on the DFT geometry (e.g. sapt0).
 
 The code is implemented with automatic checkers to see what's actually available. Run `python check_available_tasks_workflows_backends.py` for a list.
 
