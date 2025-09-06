@@ -1,0 +1,18 @@
+task: workflow
+workflow_name: default
+
+backend: psi4
+method: b3lyp
+basis: def2-svp
+scf_type: pk
+reference: rhf
+maxiter: 50
+
+workflow:
+  - optimise
+
+output:
+  directory: results
+  overwrite: false
+  filenames:
+    optimise: water_optimised_poo.xyz

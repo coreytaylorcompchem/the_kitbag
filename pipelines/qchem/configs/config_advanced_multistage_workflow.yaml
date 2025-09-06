@@ -1,0 +1,23 @@
+task: workflow
+workflow_name: advanced_multistage_workflow
+default_backend: psi4
+
+workflow_steps:
+  - task: optimise
+    backend: xtb
+    params:
+      maxiter: 100
+
+  - task: torsion_scan
+    params:
+      dihedral_atoms: [1, 2, 3, 4]
+      steps: 12
+
+  - task: optimise
+    backend: psi4
+    params:
+      method: pbe0
+      basis: def2-tzvp
+      reference: rhf
+
+  - task: mesp_map

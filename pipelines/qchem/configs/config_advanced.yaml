@@ -1,0 +1,17 @@
+backend: psi4
+task: pipeline
+checkpoint_dir: .checkpoints/run
+
+pipeline:
+  - task: optimize
+    method: bp86
+    basis: def2-svp
+
+  - task: mesp_map
+
+  - task: optimize
+    method: pbe0
+    basis: def2-tzvp
+    force: true
+
+  - task: sapt0
