@@ -1,0 +1,36 @@
+workflow: vanilla_docking  # corresponds to workflows/vanilla_docking.py
+
+workflow:
+  - standardize_ligand
+  - generate_conformers
+  - cluster_conformers
+  - save_conformers
+  - convert_to_pdbqt
+  - dock
+
+backend:
+  gnina_path: "/path/to/custom/gnina"
+  use_gpu: true
+
+protein:
+  pdb_path: "/path/to/protein.pdb"
+  pH: 7.4
+
+generate_ligands_from_list: true
+ligands_txt: "ligands_list.txt"    # Only used if generate_ligands_from_list is true
+# ligands_csv: "ligands.csv"         # Will be created if needed, or used directly if list is false
+
+output_dir: "output"
+
+docking:
+  # Option 1: Explicit center
+  # center: [10.5, 22.1, 15.7]
+  # size: [15.0, 15.0, 15.0]
+
+  # Option 2: Reference ligand path
+  # ref_ligand_path: "/path/to/reference_ligand.sdf"
+  # size: [15.0, 15.0, 15.0]
+
+  # Option 3: Use crystallized ligand
+  use_crystal_ligand: true
+  size: [15.0, 15.0, 15.0]
