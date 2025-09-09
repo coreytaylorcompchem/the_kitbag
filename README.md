@@ -2,6 +2,15 @@ Here's where all my end-to-end comp chem software pipelines live. Generally knit
 
 The code is organised into sections that reflect various computational chem software for various computational chem pipelines;
 
+* Cheminformatics
+    * Various data-driven use cases for:
+        * Hit discovery
+        * Lead opt
+        * Multi-target
+* Data retrieval and curation
+    * Retrieve data from public sources (Chembl, Pubchem, etc.)
+    * Curate them for further calculations.
+    * Smoosh them together for various purposes
 * Docking
     * Modelling
     * Running the docking (Gnina, generally)
@@ -15,8 +24,6 @@ The code is organised into sections that reflect various computational chem soft
     * Setup, structure opt, SP
     * Post-processing
     * Benchmarking
-* Cheminformatics
-    * Not sure how to do this one yet
 
 TODO
 

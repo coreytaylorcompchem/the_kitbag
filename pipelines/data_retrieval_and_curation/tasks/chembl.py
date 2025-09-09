@@ -40,8 +40,16 @@ def clean_bioactivities(config, df):
 def retrieve_compound_data(config, bio_df):
     compounds_api = new_client.molecule
     ids = list(bio_df["molecule_chembl_id"])
-    compounds = list(compounds_api.filter(molecule_chembl_id__in=ids))
+    # Request the necessary fields explicitly:
+    compounds = list(
+        compounds_api.filter(molecule_chembl_id__in=ids)
+        .only("molecule_chembl_id", "molecule_structures")
+    )
     df = pd.DataFrame.from_records(compounds)
+
+    if "molecule_structures" not in df.columns:
+        raise KeyError("The field 'molecule_structures' is missing from the retrieved compound data.")
+
     df["smiles"] = df["molecule_structures"].apply(lambda x: x.get("canonical_smiles") if x else None)
     df = df.dropna(subset=["smiles"])
     df = df.drop_duplicates("molecule_chembl_id")
