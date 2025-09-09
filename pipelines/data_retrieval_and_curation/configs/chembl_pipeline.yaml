@@ -1,0 +1,17 @@
+task: workflow
+workflow_name: chembl_bioactivity
+
+uniprot_id: P00533
+readout: IC50
+relation: "="
+assay_type: B
+
+workflow:
+  - retrieve_chembl_bioactivities
+  - clean_bioactivities
+  - retrieve_compound_data
+
+output:
+  filename: egfr_bioactivity.csv
+  directory: outputs
+  overwrite: true

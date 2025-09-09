@@ -1,0 +1,15 @@
+backends:
+  - chembl
+  - pubchem
+
+compounds:
+  chembl:
+    - CHEMBL25
+    - CHEMBL190
+  pubchem:
+    - 1983
+    - 5090
+
+tasks:
+  - name: merge_bioactivity
+    params: {}
