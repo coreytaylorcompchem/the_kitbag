@@ -25,25 +25,32 @@ def main():
     if not workflow_name:
         raise ValueError("Missing 'workflow_name' in config")
 
+    print(f"Workflow name in config: '{workflow_name}'")
+
     workflow_func = get_workflow(workflow_name)
     if not workflow_func:
         raise ValueError(f"Workflow '{workflow_name}' not found")
 
     result_df = workflow_func(config)
 
-    # Handle output
-    if result_df is not None and hasattr(result_df, 'to_csv'):
-        output_cfg = config.get("output", {})
-        filename = output_cfg.get("filename", "output.csv")
-        directory = output_cfg.get("directory", "outputs")
-        os.makedirs(directory, exist_ok=True)
-        filepath = os.path.join(directory, filename)
+    # Workflows that handle their own output (we skip writing again)
+    workflows_that_handle_output = {"chembl_multi_target"}
 
-        if not os.path.exists(filepath) or output_cfg.get("overwrite", False):
-            result_df.to_csv(filepath, index=False)
-            print(f"\n✅ Output saved to {filepath}")
-        else:
-            print(f"\n⚠️ Output file exists and overwrite is false: {filepath}")
+    if workflow_name not in workflows_that_handle_output:
+        if result_df is not None and hasattr(result_df, 'to_csv'):
+            output_cfg = config.get("output", {})
+            filename = output_cfg.get("filename", "output.csv")
+            directory = output_cfg.get("directory", "outputs")
+            os.makedirs(directory, exist_ok=True)
+            filepath = os.path.join(directory, filename)
+
+            if not os.path.exists(filepath) or output_cfg.get("overwrite", False):
+                result_df.to_csv(filepath, index=False)
+                print(f"\nOutput saved to {filepath}")
+            else:
+                print(f"\nOutput file exists and overwrite is false: {filepath}")
+    # else:
+    #     print(f"Skipping write: Workflow '{workflow_name}' handles output internally.")
 
 if __name__ == "__main__":
     main()

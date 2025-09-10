@@ -1,0 +1,21 @@
+task: workflow
+workflow_name: chembl_multi_target
+
+uniprot_ids:
+  - P34995  # EP1
+  - P43116  # EP2
+  - Q5CZ57  # EP3
+  - P35408  # EP4
+readout: IC50
+relation: "="
+assay_type: B
+
+workflow:
+  - retrieve_chembl_bioactivities
+  - clean_bioactivities
+  - retrieve_compound_data
+
+output:
+  directory: outputs/multi_target
+  filename: all_targets_bioactivity.csv
+  overwrite: true
