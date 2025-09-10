@@ -1,0 +1,60 @@
+task: workflow
+workflow_name: chembl_tox_targets
+
+uniprot_ids:
+  - Q5UL91   # MAO-A
+  - Q14432   # PDE3A
+  - Q08499   # PDE4D
+  - P06239   # Lck
+  - P29274   # A2A
+  - P35348   # alpha1A
+  - P08913   # alpha2A
+  - P08588   # beta1
+  - Q9BYZ0   # beta2
+  - Q71UR5   # NET
+  - P10275   # AR
+  - P22002   # Cav1.2 (Rat)
+  - P21554   # CB1
+  - P34972   # CB2
+  - P32238   # CCK1
+  - P21728   # D1
+  - P14416   # D2S
+  - Q6LC27   # DAT
+  - P05305   # ETA
+  - P62813   # GABAa (Rat)
+  - P04150   # GR
+  - Q9R1M7   # NMDA (Rat)
+  - P35367   # H1
+  - P25021   # H2
+  - P11229   # M1
+  - P08172   # M2
+  - P20309   # M3
+  - P41143   # delta
+  - P41145   # kappa
+  - P35372   # mu
+  - P62483   # KV (Rat)
+  - Q12809   # hERG
+  - P08908   # 5-HT1A
+  - P28222   # 5-HT1B
+  - P28223   # 5-HT2A
+  - P41595   # 5-HT2B
+  - P46098   # 5-HT3
+  - P31645   # SERT
+  - Q14524   # Nav1.5
+  - Q3S2J4   # V1A
+  - P43681   # nAChR (alpha4)
+  - P17787   # nAChR (beta2)
+
+readout: ["IC50", "Ki", "EC50", "Kd", "Potency"]
+relation: "="
+assay_type: B
+
+workflow:
+  - retrieve_chembl_bioactivities
+  - clean_bioactivities
+  - retrieve_compound_data
+
+output:
+  directory: outputs/tox_targets
+  filename: combined_tox_bioactivity.csv
+  overwrite: true

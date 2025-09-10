@@ -5,110 +5,169 @@ import math
 from tqdm import tqdm
 
 @register_task("retrieve_chembl_bioactivities")
-def retrieve_chembl_bioactivities(config, _):
-    uniprot_id = config["uniprot_id"]
-    readout = config["readout"]
-    relation = config["relation"]
-    assay_type = config["assay_type"]
-
-    targets = new_client.target.get(target_components__accession=uniprot_id)
-    targets = pd.DataFrame.from_records(targets)
-    if targets.empty:
-        raise ValueError("No targets found.")
-    chembl_id = targets.iloc[0]["target_chembl_id"]
-
-    bioactivities = new_client.activity.filter(
-        target_chembl_id=chembl_id,
-        type=readout,
-        relation=relation,
-        assay_type=assay_type,
-    )
-
-    bioactivities = list(tqdm(bioactivities))
-    print(f"Retrieved {len(bioactivities)} bioactivities")
-    return pd.DataFrame.from_records(bioactivities)
-
-
-@register_task("clean_bioactivities")
-def clean_bioactivities(config, df):
-    # Print initial shape
-    print(f"Cleaning bioactivities: input shape = {df.shape}")
+def retrieve_chembl_bioactivities(config, data=None):
+    uniprot_id = config.get("uniprot_id")
+    assay_type = config.get("assay_type")
+    relation = config.get("relation")
+    readouts = config.get("readout", ["IC50"])
     
-    # Check required columns
-    required_cols = ["standard_value", "standard_units", "molecule_chembl_id"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        raise ValueError(f"Missing required columns in bioactivity data: {missing_cols}")
-    
-    # Only keep rows with required fields not null
-    df = df.dropna(subset=required_cols)
-    
-    # Focus on nanomolar values
-    df = df[df["standard_units"] == "nM"]
-    print(f"After filtering for 'nM': shape = {df.shape}")
-    
-    # Drop duplicates
-    df = df.drop_duplicates("molecule_chembl_id")
+    if isinstance(readouts, str):
+        readouts = [readouts]
 
-    # Rename for downstream processing
-    df.rename(columns={"standard_value": "IC50", "standard_units": "units"}, inplace=True)
-    
-    print(f"Final cleaned bioactivities: shape = {df.shape}")
+    target = new_client.target
+    activity = new_client.activity
+
+    # Lookup target by uniprot
+    target_query = target.filter(target_components__accession=uniprot_id)
+    if not target_query:
+        print(f"❌ No targets found for UniProt ID: {uniprot_id}")
+        return {"df": pd.DataFrame(), "readout": None}
+
+    target_chembl_id = target_query[0]["target_chembl_id"]
+
+    # Base filter
+    filters = {
+        "target_chembl_id": target_chembl_id,
+        "standard_type__in": readouts
+    }
+
+    if relation:
+        filters["standard_relation"] = relation
+
+    if assay_type:
+        filters["assay_type"] = assay_type
+
+    # Query bioactivities
+    activities = activity.filter(**filters)
+
+    df = pd.DataFrame(activities)
+
+    if df.empty:
+        print(f"No bioactivity data found for {uniprot_id} ({target_chembl_id}) with readouts: {readouts}")
+    else:
+        print(f"Retrieved {len(df)} bioactivities for {uniprot_id}")
+
     return df
 
 
+@register_task("clean_bioactivities")
+def clean_bioactivities(config, data):
+    uniprot_id = config.get("uniprot_id", "UNKNOWN")
+    readout_priority = config.get("readout", ["IC50", "Ki", "EC50"])
+    if isinstance(readout_priority, str):
+        readout_priority = [readout_priority]
+
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        print(f"[{uniprot_id}] Received empty or invalid DataFrame.")
+        return {"df": pd.DataFrame(), "readout": None}
+
+    if "standard_type" not in data.columns:
+        print(f"❌ [{uniprot_id}] Missing 'standard_type' column.")
+        return {"df": pd.DataFrame(), "readout": None}
+
+    cleaned_frames = []
+    for readout in tqdm(readout_priority, desc=f"[{uniprot_id}] Cleaning readouts", leave=False):
+        selected_readout = readout.upper()
+
+        df_readout = data[data["standard_type"].str.upper() == selected_readout]
+        if df_readout.empty:
+            print(f"[{uniprot_id}] No data for readout '{selected_readout}'")
+            continue
+
+        # Filter for units nm
+        if "standard_units" not in df_readout.columns:
+            print(f"❌ [{uniprot_id}] Missing 'standard_units' column.")
+            continue
+
+        df_readout = df_readout[df_readout["standard_units"].str.lower() == "nm"]
+
+        # Drop nulls in critical columns
+        if "standard_value" not in df_readout.columns or "molecule_chembl_id" not in df_readout.columns:
+            print(f"❌ [{uniprot_id}] Missing required columns.")
+            continue
+
+        df_readout = df_readout.dropna(subset=["standard_value", "molecule_chembl_id"])
+        df_readout["standard_value"] = pd.to_numeric(df_readout["standard_value"], errors="coerce")
+        df_readout = df_readout.dropna(subset=["standard_value"])
+
+        if df_readout.empty:
+            print(f"[{uniprot_id}] No usable values for readout '{selected_readout}' after cleaning.")
+            continue
+
+        columns_to_keep = [
+            "molecule_chembl_id", "target_chembl_id", "target_pref_name",
+            "standard_type", "standard_relation", "standard_value", "standard_units",
+            "assay_chembl_id", "assay_type", "assay_description", "document_chembl_id"
+        ]
+        df_readout = df_readout[[col for col in columns_to_keep if col in df_readout.columns]]
+
+        df_readout["readout"] = selected_readout
+
+        print(f"[{uniprot_id}] Cleaned data for '{selected_readout}': shape = {df_readout.shape}")
+
+        cleaned_frames.append(df_readout)
+
+    if cleaned_frames:
+        combined = pd.concat(cleaned_frames, ignore_index=True)
+        return {"df": combined, "readout": None}
+    else:
+        print(f"[{uniprot_id}] No readout data cleaned for any requested readouts.")
+        return {"df": pd.DataFrame(), "readout": None}
+
+
 @register_task("retrieve_compound_data")
-def retrieve_compound_data(config, bio_df):
+def retrieve_compound_data(config, data):
+    if not isinstance(data, dict) or "df" not in data:
+        raise ValueError(f"Expected dict with 'df' and 'readout', got {type(data)}")
 
+    bio_df = data["df"]
+    readout = data.get("readout")  # Can be None if multiple readouts
+
+    if bio_df is None or bio_df.empty:
+        raise ValueError("Bioactivity data is empty.")
+
+    print(f"Received {len(bio_df)} entries to fetch compound data for.")
+    
     compounds_api = new_client.molecule
-    ids = list(bio_df["molecule_chembl_id"])
+    ids = list(bio_df["molecule_chembl_id"].unique())
 
-    # Handle batching to avoid overloading API
     def chunk_list(lst, n):
         for i in range(0, len(lst), n):
             yield lst[i:i + n]
 
     all_compounds = []
-    for chunk in chunk_list(ids, 25):  # safer chunk size
+    for chunk in tqdm(chunk_list(ids, 25), total=math.ceil(len(ids)/25), desc="Fetching compounds"):
         results = compounds_api.filter(molecule_chembl_id__in=chunk)
         records = list(results)
-        if not records:
-            print(f"No compound data returned for chunk: {chunk}")
         all_compounds.extend(records)
 
     df = pd.DataFrame.from_records(all_compounds)
 
-    # Early exit if no data retrieved
     if df.empty:
         raise ValueError("No compound data retrieved from ChEMBL.")
 
-    # Check for expected columns
-    missing_cols = [col for col in ["molecule_chembl_id", "molecule_structures"] if col not in df.columns]
-    if missing_cols:
-        raise KeyError(f"Missing expected column(s) in compound data: {missing_cols}\nColumns present: {df.columns.tolist()}")
-
-    # Extract SMILES
-    try:
-        df["smiles"] = df["molecule_structures"].apply(lambda x: x.get("canonical_smiles") if x else None)
-    except Exception as e:
-        print("Error extracting SMILES:", e)
+    df["smiles"] = df["molecule_structures"].apply(lambda x: x.get("canonical_smiles") if x else None)
     df = df.dropna(subset=["smiles"])
     df = df.drop_duplicates("molecule_chembl_id")
 
-    if df.empty:
-        raise ValueError("No compounds with valid SMILES found.")
-
-    # Final merge
     merged = pd.merge(bio_df, df[["molecule_chembl_id", "smiles"]], on="molecule_chembl_id", how="inner")
+
     if merged.empty:
         raise ValueError("No overlap between bioactivity data and compound SMILES.")
 
-    # drop any weird values
-    merged["IC50"] = pd.to_numeric(merged["IC50"], errors="coerce")
-    merged = merged.dropna(subset=["IC50"])
-    merged["pIC50"] = merged["IC50"].apply(lambda x: 9 - math.log10(x) if x > 0 else None)
+    def compute_pX(row):
+        val = row.get("standard_value")
+        if pd.notnull(val) and val > 0:
+            try:
+                return 9 - math.log10(val)
+            except:
+                return None
+        return None
 
-    output_df = merged[[
+    merged["standard_value"] = pd.to_numeric(merged["standard_value"], errors="coerce")
+    merged["pActivity"] = merged.apply(compute_pX, axis=1)
+
+    desired_cols = [
         "molecule_chembl_id", 
         "target_chembl_id", 
         "target_organism", 
@@ -119,11 +178,13 @@ def retrieve_compound_data(config, bio_df):
         "document_journal", 
         "document_year",
         "smiles", 
-        "IC50", 
-        "pIC50", 
-        "units"
-        ]]
-    
+        "readout", 
+        "standard_value", 
+        "standard_units",
+        "pActivity"
+    ]
+
+    output_df = merged[[col for col in desired_cols if col in merged.columns]]
     print(f"Final output shape: {output_df.shape}")
 
-    return output_df
+    return {"df": output_df}
