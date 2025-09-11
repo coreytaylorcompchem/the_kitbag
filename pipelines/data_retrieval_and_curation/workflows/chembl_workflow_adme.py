@@ -22,7 +22,6 @@ def run_adme_pipeline_for_readout(config: dict) -> dict:
 
     local_config = deepcopy(config)
 
-    # Inject filters specific for this readout, if any
     readout_filters = local_config.get("filters", {}).get(readout)
     if readout_filters:
         local_config.update(readout_filters)
@@ -34,7 +33,6 @@ def run_adme_pipeline_for_readout(config: dict) -> dict:
             raise ValueError(f"Task '{step}' not found in registry.")
         data = task_func(local_config, data)
 
-    # Extract DataFrame from returned data structure
     if isinstance(data, dict) and "df" in data:
         df = data["df"]
     else:
@@ -55,14 +53,13 @@ def run_chembl_adme_workflow(config):
     if not readouts:
         raise ValueError("No readouts specified in config['readout'].")
 
-    # Make a shallow copy of config and insert readouts as a list under key 'readout'
     local_config = deepcopy(config)
     local_config["readout"] = readouts
 
     runner = ParallelWorkflowRunner(
         workflow_func=run_adme_pipeline_for_readout,
         config=local_config,
-        input_key="readout",  # key to look in local_config for inputs
+        input_key="readout",
         output_key="readout",
         output_dir=local_config.get("output", {}).get("directory", "outputs/adme"),
         filename_pattern="{readout}_adme.csv",

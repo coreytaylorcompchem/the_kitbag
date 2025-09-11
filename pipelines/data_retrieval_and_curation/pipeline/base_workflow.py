@@ -41,11 +41,11 @@ class BaseWorkflow:
         elif hasattr(self.data, "to_csv"):
             df_to_save = self.data
         else:
-            print("❌ No DataFrame to save.")
+            print("No DataFrame to save.")
             return
 
         if out_path.exists() and not overwrite:
-            print(f"❌ File already exists at {out_path} and overwrite is False. Skipping save.")
+            print(f"File already exists at {out_path} and overwrite is False. Skipping save.")
         else:
             df_to_save.to_csv(out_path, index=False)
-            print(f"✅ Saved output to {out_path}")
+            print(f"Saved output to {out_path}")

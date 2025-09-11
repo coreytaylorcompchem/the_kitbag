@@ -68,7 +68,6 @@ def clean_adme_data(config, df=None):
 
         df = df[mask]
 
-        # Assign final normalized column if needed in output
         if "normalized_units" in output_columns:
             df["normalized_units"] = df["standard_units_norm"]
 
@@ -76,7 +75,7 @@ def clean_adme_data(config, df=None):
     else:
         print("[clean_adme_data] WARNING: 'standard_units' column missing, skipping unit filtering.")
 
-    # Retain only requested output columns
+    # output only columns from yaml in final csv
     if output_columns:
         missing_cols = [col for col in output_columns if col not in df.columns and col != "smiles"]
         if missing_cols:

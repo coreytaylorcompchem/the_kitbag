@@ -21,7 +21,7 @@ def fetch_single_alias_task(args):
     filters = base_filters.copy()
     filters["standard_type"] = alias
 
-    print(f"🔍 Fetching for alias: '{alias}' (readout: {readout_key}) with filters: {filters}")
+    print(f"Fetching for alias: '{alias}' (readout: {readout_key}) with filters: {filters}")
     query = new_client.activity.filter(**filters)
 
     rows = []
@@ -65,7 +65,7 @@ def retrieve_chembl_adme_data(config, data=None):
 
         # Use multiprocessing to fetch aliases in parallel
         num_workers = min(len(tasks), max(1, cpu_count() - 2))
-        print(f"🧵 Parallel fetching with {num_workers} workers for '{readout_key}' aliases...")
+        print(f"Parallel fetching with {num_workers} workers for '{readout_key}' aliases...")
 
         # Spawn context to allow nested multiprocessing
         with ThreadPool(num_workers) as pool:    alias_dfs = list(tqdm(pool.imap(fetch_single_alias_task, tasks), total=len(tasks), desc=f"Fetching {readout_key}"))
@@ -74,7 +74,7 @@ def retrieve_chembl_adme_data(config, data=None):
         if readout_df.empty:
             print(f"❌ No data found for readout: {readout_key}")
         else:
-            print(f"✅ Retrieved {len(readout_df)} rows for readout: {readout_key}")
+            print(f"Retrieved {len(readout_df)} rows for readout: {readout_key}")
             results.append(readout_df)
 
     if results:
@@ -91,7 +91,7 @@ def retrieve_chembl_adme_data(config, data=None):
 # results_summary = {}
 
 # for alias in aliases:
-#     print(f"\n🔍 Checking alias: '{alias}'")
+#     print(f"\nChecking alias: '{alias}'")
 #     query = new_client.activity.filter(standard_type=alias)
     
 #     # Fetch the first N items (you can adjust the cap here)
@@ -107,10 +107,10 @@ def retrieve_chembl_adme_data(config, data=None):
 #             print(df[["molecule_chembl_id", "standard_type", "standard_value", "assay_type", "standard_units"]].head())
     
 #     except Exception as e:
-#         print(f" ❌ Error fetching alias '{alias}': {e}")
+#         print(f"Error fetching alias '{alias}': {e}")
 #         results_summary[alias] = 0
 
 # # Print final summary
-# print("\n📊 Summary of found records:")
+# print("\nSummary of found records:")
 # for alias, count in results_summary.items():
 #     print(f" - {alias!r}: {count} records")

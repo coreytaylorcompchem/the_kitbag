@@ -69,7 +69,7 @@ def run_pipeline_for_target(local_config):
                 result = task_func(local_config, data)
                 data = result
 
-        # After all steps, extract final DataFrame to save
+        # compile final df
         if isinstance(data, dict) and "df" in data:
             final_df = data["df"]
         elif isinstance(data, pd.DataFrame):
@@ -94,7 +94,6 @@ def run_pipeline_for_target(local_config):
 
 @register_workflow("chembl_tox_targets", description="Retrieve bioactivity data for tox-relevant targets")
 def run_chembl_tox_targets_parallel_workflow(config):
-    # Setup ParallelWorkflowRunner
     runner = ParallelWorkflowRunner(
         workflow_func=run_pipeline_for_target,
         config=config,

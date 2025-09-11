@@ -74,14 +74,13 @@ def clean_bioactivities(config, data):
             print(f"[{uniprot_id}] No data for readout '{selected_readout}'")
             continue
 
-        # Filter for units nm
         if "standard_units" not in df_readout.columns:
             print(f"❌ [{uniprot_id}] Missing 'standard_units' column.")
             continue
 
         df_readout = df_readout[df_readout["standard_units"].str.lower() == "nm"]
 
-        # Drop nulls in critical columns
+        # Drop NaN in compulsory columns
         if "standard_value" not in df_readout.columns or "molecule_chembl_id" not in df_readout.columns:
             print(f"❌ [{uniprot_id}] Missing required columns.")
             continue
@@ -150,7 +149,6 @@ def retrieve_compound_smiles(config, data):
     compound_df = compound_df.dropna(subset=["smiles"])
     compound_df = compound_df.drop_duplicates(subset="molecule_chembl_id")
 
-    # Merge into original DataFrame
     merged_df = pd.merge(input_df, compound_df[["molecule_chembl_id", "smiles"]], on="molecule_chembl_id", how="left")
 
     if merged_df["smiles"].isnull().all():

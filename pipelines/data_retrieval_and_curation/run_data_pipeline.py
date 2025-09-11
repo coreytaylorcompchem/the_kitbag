@@ -9,12 +9,11 @@ def load_yaml(path):
         return yaml.safe_load(f)
 
 def main():
-    # Dynamically import all tasks and workflows before using registries
     this_dir = os.path.dirname(os.path.abspath(__file__))
     import_modules_from_dir(os.path.join(this_dir, "workflows"), "workflows")
     import_modules_from_dir(os.path.join(this_dir, "tasks"), "tasks")
 
-    # Load config
+    # Load config from file
     parser = argparse.ArgumentParser()
     parser.add_argument('--params', required=True, help='Path to YAML config file')
     args = parser.parse_args()
@@ -33,7 +32,6 @@ def main():
 
     result_df = workflow_func(config)
 
-    # Workflows that handle their own output (we skip writing again)
     workflows_that_handle_output = {"chembl_multi_target"}
 
     if workflow_name not in workflows_that_handle_output:

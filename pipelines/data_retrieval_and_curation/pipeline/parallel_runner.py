@@ -43,7 +43,7 @@ class ParallelWorkflowRunner:
             try:
                 result = self.workflow_func(identifier)
             except Exception as e:
-                print(f"❌ [{identifier}] Error: {e}")
+                print(f"[{identifier}] Error: {e}")
                 return pd.DataFrame()
         else:
             local_config = deepcopy(self.config)
@@ -51,7 +51,7 @@ class ParallelWorkflowRunner:
             try:
                 result = self.workflow_func(local_config)
             except Exception as e:
-                print(f"❌ [{identifier}] Error: {e}")
+                print(f"[{identifier}] Error: {e}")
                 return pd.DataFrame()
 
         if isinstance(result, dict) and "df" in result:
@@ -101,7 +101,7 @@ class ParallelWorkflowRunner:
 
         valid_dfs = [df for df in results if isinstance(df, pd.DataFrame) and not df.empty]
         if not valid_dfs:
-            print("❌ No valid results to combine.")
+            print("No valid results to combine.")
             return pd.DataFrame()
 
         combined_df = pd.concat(valid_dfs, ignore_index=True)

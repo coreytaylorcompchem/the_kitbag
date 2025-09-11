@@ -24,8 +24,8 @@ def run_chembl_multi_target_parallel_workflow(config):
     runner = ParallelWorkflowRunner(
         workflow_func=workflow_function,
         config=config,
-        input_key="uniprot_ids",     # where the list of inputs is in config
-        output_key="uniprot_id",     # name of the per-task ID key
+        input_key="uniprot_ids",
+        output_key="uniprot_id",
         filename_pattern="{uniprot_id}_bioactivity.csv",
         combined_filename=config.get("output", {}).get("filename", "combined_bioactivity.csv"),
         output_dir=config.get("output", {}).get("directory", "outputs/parallel")
