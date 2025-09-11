@@ -1,26 +1,21 @@
 import os
 import pandas as pd
 from copy import deepcopy
-from multiprocessing import Pool
 from pipeline.task_registry import get_task
 from pipeline.workflow_registry import register_workflow
-
+from pipeline.parallel_runner import ParallelWorkflowRunner
 import traceback
 from tqdm import tqdm
 
-def run_pipeline_for_target(args):
-    uniprot_id, config = args
-    local_config = deepcopy(config)
-    local_config["uniprot_id"] = uniprot_id
-
-    output_dir = config.get("output", {}).get("directory", "outputs/tox_targets")
+def run_pipeline_for_target(local_config):
+    uniprot_id = local_config.get("uniprot_id")
+    output_dir = local_config.get("output", {}).get("directory", "outputs/tox_targets")
     os.makedirs(output_dir, exist_ok=True)
 
     try:
         data = None
-        # Optionally, progress over steps for a target
-        workflow_steps = config.get("workflow", [])
-        for i, step in enumerate(workflow_steps):
+        workflow_steps = local_config.get("workflow", [])
+        for step in workflow_steps:
             task_func = get_task(step)
             if not task_func:
                 raise ValueError(f"Task '{step}' not found in registry.")
@@ -93,40 +88,23 @@ def run_pipeline_for_target(args):
 
     except Exception as e:
         print(f"❌ [{uniprot_id}] Error: {e}")
-        print(traceback.format_exc())  # Print full traceback for easier debugging
+        print(traceback.format_exc())
         return pd.DataFrame()
+
 
 @register_workflow("chembl_tox_targets", description="Retrieve bioactivity data for tox-relevant targets")
 def run_chembl_tox_targets_parallel_workflow(config):
-    uniprot_ids = config.get("uniprot_ids", [])
-    output_cfg = config.get("output", {})
-    output_dir = output_cfg.get("directory", "outputs/tox_targets")
-    os.makedirs(output_dir, exist_ok=True)
-
-    # 🔧 Reserve 4 CPUs
-    available_cpus = max(1, os.cpu_count() - 4)
-    num_workers = min(available_cpus, len(uniprot_ids))
-    print(f"Using {num_workers} workers to process {len(uniprot_ids)} targets")
-
-    args_list = [(uid, config) for uid in uniprot_ids]
-
-    results = []
-    with Pool(processes=num_workers) as pool:
-        # Use imap_unordered for tqdm progress bar support
-        for result in tqdm(pool.imap_unordered(run_pipeline_for_target, args_list), total=len(args_list), desc="Targets"):
-            results.append(result)
-
-    valid_results = [df for df in results if not df.empty]
-
-    if not valid_results:
-        print("❗ No valid bioactivity data was collected from any target.")
-        return pd.DataFrame()
-
-    all_data = pd.concat(valid_results, ignore_index=True)
-
-    if not all_data.empty:
-        combined_path = os.path.join(output_dir, output_cfg.get("filename", "combined_tox_bioactivity.csv"))
-        all_data.to_csv(combined_path, index=False)
-        print(f"\nCombined tox bioactivity data saved to {combined_path}")
-
-    return all_data
+    # Setup ParallelWorkflowRunner
+    runner = ParallelWorkflowRunner(
+        workflow_func=run_pipeline_for_target,
+        config=config,
+        input_key="uniprot_ids",       # list of uniprot_ids in config
+        output_key="uniprot_id",       # each run gets a single uniprot_id in config['uniprot_id']
+        output_dir=config.get("output", {}).get("directory", "outputs/tox_targets"),
+        filename_pattern="{uniprot_id}_bioactivity.csv",
+        combined_filename=config.get("output", {}).get("filename", "combined_tox_bioactivity.csv"),
+        use_multiprocessing=True,
+        reserve_cpus=4
+    )
+    
+    return runner.run()

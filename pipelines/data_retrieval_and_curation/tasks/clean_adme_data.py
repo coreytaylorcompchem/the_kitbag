@@ -78,7 +78,7 @@ def clean_adme_data(config, df=None):
 
     # Retain only requested output columns
     if output_columns:
-        missing_cols = [col for col in output_columns if col not in df.columns]
+        missing_cols = [col for col in output_columns if col not in df.columns and col != "smiles"]
         if missing_cols:
             print(f"[clean_adme_data] WARNING: Missing output columns: {missing_cols}")
         df = df[[col for col in output_columns if col in df.columns]]
