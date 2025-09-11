@@ -1,56 +1,33 @@
-# Quantum chemistry pipeline
+# Data curation pipeline
 
-Here's where we can run some quantum chemistry calculations. 
+Here's where we can curate and combine affinity, ADME, etc, data from multiple sources. 
 
 ## Setup and dependencies
 
-You'll need `psi4` and several others. Will create an env.yaml in time. Further explanations on what the other bits do - soon.
+Mainly Python libs and the [Chembl webresource_client](https://github.com/chembl/chembl_webresource_client).
 
 ## Running calculations
 
 I use a yaml/workflow system. Examples for each are in `configs/*yaml` and `workflows/*py`.
 
-Just to verify all the code and software is running and installed correctly, there's a test run in `projects/test` Run the code from there with:
+See a few workflow runs in `projects/test` Run the code from there with, for example:
 
-`python ../../main.py water.xyz ../../configs/config_default_workflow.yaml > log.log`
+`python run_data_pipeline --params ../../configs/chembl_workflow_bioactivity_single_target.yaml > log.log`
 
-If the calculation runs correctly, you should see output (`log.log`) and a `results` directory appear.
+If the calculation runs correctly, you should see output (`log.log`) and a `output/single_target` directory should appear.
 
 ## So what can it do?
 
-Not much - yet.
-
-The framework to build workflows is there, so it should be a matter of implementing the specific calculations so workflows can actually run them. The framework is currently implemented in such a way that it will eventually be possible to stack calculations with checkpointing at each step so if there's a psi4 crash, it won't need to re-run steps. So you could run a quick opt with XTB, run some other structural steps, another optimisation with a DFT method then more advanced calculations on the DFT geometry (e.g. sapt0).
-
-The code is implemented with automatic checkers to see what's actually available. Run `python check_available_tasks_workflows_backends.py` for a list.
-
-```
-python check_available_tasks_workflows_backends.py 
-Available Backends:
- - psi4
- - xtb
-
-Available Tasks:
- - mesp_map: Calculates a Molecular Electrostatic Potential Map
-   ↳ Backends: None
- - optimise: Performs geometry optimization using the selected backend.
-   ↳ Backends: psi4, xtb
- - pipeline: Allows us to stack calculations in a workflow
-   ↳ Backends: None
- - sapt0: Do a sapt0 calculation (psi4 only)
-   ↳ Backends: None
- - torsion_scan: Do a torsion scan of a bond.
-   ↳ Backends: None
-
-Available Workflows:
- - advanced: optimize → mesp_map → torsion_scan → sapt0
- - advanced_multistage_workflow: Runs opt → torsion → opt → MESP with different backends.
- - default: Performs structure optimisation only.
-```
+* Download and clean (Chembl only):
+  * Bioactivities for single targets
+  * Bioactivities for multiple targets
+  * Bioactivities for all tox targets on the Eurofins Safety44 panel.
+  * ADME assay results for LogD, human microsomal/heps stability, solubility, Caco-2 permeability and hPPB.
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
 
 ## TODO
 
-* Implement XTB and Orca API to give further options.
-* Add all the common calculations (torsion scans, mesp maps, etc.)
+* Implement more advanaced curation (e.g. Caco-2 current retrieves all readouts).
+* Add more parsers for alternative data sources.
+* Workflows to combine data from different sources.

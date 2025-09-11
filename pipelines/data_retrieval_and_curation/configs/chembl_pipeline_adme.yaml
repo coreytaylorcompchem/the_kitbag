@@ -2,7 +2,7 @@ task: workflow
 workflow_name: chembl_adme_data
 
 readout:
-  # - LogD
+  - LogD
   - mhCLint # include microsomes and heps - to be filtered later
   - Solubility
   - Caco-2 Permeability
