@@ -1,0 +1,2 @@
+molecule_chembl_id,target_chembl_id,target_pref_name,standard_type,standard_relation,standard_value,standard_units,assay_chembl_id,assay_type,assay_description,document_chembl_id,readout,smiles
+CHEMBL1669092,CHEMBL1883,Neuronal acetylcholine receptor protein beta-2 subunit,Ki,=,39000.0,nM,CHEMBL1669854,B,Binding affinity to beta2 nAChR,CHEMBL1667785,KI,CC(COc1ccc(/C=C\c2ccccc2)cc1)[N+](C)(C)C.[I-]

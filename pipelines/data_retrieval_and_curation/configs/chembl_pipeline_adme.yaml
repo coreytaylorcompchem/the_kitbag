@@ -1,0 +1,62 @@
+task: workflow
+workflow_name: chembl_adme_data
+
+readout:
+  # - LogD
+  - CLint
+  # - Solubility
+  # - Caco-2 Permeability
+  # - PPB
+
+relation: "="
+assay_type: A
+
+filters:
+  CLint:
+    assay_organism: Homo sapiens
+  PPB:
+    assay_organism: Homo sapiens
+
+cleaning:
+  column_map:
+    compound_id: molecule_chembl_id
+    concentration: standard_value
+    units: standard_units
+    assay_name: readout
+
+  default_units: 
+    - uM
+    - µM
+    - ug/mL
+    - uL min-1 mg-1
+    - uL/(min.pmol)
+    - uL min-1e6 cells  
+    - mg/mL             
+    - logS              
+  min_value: 0.01
+  max_value: 10000
+  required_columns:
+    - molecule_chembl_id
+    - standard_value
+    - standard_units
+
+workflow:
+  - retrieve_chembl_adme_data
+  - clean_adme_data
+  - retrieve_compound_smiles
+
+output:
+  directory: outputs/adme
+  filename: combined_adme_data.csv
+  overwrite: true
+
+output_columns:
+  - molecule_chembl_id
+  - target_chembl_id
+  - assay_description
+  - document_year
+  - smiles
+  - standard_value
+  - standard_units
+  # - normalized_value
+  - normalized_units

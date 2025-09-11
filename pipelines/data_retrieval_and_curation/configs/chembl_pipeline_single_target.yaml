@@ -9,9 +9,10 @@ assay_type: B
 workflow:
   - retrieve_chembl_bioactivities
   - clean_bioactivities
-  - retrieve_compound_data
+  - retrieve_compound_smiles
+  - annotate_bioactivity_pactivity
 
 output:
-  filename: ep4_bioactivity.csv
   directory: outputs/single_target
+  filename: ep4_bioactivity.csv
   overwrite: true

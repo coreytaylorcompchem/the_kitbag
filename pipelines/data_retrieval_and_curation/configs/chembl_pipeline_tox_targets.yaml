@@ -52,7 +52,8 @@ assay_type: B
 workflow:
   - retrieve_chembl_bioactivities
   - clean_bioactivities
-  - retrieve_compound_data
+  - retrieve_compound_smiles
+  - annotate_bioactivity_pactivity
 
 output:
   directory: outputs/tox_targets

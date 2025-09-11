@@ -6,14 +6,17 @@ uniprot_ids:
   - P43116  # EP2
   - Q5CZ57  # EP3
   - P35408  # EP4
-readout: IC50
+readout: 
+  - IC50
+  - EC50
 relation: "="
 assay_type: B
 
 workflow:
   - retrieve_chembl_bioactivities
   - clean_bioactivities
-  - retrieve_compound_data
+  - retrieve_compound_smiles
+  - annotate_bioactivity_pactivity
 
 output:
   directory: outputs/multi_target
