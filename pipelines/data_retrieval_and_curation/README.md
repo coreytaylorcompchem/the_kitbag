@@ -18,11 +18,25 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 ## So what can it do?
 
-* Download and clean (Chembl only):
-  * Bioactivities for single targets
-  * Bioactivities for multiple targets
-  * Bioactivities for all tox targets on the Eurofins Safety44 panel.
-  * ADME assay results for LogD, human microsomal/heps stability, solubility, Caco-2 permeability and hPPB.
+`python list_available_tasks_and_workflows.py`
+
+```
+Available Tasks:
+ - retrieve_chembl_adme_data: Retrieve CHEMBL ADME data.
+ - retrieve_chembl_bioactivities: Retrieve bioactivity data from CHEMBL.
+ - clean_bioactivities: Check and standardise bioactivities.
+ - retrieve_compound_smiles: Retrieve SMILES from downloaded compound data.
+ - annotate_bioactivity_pactivity: Compute p(readout)) and add to retrieval results.
+ - clean_adme_data: Check and standardise ADME data.
+ - merge_bioactivity: Merge data from different sources (WIP).
+
+Available Workflows:
+ - chembl_adme_data: Retrieve, standardise and collate ADME data - ChEMBL.
+ - chembl_multi_target: Retrieve, standardise and collate bioactivities for multiple targets - CHEMBL.
+ - chembl_bioactivity_single_target: Retrieve, standardise and collate bioactivities for a single target - CHEMBL.
+ - chembl_tox_targets: Retrieve, standardise and collate bioactivities for tox-relevant targets - CHEMBL.
+
+```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
 
