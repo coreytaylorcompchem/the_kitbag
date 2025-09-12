@@ -36,7 +36,7 @@ def fetch_single_alias_task(args):
         print(f"No records for alias '{alias}'")
         return pd.DataFrame()
 
-@register_task("retrieve_chembl_adme_data")
+@register_task("retrieve_chembl_adme_data", description="Retrieve CHEMBL ADME data.")
 def retrieve_chembl_adme_data(config, data=None):
     readouts = config.get("readout", ["LogD"])
     relation = config.get("relation")

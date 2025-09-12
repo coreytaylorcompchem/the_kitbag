@@ -1,4 +1,4 @@
-from pipeline.workflow_registry import register_workflow
+from workflows import register_workflow
 from pipeline.parallel_runner import ParallelWorkflowRunner
 from pipeline.task_registry import get_task
 
@@ -18,7 +18,7 @@ def workflow_function(config):
 
 @register_workflow(
     "chembl_multi_target",
-    description="Retrieve and clean ChEMBL bioactivities for multiple targets in parallel."
+    description="Retrieve, standardise and collate bioactivities for multiple targets - CHEMBL."
 )
 def run_chembl_multi_target_parallel_workflow(config):
     runner = ParallelWorkflowRunner(

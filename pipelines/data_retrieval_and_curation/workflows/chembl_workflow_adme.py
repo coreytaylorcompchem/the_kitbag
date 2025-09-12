@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from copy import deepcopy
 from pipeline.task_registry import get_task
-from pipeline.workflow_registry import register_workflow
+from workflows import register_workflow
 from pipeline.parallel_runner import ParallelWorkflowRunner
 
 from workflows.utils import process_readout_dataframe
@@ -71,7 +71,7 @@ def validate_filters_section(config):
             raise ValueError(f"[Config Error] Filter for readout '{readout}' is missing required 'assay_type'.")
 
 
-@register_workflow("chembl_adme_data", description="Retrieve ADME data from ChEMBL (parallelized by readout)")
+@register_workflow("chembl_adme_data", description="Retrieve, standardise and collate ADME data - ChEMBL.")
 def run_chembl_adme_workflow(config):
     readouts = config.get("readout", [])
     if isinstance(readouts, str):

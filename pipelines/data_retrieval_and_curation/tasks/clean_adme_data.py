@@ -1,7 +1,7 @@
 from pipeline.task_registry import register_task
 import pandas as pd
 
-@register_task("clean_adme_data")
+@register_task("clean_adme_data", description="Check and standardise ADME data.")
 def clean_adme_data(config, df=None):
     """
     Clean ADME data, agnostic of data source.

@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from copy import deepcopy
 from pipeline.task_registry import get_task
-from pipeline.workflow_registry import register_workflow
+from workflows import register_workflow
 from pipeline.parallel_runner import ParallelWorkflowRunner
 import traceback
 from tqdm import tqdm
@@ -92,7 +92,7 @@ def run_pipeline_for_target(local_config):
         return pd.DataFrame()
 
 
-@register_workflow("chembl_tox_targets", description="Retrieve bioactivity data for tox-relevant targets")
+@register_workflow("chembl_tox_targets", description="Retrieve, standardise and collate bioactivities for tox-relevant targets - CHEMBL.")
 def run_chembl_tox_targets_parallel_workflow(config):
     runner = ParallelWorkflowRunner(
         workflow_func=run_pipeline_for_target,

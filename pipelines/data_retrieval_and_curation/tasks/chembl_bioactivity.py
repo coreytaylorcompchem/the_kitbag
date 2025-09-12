@@ -4,7 +4,7 @@ import pandas as pd
 import math
 from tqdm import tqdm
 
-@register_task("retrieve_chembl_bioactivities")
+@register_task("retrieve_chembl_bioactivities", description="Retrieve bioactivity data from CHEMBL.")
 def retrieve_chembl_bioactivities(config, data=None):
     uniprot_id = config.get("uniprot_id")
     assay_type = config.get("assay_type")
@@ -50,7 +50,7 @@ def retrieve_chembl_bioactivities(config, data=None):
     return df
 
 
-@register_task("clean_bioactivities")
+@register_task("clean_bioactivities", description="Check and standardise bioactivities.")
 def clean_bioactivities(config, data):
     uniprot_id = config.get("uniprot_id", "UNKNOWN")
     readout_priority = config.get("readout", ["IC50", "Ki", "EC50"])
@@ -114,7 +114,7 @@ def clean_bioactivities(config, data):
         return {"df": pd.DataFrame(), "readout": None}
 
 
-@register_task("retrieve_compound_smiles")
+@register_task("retrieve_compound_smiles", description="Retrieve SMILES from downloaded compound data.")
 def retrieve_compound_smiles(config, data):
     if not isinstance(data, dict) or "df" not in data:
         raise ValueError("Expected a dict with 'df' key containing a DataFrame.")
@@ -158,7 +158,7 @@ def retrieve_compound_smiles(config, data):
 
     return {"df": merged_df, "readout": data.get("readout")}
 
-@register_task("annotate_bioactivity_pactivity")
+@register_task("annotate_bioactivity_pactivity", description="Compute p(readout)) and add to retrieval results.")
 def annotate_bioactivity_pactivity(config, data):
     if not isinstance(data, dict) or "df" not in data:
         raise ValueError("Expected a dict with 'df' key containing a DataFrame.")
