@@ -42,6 +42,6 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 ## TODO
 
-* Implement more advanaced curation (e.g. Caco-2 current retrieves all readouts).
+* Implement more advanced curation (at the moment, ADME retrieves all readouts / units).
 * Add more parsers for alternative data sources.
 * Workflows to combine data from different sources.
