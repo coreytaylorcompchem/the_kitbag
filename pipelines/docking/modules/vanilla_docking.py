@@ -145,29 +145,40 @@ class LigandPreparer:
 
     def convert_to_pdbqt(self, output_dir: Path, mode: str = "ensemble"):
         """
-        Converts conformers to individual PDBQT files.
+        Converts selected conformers to PDBQT files using Open Babel.
+        
+        Parameters:
+            output_dir (Path): Directory where files will be written.
+            mode (str): "ensemble" or "lowest_energy"
+        
+        Returns:
+            List[Path]: Paths to generated PDBQT files.
         """
         pdbqt_paths = []
 
-        conformers_to_process = []
+        if not self.conformers:
+            raise RuntimeError("No conformers selected. Run conformer generation and selection first.")
 
+        # Determine which conformers to convert
         if mode == "ensemble":
             conformers_to_process = self.conformers
 
         elif mode == "lowest_energy":
-            lowest_conf = self.get_lowest_energy_conformer()
-            conformers_to_process = [lowest_conf]
+            conformers_to_process = [self.get_lowest_energy_conformer()]
 
         else:
-            raise ValueError(f"Unknown docking mode: {mode}")
+            raise ValueError(f"Unknown docking mode: '{mode}' (expected 'ensemble' or 'lowest_energy')")
 
         for idx, conf_id in enumerate(conformers_to_process):
             sdf_path = output_dir / f"{self.name}_conf{idx}.sdf"
+            pdbqt_path = output_dir / f"{self.name}_conf{idx}.pdbqt"
+
+            # Save the conformer as an SDF file
             writer = Chem.SDWriter(str(sdf_path))
             writer.write(self.mol, confId=conf_id)
             writer.close()
 
-            pdbqt_path = output_dir / f"{self.name}_conf{idx}.pdbqt"
+            # Convert to PDBQT using Open Babel
             cmd = [
                 "obabel",
                 str(sdf_path),
@@ -179,4 +190,5 @@ class LigandPreparer:
             pdbqt_paths.append(pdbqt_path)
 
         return pdbqt_paths
+
 

@@ -25,9 +25,10 @@ def cluster_conformers(backend, ligand_info, config):
     if not lp:
         raise ValueError("Ligand not found in cache.")
 
-    final_n = config.get("final_n_conformers", 5)
-    rmsd_thresh = config.get("rmsd_threshold", 0.75)
-    min_gap = config.get("min_energy_gap", 0.5)
+    docking_cfg = config.get("docking", {})
+    final_n = docking_cfg.get("final_n_conformers", 5)
+    rmsd_thresh = docking_cfg.get("rmsd_threshold", 0.75)
+    min_gap = docking_cfg.get("min_energy_gap", 0.5)
 
     lp.cluster_and_select(
         final_n=final_n,
@@ -59,37 +60,19 @@ def convert_to_pdbqt(backend, ligand_info, config):
     if not lp:
         raise ValueError("Ligand not found in cache.")
     
-    sdf_path = backend.cache.get(f"{ligand_info['name']}_sdf_path")
-    if sdf_path is None:
-        raise ValueError("SDF path not found. Did you run 'save_final_conformers'?")
-    
     output_dir = Path(config['output_dir'])
-    pdbqt_paths = lp.convert_to_pdbqt(output_dir=output_dir)
-    mol_supplier = Chem.SDMolSupplier(str(sdf_path), removeHs=False)
-    
-    if not mol_supplier:
-        raise ValueError(f"Failed to load conformers from SDF: {sdf_path}")
-    
-    pdbqt_paths = []
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    for i, mol in enumerate(mol_supplier):
-        if mol is None:
-            continue
+    docking_mode = config.get("docking", {}).get("docking_mode", "ensemble")
 
-        temp_sdf_path = output_dir / f"{ligand_info['name']}_conf{i}.sdf"
-        temp_pdbqt_path = output_dir / f"{ligand_info['name']}_conf{i}.pdbqt"
+    # Use the mode from config, and let lp handle all file creation
+    pdbqt_paths = lp.convert_to_pdbqt(output_dir=output_dir, mode=docking_mode)
 
-        writer = Chem.SDWriter(str(temp_sdf_path))
-        writer.write(mol)
-        writer.close()
-
-        lp.convert_to_pdbqt(output_dir=output_dir, mode="ensemble")  # or mode="lowest_energy"
-        pdbqt_paths.append(temp_pdbqt_path)
-
-    # Save list of paths for later use in docking
+    # Cache the generated PDBQT paths
     backend.cache[f"{ligand_info['name']}_pdbqt_path"] = pdbqt_paths
 
     print(f"[INFO] Converted {len(pdbqt_paths)} conformers to PDBQT for {ligand_info['name']}")
+
 
 @register_task("dock", description="Run docking using Gnina backend.")
 def dock(backend, ligand_info, config):
@@ -107,7 +90,9 @@ def dock(backend, ligand_info, config):
     if receptor_pdbqt is None:
         raise ValueError("Receptor PDBQT path not found in backend cache.")
 
-    docking_cfg = config.get('docking', {})
+    docking_cfg = config.get("docking", {})
+    docking_mode = docking_cfg.get("docking_mode", "ensemble")
+
     if 'center' not in docking_cfg or 'size' not in docking_cfg:
         raise ValueError("Docking 'center' and 'size' must be specified in config under 'docking'.")
 

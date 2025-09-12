@@ -1,87 +1,45 @@
 import yaml
 import csv
 from pathlib import Path
-from rdkit import Chem
 
 from backends.gnina import GninaBackend
 from modules.protein_preparation import ProteinPreparer
 from docking_task_registry import get_task
 from workflows import register_workflow
 
-# --------------------------
-# Utility: CSV Generation
-# --------------------------
-def generate_ligands_csv_from_txt(txt_path: Path, csv_path: Path):
-    with open(txt_path, 'r') as f:
-        smiles_list = [line.strip() for line in f if line.strip()]
-
-    if not smiles_list:
-        raise ValueError(f"No SMILES found in {txt_path}")
-
-    with open(csv_path, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['name', 'smiles'])
-        for i, smi in enumerate(smiles_list, start=1):
-            writer.writerow([f"ligand{i}", smi])
-
-    print(f"[INFO] Generated ligands.csv at {csv_path} with {len(smiles_list)} ligands.")
-
-# --------------------------
-# Utility: CSV Validation
-# --------------------------
-def validate_ligands_csv(csv_path: Path):
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Expected ligands.csv at {csv_path} not found.")
-    with open(csv_path, newline='') as csvfile:
-        reader = csv.DictReader(csvfile)
-        if 'name' not in reader.fieldnames or 'smiles' not in reader.fieldnames:
-            raise ValueError(f"ligands.csv must have 'name' and 'smiles' columns.")
-
-# --------------------------
-# Utility: Docking Center
-# --------------------------
-def get_docking_center(config, protein_preparer):
-    docking_cfg = config['docking']
-
-    if 'center' in docking_cfg:
-        return tuple(docking_cfg['center'])
-
-    elif 'ref_ligand_path' in docking_cfg:
-        ligand_mol = Chem.MolFromMolFile(docking_cfg['ref_ligand_path'])
-        if ligand_mol is None:
-            raise ValueError(f"Reference ligand file invalid: {docking_cfg['ref_ligand_path']}")
-        conf = ligand_mol.GetConformer()
-        pts = [list(conf.GetAtomPosition(i)) for i in range(ligand_mol.GetNumAtoms())]
-        return tuple(sum(x)/len(x) for x in zip(*pts))
-
-    elif docking_cfg.get('use_crystal_ligand', False):
-        ref_lig_path = protein_preparer.reference_ligand_path
-        ligand_mol = Chem.MolFromPDBFile(str(ref_lig_path))
-        if ligand_mol is None:
-            raise ValueError("Failed to read crystallized ligand from protein.")
-        conf = ligand_mol.GetConformer()
-        pts = [list(conf.GetAtomPosition(i)) for i in range(ligand_mol.GetNumAtoms())]
-        return tuple(sum(x)/len(x) for x in zip(*pts))
-
-    else:
-        raise ValueError("Docking center not specified. Provide `center`, `ref_ligand_path`, or `use_crystal_ligand: true`.")
+from workflows.utils import generate_ligands_csv_from_txt, validate_ligands_csv, get_docking_box, validate_config
 
 # --------------------------
 # Main Workflow Function
 # --------------------------
 @register_workflow("vanilla_docking", description="Preparation and docking using Gnina.")
 def run(config_path: str):
+
     # ----------------------
     # Load YAML Config
     # ----------------------
+
+    # Minimum fields required from yaml for successful docking
+    required_fields = [
+        "output_dir",
+        "workflow",
+        "docking.final_n_conformers",
+        "docking.rmsd_threshold",
+        "docking.min_energy_gap",
+    ]
+    
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
+    validate_config(config, required_fields) # check to make sure all minimum steps are in the workflow
+
+    docking_cfg = config.get("docking", {})
+
     print("[INFO] Loaded YAML configuration:")
     print(f"  - Output directory: {config.get('output_dir')}")
-    print(f"  - Final conformers: {config.get('final_n_conformers', 5)}")
-    print(f"  - RMSD threshold:   {config.get('rmsd_threshold', 0.75)}")
-    print(f"  - Energy gap:       {config.get('min_energy_gap', 0.5)}")
+    print(f"  - Final conformers: {docking_cfg.get('final_n_conformers', 5)}")
+    print(f"  - RMSD threshold:   {docking_cfg.get('rmsd_threshold', 0.75)}")
+    print(f"  - Energy gap:       {docking_cfg.get('min_energy_gap', 0.5)}")
     print(f"  - Workflow steps:   {config.get('workflow', [])}")
 
     # ----------------------
@@ -128,8 +86,7 @@ def run(config_path: str):
     # ----------------------
     # Docking Center
     # ----------------------
-    center = get_docking_center(config, protein_preparer)
-    size = tuple(config['docking']['size'])
+    center, size = get_docking_box(config, protein_preparer)
 
     # Inject back into config for tasks
     config['docking']['center'] = center
