@@ -5,13 +5,13 @@ from docking_task_registry import register_task
 from rdkit import Chem
 from tqdm import tqdm
 
-@register_task("standardize_ligand", description="Standardize ligand from SMILES.", supported_backends=["gnina"])
+@register_task("standardize_ligand", description="Prep: standardise ligand from SMILES.")
 def standardize_ligand(backend, ligand_info, config):
     lp = LigandPreparer(smiles=ligand_info['smiles'], name=ligand_info['name'])
     lp.standardize()
     backend.cache[ligand_info['name']] = lp
 
-@register_task("generate_conformers", description="Generate RDKit conformers.")
+@register_task("generate_conformers", description="Prep: generate RDKit conformers.")
 def generate_conformers(backend, ligand_info, config):
     lp = backend.cache.get(ligand_info['name'])
     if not lp:
@@ -19,7 +19,7 @@ def generate_conformers(backend, ligand_info, config):
     n_confs = config.get("n_conformers", 250)
     lp.generate_conformers(n_confs=n_confs)
 
-@register_task("cluster_conformers", description="Cluster and select conformers.")
+@register_task("cluster_conformers", description="Prep: cluster and select conformers.")
 def cluster_conformers(backend, ligand_info, config):
     lp = backend.cache.get(ligand_info['name'])
     if not lp:
@@ -36,7 +36,7 @@ def cluster_conformers(backend, ligand_info, config):
         min_energy_gap=min_gap
     )
 
-@register_task("optimize_with_xtb", description="Optimize conformers using GFN1-xTB.")
+@register_task("optimize_with_xtb", description="Prep: optimise conformers using GFN1-xTB.")
 def optimize_with_xtb(backend, ligand_info, config):
     lp = backend.cache.get(ligand_info['name'])
     if not lp:
@@ -45,7 +45,7 @@ def optimize_with_xtb(backend, ligand_info, config):
     output_dir.mkdir(exist_ok=True, parents=True)
     lp.optimize_with_xtb(output_dir=output_dir)
 
-@register_task("save_final_conformers", description="Save final conformers to SDF.")
+@register_task("save_final_conformers", description="Prep: save final conformers to sdf.")
 def save_final_conformers(backend, ligand_info, config):
     lp = backend.cache.get(ligand_info['name'])
     if not lp:
@@ -54,7 +54,7 @@ def save_final_conformers(backend, ligand_info, config):
     sdf_path = lp.save_final_conformers(output_dir)
     backend.cache[f"{ligand_info['name']}_sdf_path"] = sdf_path
 
-@register_task("convert_to_pdbqt", description="Convert final conformers to PDBQT.")
+@register_task("convert_to_pdbqt", description="Prep: convert final conformers to PDBQT for docking.")
 def convert_to_pdbqt(backend, ligand_info, config):
     lp = backend.cache.get(ligand_info['name'])
     if not lp:
@@ -74,7 +74,7 @@ def convert_to_pdbqt(backend, ligand_info, config):
     print(f"[INFO] Converted {len(pdbqt_paths)} conformers to PDBQT for {ligand_info['name']}")
 
 
-@register_task("dock", description="Run docking using Gnina backend.")
+@register_task("dock", description="Docking: run docking.", supported_backends=["gnina"])
 def dock(backend, ligand_info, config):
     output_dir = Path(config['output_dir'])
     ligand_name = ligand_info['name']

@@ -18,7 +18,7 @@ def main():
         desc = meta.get('description', '')
         supported = ', '.join(meta.get('supported_backends', []))
         print(f" - {task}: {desc}")
-        print(f"   ↳ Backends: {supported or 'None'}")
+        #print(f"   ↳ Backends: {supported or 'None'}")
 
     print("\nAvailable Workflows:")
     for wf in list_workflows():

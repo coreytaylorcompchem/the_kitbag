@@ -12,7 +12,7 @@ from workflows.utils import generate_ligands_csv_from_txt, validate_ligands_csv,
 # --------------------------
 # Main Workflow Function
 # --------------------------
-@register_workflow("vanilla_docking", description="Preparation and docking using Gnina.")
+@register_workflow("vanilla_docking", description="Preparation, dock and score with no constraints.")
 def run(config_path: str):
 
     # ----------------------
