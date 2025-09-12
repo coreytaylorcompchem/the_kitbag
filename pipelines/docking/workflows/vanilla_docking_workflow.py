@@ -76,6 +76,13 @@ def run(config_path: str):
     # ----------------------
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
+    
+    print("[INFO] Loaded YAML configuration:")
+    print(f"  - Output directory: {config.get('output_dir')}")
+    print(f"  - Final conformers: {config.get('final_n_conformers', 5)}")
+    print(f"  - RMSD threshold:   {config.get('rmsd_threshold', 0.75)}")
+    print(f"  - Energy gap:       {config.get('min_energy_gap', 0.5)}")
+    print(f"  - Workflow steps:   {config.get('workflow', [])}")
 
     # ----------------------
     # Output Directory
@@ -173,6 +180,7 @@ def run(config_path: str):
             task_func = get_task(step)
             if not task_func:
                 raise ValueError(f"Workflow step '{step}' is not a registered task.")
+            print(f"[INFO] Running step: {step}")
             task_func(backend, ligand, config)
 
     print("\n[INFO] Vanilla docking workflow completed.")

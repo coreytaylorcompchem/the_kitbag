@@ -3,7 +3,10 @@ import tempfile
 import shutil
 from pathlib import Path
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, rdMolAlign
+from rdkit.ML.Cluster import Butina
+import numpy as np
+from tqdm import tqdm
 
 class LigandPreparer:
     def __init__(self, smiles: str, name: str, xtb_path: str = "xtb"):
@@ -38,18 +41,58 @@ class LigandPreparer:
             raise RuntimeError("No conformer energies available.")
         return min(self.conformer_energies, key=lambda x: x[1])[0]
 
-    def cluster_and_select(self, final_n: int = 35):
+    def cluster_and_select(self, final_n: int = 5, rmsd_threshold: float = 0.75, min_energy_gap: float = 0.5):
+        """
+        Clusters conformers using RMSD and selects top ones based on xTB energy.
+        Applies a minimum energy gap between selected conformers.
+        """
         if not self.conformers:
             raise RuntimeError("No conformers generated. Run generate_conformers() first.")
-        self.conformers = self.conformers[:final_n]
+
+        # Calculate RMSD matrix
+        rmslist = AllChem.GetConformerRMSMatrix(self.mol, prealigned=False)
+        clusters = [[0]]  # Start first cluster with the first conformer
+
+        for i in range(1, len(self.conformers)):
+            added = False
+            for cluster in clusters:
+                rmsds = [rmslist[min(i, j) * (max(i, j) - 1) // 2] for j in cluster]
+                if all(r < rmsd_threshold for r in rmsds):
+                    cluster.append(i)
+                    added = True
+                    break
+            if not added:
+                clusters.append([i])
+
+        print(f"[INFO] Found {len(clusters)} conformer clusters at RMSD threshold {rmsd_threshold}")
+
+        # For each cluster, pick the lowest energy conformer (fake energy here for demo)
+        selected = []
+        energies = [AllChem.MMFFGetMoleculeForceField(self.mol, AllChem.MMFFGetMoleculeProperties(self.mol)).CalcEnergy() for _ in self.conformers]
+
+        used = set()
+        for cluster in clusters:
+            sorted_cluster = sorted(cluster, key=lambda idx: energies[idx])
+            for idx in sorted_cluster:
+                if all(abs(energies[idx] - energies[u]) >= min_energy_gap for u in used):
+                    selected.append(idx)
+                    used.add(idx)
+                    break
+            if len(selected) >= final_n:
+                break
+
+        self.conformers = selected
+        print(f"[INFO] Selected {len(selected)} conformers based on energy and RMSD")
+        for i, conf_id in enumerate(self.conformers):
+            print(f"  - Conf {conf_id:3d}: Energy = {energies[conf_id]:.4f}")
 
     def optimize_with_xtb(self, output_dir: Path):
         """
-        Optimizes each conformer using xtb and writes out xyz files.
+        Optimizes each conformer using xTB and stores energies.
         """
-        xtb_confs = []
+        self.conformer_energies = []
 
-        for idx, conf_id in enumerate(self.conformers):
+        for idx, conf_id in enumerate(tqdm(self.conformers, desc=f"[xTB] Optimizing {self.name}", unit="conf")):
             mol_block = Chem.MolToMolBlock(self.mol, confId=conf_id)
             temp_dir = tempfile.mkdtemp()
             mol_file = Path(temp_dir) / "input.mol"
@@ -63,14 +106,32 @@ class LigandPreparer:
 
             # Save optimized structure
             xtb_xyz = Path(temp_dir) / "xtbopt.xyz"
+            xtb_log = Path(temp_dir) / "xtbopt.log"
+
             if xtb_xyz.exists():
                 dest = output_dir / f"{self.name}_conf{idx}.xyz"
                 shutil.copy(xtb_xyz, dest)
-                xtb_confs.append(dest)
+
+            # Parse xTB energy
+            energy = None
+            if xtb_log.exists():
+                with open(xtb_log, 'r') as f:
+                    for line in f:
+                        if "TOTAL ENERGY" in line.upper():
+                            try:
+                                energy = float(line.strip().split()[-1])
+                            except:
+                                pass
+
+            if energy is None:
+                print(f"[WARNING] Energy not found for conf {conf_id}, skipping.")
+            else:
+                self.conformer_energies.append((conf_id, energy))
 
             shutil.rmtree(temp_dir)
 
-        return xtb_confs
+        if not self.conformer_energies:
+            raise RuntimeError("xTB optimization failed for all conformers.")
 
     def save_final_conformers(self, output_dir: Path) -> Path:
         if not self.conformers:

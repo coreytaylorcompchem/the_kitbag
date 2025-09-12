@@ -25,6 +25,8 @@ output_dir: "output"
 
 docking_mode: ensemble # or 'lowest_energy'
 final_n_conformers: 2
+rmsd_threshold: 0.75
+min_energy_gap: 0.5  # in kcal/mol or eV depending on energy units
 docking:
   # Option 1: Explicit center
   # center: [10.5, 22.1, 15.7]
