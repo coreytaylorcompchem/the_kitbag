@@ -1,27 +1,30 @@
-workflow: vanilla_docking  # corresponds to workflows/vanilla_docking.py
+task: workflow
+workflow_name: vanilla_docking  # corresponds to workflows/vanilla_docking.py
 
 workflow:
   - standardize_ligand
   - generate_conformers
   - cluster_conformers
-  - save_conformers
+  - save_final_conformers
   - convert_to_pdbqt
   - dock
 
 backend:
-  gnina_path: "/path/to/custom/gnina"
+  gnina_path: "/home/corey/local_software/gnina.1.3.2.cuda12.8"
   use_gpu: true
 
 protein:
-  pdb_path: "/path/to/protein.pdb"
+  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
   pH: 7.4
 
 generate_ligands_from_list: true
-ligands_txt: "ligands_list.txt"    # Only used if generate_ligands_from_list is true
+ligands_txt: "ligs.txt"    # Only used if generate_ligands_from_list is true
 # ligands_csv: "ligands.csv"         # Will be created if needed, or used directly if list is false
 
 output_dir: "output"
 
+docking_mode: ensemble # or 'lowest_energy'
+final_n_conformers: 2
 docking:
   # Option 1: Explicit center
   # center: [10.5, 22.1, 15.7]

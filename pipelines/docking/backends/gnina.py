@@ -17,6 +17,7 @@ class GninaBackend:
         """
         self.gnina_executable = gnina_executable
         self.use_gpu = use_gpu
+        self.cache = {}
 
     def dock(
         self,

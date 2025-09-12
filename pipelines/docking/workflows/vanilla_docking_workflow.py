@@ -69,7 +69,7 @@ def get_docking_center(config, protein_preparer):
 # --------------------------
 # Main Workflow Function
 # --------------------------
-@register_workflow("vanilla_docking", description="Task-based ligand preparation and docking using Gnina.")
+@register_workflow("vanilla_docking", description="Preparation and docking using Gnina.")
 def run(config_path: str):
     # ----------------------
     # Load YAML Config
@@ -83,6 +83,21 @@ def run(config_path: str):
     output_dir = Path.cwd() / config['output_dir']
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # ----------------------
+    # Ligand Input Handling
+    # ----------------------
+    ligands_txt_path = Path(config.get('ligands_txt', 'ligands.txt'))
+    ligands_csv_path = Path(config.get('ligands_csv', output_dir / 'ligands.csv'))
+
+    if ligands_txt_path.exists():
+        print(f"[INFO] Found ligands.txt — generating ligands.csv.")
+        generate_ligands_csv_from_txt(ligands_txt_path, ligands_csv_path)
+
+    elif ligands_csv_path.exists():
+        print(f"[INFO] Found ligands.csv — using it directly.")
+
+    else:
+        raise FileNotFoundError("No ligand input found. Provide either 'ligands_txt' or 'ligands_csv' in the config or directory.")
     
     # ----------------------
     # Backend Initialization
@@ -116,15 +131,20 @@ def run(config_path: str):
     # ----------------------
     # Ligand CSV Handling
     # ----------------------
-    ligands_csv_path = Path(config['ligands_csv'])
-
     if config.get('generate_ligands_from_list', False):
-        ligands_txt_path = Path(config['ligands_txt'])
+        ligands_txt_path = Path(config.get('ligands_txt', 'ligands.txt'))
+
         if not ligands_txt_path.exists():
             raise FileNotFoundError(f"Ligands SMILES list not found at: {ligands_txt_path}")
+        
+        # Default output CSV path if not specified
+        ligands_csv_path = Path(config.get('ligands_csv', 'ligands.csv'))
         generate_ligands_csv_from_txt(ligands_txt_path, ligands_csv_path)
 
-    validate_ligands_csv(ligands_csv_path)
+    else:
+        ligands_csv_path = Path(config.get('ligands_csv', 'ligands.csv'))
+        if not ligands_csv_path.exists():
+            raise FileNotFoundError(f"Ligands CSV not found at: {ligands_csv_path}")
 
     # ----------------------
     # Read Ligands

@@ -9,7 +9,7 @@ from workflows import get_workflow, list_workflows
 def parse_args():
     parser = argparse.ArgumentParser(description="Run docking pipeline via dynamically selected workflow.")
     parser.add_argument(
-        "-c", "--config", required=True,
+        "-p", "--params", required=True,
         help="Path to the YAML configuration file."
     )
     parser.add_argument(
@@ -21,7 +21,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    config_path = Path(args.config)
+    config_path = Path(args.params)
 
     if not config_path.exists():
         print(f"[ERROR] Config file not found: {config_path}")
@@ -30,9 +30,9 @@ def main():
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
 
-    workflow_name = config.get("workflow")
+    workflow_name = config.get("workflow_name")
     if not workflow_name:
-        print("[ERROR] Config must include a 'workflow' key.")
+        print("[ERROR] Config must include a 'workflow_name' key.")
         sys.exit(1)
 
     workflow_func = get_workflow(workflow_name)

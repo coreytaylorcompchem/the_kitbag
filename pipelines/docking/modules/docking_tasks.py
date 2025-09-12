@@ -47,42 +47,38 @@ def convert_to_pdbqt(backend, ligand_info, config):
     lp = backend.cache.get(ligand_info['name'])
     if not lp:
         raise ValueError("Ligand not found in cache.")
-    
-    sdf_path = backend.cache.get(f"{ligand_info['name']}_sdf_path")
-    if sdf_path is None:
-        raise ValueError("SDF path not found. Did you run 'save_final_conformers'?")
-    
+
     output_dir = Path(config['output_dir'])
-    pdbqt_path = output_dir / f"{ligand_info['name']}.pdbqt"
-    lp.convert_to_pdbqt(sdf_path=sdf_path, pdbqt_path=pdbqt_path)
-    backend.cache[f"{ligand_info['name']}_pdbqt_path"] = pdbqt_path
+    docking_mode = config.get('docking_mode', 'ensemble')
+
+    pdbqt_paths = lp.convert_to_pdbqt(output_dir=output_dir, mode=docking_mode)
+    backend.cache[f"{ligand_info['name']}_pdbqt_paths"] = pdbqt_paths
 
 @register_task("dock", description="Run docking using Gnina backend.")
 def dock(backend, ligand_info, config):
     output_dir = Path(config['output_dir'])
     ligand_name = ligand_info['name']
-    
-    pdbqt_path = backend.cache.get(f"{ligand_name}_pdbqt_path")
-    if pdbqt_path is None:
-        raise ValueError(f"PDBQT path not found for ligand '{ligand_name}'. Did you run 'convert_to_pdbqt'?")
+
+    pdbqt_paths = backend.cache.get(f"{ligand_name}_pdbqt_paths")
+    if not pdbqt_paths:
+        raise ValueError(f"PDBQT paths not found for ligand '{ligand_name}'. Did you run 'convert_to_pdbqt'?")
 
     receptor_pdbqt = backend.cache.get("receptor_pdbqt")
     if receptor_pdbqt is None:
-        raise ValueError("Receptor PDBQT path not found in backend cache.")
-
-    output_path = output_dir / f"{ligand_name}_docked.sdf"
+        raise ValueError("Receptor PDBQT path not found.")
 
     docking_cfg = config.get('docking', {})
-    if 'center' not in docking_cfg or 'size' not in docking_cfg:
-        raise ValueError("Docking 'center' and 'size' must be specified in config under 'docking'.")
-
     center = tuple(docking_cfg['center'])
     size = tuple(docking_cfg['size'])
 
-    backend.dock(
-        receptor_path=receptor_pdbqt,
-        ligand_path=pdbqt_path,
-        output_path=output_path,
-        center=center,
-        size=size
-    )
+    for pdbqt_path in pdbqt_paths:
+        suffix = pdbqt_path.stem.split('_')[-1]  # conf0, conf1, etc.
+        output_path = output_dir / f"{ligand_name}_{suffix}_docked.sdf"
+
+        backend.dock(
+            receptor_path=receptor_pdbqt,
+            ligand_path=pdbqt_path,
+            output_path=output_path,
+            center=center,
+            size=size
+        )

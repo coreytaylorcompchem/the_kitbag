@@ -22,9 +22,21 @@ class LigandPreparer:
     def generate_conformers(self, n_confs: int = 250):
         if self.mol is None:
             raise RuntimeError("Molecule must be standardized before generating conformers.")
-        ids = AllChem.EmbedMultipleConfs(self.mol, numConfs=n_confs)
-        AllChem.MMFFOptimizeMoleculeConfs(self.mol)
-        self.conformers = ids
+
+        params = AllChem.ETKDGv3()
+        ids = AllChem.EmbedMultipleConfs(self.mol, numConfs=n_confs, params=params)
+
+        results = AllChem.MMFFOptimizeMoleculeConfs(self.mol)
+        # Store conformer IDs + energies
+        self.conformer_energies = [
+            (conf_id, result[1]) for conf_id, result in zip(ids, results)
+        ]
+        self.conformers = [x[0] for x in self.conformer_energies]
+
+    def get_lowest_energy_conformer(self):
+        if not hasattr(self, 'conformer_energies') or not self.conformer_energies:
+            raise RuntimeError("No conformer energies available.")
+        return min(self.conformer_energies, key=lambda x: x[1])[0]
 
     def cluster_and_select(self, final_n: int = 35):
         if not self.conformers:
@@ -70,11 +82,40 @@ class LigandPreparer:
         writer.close()
         return sdf_path
 
-    def convert_to_pdbqt(self, sdf_path: Path, pdbqt_path: Path):
-        cmd = [
-            "obabel",
-            str(sdf_path),
-            "-O", str(pdbqt_path),
-            "--partialcharge", "gasteiger"
-        ]
-        subprocess.run(cmd, check=True)
+    def convert_to_pdbqt(self, output_dir: Path, mode: str = "ensemble"):
+        """
+        Converts conformers to individual PDBQT files.
+        """
+        pdbqt_paths = []
+
+        conformers_to_process = []
+
+        if mode == "ensemble":
+            conformers_to_process = self.conformers
+
+        elif mode == "lowest_energy":
+            lowest_conf = self.get_lowest_energy_conformer()
+            conformers_to_process = [lowest_conf]
+
+        else:
+            raise ValueError(f"Unknown docking mode: {mode}")
+
+        for idx, conf_id in enumerate(conformers_to_process):
+            sdf_path = output_dir / f"{self.name}_conf{idx}.sdf"
+            writer = Chem.SDWriter(str(sdf_path))
+            writer.write(self.mol, confId=conf_id)
+            writer.close()
+
+            pdbqt_path = output_dir / f"{self.name}_conf{idx}.pdbqt"
+            cmd = [
+                "obabel",
+                str(sdf_path),
+                "-O", str(pdbqt_path),
+                "--partialcharge", "gasteiger"
+            ]
+            subprocess.run(cmd, check=True)
+
+            pdbqt_paths.append(pdbqt_path)
+
+        return pdbqt_paths
+
