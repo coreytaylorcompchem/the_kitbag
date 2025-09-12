@@ -28,18 +28,18 @@ Available Backends:
  - gnina
 
 Available Tasks:
- - standardize_ligand: Standardize ligand from SMILES.
- - generate_conformers: Generate RDKit conformers.
- - cluster_conformers: Cluster and select conformers.
- - optimize_with_xtb: Optimize conformers using GFN1-xTB.
- - save_final_conformers: Save final conformers to SDF.
- - convert_to_pdbqt: Convert final conformers to PDBQT.
- - dock: Run docking using Gnina backend.
+ - standardize_ligand: Prep: standardise ligand from SMILES.
+ - generate_conformers: Prep: generate RDKit conformers.
+ - cluster_conformers: Prep: cluster and select conformers.
+ - optimize_with_xtb: Prep: optimise conformers using GFN1-xTB.
+ - save_final_conformers: Prep: save final conformers to sdf.
+ - convert_to_pdbqt: Prep: convert final conformers to PDBQT for docking.
+ - dock: Docking: run docking.
 
 Available Workflows:
- - constrained_docking: Dock with core constraints.
- - ensemble_docking: Ensemble docking with Gnina.
- - vanilla_docking: Preparation and docking using Gnina.
+ - constrained_docking: Prepare, dock and score with core constraints.
+ - ensemble_docking: Prepare, dock and score emsemble of proteins.
+ - vanilla_docking: Prepare, dock and score with no constraints.
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
