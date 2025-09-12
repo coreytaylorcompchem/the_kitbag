@@ -15,16 +15,14 @@ filters:
   LogD:
     assay_type: P
   mhCLint:
-    assay_type: B
-    assay_organism: Homo sapiens
+    assay_type: A
+    # assay_organism: Homo sapiens
   Solubility:
     assay_type: P
   Caco-2 Permeability:
-    assay_type: F
+    assay_type: A
   hPPB:
     assay_type: B
-  
-  hPPB:
     assay_organism: Homo sapiens
 
 cleaning:
@@ -34,15 +32,20 @@ cleaning:
     units: standard_units
     assay_name: readout
 
-  default_units: 
+  default_units: # Add more if needed
     - uM
     - µM
     - ug/mL
-    - uL min-1 mg-1
+    - uL min-1 mg-1 # met stab
     - uL/(min.pmol)
     - uL min-1e6 cells  
-    - mg/mL             
-    - logS              
+    - mg/mL        # Solubility   
+    - logS         
+    - cm s-1       # Caco-2 units for Papp
+    - '%'          # PPB: % bound
+  unit_overrides:  # per-readout overrides, as LogD has no units and we don't want to put 'None' for other readouts
+    LogD:
+      - None
   min_value: 0.01
   max_value: 10000
   required_columns:

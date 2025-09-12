@@ -1,0 +1,144 @@
+molecule_chembl_id,target_chembl_id,assay_description,document_year,standard_value,standard_units,normalized_units,smiles
+CHEMBL878,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,6200000.0,cm s-1,cm s 1,Cc1ccccc1N1C(=O)c2cc(S(N)(=O)=O)c(Cl)cc2NC1C
+CHEMBL666,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,45000.0,cm s-1,cm s 1,O=C(O)P(=O)(O)O
+CHEMBL13,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,64000000.0,cm s-1,cm s 1,COCCc1ccc(OCC(O)CNC(C)C)cc1
+CHEMBL523,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,96000000.0,cm s-1,cm s 1,O=C1CN=C(c2ccccc2)c2cc(Cl)ccc2N1
+CHEMBL945,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,560000.0,cm s-1,cm s 1,N=C(N)NC(=O)c1nc(Cl)c(N)nc1N
+CHEMBL634,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,83000000.0,cm s-1,cm s 1,CCC(=O)N(c1ccccc1)C1(COC)CCN(CCn2nnn(CC)c2=O)CC1
+CHEMBL8,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,1700000.0,cm s-1,cm s 1,O=C(O)c1cn(C2CC2)c2cc(N3CCNCC3)c(F)cc2c1=O
+CHEMBL26,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,230000.0,cm s-1,cm s 1,CCN1CCCC1CNC(=O)c1cc(S(N)(=O)=O)ccc1OC
+CHEMBL30,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,1230000.0,cm s-1,cm s 1,CN/C(=N\CCSCc1nc[nH]c1C)NC#N
+CHEMBL58337,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,37000.0,cm s-1,cm s 1,NC(=O)[C@H](Cc1ccccc1)NC(=O)[C@H](Cc1ccccc1)NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@@H](N)Cc1ccc(O)cc1
+CHEMBL6995,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,1800000.0,cm s-1,cm s 1,CC(=O)Nc1ccc(OCC(O)CNC(C)C)cc1
+CHEMBL546,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,61000000.0,cm s-1,cm s 1,C=CCOc1ccccc1OCC(O)CNC(C)C
+CHEMBL192,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,48000000.0,cm s-1,cm s 1,CCCc1nn(C)c2c(=O)[nH]c(-c3cc(S(=O)(=O)N4CCN(C)CC4)ccc3OCC)nc12
+CHEMBL500,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,36000000.0,cm s-1,cm s 1,CC(C)NCC(O)COc1cccc2[nH]ccc12
+CHEMBL421,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,160000.0,cm s-1,cm s 1,O=C(O)c1cc(/N=N/c2ccc(S(=O)(=O)Nc3ccccn3)cc2)ccc1O
+CHEMBL89248,CHEMBL372,Caco-2 permeability was determined,2002.0,0.0000345,cm s-1,cm s 1,CCOc1ccc(S(=O)(=O)N2CCN(C)CC2)cc1-c1nc2c(=O)n(C)c(=O)n(CC(C)CC)c2[nH]1
+CHEMBL296306,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,300000.0,cm s-1,cm s 1,OC[C@H]1O[C@@H](O[C@@H]2[C@@H](CO)O[C@](O)(CO)[C@H]2O)[C@H](O)[C@@H](O)[C@H]1O
+CHEMBL12,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,119000000.0,cm s-1,cm s 1,CN1C(=O)CN=C(c2ccccc2)c2cc(Cl)ccc21
+CHEMBL389621,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,27000000.0,cm s-1,cm s 1,C[C@]12CCC(=O)C=C1CC[C@@H]1[C@@H]2[C@@H](O)C[C@@]2(C)[C@H]1CC[C@]2(O)C(=O)CO
+CHEMBL603717,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,51000.0,cm s-1,cm s 1,OC[C@H]1O[C@H](OC[C@H]2O[C@H](O[C@]3(CO)O[C@H](CO)[C@@H](O)[C@@H]3O)[C@H](O)[C@@H](O)[C@@H]2O)[C@H](O)[C@@H](O)[C@H]1O
+CHEMBL58178,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,40000.0,cm s-1,cm s 1,C[C@H](NC(=O)[C@@H](N)Cc1ccc(O)cc1)C(=O)N[C@@H](Cc1ccccc1)C(=O)N[C@@H](Cc1ccccc1)C(N)=O
+CHEMBL689,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,110000.0,cm s-1,cm s 1,OC[C@@H](O)[C@@H](O)[C@H](O)[C@H](O)CO
+CHEMBL568,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,91000000.0,cm s-1,cm s 1,O=C1Nc2ccc(Cl)cc2C(c2ccccc2)=NC1O
+CHEMBL266195,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,88000000.0,cm s-1,cm s 1,C=CCc1ccccc1OCC(O)CNC(C)C
+CHEMBL277474,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,77000000.0,cm s-1,cm s 1,Cc1cc(=O)n(-c2ccccc2)n1C
+CHEMBL24,CHEMBL612558,Apparent permeability coefficient (Papp) (Caco-2 cell monolayer),2001.0,590000.0,cm s-1,cm s 1,CC(C)NCC(O)COc1ccc(CC(N)=O)cc1
+CHEMBL154680,CHEMBL372,Caco-2 permeability coefficient.,2001.0,9.1E-7,cm s-1,cm s 1,NCc1cccc(-n2nc(C(F)(F)F)cc2C(=O)Nc2ccc(-c3ccccc3S(N)(=O)=O)cc2F)c1
+CHEMBL153946,CHEMBL372,Caco-2 permeability coefficient.,2001.0,0.00000338,cm s-1,cm s 1,CS(=O)(=O)c1ccccc1-c1ccc(NC(=O)c2cc(C(F)(F)F)nn2-c2cccc(CN)c2)cc1
+CHEMBL346857,CHEMBL372,Caco-2 permeability coefficient.,2001.0,1E-7,cm s-1,cm s 1,N=C(N)c1cccc(-n2nc(C(F)(F)F)cc2C(=O)Nc2ncc(-c3ccccc3S(N)(=O)=O)cn2)c1
+CHEMBL265784,CHEMBL372,Permeability coefficient against Caco-2 cell monolayers at 0.1 mM concentration after 1 hour exposure,1999.0,15900000.0,cm s-1,cm s 1,CCCCCCCCCCCCC(N[C@H](Cc1ccccc1)C(=O)N[C@@H](CSCNC(C)=O)C(=O)NC(C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CSCNC(C)=O)C(=O)N[C@H](C(N)=O)[C@@H](C)O)c1ccc(O)cc1)C(=O)NC1OC(O)C(O)C(O)C1O
+CHEMBL265784,CHEMBL372,Permeability coefficient against Caco-2 cell monolayers at 0.1 mM concentration after 3 hour exposure,1999.0,16200000.0,cm s-1,cm s 1,CCCCCCCCCCCCC(N[C@H](Cc1ccccc1)C(=O)N[C@@H](CSCNC(C)=O)C(=O)NC(C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CSCNC(C)=O)C(=O)N[C@H](C(N)=O)[C@@H](C)O)c1ccc(O)cc1)C(=O)NC1OC(O)C(O)C(O)C1O
+CHEMBL422351,CHEMBL372,Caco-2 permeability coefficient.,2001.0,0.00000314,cm s-1,cm s 1,Cc1cc(C(=O)Nc2ccc(-c3ccccc3S(C)(=O)=O)cc2F)n(-c2cccc(CN)c2)n1
+CHEMBL358835,CHEMBL372,Caco-2 permeability coefficient.,2001.0,2E-7,cm s-1,cm s 1,CS(=O)(=O)c1ccccc1-c1ccc(NC(=O)c2cc(C(F)(F)F)nn2-c2cccc(C(=N)N)c2)c(F)c1
+CHEMBL156775,CHEMBL372,Caco-2 permeability coefficient.,2001.0,0.0000012,cm s-1,cm s 1,Cc1cc(C(=O)Nc2ccc(-c3ccccc3S(C)(=O)=O)cc2)n(-c2cccc(CN)c2)n1
+CHEMBL2370672,CHEMBL372,Permeability coefficient against Caco-2 cell monolayers at 0.2 mM concentration after 1 hour exposure,1999.0,1.83,cm s-1,cm s 1,CCCCCCCCC(NC(=O)[C@@H](NC(=O)[C@H](CSCNC(C)=O)NC(=O)[C@H](CCCCN)NC(=O)[C@H](Cc1c[nH]c2ccccc12)NC(=O)[C@@H](NC(=O)[C@H](CSCNC(C)=O)NC(=O)[C@H](N)Cc1ccccc1)c1ccc(O)cc1)[C@@H](C)O)C(=O)NCC(=O)O
+CHEMBL2370672,CHEMBL372,Permeability coefficient against Caco-2 cell monolayers at 0.2 mM concentration after 3 hour exposure,1999.0,1.1,cm s-1,cm s 1,CCCCCCCCC(NC(=O)[C@@H](NC(=O)[C@H](CSCNC(C)=O)NC(=O)[C@H](CCCCN)NC(=O)[C@H](Cc1c[nH]c2ccccc12)NC(=O)[C@@H](NC(=O)[C@H](CSCNC(C)=O)NC(=O)[C@H](N)Cc1ccccc1)c1ccc(O)cc1)[C@@H](C)O)C(=O)NCC(=O)O
+CHEMBL134736,CHEMBL372,Caco-2 permeability coefficient.,2001.0,2E-7,cm s-1,cm s 1,Cc1cc(C(=O)Nc2ccc(-c3ccccc3S(N)(=O)=O)cc2)n(-c2cccc(CN)c2)n1
+CHEMBL2370682,CHEMBL372,Permeability coefficient against Caco-2 cell monolayers at 0.1 mM concentration after 1 hour exposure,1999.0,19400000.0,cm s-1,cm s 1,CCCCCCCCCCCCCCCCC(N)C(=O)N[C@H](Cc1ccccc1)C(=O)N[C@@H](CSCNC(C)=O)C(=O)N[C@H](C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CSCNC(C)=O)C(=O)N[C@H](C(N)=O)[C@@H](C)O)c1ccc(O)cc1
+CHEMBL2370682,CHEMBL372,Permeability coefficient against Caco-2 cell monolayers at 0.1 mM concentration after 3 hour exposure,1999.0,16700000.0,cm s-1,cm s 1,CCCCCCCCCCCCCCCCC(N)C(=O)N[C@H](Cc1ccccc1)C(=O)N[C@@H](CSCNC(C)=O)C(=O)N[C@H](C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CSCNC(C)=O)C(=O)N[C@H](C(N)=O)[C@@H](C)O)c1ccc(O)cc1
+CHEMBL559015,CHEMBL372,Caco-2 permeability coefficient.,2001.0,0.00000486,cm s-1,cm s 1,CS(=O)(=O)c1ccccc1-c1ccc(NC(=O)c2cc(C(F)(F)F)nn2-c2cccc(CN)c2)c(F)c1.Cl
+CHEMBL152854,CHEMBL372,Caco-2 permeability coefficient.,2001.0,3E-7,cm s-1,cm s 1,Cc1cc(C(=O)Nc2ccc(-c3ccccc3S(N)(=O)=O)cc2)n(-c2cccc(C(=N)N)c2)n1.O=C(O)C(F)(F)F
+CHEMBL154572,CHEMBL372,Caco-2 permeability coefficient.,2001.0,9.5E-7,cm s-1,cm s 1,Cc1cc(C(=O)Nc2ccc(-c3ccccc3S(N)(=O)=O)cc2F)n(-c2cccc(CN)c2)n1
+CHEMBL38105,CHEMBL612558,Corneal permeability coefficient was determined,1986.0,0.0000651,cm s-1,cm s 1,CNS(=O)(=O)c1ccc(Cl)cc1
+CHEMBL20,CHEMBL612558,Corneal permeability coefficient was determined,1986.0,0.00000128,cm s-1,cm s 1,CC(=O)Nc1nnc(S(N)(=O)=O)s1
+CHEMBL804,CHEMBL612558,Corneal permeability coefficient was determined,1986.0,0.0000547,cm s-1,cm s 1,NS(=O)(=O)c1ccc(Cl)cc1
+CHEMBL34910,CHEMBL612558,Corneal permeability coefficient was determined,1986.0,0.00000226,cm s-1,cm s 1,CNS(=O)(=O)c1nnc(NC(C)=O)s1
+CHEMBL2303836,CHEMBL376,Transport rate in vitro over rat small intestine.,1995.0,1840000.0,cm s-1,cm s 1,CC(=O)OC[C@@H]1O[C@@H](OC[C@@H]2NC(=O)[C@H](Cc3ccccc3)NC(=O)[C@H](Cc3ccc(O)cc3)NC(=O)CCSSC[C@@H](C(=O)N3CCC[C@H]3C(=O)N[C@@H](CCCN=C(N)N)C(=O)NCC(N)=O)NC(=O)[C@H](CC(N)=O)NC2=O)[C@@H](OC(C)=O)[C@@H](OC(C)=O)[C@H]1OC(C)=O
+CHEMBL2373996,CHEMBL376,Transport rate in vitro over rat small intestine.,1995.0,1030000.0,cm s-1,cm s 1,NC(=O)CNC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@@H]1CCCN1C(=O)[C@@H]1CSSCCC(=O)N[C@H](Cc2ccc(O)cc2)C(=O)N[C@@H](Cc2ccccc2)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC(N)=O)C(=O)N1
+CHEMBL2303837,CHEMBL376,Transport rate in vitro over rat small intestine.,1995.0,1670000.0,cm s-1,cm s 1,NC(=O)CNC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@@H]1CCCN1C(=O)[C@@H]1CSSCCC(=O)N[C@@H](Cc2ccc(O)cc2)C(=O)N[C@@H](Cc2ccccc2)C(=O)N[C@@H](CO[C@@H]2O[C@@H](CO)[C@H](O)[C@H](O)[C@@H]2O)C(=O)N[C@@H](CC(N)=O)C(=O)N1
+CHEMBL1429,CHEMBL376,Transport rate in vitro over rat small intestine.,1995.0,890000.0,cm s-1,cm s 1,N=C(N)NCCC[C@@H](NC(=O)[C@@H]1CCCN1C(=O)[C@@H]1CSSCCC(=O)N[C@@H](Cc2ccc(O)cc2)C(=O)N[C@@H](Cc2ccccc2)C(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CC(N)=O)C(=O)N1)C(=O)NCC(N)=O
+CHEMBL163981,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,65800000.0,cm s-1,cm s 1,N#Cc1cccc(Cn2cnc3ccccc32)c1
+CHEMBL162939,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,71900000.0,cm s-1,cm s 1,N#Cc1cccc(Cn2cccn2)c1
+CHEMBL349286,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,6100000.0,cm s-1,cm s 1,O=C(O)c1cccc(Cc2ncccn2)c1
+CHEMBL14192,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,68100000.0,cm s-1,cm s 1,c1ccc(Cn2ccnc2)cc1
+CHEMBL163823,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,23400000.0,cm s-1,cm s 1,CS(=O)(=O)Nc1cccc(Cn2cnc3ccccc32)c1
+CHEMBL164365,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,710000.0,cm s-1,cm s 1,O=C(O)Cc1ccc(Cn2ccnc2)cc1
+CHEMBL352888,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,25100000.0,cm s-1,cm s 1,NC(=O)c1cccc(Cn2cnc3ccccc32)c1
+CHEMBL439834,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,3190000.0,cm s-1,cm s 1,O=C(O)c1ccc(Cn2cnc3ccccc32)cc1
+CHEMBL163641,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,5390000.0,cm s-1,cm s 1,O=C(O)c1ccc(Cc2ncccn2)cc1
+CHEMBL163694,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,57400000.0,cm s-1,cm s 1,Nc1cccc(Cn2cnc3ccccc32)c1
+CHEMBL163451,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,44400000.0,cm s-1,cm s 1,NC(=O)c1cccc(Cn2cccn2)c1
+CHEMBL162897,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,3660000.0,cm s-1,cm s 1,O=C(O)c1ccc(Cn2cccn2)cc1
+CHEMBL162846,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,34600000.0,cm s-1,cm s 1,NC(=O)c1cccc(Cc2ncccn2)c1
+CHEMBL422194,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,2630000.0,cm s-1,cm s 1,O=C(O)Cc1ccc(Cn2cnc3ccccc32)cc1
+CHEMBL164271,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,2930000.0,cm s-1,cm s 1,O=C(O)c1cccc(Cn2cccn2)c1
+CHEMBL163922,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,67800000.0,cm s-1,cm s 1,N#Cc1cccc(Cn2ccnc2)c1
+CHEMBL163429,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,66700000.0,cm s-1,cm s 1,N#Cc1cccc(Cc2ncccn2)c1
+CHEMBL352209,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,25300000.0,cm s-1,cm s 1,NCc1cccc(Cc2ncccn2)c1
+CHEMBL348747,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,2890000.0,cm s-1,cm s 1,O=C(O)Cc1ccc(Cn2cccn2)cc1
+CHEMBL347547,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,71100000.0,cm s-1,cm s 1,c1ccc(Cn2cnc3ccccc32)cc1
+CHEMBL163819,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,6850000.0,cm s-1,cm s 1,NC(=O)c1cccc(Cn2ccnc2)c1
+CHEMBL159424,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,23400000.0,cm s-1,cm s 1,NS(=O)(=O)c1ccc(Cn2cnc3ccccc32)cc1
+CHEMBL163761,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,27600000.0,cm s-1,cm s 1,NCc1cccc(Cn2cnc3ccccc32)c1
+CHEMBL159431,CHEMBL612558,Permeability coefficient (Papp) (Caco-2 cell monolayer),2003.0,28400000.0,cm s-1,cm s 1,NCc1cccc(Cn2cccn2)c1
+CHEMBL556031,CHEMBL614058,In vitro apparent permeability (Paap*10e-6) coefficient after 120 min incubation of Caco-2 cells in presence of compound,2004.0,38.2,cm s-1,cm s 1,C=C(Br)C(=O)Nc1cc(C(=O)Nc2cc(C(=O)Nc3cc(C(=O)Nc4cc(C(=O)NCCC(=N)N)n(C)c4)n(C)c3)n(C)c2)n(C)c1.Cl
+CHEMBL545614,CHEMBL614058,In vitro apparent permeability (Paap*10e-6) coefficient after 120 min incubation of Caco-2 cells in presence of compound,2004.0,0.69,cm s-1,cm s 1,C=C(Br)C(=O)Nc1cc(C(=O)NCCC(=N)N)n(C)c1.Cl
+CHEMBL544442,CHEMBL614058,In vitro apparent permeability (Paap*10e-6) coefficient after 120 min incubation of Caco-2 cells in presence of compound,2004.0,15.21,cm s-1,cm s 1,C=C(Br)C(=O)Nc1cc(C(=O)Nc2cc(C(=O)Nc3cc(C(=O)NCCC(=N)N)n(C)c3)n(C)c2)n(C)c1.Cl
+CHEMBL542800,CHEMBL614058,In vitro apparent permeability (Paap*10e-6) coefficient after 120 min incubation of Caco-2 cells in presence of compound,2004.0,5.58,cm s-1,cm s 1,C=C(Br)C(=O)Nc1cc(C(=O)Nc2cc(C(=O)NCCC(=N)N)n(C)c2)n(C)c1.Cl
+CHEMBL37251,CHEMBL373,Tested for permeability across Caco monolayers of intestinal mucosa of dog,2003.0,0.3,cm s-1,cm s 1,Cc1cc(C(=O)Nc2ccc(-c3ccccc3S(N)(=O)=O)cc2)n(-c2cccc(C(=N)N)c2)n1
+CHEMBL151939,CHEMBL373,Tested for permeability across Caco monolayers of intestinal mucosa of dog,2003.0,6.5,cm s-1,cm s 1,NCc1ccccc1-n1nc(C(F)(F)F)cc1C(=O)Nc1ccc(-c2ccccc2S(N)(=O)=O)cc1F
+CHEMBL559015,CHEMBL373,Tested for permeability across Caco monolayers of intestinal mucosa of dog,2003.0,4.9,cm s-1,cm s 1,CS(=O)(=O)c1ccccc1-c1ccc(NC(=O)c2cc(C(F)(F)F)nn2-c2cccc(CN)c2)c(F)c1.Cl
+CHEMBL355992,CHEMBL373,Tested for permeability across Caco monolayers of intestinal mucosa of dog,2003.0,0.1,cm s-1,cm s 1,COc1ccc(-n2nc(C(F)(F)F)cc2C(=O)Nc2ccc(-c3ccccc3S(N)(=O)=O)cn2)cc1
+CHEMBL146982,CHEMBL373,Tested for permeability across Caco monolayers of intestinal mucosa of dog,2003.0,1.1,cm s-1,cm s 1,COc1ccc(-n2nc(C)cc2C(=O)Nc2ccc(-c3ccccc3S(N)(=O)=O)cn2)cc1
+CHEMBL139788,CHEMBL373,Tested for permeability across Caco monolayers of intestinal mucosa of dog,2003.0,51.0,cm s-1,cm s 1,COc1ccc(-n2nc(C)cc2C(=O)Nc2ccc(-c3ccccc3S(N)(=O)=O)cc2)cc1
+CHEMBL250689,CHEMBL612558,Apparent permeability was measured in Caco-2 cells,2005.0,11000000.0,cm s-1,cm s 1,CC(=O)c1cccc(NC(=O)N[C@@H]2CCCC[C@H]2CN2CCC[C@@H](Cc3ccc(F)cc3)C2)c1
+CHEMBL13,CHEMBL612558,Apparent permeability of the compound was determined in MDCK (madin darby canine kidney) strain I; Activity = Papp 10e-6,2005.0,37.78,cm s-1,cm s 1,COCCc1ccc(OCC(O)CNC(C)C)cc1
+CHEMBL13,CHEMBL612558,Apparent permeability of the compound was determined inCaco-2 (human colon carcinoma) cells; Activity = Papp 10E-6,2005.0,18.21,cm s-1,cm s 1,COCCc1ccc(OCC(O)CNC(C)C)cc1
+CHEMBL27,CHEMBL612558,Apparent permeability of the compound was determined in MDCK (madin darby canine kidney) strain I; Activity = Papp 10e-6,2005.0,34.36,cm s-1,cm s 1,CC(C)NCC(O)COc1cccc2ccccc12
+CHEMBL27,CHEMBL612558,Apparent permeability of the compound was determined inCaco-2 (human colon carcinoma) cells; Activity = Papp 10E-6,2005.0,12.63,cm s-1,cm s 1,CC(C)NCC(O)COc1cccc2ccccc12
+CHEMBL6966,CHEMBL612558,Apparent permeability of the compound was determined in MDCK (madin darby canine kidney) strain I; Activity = Papp 10e-6,2005.0,16.6,cm s-1,cm s 1,COc1ccc(CCN(C)CCCC(C#N)(c2ccc(OC)c(OC)c2)C(C)C)cc1OC
+CHEMBL6966,CHEMBL612558,Apparent permeability of the compound was determined inCaco-2 (human colon carcinoma) cells; Activity = Papp 10E-6,2005.0,7.2,cm s-1,cm s 1,COc1ccc(CCN(C)CCCC(C#N)(c2ccc(OC)c(OC)c2)C(C)C)cc1OC
+CHEMBL1790041,CHEMBL612558,Apparent permeability of the compound was determined in MDCK (madin darby canine kidney) strain I; Activity = Papp 10e-6,2005.0,0.27,cm s-1,cm s 1,CNC(=C[N+](=O)[O-])NCCSCc1ccc(CN(C)C)o1
+CHEMBL35,CHEMBL612558,Apparent permeability of the compound was determined in MDCK (madin darby canine kidney) strain I; Activity = Papp 10e-6,2005.0,0.27,cm s-1,cm s 1,NS(=O)(=O)c1cc(C(=O)O)c(NCc2ccco2)cc1Cl
+CHEMBL35,CHEMBL612558,Apparent permeability of the compound was determined inCaco-2 (human colon carcinoma) cells; Activity = Papp 10e-6 (ND =Not determined),2005.0,0.39,cm s-1,cm s 1,NS(=O)(=O)c1cc(C(=O)O)c(NCc2ccco2)cc1Cl
+CHEMBL130,CHEMBL612558,Apparent permeability of the compound was determined in MDCK (madin darby canine kidney) strain I; Activity = Papp 10e-6,2005.0,3.15,cm s-1,cm s 1,O=C(N[C@H](CO)[C@H](O)c1ccc([N+](=O)[O-])cc1)C(Cl)Cl
+CHEMBL175443,CHEMBL612558,Apparent permeability in Caco-2 cells,2005.0,25.6,cm s-1,cm s 1,COc1cccc(-n2c(=O)n(Cc3ccccc3C#N)c(=O)n(C[C@H](N)c3ccccc3)c2=O)c1F
+CHEMBL425523,CHEMBL612558,Apparent permeability in Caco-2 cells,2005.0,6.2,cm s-1,cm s 1,COc1cccc(-n2c(=O)n(Cc3ccccc3OC(F)(F)F)c(=O)n(C[C@H](N)c3ccccc3)c2=O)c1F
+CHEMBL368511,CHEMBL612558,Apparent permeability in Caco-2 cells,2005.0,13.9,cm s-1,cm s 1,COc1cccc(-n2c(=O)n(Cc3c(F)cccc3Br)c(=O)n(C[C@H](N)c3ccccc3)c2=O)c1F
+CHEMBL368427,CHEMBL612558,Permeability was determined,2004.0,60.0,cm s-1,cm s 1,N#Cc1c(C2CCNCC2)cc(-c2c(O)cccc2OCC2CC2)nc1N
+CHEMBL363840,CHEMBL612558,Apparent permeability was measured in Caco-2 cells,2005.0,2000000.0,cm s-1,cm s 1,Cn1nnnc1-c1cccc(NC(=O)N[C@@H]2CCCC[C@H]2CN2CCC[C@@H](Cc3ccc(F)cc3)C2)c1
+CHEMBL195433,CHEMBL612558,Apparent permeability was measured in Caco-2 cells,2005.0,6000000.0,cm s-1,cm s 1,CC(=O)c1sc(NC(=O)N[C@@H]2CCCC[C@H]2CN2CCC[C@@H](Cc3ccc(F)cc3)C2)nc1C
+CHEMBL216884,CHEMBL614058,Permeability (Papp) run from pH 6.5-7.4,2007.0,15.4,10-6 cm s-1,10 6 cm s 1,O=C(NO)c1ccc(-c2ccc(CNCc3ccccc3)cn2)s1
+CHEMBL217716,CHEMBL614058,Permeability (Papp) run from pH 6.5-7.4,2007.0,4.2,10-6 cm s-1,10 6 cm s 1,O=C(NO)c1ccc(-c2ccn(CCNCc3ccc4c(c3)OCO4)n2)s1
+CHEMBL98,CHEMBL614058,Permeability (Papp) run from pH 6.5-7.4,2007.0,8.0,10-6 cm s-1,10 6 cm s 1,O=C(CCCCCCC(=O)Nc1ccccc1)NO
+CHEMBL1486,CHEMBL614058,Apparent permeability across human Caco-2 cells assessed as efflux saturation binding constant,2007.0,144.0,uM,um,CC(C)OC(=O)OCOP(=O)(CO[C@H](C)Cn1cnc2c(N)ncnc21)OCOC(=O)OC(C)C.O=C(O)/C=C/C(=O)O
+CHEMBL515387,CHEMBL614068,Apparent permeability from apical to basolateral side in MDCK cells,2009.0,13.0,uM,um,O=C([C@@H]1C[C@H](N2CCN(c3ncccn3)CC2)CN1)N1CCC(F)(F)C1
+CHEMBL1689810,CHEMBL614058,Apparent permeability across apical to basolateral side in human Caco2 cells at 10 umol/L,2011.0,32.7,umol/L/s,umol l s,CCC(CC)(NC(=O)c1cnn2c1NC(c1ccccc1)CC2(C)C)c1ccc(C(F)(F)F)cc1
+CHEMBL1689816,CHEMBL614058,Apparent permeability across apical to basolateral side in human Caco2 cells at 10 umol/L,2011.0,52.6,umol/L/s,umol l s,CCC(CC)(NC(=O)c1cnn2c1NC(c1ccccc1)CC2(C)C)c1ccc(Cl)cc1
+CHEMBL1688097,CHEMBL614058,Apparent permeability across apical to basolateral side in human Caco2 cells at 10 umol/L,2011.0,58.9,umol/L/s,umol l s,CCC(CC)(NC(=O)c1cnn2c1NC(c1ccccc1)CC2(C)C)c1ccc(C)cc1.Cl
+CHEMBL1689810,CHEMBL614058,Apparent permeability across apical to basolateral side of human Caco2 cells at at 10 umol/L,2011.0,24.2,umol/L/s,umol l s,CCC(CC)(NC(=O)c1cnn2c1NC(c1ccccc1)CC2(C)C)c1ccc(C(F)(F)F)cc1
+CHEMBL1689816,CHEMBL614058,Apparent permeability across apical to basolateral side of human Caco2 cells at at 10 umol/L,2011.0,36.8,umol/L/s,umol l s,CCC(CC)(NC(=O)c1cnn2c1NC(c1ccccc1)CC2(C)C)c1ccc(Cl)cc1
+CHEMBL1688097,CHEMBL614058,Apparent permeability across apical to basolateral side of human Caco2 cells at at 10 umol/L,2011.0,42.7,umol/L/s,umol l s,CCC(CC)(NC(=O)c1cnn2c1NC(c1ccccc1)CC2(C)C)c1ccc(C)cc1.Cl
+CHEMBL1801085,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,26.0,%,%,COc1cc(C(=O)NC2(C(=O)N[C@H](C)c3ccc(-n4nc(Cl)c5ccccc54)cc3F)CC2)on1
+CHEMBL1801086,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,19.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cncs2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801087,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,14.0,%,%,COc1ncc(C(=O)NC2(C(=O)N[C@H](C)c3ccc(-n4nc(Cl)c5ccccc54)cc3F)CC2)s1
+CHEMBL1801340,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,21.0,%,%,Cc1nnsc1C(=O)NC1(C(=O)N[C@H](C)c2ccc(-n3nc(Cl)c4ccccc43)cc2F)CC1
+CHEMBL1801341,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,19.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cn[nH]c2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801344,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,8.2,%,%,C[C@@H](NC(=O)C1(NC(=O)c2ccc(Br)nc2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801345,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,22.0,%,%,Cc1cncc(C(=O)NC2(C(=O)N[C@H](C)c3ccc(-n4nc(Cl)c5ccccc54)cc3F)CC2)c1
+CHEMBL1801346,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,18.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cncc(O)c2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801347,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,21.0,%,%,COc1cncc(C(=O)NC2(C(=O)N[C@H](C)c3ccc(-n4nc(Cl)c5ccccc54)cc3F)CC2)c1
+CHEMBL1801348,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,24.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cncc(F)c2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801349,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,15.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cncc(Cl)c2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801350,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,13.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cncc(Br)c2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801351,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,25.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2ccnnc2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801352,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,24.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cncnc2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801353,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,30.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cnccn2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1801354,CHEMBL612558,Apparent passive permeability coefficient by cell based assay,2010.0,24.0,%,%,C[C@@H](NC(=O)C1(NC(=O)c2cncc(Cl)n2)CC1)c1ccc(-n2nc(Cl)c3ccccc32)cc1F
+CHEMBL1617574,CHEMBL614058,Apparent permeability across human Caco2 cells at pH 7.4,2012.0,5.0,um/s,um s,CC(=O)Nc1sc2c(c1-c1nc3ccccc3s1)CCN(C(C)C)C2
+CHEMBL1706858,CHEMBL614058,Apparent permeability across human Caco2 cells at pH 7.4,2012.0,6.8,um/s,um s,CC(=O)Nc1sc2c(c1-c1nc3ccccc3s1)CNC2
+CHEMBL3109356,CHEMBL614577,Apparent permeability across apical to basolateral side in pig LLC-PK1 cells expressing MDR1 assessed as compound recovery,2014.0,30.0,%,%,COCCOc1ccn2c(-c3ccc4cccc(O[C@@H]5CCNC[C@@H]5F)c4n3)cnc2c1
+CHEMBL3109337,CHEMBL614577,Apparent permeability across apical to basolateral side in pig LLC-PK1 cells expressing MDR1 assessed as compound recovery,2014.0,30.0,%,%,COCCOc1ccn2c(-c3ccc4cccc(O[C@@H]5CCNC[C@H]5F)c4n3)cnc2c1
+CHEMBL3109340,CHEMBL614577,Apparent permeability across apical to basolateral side in pig LLC-PK1 cells expressing MDR1 assessed as compound recovery,2014.0,50.0,%,%,COCCOc1ccn2c(-c3ccc4cccc(OC5CCNCC5)c4n3)cnc2c1
+CHEMBL3110070,CHEMBL614058,Apparent permeability across basolateral to apical side in human Caco2 cells assessed as compound recovery at 10 uM by LC-MS/MS analysis,2013.0,104.0,%,%,Nc1nc(F)nc2c1ncn2[C@@H]1O[C@H](CO)C[C@H]1O
+CHEMBL3110070,CHEMBL614058,Apparent permeability across apical to basolateral side in human Caco2 cells assessed as compound recovery at 10 uM by LC-MS/MS analysis,2013.0,102.0,%,%,Nc1nc(F)nc2c1ncn2[C@@H]1O[C@H](CO)C[C@H]1O
+CHEMBL3797667,CHEMBL612558,Apparent permeability in human Caco2 cells assessed as Fabs after 95 mins by LC-MS/MS analysis,2016.0,100.0,%,%,C[C@@H](NC(=O)c1ccc2[nH]nc(-c3ccncc3)c2c1)c1cccc(Cl)c1
+CHEMBL3800134,CHEMBL612558,Apparent permeability in human Caco2 cells assessed as Fabs after 95 mins by LC-MS/MS analysis,2016.0,69.0,%,%,O=C(NC(CO)c1cccc(Cl)c1)c1ccc2[nH]nc(-c3ccncc3)c2c1
+CHEMBL3797242,CHEMBL612558,Apparent permeability in human Caco2 cells assessed as Fabs after 95 mins by LC-MS/MS analysis,2016.0,99.0,%,%,O=C(NCc1c(Cl)cncc1Cl)c1ccc2[nH]nc(-c3ccncc3)c2c1
+CHEMBL4292211,CHEMBL612558,Apparent permeability across apical to basolateral side in human Caco2 cells at 100 uM after 60 mins by lucifer yellow fluorescence-based assay relative to propranolol,2018.0,50.0,%,%,O=C1C(O)=C(I)C(=O)c2ccccc21
+CHEMBL4281588,CHEMBL612558,Apparent permeability across apical to basolateral side in human Caco2 cells at 100 uM after 60 mins by lucifer yellow fluorescence-based assay relative to propranolol,2018.0,60.0,%,%,O=C1C(O)=C(c2ccccc2)C(=O)c2ccccc21
+CHEMBL5200010,CHEMBL612558,Effective permeability in PBS at pH 7.4 incubated for 5 hrs by PAMPA based UPLC-MS/MS analysis,2022.0,20.0,um/s,um s,O=C(Nc1ccccc1)Nc1cccc(Nc2nccc(Nc3ccc4[nH]ccc4c3)n2)c1
+CHEMBL5206223,CHEMBL612558,Effective permeability in PBS at pH 7.4 incubated for 5 hrs by PAMPA based UPLC-MS/MS analysis,2022.0,0.1,um/s,um s,O=C(Nc1ccccc1)Nc1cccc(Nc2nccc(Nc3ccc4cc[nH]c4c3)n2)c1
+CHEMBL5169911,CHEMBL612558,Effective permeability in PBS at pH 7.4 incubated for 5 hrs by PAMPA based UPLC-MS/MS analysis,2022.0,30.0,um/s,um s,Cn1cc2ccc(Nc3ccnc(Nc4cccc(NC(=O)Nc5ccccc5)c4)n3)cc2n1

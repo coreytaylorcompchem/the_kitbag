@@ -57,15 +57,14 @@ def retrieve_chembl_adme_data(config, data=None):
         if relation:
             base_filters["standard_relation"] = relation
 
-        # Add any user-specified filters for this readout
+
         base_filters.update(readout_filters.get(readout_key, {}))
 
-        # Prepare alias fetch tasks
         tasks = [(alias, readout_key, base_filters) for alias in aliases]
 
         # Use multiprocessing to fetch aliases in parallel
         num_workers = min(len(tasks), max(1, cpu_count() - 2))
-        print(f"Parallel fetching with {num_workers} workers for '{readout_key}' aliases...")
+        print(f"\nParallel fetching with {num_workers} workers for '{readout_key}' aliases...")
 
         # Spawn context to allow nested multiprocessing
         with ThreadPool(num_workers) as pool:    alias_dfs = list(tqdm(pool.imap(fetch_single_alias_task, tasks), total=len(tasks), desc=f"Fetching {readout_key}"))
@@ -81,36 +80,3 @@ def retrieve_chembl_adme_data(config, data=None):
         return {"df": pd.concat(results, ignore_index=True)}
     else:
         return {"df": pd.DataFrame()}
-    
-# from chembl_webresource_client.new_client import new_client
-# import pandas as pd
-
-# # Aliases to check
-# aliases = ["LogD", "Log D", "logD", "log D", "LogD7.4", "LogD7_4", "pLogD", "logD (pH 7.4)"]
-
-# results_summary = {}
-
-# for alias in aliases:
-#     print(f"\nChecking alias: '{alias}'")
-#     query = new_client.activity.filter(standard_type=alias)
-    
-#     # Fetch the first N items (you can adjust the cap here)
-#     try:
-#         sample_data = list(query[:100])
-#         count = len(sample_data)
-#         results_summary[alias] = count
-#         print(f" → Found {count} records for standard_type = '{alias}'")
-
-#         if count > 0:
-#             df = pd.DataFrame(sample_data)
-#             print("Sample data:")
-#             print(df[["molecule_chembl_id", "standard_type", "standard_value", "assay_type", "standard_units"]].head())
-    
-#     except Exception as e:
-#         print(f"Error fetching alias '{alias}': {e}")
-#         results_summary[alias] = 0
-
-# # Print final summary
-# print("\nSummary of found records:")
-# for alias, count in results_summary.items():
-#     print(f" - {alias!r}: {count} records")

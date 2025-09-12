@@ -107,6 +107,6 @@ class ParallelWorkflowRunner:
         combined_df = pd.concat(valid_dfs, ignore_index=True)
         combined_path = self.output_dir / self.combined_filename
         combined_df.to_csv(combined_path, index=False)
-        print(f"\n✅ Combined output saved to {combined_path}")
+        print(f"\nCombined output saved to {combined_path}")
 
         return combined_df

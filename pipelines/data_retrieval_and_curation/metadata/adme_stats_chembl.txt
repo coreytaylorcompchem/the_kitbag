@@ -1,0 +1,14 @@
+##### Overall Chembl stats for ADME data (Sept 2025)
+
+- LogD
+- mhCLint
+- Solubility
+- Caco-2 Permeability
+
+assay_type A
+
+~ 4200 compounds
+
+https://www.ebi.ac.uk/chembl/explore/cell_line/CHEMBL3307519
+
+- hPPB

@@ -1,0 +1,75 @@
+molecule_chembl_id,target_chembl_id,assay_description,document_year,standard_value,standard_units,normalized_units,smiles
+CHEMBL180489,CHEMBL1907598,Percent plasma protein binding against Vitronectin receptor (alpha V beta 3),2005.0,99.0,%,%,COc1ccc([C@@H](CCCCCCc2ccc3c(n2)NCCC3)CC(=O)O)cn1
+CHEMBL189123,CHEMBL612558,Binding affinity to human plasma protein,2004.0,36.0,%,%,O=C(C[C@@H]1C(=O)Nc2ccccc2N1S(=O)(=O)c1ccc(Cl)c(Cl)c1)NCCc1ccc(C2=NCCN2)cc1
+CHEMBL189245,CHEMBL612558,Binding affinity to human plasma protein; ND denotes not done,2004.0,,%,%,O=C(C[C@@H]1C(=O)Nc2ccccc2N1S(=O)(=O)c1ccc(Cl)c(Cl)c1)NCCc1ccc(-n2ccnc2)cc1
+CHEMBL188617,CHEMBL612558,Binding affinity to human plasma protein,2004.0,82.5,%,%,O=C(C[C@@H]1C(=O)Nc2ccccc2N1S(=O)(=O)c1ccc(Cl)c(Cl)c1)NCCc1ccc(-n2cnnc2)cc1
+CHEMBL359553,CHEMBL612558,Binding affinity of the [35S]- radiolabeled compound to human plasma protein,2004.0,79.4,%,%,O=C(C[C@@H]1C(=O)Nc2ccccc2N1S(=O)(=O)c1ccc2ccccc2c1)NCCc1ccc(C2=NCCN2)cc1
+CHEMBL185811,CHEMBL612558,Binding affinity to human plasma protein,2004.0,98.5,%,%,O=C(C[C@@H]1C(=O)Nc2ccccc2N1S(=O)(=O)c1ccc2ccccc2c1)NCCc1ccc(-c2ncc[nH]2)cc1
+CHEMBL160547,CHEMBL612558,Binding affinity to human plasma protein,2004.0,93.6,%,%,O=C(C[C@@H]1C(=O)Nc2ccc(Cl)cc2N1S(=O)(=O)c1ccc2ccccc2c1)NCCc1ccc(C2=NCCN2)cc1
+CHEMBL185693,CHEMBL612558,Binding affinity to human plasma protein,2004.0,91.7,%,%,CN1CCN=C1c1ccc(CCNC(=O)C[C@@H]2C(=O)Nc3ccc(Cl)cc3N2S(=O)(=O)c2ccc3ccccc3c2)cc1
+CHEMBL185727,CHEMBL612558,Binding affinity to human plasma protein; ND denotes not done,2004.0,,%,%,O=C(C[C@@H]1C(=O)Nc2ccc(Cl)cc2N1S(=O)(=O)c1ccc2ccccc2c1)NCCc1ccc(-c2ncc[nH]2)cc1
+CHEMBL189475,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,99.8,%,%,C[C@@H](C(=O)NS(C)(=O)=O)c1ccc(OS(=O)(=O)C(F)(F)F)cc1
+CHEMBL191413,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,99.9,%,%,CC(C)Cc1ccc([C@@H](C)C(=O)NS(C)(=O)=O)cc1
+CHEMBL364714,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,92.0,%,%,C[C@@H](C(N)=O)c1ccc(OS(=O)(=O)C(F)(F)F)cc1
+CHEMBL190243,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,70.0,%,%,C[C@@H](C(=O)NCCN1CCCC1)c1ccc(OS(=O)(=O)C(F)(F)F)cc1
+CHEMBL364310,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,62.0,%,%,C[C@@H](C(=O)NCCCN1CCCC1)c1ccc(OS(=O)(=O)C(F)(F)F)cc1
+CHEMBL190391,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,85.1,%,%,CC(C)Cc1ccc([C@@H](C)C(=O)NCCCN2CCCCC2)cc1
+CHEMBL188136,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,75.1,%,%,CC(C)Cc1ccc([C@@H](C)C(=O)NCCCN(C)C)cc1
+CHEMBL372867,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,83.1,%,%,CC(C)Cc1ccc([C@@H](C)C(=O)NCCOCCO)cc1
+CHEMBL192965,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,96.0,%,%,CC(C)Cc1ccc([C@@H](C)C(=O)N[C@H](C)C(=O)O)cc1
+CHEMBL189951,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,70.2,%,%,CC(Cc1ccc([C@@H](C)C(=O)NS(C)(=O)=O)cc1)C(=O)O
+CHEMBL571,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,99.2,%,%,CC(C(=O)O)c1cccc(C(=O)c2ccccc2)c1
+CHEMBL139,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,99.5,%,%,O=C(O)Cc1ccccc1Nc1c(Cl)cccc1Cl
+CHEMBL563,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,99.5,%,%,CC(C(=O)O)c1ccc(-c2ccccc2)c(F)c1
+CHEMBL6,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,90.0,%,%,COc1ccc2c(c1)c(CC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1
+CHEMBL193998,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,98.0,%,%,COc1ccc2c(c1)CN(c1ccc(C(C)C(=O)O)cc1)C2=O
+CHEMBL469,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,99.2,%,%,O=C(c1ccccc1)c1ccc2n1CCC2C(=O)O
+CHEMBL15770,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,94.0,%,%,CC1=C(CC(=O)O)c2cc(F)ccc2/C1=C\c1ccc([S+](C)[O-])cc1
+CHEMBL1020,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,99.6,%,%,Cc1ccc(C(=O)c2ccc(CC(=O)O)n2C)cc1
+CHEMBL19490,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,98.5,%,%,Cc1cc(CC(=O)O)n(C)c1C(=O)c1ccc(Cl)cc1
+CHEMBL498,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,96.0,%,%,CCCNC(=O)NS(=O)(=O)c1ccc(Cl)cc1
+CHEMBL35,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,98.8,%,%,NS(=O)(=O)c1cc(C(=O)O)c(NCc2ccco2)cc1Cl
+CHEMBL435,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,58.0,%,%,NS(=O)(=O)c1cc2c(cc1Cl)NCNS2(=O)=O
+CHEMBL56367,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,90.0,%,%,CS(=O)(=O)Nc1ccc([N+](=O)[O-])cc1Oc1ccccc1
+CHEMBL471,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,17.5,%,%,CC(C)NCC(O)c1ccc(NS(C)(=O)=O)cc1
+CHEMBL817,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,97.0,%,%,Cc1ccc(S(=O)(=O)NC(=O)NN2CCCCCC2)cc1
+CHEMBL782,CHEMBL3253,Percentage plasma protein binding towards human serum albumin,2005.0,96.0,%,%,CCCCNC(=O)NS(=O)(=O)c1ccc(C)cc1
+CHEMBL113,CHEMBL3253,Binding affinity to human plasma albumin by ultracentrifugation,2009.0,37.8,%,%,Cn1c(=O)c2c(ncn2C)n(C)c1=O
+CHEMBL1688364,CHEMBL1957,Inhibition of human IGF1R phosphorylation at 1 uM by mobility shift assay,2010.0,50.0,%,%,C[C@]1(O)C[C@@H](c2nc(-c3ccc4ccc(-c5ccccc5)nc4c3F)c3c(N)ncnn32)C1.Cl
+CHEMBL1688364,CHEMBL1981,Inhibition of IR phosphorylation at 1 uM by mobility shift assay,2010.0,50.0,%,%,C[C@]1(O)C[C@@H](c2nc(-c3ccc4ccc(-c5ccccc5)nc4c3F)c3c(N)ncnn32)C1.Cl
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 0.164 ug-ml-1 concentration to plasma protein of rat,,80.7,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 0.077 ug-ml-1 concentration to plasma protein of rat,,85.6,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 0.048 ug-ml-1 concentration to plasma protein of rat,,88.2,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 0.056 ug-ml-1 concentration to plasma protein of rat,,81.7,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 0.223 ug-ml-1 concentration to plasma protein of rat,,81.0,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 1.081 ug-ml-1 concentration to plasma protein of rat,,82.2,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 20 ng.ml-1 concentration to plasma protein of man,,0.0,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 100 ng.ml-1 concentration to plasma protein of man,,78.09,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 500 ng.ml-1 concentration to plasma protein of man,,77.35,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 1000 ng.ml-1 concentration to plasma protein of man,,76.78,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 20 ng.ml-1 concentration to plasma protein of mouse,,76.52,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 100 ng.ml-1 concentration to plasma protein of mouse,,79.89,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 500 ng.ml-1 concentration to plasma protein of mouse,,79.96,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 1000 ng.ml-1 concentration to plasma protein of mouse,,80.35,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 20 ng.ml-1 concentration to plasma protein of rat,,79.06,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 100 ng.ml-1 concentration to plasma protein of rat,,82.76,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 500 ng.ml-1 concentration to plasma protein of rat,,81.27,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 1000 ng.ml-1 concentration to plasma protein of rat,,78.67,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 20 ng.ml-1 concentration to plasma protein of rabbit,,78.46,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 100 ng.ml-1 concentration to plasma protein of rabbit,,70.17,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 500 ng.ml-1 concentration to plasma protein of rabbit,,78.4,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 1000 ng.ml-1 concentration to plasma protein of rabbit,,77.06,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 20 ng.ml-1 concentration to plasma protein of dog,,80.32,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 100 ng.ml-1 concentration to plasma protein of dog,,81.22,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 500 ng.ml-1 concentration to plasma protein of dog,,80.68,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL417,CHEMBL612545,Binding of 14C-epirubicin at 1000 ng.ml-1 concentration to plasma protein of dog,,80.9,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1
+CHEMBL1200981,CHEMBL612545,Binding of epirubicin at 20-1000 ng.ml-1 concentration to plasma protein of human,,77.0,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1.Cl
+CHEMBL1200981,CHEMBL612545,Binding of epirubicin to plasma protein of human,,75.0,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1.Cl
+CHEMBL53463,CHEMBL612545,Binding of doxorubicin to plasma protein of human,,71.0,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@H](O)[C@H](C)O1
+CHEMBL1200981,CHEMBL3253,Binding of epirubicin to albumin,,57.0,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@@H](O)[C@H](C)O1.Cl
+CHEMBL53463,CHEMBL3253,Binding of doxorubicin to albumin,,62.0,%,%,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@@H]3O[C@H]1C[C@H](N)[C@H](O)[C@H](C)O1
+CHEMBL1064,CHEMBL612545,Plasma protein binding of simvastatin following oral dose of simvastatin at 2 mg.Kg-1 level in dog,,97.0,%,%,CCC(C)(C)C(=O)O[C@H]1C[C@@H](C)C=C2C=C[C@H](C)[C@H](CC[C@@H]3C[C@@H](O)CC(=O)O3)[C@H]21
+CHEMBL1201391,CHEMBL612545,Plasma protein binding of simvastatin acid following oral dose of simvastatin at 2 mg.Kg-1 level in dog,,93.0,%,%,CCC(C)(C)C(=O)O[C@H]1C[C@@H](C)C=C2C=C[C@H](C)[C@H](CC[C@@H](O)C[C@@H](O)CC(=O)O)[C@H]21
+CHEMBL1064,CHEMBL612545,Plasma protein binding of simvastatin following oral dose of simvastatin at 40 mg.Kg-1 level in human,,97.0,%,%,CCC(C)(C)C(=O)O[C@H]1C[C@@H](C)C=C2C=C[C@H](C)[C@H](CC[C@@H]3C[C@@H](O)CC(=O)O3)[C@H]21
+CHEMBL1201391,CHEMBL612545,Plasma protein binding of simvastatin acid following oral dose of simvastatin at 40 mg.Kg-1 level in human,,93.0,%,%,CCC(C)(C)C(=O)O[C@H]1C[C@@H](C)C=C2C=C[C@H](C)[C@H](CC[C@@H](O)C[C@@H](O)CC(=O)O)[C@H]21
+CHEMBL4639484,CHEMBL2095168,Protein binding to human hemoglobin,2019.0,10.0,%,%,CC#C[14C](=O)N[C@H]1CCCN(c2c(F)cc(C(N)=O)c3[nH]c(C)c(C)c23)C1
