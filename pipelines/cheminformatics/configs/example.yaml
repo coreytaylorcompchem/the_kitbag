@@ -1,0 +1,8 @@
+backend: rdkit
+input_file: data/input_mols.sdf
+
+workflow: early_hit_discovery
+tasks:
+  - name: physchem_filtering
+    params:
+      mw_cutoff: 450
