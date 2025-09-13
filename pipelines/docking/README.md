@@ -4,9 +4,9 @@ In this repo are workflows to dock compounds with various use cases (unbiased, c
 
 ## Setup and dependencies
 
-* gnina
-* propka
-* xtb
+* [gnina](https://github.com/gnina/)
+* [propka](https://propka.readthedocs.io/en/latest/)
+* [xtb](https://xtb-docs.readthedocs.io/en/latest/setup.html)
 * Most Python libs.
 
 ## Running calculations
@@ -46,6 +46,6 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 ## TODO
 
-* Add more docking backends ([Uni-dock](https://github.com/dptech-corp/Uni-Dock) and ML-based backends like Diffdock and Equibind).
+* Add more docking backends ([Uni-dock](https://github.com/dptech-corp/Uni-Dock) and ML-based backends like [Diffdock](https://github.com/gcorso/DiffDock) and [Equibind](https://github.com/HannesStark/EquiBind)).
 * Add other docking modes (constrained core, ensemble, etc.)
 * Run docking on multiple targets. 
