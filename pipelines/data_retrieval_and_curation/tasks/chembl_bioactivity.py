@@ -1,7 +1,11 @@
 from pipeline.task_registry import register_task
 from chembl_webresource_client.new_client import new_client
-import pandas as pd
+
 import math
+import time
+import random
+
+import pandas as pd
 from tqdm import tqdm
 
 from pipeline.logger import setup_logger
@@ -11,6 +15,17 @@ logger = setup_logger(
     debug_mode=False,
     simple_format=True
 )
+
+def retry_activity_query(filters, max_retries=3):
+    activity = new_client.activity
+    for attempt in range(max_retries):
+        try:
+            return activity.filter(**filters)
+        except Exception as e:
+            logger.warning(f"⚠️ Retry {attempt+1}/{max_retries} failed: {e}")
+            time.sleep(2 ** attempt + random.random())
+    logger.error("❌ Final retry failed.")
+    return []
 
 @register_task("retrieve_chembl_bioactivities", description="Retrieve bioactivity data from CHEMBL.")
 def retrieve_chembl_bioactivities(config, data=None):
@@ -46,7 +61,7 @@ def retrieve_chembl_bioactivities(config, data=None):
         filters["assay_type"] = assay_type
 
     # Query bioactivities
-    activities = activity.filter(**filters)
+    activities = retry_activity_query(filters)
 
     df = pd.DataFrame(activities)
 
@@ -54,6 +69,10 @@ def retrieve_chembl_bioactivities(config, data=None):
         logger.info(f"No bioactivity data found for {uniprot_id} ({target_chembl_id}) with readouts: {readouts}")
     else:
         logger.info(f"Retrieved {len(df)} bioactivities for {uniprot_id}")
+    
+    if not df.empty:
+        df["uniprot_id"] = uniprot_id
+        df["target_pref_name"] = target_query[0].get("pref_name")
 
     return df
 

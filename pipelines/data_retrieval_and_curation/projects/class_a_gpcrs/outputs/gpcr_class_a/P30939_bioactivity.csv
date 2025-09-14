@@ -1,0 +1,4 @@
+molecule_chembl_id,target_chembl_id,target_pref_name,standard_type,standard_relation,standard_value,standard_units,assay_chembl_id,assay_type,assay_description,document_chembl_id,readout,smiles,pActivity
+CHEMBL292779,CHEMBL1805,Serotonin 1f (5-HT1f) receptor,IC50,=,3800.0,nM,CHEMBL616721,B,Compound was evaluated for the affinity at 5-hydroxytryptamine 1F receptor,CHEMBL1130196,IC50,Fc1cccc(CCN2CCN(CCCc3c[nH]c4ccc(-n5cnnc5)cc34)CC2)c1,5.42021640338319
+CHEMBL2110300,CHEMBL1805,Serotonin 1f (5-HT1f) receptor,IC50,=,363.08,nM,CHEMBL617125,B,Binding affinity towards human recombinant 5-hydroxytryptamine 1F receptor,CHEMBL1134844,IC50,CN(C)[C@H]1C[C@H](c2c[nH]c3ccc(CC4COC(=O)N4)cc32)C1,6.4399976732266335
+CHEMBL4851044,CHEMBL1805,Serotonin 1f (5-HT1f) receptor,IC50,=,0.32,nM,CHEMBL4830576,B,Binding affinity to human 5HT1F receptor,CHEMBL4828744,IC50,CN1CCC(=C(F)c2cccc(NC(=O)c3c(F)cc(F)cc3F)n2)CC1,9.494850021680094

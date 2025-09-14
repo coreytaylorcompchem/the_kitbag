@@ -1,7 +1,7 @@
 task: workflow
 workflow_name: chembl_multi_target
 
-target_class: rhodopsin
+target_class: membrane
 species: "Homo sapiens"
 readout: 
   - IC50
@@ -15,6 +15,7 @@ workflow:
   - clean_bioactivities
   - retrieve_compound_smiles
   - annotate_bioactivity_pactivity
+  # - diagnose_pipeline_results
 
 output:
   directory: outputs/gpcr_class_a
