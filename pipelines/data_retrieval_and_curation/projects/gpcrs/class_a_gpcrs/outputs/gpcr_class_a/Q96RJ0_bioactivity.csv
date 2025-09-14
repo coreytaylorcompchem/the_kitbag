@@ -1,0 +1,2 @@
+molecule_chembl_id,target_chembl_id,target_pref_name,standard_type,standard_relation,standard_value,standard_units,assay_chembl_id,assay_type,assay_description,document_chembl_id,uniprot_id,target_pref_name,readout,smiles,pActivity
+CHEMBL4650337,CHEMBL5857,Trace amine-associated receptor 1,EC50,=,140.0,nM,CHEMBL5233296,B,Agonist activity at human TAAR1,CHEMBL5233201,Q96RJ0,Trace amine-associated receptor 1,EC50,CNC[C@@H]1OCCc2ccsc21,6.853871964321762

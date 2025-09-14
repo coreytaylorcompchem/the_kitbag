@@ -1,0 +1,2 @@
+molecule_chembl_id,target_chembl_id,target_pref_name,standard_type,standard_relation,standard_value,standard_units,assay_chembl_id,assay_type,assay_description,document_chembl_id,uniprot_id,target_pref_name,readout,smiles,pActivity
+CHEMBL1182312,CHEMBL3714046,Trace amine-associated receptor 5,EC50,=,4400.0,nM,CHEMBL3788460,B,Inverse agonist activity at human TAAR5 expressed in HEK293 cells by Alphascreen assay,CHEMBL3784953,O14804,Trace amine-associated receptor 5,EC50,NCCc1ccc(Oc2ccc(O)cc2)c(I)c1,5.356547323513812

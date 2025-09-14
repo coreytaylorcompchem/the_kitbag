@@ -30,11 +30,11 @@ def run_chembl_multi_target_parallel_workflow(config):
 
     # Case 1: UniProt IDs already provided
     if config.get("uniprot_ids"):
-        logger.info("✅ Using provided UniProt IDs from config.")
+        logger.info("Using provided UniProt IDs from config.")
 
     # Case 2: Try to retrieve UniProt IDs using a task
     elif "retrieve_protein_class_target_list" in steps:
-        logger.info("🔍 Attempting to retrieve UniProt IDs via 'retrieve_protein_class_target_list'...")
+        logger.info("Attempting to retrieve UniProt IDs via 'retrieve_protein_class_target_list'...")
 
         task_func = get_task("retrieve_protein_class_target_list")
         if not task_func:
@@ -43,7 +43,7 @@ def run_chembl_multi_target_parallel_workflow(config):
         task_func(config)  # updates config['uniprot_ids']
 
         if not config.get("uniprot_ids"):
-            logger.error("🛑 No UniProt IDs found after running 'retrieve_protein_class_target_list'.")
+            logger.error("❌ No UniProt IDs found after running 'retrieve_protein_class_target_list'.")
             return pd.DataFrame()
 
         # Remove the task since it's already run

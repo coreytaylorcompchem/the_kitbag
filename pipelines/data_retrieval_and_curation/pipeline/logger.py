@@ -10,7 +10,8 @@ def setup_logger(
     log_to_file: bool = False,
     log_file: str = "app.log",
     debug_mode: bool = False,
-    simple_format: bool = False
+    simple_format: bool = False,
+    minimalist_format: bool = False
 ) -> logging.Logger:
     """
     Set up and return a custom logger.
@@ -22,7 +23,9 @@ def setup_logger(
     level = logging.DEBUG if debug_mode else log_level
     logger.setLevel(level)
 
-    if simple_format:
+    if minimalist_format:
+        formatter = logging.Formatter('%(levelname)s %(message)s')
+    elif simple_format:
         formatter = logging.Formatter('%(levelname)s - %(name)s - %(message)s')
     else:
         formatter = logging.Formatter(

@@ -7,17 +7,18 @@ from tqdm import tqdm
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 BASE_URL = "https://www.ebi.ac.uk/chembl/api/data/target"
-CLASS_A_INTERPRO_IDS = {'IPR000276', 'IPR017452'}
+# CLASS_A_INTERPRO_IDS = {'IPR000276', 'IPR017452'}
 
-@register_task("retrieve_protein_class_target_list", description="Retrieve UniProt IDs for Class A GPCRs.")
+@register_task("retrieve_protein_class_target_list", description="Retrieve UniProt IDs for protein target class.")
 def retrieve_protein_class_target_list(config, data=None):
-    species = config.get("species", "Homo sapiens")
+    target_class = config.get("protein_class_keyword")
+    species = config.get("species")
 
     all_targets = []
     offset = 0
     limit = 500
 
-    logger.info(f"🔍 Searching for targets with 'receptor' in name for species: {species}")
+    logger.info(f"Searching for targets matching keyword '{target_class}' and species: {species}")
 
     # Initial call to get total count
     params = {
@@ -29,7 +30,7 @@ def retrieve_protein_class_target_list(config, data=None):
     response.raise_for_status()
     data = response.json()
     total_count = data['page_meta']['total_count']
-    logger.info(f"📊 Total receptor-like targets found: {total_count}")
+    logger.info(f"Total targets found: {total_count}")
 
     # Process in chunks
     all_targets = data.get('targets', [])
@@ -50,9 +51,12 @@ def retrieve_protein_class_target_list(config, data=None):
             pbar.update(len(targets))
 
 
-    logger.info(f"📦 Retrieved {len(all_targets)} targets containing 'receptor' in pref_name.")
+    logger.info(f"Retrieved {len(all_targets)} targets matching keyword '{target_class}'.")
 
-    class_a_gpcr_uniprots = []
+    interpro_accession = config.get("interpro_accession") # using InterPro ID to narrow uniprot search
+    logger.info(f"Using InterPro accession {interpro_accession} to assist search")
+
+    _uniprots = []
 
     for target in all_targets:
         if target.get("organism") != species:
@@ -60,19 +64,24 @@ def retrieve_protein_class_target_list(config, data=None):
 
         for comp in target.get("target_components", []):
             for xref in comp.get("target_component_xrefs", []):
-                if xref.get("xref_src_db") == "InterPro" and xref.get("xref_id") in CLASS_A_INTERPRO_IDS:
+                if interpro_accession:
+                    if xref.get("xref_src_db") == "InterPro" and xref.get("xref_id") in interpro_accession:
+                        accession = comp.get("accession")
+                        if accession:
+                            _uniprots.append(accession)
+                else:
                     accession = comp.get("accession")
-                    if accession:
-                        class_a_gpcr_uniprots.append(accession)
+                    _uniprots.append(accession)
 
-    class_a_gpcr_uniprots = list(set(class_a_gpcr_uniprots))  # remove duplicates
+    _uniprots = list(set(_uniprots))
 
-    if class_a_gpcr_uniprots:
-        logger.info(f"✅ Found {len(class_a_gpcr_uniprots)} UniProt IDs for Class A GPCRs.")
+    if _uniprots and interpro_accession:
+        logger.info(f"Building list of {len(_uniprots)} unique UniProt IDs for targets containing '{target_class}' and '{interpro_accession}'.")
+    elif _uniprots:
+        logger.info(f"Building list {len(_uniprots)} unique UniProt IDs for targets containing '{target_class}'.")
     else:
-        logger.warning("⚠ No UniProt IDs found for the filtered Class A GPCR targets.")
+        logger.warning("No UniProt IDs found for the filtered targets.")
 
-    # Update config so ParallelRunner can access the IDs
-    config["uniprot_ids"] = class_a_gpcr_uniprots
+    config["uniprot_ids"] = _uniprots
 
-    return class_a_gpcr_uniprots
+    return _uniprots

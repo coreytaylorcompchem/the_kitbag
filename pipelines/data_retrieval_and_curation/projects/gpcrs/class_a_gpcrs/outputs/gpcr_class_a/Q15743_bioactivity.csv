@@ -1,0 +1,2 @@
+molecule_chembl_id,target_chembl_id,target_pref_name,standard_type,standard_relation,standard_value,standard_units,assay_chembl_id,assay_type,assay_description,document_chembl_id,uniprot_id,target_pref_name,readout,smiles,pActivity
+CHEMBL4548689,CHEMBL3713916,Ovarian cancer G-protein coupled receptor 1,EC50,=,147.91,nM,CHEMBL4884585,B,FLIPR-TETRA assay,CHEMBL4507323,Q15743,Ovarian cancer G-protein coupled receptor 1,EC50,Nc1nc(NCc2ccccc2)nc(-c2ccccc2CO)n1,6.83000246293343

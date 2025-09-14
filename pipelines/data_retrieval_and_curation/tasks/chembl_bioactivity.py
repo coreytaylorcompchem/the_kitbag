@@ -22,7 +22,7 @@ def retry_activity_query(filters, max_retries=3):
         try:
             return activity.filter(**filters)
         except Exception as e:
-            logger.warning(f"⚠️ Retry {attempt+1}/{max_retries} failed: {e}")
+            logger.warning(f"Retry {attempt+1}/{max_retries} failed: {e}")
             time.sleep(2 ** attempt + random.random())
     logger.error("❌ Final retry failed.")
     return []
@@ -123,8 +123,12 @@ def clean_bioactivities(config, data):
         columns_to_keep = [
             "molecule_chembl_id", "target_chembl_id", "target_pref_name",
             "standard_type", "standard_relation", "standard_value", "standard_units",
-            "assay_chembl_id", "assay_type", "assay_description", "document_chembl_id"
+            "assay_chembl_id", "assay_type", "assay_description", "document_chembl_id",
+            "uniprot_id", "target_pref_name"
         ]
+
+        # print(df_readout.columns)
+
         df_readout = df_readout[[col for col in columns_to_keep if col in df_readout.columns]]
 
         df_readout["readout"] = selected_readout

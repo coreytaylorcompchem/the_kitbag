@@ -1,0 +1,2 @@
+molecule_chembl_id,target_chembl_id,target_pref_name,standard_type,standard_relation,standard_value,standard_units,assay_chembl_id,assay_type,assay_description,document_chembl_id,uniprot_id,target_pref_name,readout,smiles,pActivity
+CHEMBL5288861,CHEMBL1075315,C-X-C chemokine receptor type 5,IC50,=,251.19,nM,CHEMBL5257226,B,Antagonist activity at CXCR5 (unknown origin),CHEMBL5257017,P32302,C-X-C chemokine receptor type 5,IC50,C[N+](C)(Cc1ccc(NC(=O)C2=Cc3cc(-c4ccccc4)ccc3CCC2)cc1)C1CCOCC1.[Cl-],6.599997654072045

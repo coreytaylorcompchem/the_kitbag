@@ -1,0 +1,38 @@
+task: workflow
+workflow_name: chembl_multi_target
+
+# Collecting uniprots to retrieve all bioactivity for a protein class
+
+# Strict search: you want only a single protein target class
+# Use the InterPro Accession number for the family.
+
+# protein_class IPR000276 # Class A GPCR
+
+# Flexible search: keyword search with optional refinement. 
+# In this case, all targets with the word 'receptor' are matched including GPCRs, nuclear receptors, etc.
+# Refinement using 'IPR000276' (Rhodopsin-like) gives us all Class A GPCRs, 
+# IPR000337 = Class B, IPR000719 gives receptor kinases, etc.
+# Using a specific protein's InterPro ID (e.g. B2AR = IPR000332) reduces the search back down to a single uniprot ID.
+
+protein_class_keyword: receptor
+interpro_accession: IPR000337
+
+species: "Homo sapiens"
+readout: 
+  - IC50
+  - EC50
+relation: "="
+assay_type: B
+
+workflow:
+  - retrieve_protein_class_target_list
+  - retrieve_chembl_bioactivities
+  - clean_bioactivities
+  - retrieve_compound_smiles
+  - annotate_bioactivity_pactivity
+  # - diagnose_pipeline_results
+
+output:
+  directory: outputs/gpcr_class_b
+  filename: class_b_gpcr_bioactivity.csv
+  overwrite: true
