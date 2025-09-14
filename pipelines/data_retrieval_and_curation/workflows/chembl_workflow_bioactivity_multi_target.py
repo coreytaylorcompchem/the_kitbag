@@ -2,7 +2,6 @@ from workflows import register_workflow
 from pipeline.parallel_runner import ParallelWorkflowRunner
 from pipeline.task_registry import get_task
 
-
 def workflow_function(config):
     steps = config.get("workflow", [])
     data = None

@@ -7,6 +7,14 @@ from pipeline.parallel_runner import ParallelWorkflowRunner
 import traceback
 from tqdm import tqdm
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
 def run_pipeline_for_target(local_config):
     uniprot_id = local_config.get("uniprot_id")
     output_dir = local_config.get("output", {}).get("directory", "outputs/tox_targets")
@@ -41,17 +49,17 @@ def run_pipeline_for_target(local_config):
                     if cleaned_df is not None and not cleaned_df.empty:
                         cleaned_df = cleaned_df.copy()
                         cleaned_df["readout"] = readout.upper()
-                        print(f"[{uniprot_id}] Cleaned data for '{readout}': shape = {cleaned_df.shape}")
+                        logger.info(f"[{uniprot_id}] Cleaned data for '{readout}': shape = {cleaned_df.shape}")
                         cleaned_frames.append(cleaned_df)
                     else:
-                        print(f"[{uniprot_id}] No data for readout '{readout}'")
+                        logger.info(f"[{uniprot_id}] No data for readout '{readout}'")
 
                 if cleaned_frames:
                     combined_cleaned = pd.concat(cleaned_frames, ignore_index=True)
-                    print(f"[{uniprot_id}] Combined cleaned data shape: {combined_cleaned.shape}")
+                    logger.info(f"[{uniprot_id}] Combined cleaned data shape: {combined_cleaned.shape}")
                     data = {"df": combined_cleaned, "readout": None}
                 else:
-                    print(f"[{uniprot_id}] No readout data cleaned for any requested readouts.")
+                    logger.info(f"[{uniprot_id}] No readout data cleaned for any requested readouts.")
                     data = {"df": pd.DataFrame(), "readout": None}
 
             elif step == "retrieve_compound_data":
@@ -60,7 +68,7 @@ def run_pipeline_for_target(local_config):
                     data = result
                 except ValueError as e:
                     if "Bioactivity data is empty" in str(e) or "no readout selected" in str(e):
-                        print(f"[{uniprot_id}] Skipping 'retrieve_compound_data': {e}")
+                        logger.info(f"[{uniprot_id}] Skipping 'retrieve_compound_data': {e}")
                         data = {"df": pd.DataFrame(), "readout": None}
                     else:
                         raise
@@ -80,15 +88,15 @@ def run_pipeline_for_target(local_config):
         if not final_df.empty:
             file_path = os.path.join(output_dir, f"{uniprot_id}_bioactivity.csv")
             final_df.to_csv(file_path, index=False)
-            print(f"[{uniprot_id}] Saved: {file_path}")
+            logger.info(f"[{uniprot_id}] Saved: {file_path}")
             return final_df
         else:
-            print(f"⚠️⚠️⚠️ [{uniprot_id}] There was no bioactivity data for {uniprot_id}")
+            logger.info(f"⚠️⚠️⚠️ [{uniprot_id}] There was no bioactivity data for {uniprot_id}")
             return pd.DataFrame()
 
     except Exception as e:
-        print(f"❌ [{uniprot_id}] Error: {e}")
-        print(traceback.format_exc())
+        logger.info(f"❌ [{uniprot_id}] Error: {e}")
+        logger.info(traceback.format_exc())
         return pd.DataFrame()
 
 

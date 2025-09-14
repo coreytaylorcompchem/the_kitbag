@@ -15,7 +15,13 @@ def register_task(name, description=None):
     return wrapper
 
 def get_task(name):
-    return _TASK_REGISTRY.get(name)
+    """
+    Return the registered task function (callable) for a given name.
+    """
+    entry = _TASK_REGISTRY.get(name.lower())
+    if entry is None:
+        return None
+    return entry["func"] 
 
 def list_tasks():
     """

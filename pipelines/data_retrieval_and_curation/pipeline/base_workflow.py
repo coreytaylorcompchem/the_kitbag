@@ -1,6 +1,14 @@
 from pathlib import Path
 from pipeline.task_registry import get_task
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
 class BaseWorkflow:
     def __init__(self, config):
         self.config = config
@@ -9,7 +17,7 @@ class BaseWorkflow:
     def run(self):
         steps = self.config.get('workflow', [])
         for step in steps:
-            print(f"\n>>> Running step: {step}")
+            logger.info(f"\n>>> Running step: {step}")
             task_func = get_task(step)
             if not task_func:
                 raise ValueError(f"Task '{step}' not found in registry.")
@@ -21,11 +29,11 @@ class BaseWorkflow:
 
     def _log_step_output(self, step):
         if isinstance(self.data, dict) and "df" in self.data and hasattr(self.data["df"], "shape"):
-            print(f"[{step}] → Output shape: {self.data['df'].shape}")
+            logger.info(f"[{step}] → Output shape: {self.data['df'].shape}")
         elif hasattr(self.data, "shape"):
-            print(f"[{step}] → Output shape: {self.data.shape}")
+            logger.info(f"[{step}] → Output shape: {self.data.shape}")
         else:
-            print(f"[{step}] → Output data type: {type(self.data)}")
+            logger.info(f"[{step}] → Output data type: {type(self.data)}")
 
     def _save_output(self):
         output_cfg = self.config.get("output", {})
@@ -41,11 +49,11 @@ class BaseWorkflow:
         elif hasattr(self.data, "to_csv"):
             df_to_save = self.data
         else:
-            print("No DataFrame to save.")
+            logger.info("No DataFrame to save.")
             return
 
         if out_path.exists() and not overwrite:
-            print(f"File already exists at {out_path} and overwrite is False. Skipping save.")
+            logger.info(f"File already exists at {out_path} and overwrite is False. Skipping save.")
         else:
             df_to_save.to_csv(out_path, index=False)
-            print(f"Saved output to {out_path}")
+            logger.info(f"Saved output to {out_path}")

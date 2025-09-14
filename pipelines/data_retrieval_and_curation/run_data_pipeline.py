@@ -1,8 +1,16 @@
 import argparse
 import yaml
 import os
-from pipeline.workflow_registry import get_workflow
+from workflows import get_workflow
 from pipeline.import_utilities import import_modules_from_dir
+
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
 
 def load_yaml(path):
     with open(path, 'r') as f:
@@ -19,12 +27,12 @@ def main():
     args = parser.parse_args()
     config = load_yaml(args.params)
 
-    # Get and run workflow
+    # Actually run the workflow
     workflow_name = config.get('workflow_name')
     if not workflow_name:
         raise ValueError("Missing 'workflow_name' in config")
 
-    print(f"Workflow name in config: '{workflow_name}'")
+    logger.info(f"Workflow name in config: '{workflow_name}'")
 
     workflow_func = get_workflow(workflow_name)
     if not workflow_func:
@@ -44,11 +52,11 @@ def main():
 
             if not os.path.exists(filepath) or output_cfg.get("overwrite", False):
                 result_df.to_csv(filepath, index=False)
-                print(f"\nOutput saved to {filepath}")
+                logger.info(f"\nOutput saved to {filepath}")
             else:
-                print(f"\nOutput file exists and overwrite is false: {filepath}")
+                logger.info(f"\nOutput file exists and overwrite is false: {filepath}")
     # else:
-    #     print(f"Skipping write: Workflow '{workflow_name}' handles output internally.")
+    #     logger.info(f"Skipping write: Workflow '{workflow_name}' handles output internally.")
 
 if __name__ == "__main__":
     main()

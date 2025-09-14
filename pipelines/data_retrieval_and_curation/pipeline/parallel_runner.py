@@ -6,6 +6,14 @@ from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from tqdm import tqdm
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
 class ParallelWorkflowRunner:
     def __init__(
         self,
@@ -39,11 +47,11 @@ class ParallelWorkflowRunner:
 
     def _run_for_single(self, identifier):
         if self.input_is_pair:
-            # identifier is assumed to be a tuple: (input_value, config)
+            # identifier is a tuple: (input_value, config)
             try:
                 result = self.workflow_func(identifier)
             except Exception as e:
-                print(f"[{identifier}] Error: {e}")
+                logger.info(f"[{identifier}] Error: {e}")
                 return pd.DataFrame()
         else:
             local_config = deepcopy(self.config)
@@ -51,7 +59,7 @@ class ParallelWorkflowRunner:
             try:
                 result = self.workflow_func(local_config)
             except Exception as e:
-                print(f"[{identifier}] Error: {e}")
+                logger.info(f"[{identifier}] Error: {e}")
                 return pd.DataFrame()
 
         if isinstance(result, dict) and "df" in result:
@@ -59,11 +67,11 @@ class ParallelWorkflowRunner:
         elif isinstance(result, pd.DataFrame):
             result_df = result
         else:
-            print(f"[{identifier}] Unsupported result type: {type(result)}")
+            logger.info(f"[{identifier}] Unsupported result type: {type(result)}")
             return pd.DataFrame()
 
         if result_df.empty:
-            print(f"[{identifier}] No data returned.")
+            logger.info(f"[{identifier}] No data returned.")
             return pd.DataFrame()
 
         # filename pattern formatting for the input, works for both str or tuple keys
@@ -76,16 +84,16 @@ class ParallelWorkflowRunner:
         filename = self.filename_pattern.format(**{self.output_key: filename_key})
         output_path = self.output_dir / filename
         result_df.to_csv(output_path, index=False)
-        print(f"[{filename_key}] Saved: {output_path}")
+        logger.info(f"[{filename_key}] Saved: {output_path}")
         return result_df
 
     def run(self):
-        print(f"Running workflow on {len(self.inputs)} inputs...")
+        logger.info(f"Running workflow on {len(self.inputs)} inputs...")
 
         if self.use_multiprocessing and len(self.inputs) > 1:
             available_cpus = max(1, cpu_count() - self.reserve_cpus)
             num_workers = min(available_cpus, len(self.inputs))
-            print(f"Using {num_workers} worker(s) for parallel execution.")
+            logger.info(f"Using {num_workers} worker(s) for parallel execution.")
 
             with Pool(processes=num_workers) as pool:
                 results_iter = pool.imap_unordered(self._run_for_single, self.inputs)
@@ -94,19 +102,19 @@ class ParallelWorkflowRunner:
                     results.append(result)
 
         else:
-            print("Running in serial mode (no multiprocessing).")
+            logger.info("Running in serial mode (no multiprocessing).")
             results = []
             for i in tqdm(self.inputs, desc="Tasks"):
                 results.append(self._run_for_single(i))
 
         valid_dfs = [df for df in results if isinstance(df, pd.DataFrame) and not df.empty]
         if not valid_dfs:
-            print("No valid results to combine.")
+            logger.info("No valid results to combine.")
             return pd.DataFrame()
 
         combined_df = pd.concat(valid_dfs, ignore_index=True)
         combined_path = self.output_dir / self.combined_filename
         combined_df.to_csv(combined_path, index=False)
-        print(f"\nCombined output saved to {combined_path}")
+        logger.info(f"\nCombined output saved to {combined_path}")
 
         return combined_df

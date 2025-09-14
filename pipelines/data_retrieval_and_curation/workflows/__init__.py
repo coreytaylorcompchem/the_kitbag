@@ -1,6 +1,14 @@
 import importlib
 import pkgutil
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
 # Registry for workflows
 _workflow_registry = {}
 
@@ -26,4 +34,4 @@ def load_all_workflows():
         try:
             importlib.import_module(f"{workflows.__name__}.{name}")
         except Exception as e:
-            print(f"[load_all_workflows] ⚠️ Failed to import workflow module '{name}': {e}")
+            logger.info(f"[load_all_workflows] ⚠️ Failed to import workflow module '{name}': {e}")

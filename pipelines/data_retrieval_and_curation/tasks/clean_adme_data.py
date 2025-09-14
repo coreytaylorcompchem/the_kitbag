@@ -1,6 +1,14 @@
 from pipeline.task_registry import register_task
 import pandas as pd
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
 @register_task("clean_adme_data", description="Check and standardise ADME data.")
 def clean_adme_data(config, df=None):
     """
@@ -32,18 +40,18 @@ def clean_adme_data(config, df=None):
     column_map = cleaning_cfg.get("column_map", {})
     output_columns = config.get("output_columns", [])
 
-    print(f"[clean_adme_data] Loaded column_map: {column_map}")
-    print(f"[clean_adme_data] Loaded default_units: {default_units}")
-    print(f"[clean_adme_data] Output columns (if specified): {output_columns}")
+    logger.info(f"[clean_adme_data] Loaded column_map: {column_map}")
+    logger.info(f"[clean_adme_data] Loaded default_units: {default_units}")
+    logger.info(f"[clean_adme_data] Output columns (if specified): {output_columns}")
 
     # Rename columns to standard names
     df = df.rename(columns=column_map)
     df = df.loc[:, ~df.columns.duplicated()]  # Remove duplicate columns if any
-    print(f"[clean_adme_data] Columns after renaming: {df.columns.tolist()}")
+    logger.info(f"[clean_adme_data] Columns after renaming: {df.columns.tolist()}")
 
     def normalize_unit(u):
         if isinstance(u, pd.Series):
-            print(f"[normalize_unit] ERROR: Got Series instead of scalar:\n{u}")
+            logger.info(f"[normalize_unit] ERROR: Got Series instead of scalar:\n{u}")
             return ""
         if pd.isna(u):
             return ""
@@ -67,15 +75,15 @@ def clean_adme_data(config, df=None):
         df["standard_units_norm"] = df["standard_units"].apply(normalize_unit)
         valid_units_norm = [normalize_unit(u) for u in allowed_units]
 
-        print(f"[clean_adme_data] [{readout_name}] Normalized units in data: {df['standard_units_norm'].unique()}")
-        print(f"[clean_adme_data] [{readout_name}] Normalized allowed units: {valid_units_norm}")
+        logger.info(f"[clean_adme_data] [{readout_name}] Normalized units in data: {df['standard_units_norm'].unique()}")
+        logger.info(f"[clean_adme_data] [{readout_name}] Normalized allowed units: {valid_units_norm}")
 
         def unit_match(unit_str):
             return any(allowed_unit in unit_str for allowed_unit in valid_units_norm)
 
         mask = df["standard_units_norm"].apply(unit_match)
-        print(f"[clean_adme_data] [{readout_name}] Rows before filtering: {len(df)}, after filtering: {mask.sum()}")
-        print(f"[clean_adme_data] [{readout_name}] Found original units: {df['standard_units'].unique()}")  # Check what's being filtered
+        logger.info(f"[clean_adme_data] [{readout_name}] Rows before filtering: {len(df)}, after filtering: {mask.sum()}")
+        logger.info(f"[clean_adme_data] [{readout_name}] Found original units: {df['standard_units'].unique()}")  # Check what's being filtered
 
         df = df[mask]
 
@@ -84,13 +92,13 @@ def clean_adme_data(config, df=None):
 
         df = df.drop(columns=["standard_units_norm"])
     else:
-        print(f"[clean_adme_data] [{readout_name}] WARNING: 'standard_units' column missing, skipping unit filtering.")
+        logger.info(f"[clean_adme_data] [{readout_name}] WARNING: 'standard_units' column missing, skipping unit filtering.")
 
     # Output only columns from YAML in final CSV
     if output_columns:
         missing_cols = [col for col in output_columns if col not in df.columns and col != "smiles"]
         if missing_cols:
-            print(f"[clean_adme_data] [{readout_name}] WARNING: Missing output columns: {missing_cols}")
+            logger.info(f"[clean_adme_data] [{readout_name}] WARNING: Missing output columns: {missing_cols}")
         df = df[[col for col in output_columns if col in df.columns]]
 
     return {

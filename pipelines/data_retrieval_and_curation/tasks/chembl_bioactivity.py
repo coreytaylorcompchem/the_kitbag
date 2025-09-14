@@ -4,6 +4,14 @@ import pandas as pd
 import math
 from tqdm import tqdm
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
 @register_task("retrieve_chembl_bioactivities", description="Retrieve bioactivity data from CHEMBL.")
 def retrieve_chembl_bioactivities(config, data=None):
     uniprot_id = config.get("uniprot_id")
@@ -20,7 +28,7 @@ def retrieve_chembl_bioactivities(config, data=None):
     # Lookup target by uniprot
     target_query = target.filter(target_components__accession=uniprot_id)
     if not target_query:
-        print(f"❌ No targets found for UniProt ID: {uniprot_id}")
+        logger.info(f"❌ No targets found for UniProt ID: {uniprot_id}")
         return {"df": pd.DataFrame(), "readout": None}
 
     target_chembl_id = target_query[0]["target_chembl_id"]
@@ -43,9 +51,9 @@ def retrieve_chembl_bioactivities(config, data=None):
     df = pd.DataFrame(activities)
 
     if df.empty:
-        print(f"No bioactivity data found for {uniprot_id} ({target_chembl_id}) with readouts: {readouts}")
+        logger.info(f"No bioactivity data found for {uniprot_id} ({target_chembl_id}) with readouts: {readouts}")
     else:
-        print(f"Retrieved {len(df)} bioactivities for {uniprot_id}")
+        logger.info(f"Retrieved {len(df)} bioactivities for {uniprot_id}")
 
     return df
 
@@ -58,11 +66,11 @@ def clean_bioactivities(config, data):
         readout_priority = [readout_priority]
 
     if not isinstance(data, pd.DataFrame) or data.empty:
-        print(f"[{uniprot_id}] Received empty or invalid DataFrame.")
+        logger.info(f"[{uniprot_id}] Received empty or invalid DataFrame.")
         return {"df": pd.DataFrame(), "readout": None}
 
     if "standard_type" not in data.columns:
-        print(f"❌ [{uniprot_id}] Missing 'standard_type' column.")
+        logger.info(f"❌ [{uniprot_id}] Missing 'standard_type' column.")
         return {"df": pd.DataFrame(), "readout": None}
 
     cleaned_frames = []
@@ -71,18 +79,18 @@ def clean_bioactivities(config, data):
 
         df_readout = data[data["standard_type"].str.upper() == selected_readout]
         if df_readout.empty:
-            print(f"[{uniprot_id}] No data for readout '{selected_readout}'")
+            logger.info(f"[{uniprot_id}] No data for readout '{selected_readout}'")
             continue
 
         if "standard_units" not in df_readout.columns:
-            print(f"❌ [{uniprot_id}] Missing 'standard_units' column.")
+            logger.info(f"❌ [{uniprot_id}] Missing 'standard_units' column.")
             continue
 
         df_readout = df_readout[df_readout["standard_units"].str.lower() == "nm"]
 
         # Drop NaN in compulsory columns
         if "standard_value" not in df_readout.columns or "molecule_chembl_id" not in df_readout.columns:
-            print(f"❌ [{uniprot_id}] Missing required columns.")
+            logger.info(f"❌ [{uniprot_id}] Missing required columns.")
             continue
 
         df_readout = df_readout.dropna(subset=["standard_value", "molecule_chembl_id"])
@@ -90,7 +98,7 @@ def clean_bioactivities(config, data):
         df_readout = df_readout.dropna(subset=["standard_value"])
 
         if df_readout.empty:
-            print(f"[{uniprot_id}] No usable values for readout '{selected_readout}' after cleaning.")
+            logger.info(f"[{uniprot_id}] No usable values for readout '{selected_readout}' after cleaning.")
             continue
 
         columns_to_keep = [
@@ -102,7 +110,7 @@ def clean_bioactivities(config, data):
 
         df_readout["readout"] = selected_readout
 
-        print(f"[{uniprot_id}] Cleaned data for '{selected_readout}': shape = {df_readout.shape}")
+        logger.info(f"[{uniprot_id}] Cleaned data for '{selected_readout}': shape = {df_readout.shape}")
 
         cleaned_frames.append(df_readout)
 
@@ -110,7 +118,7 @@ def clean_bioactivities(config, data):
         combined = pd.concat(cleaned_frames, ignore_index=True)
         return {"df": combined, "readout": None}
     else:
-        print(f"[{uniprot_id}] No readout data cleaned for any requested readouts.")
+        logger.info(f"[{uniprot_id}] No readout data cleaned for any requested readouts.")
         return {"df": pd.DataFrame(), "readout": None}
 
 
@@ -123,7 +131,7 @@ def retrieve_compound_smiles(config, data):
     if input_df.empty:
         raise ValueError("Input DataFrame is empty.")
 
-    print(f"[retrieve_compound_smiles] Fetching SMILES for {len(input_df)} entries...")
+    logger.info(f"[retrieve_compound_smiles] Fetching SMILES for {len(input_df)} entries...")
 
     molecule_ids = input_df["molecule_chembl_id"].dropna().unique().tolist()
     compounds_api = new_client.molecule
@@ -154,7 +162,7 @@ def retrieve_compound_smiles(config, data):
     if merged_df["smiles"].isnull().all():
         raise ValueError("No SMILES could be attached to the input compounds.")
 
-    print(f"[retrieve_compound_smiles] Attached SMILES to {merged_df['smiles'].notnull().sum()} entries.")
+    logger.info(f"[retrieve_compound_smiles] Attached SMILES to {merged_df['smiles'].notnull().sum()} entries.")
 
     return {"df": merged_df, "readout": data.get("readout")}
 
@@ -180,10 +188,10 @@ def annotate_bioactivity_pactivity(config, data):
     # Guess readout if not explicitly passed
     readout_guess = readout or df.get("readout", pd.Series()).mode().iloc[0] if "readout" in df.columns else None
     if readout_guess is None or readout_guess not in bioactivity_readouts:
-        print(f"[annotate_bioactivity_pactivity] Skipping pActivity. Not a bioactivity readout: {readout_guess}")
+        logger.info(f"[annotate_bioactivity_pactivity] Skipping pActivity. Not a bioactivity readout: {readout_guess}")
         return {"df": df, "readout": readout_guess}
 
-    print(f"[annotate_bioactivity_pactivity] Calculating pActivity for readout: {readout_guess}")
+    logger.info(f"[annotate_bioactivity_pactivity] Calculating pActivity for readout: {readout_guess}")
 
     def compute_pX(val):
         if pd.notnull(val) and val > 0:
@@ -197,6 +205,6 @@ def annotate_bioactivity_pactivity(config, data):
     df["pActivity"] = df["standard_value"].apply(compute_pX)
 
     num_valid = df["pActivity"].notnull().sum()
-    print(f"[annotate_bioactivity_pactivity] Computed pActivity for {num_valid} entries.")
+    logger.info(f"[annotate_bioactivity_pactivity] Computed pActivity for {num_valid} entries.")
 
     return {"df": df, "readout": readout_guess}

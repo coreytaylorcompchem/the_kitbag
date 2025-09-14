@@ -5,6 +5,14 @@ from multiprocessing.pool import ThreadPool
 import pandas as pd
 from tqdm import tqdm
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
 # Readout name variants mapping
 ADME_READOUT_ALIASES = {
     "LogD": ["LogD", "Log D", "logD", "log D"],
@@ -21,7 +29,7 @@ def fetch_single_alias_task(args):
     filters = base_filters.copy()
     filters["standard_type"] = alias
 
-    print(f"Fetching for alias: '{alias}' (readout: {readout_key}) with filters: {filters}")
+    logger.info(f"Fetching for alias: '{alias}' (readout: {readout_key}) with filters: {filters}")
     query = new_client.activity.filter(**filters)
 
     rows = []
@@ -33,7 +41,7 @@ def fetch_single_alias_task(args):
         df["readout"] = readout_key
         return df
     else:
-        print(f"No records for alias '{alias}'")
+        logger.info(f"No records for alias '{alias}'")
         return pd.DataFrame()
 
 @register_task("retrieve_chembl_adme_data", description="Retrieve CHEMBL ADME data.")
@@ -64,16 +72,16 @@ def retrieve_chembl_adme_data(config, data=None):
 
         # Use multiprocessing to fetch aliases in parallel
         num_workers = min(len(tasks), max(1, cpu_count() - 2))
-        print(f"\nParallel fetching with {num_workers} workers for '{readout_key}' aliases...")
+        logger.info(f"\nParallel fetching with {num_workers} workers for '{readout_key}' aliases...")
 
         # Spawn context to allow nested multiprocessing
         with ThreadPool(num_workers) as pool:    alias_dfs = list(tqdm(pool.imap(fetch_single_alias_task, tasks), total=len(tasks), desc=f"Fetching {readout_key}"))
         readout_df = pd.concat([df for df in alias_dfs if not df.empty], ignore_index=True)
 
         if readout_df.empty:
-            print(f"❌ No data found for readout: {readout_key}")
+            logger.info(f"❌ No data found for readout: {readout_key}")
         else:
-            print(f"Retrieved {len(readout_df)} rows for readout: {readout_key}")
+            logger.info(f"Retrieved {len(readout_df)} rows for readout: {readout_key}")
             results.append(readout_df)
 
     if results:

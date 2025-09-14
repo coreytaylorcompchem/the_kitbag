@@ -5,8 +5,15 @@ from pipeline.task_registry import get_task
 from workflows import register_workflow
 from pipeline.parallel_runner import ParallelWorkflowRunner
 
-from workflows.utils import process_readout_dataframe
+from pipeline.logger import setup_logger
 
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
+from workflows.utils import process_readout_dataframe
 
 def run_adme_pipeline_for_readout(config: dict) -> dict:
     """
@@ -61,7 +68,7 @@ def validate_filters_section(config):
 
     for readout, filter_set in filters.items():
         if readout not in readouts:
-            print(f"[Info] Skipping validation for non-readout filter key: '{readout}'")
+            logger.info(f"[Info] Skipping validation for non-readout filter key: '{readout}'")
             continue
 
         if not isinstance(filter_set, dict):
