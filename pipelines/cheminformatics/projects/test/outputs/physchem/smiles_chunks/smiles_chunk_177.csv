@@ -1,0 +1,11 @@
+smiles
+Nc1ncnc2c1ncn2[C@@H]1O[C@H](COP(=O)(O)OP(=O)(O)OP(=O)(O)O)[C@@H](O)[C@H]1O
+Nc1ccn([C@H]2C[C@H](O)[C@@H](COP(=O)([O-])OP(=O)([O-])OP(=O)([O-])OP(=O)([O-])OC[C@H]3O[C@@H](n4ccc(=O)[nH]c4=O)[C@H](O)[C@@H]3O)O2)c(=O)n1.[Na+].[Na+].[Na+].[Na+]
+CCCCCCCC/C=C\CCCCCCCC(=O)OC[C@@H](O)COP(=O)(O)OC[C@H](N)C(=O)O
+CCCCCCCC/C=C\CCCCCCCC(=O)OC[C@H](O)COP(=O)(O)OC[C@H](N)C(=O)O
+CCCCCCCC/C=C\CCCCCCCC(=O)OC[C@@H](F)COP(=O)(O)OC[C@H](N)C(=O)O
+CCCCCC/C=C\CCCCCCCC(=O)OC[C@@H](O)COP(=O)(O)OC[C@H](N)C(=O)O
+CCCCCCCCCCCCCCCC(=O)OC[C@@H](O)COP(=O)(O)OC[C@H](N)C(=O)O
+CCCCCCCCCCCCCC(=O)OC[C@@H](O)COP(=O)(O)OC[C@H](N)C(=O)O
+CCCCCCCCCCCC(=O)OC[C@@H](O)COP(=O)(O)OC[C@H](N)C(=O)O
+CCCCCCCC/C=C\CCCCCCCC(=O)NC[C@@H](O)COP(=O)(O)OC[C@H](N)C(=O)O

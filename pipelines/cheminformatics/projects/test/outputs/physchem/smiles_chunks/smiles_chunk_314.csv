@@ -1,0 +1,11 @@
+smiles
+CCCOc1cc([C@H]2CC[C@H](c3cc(OC)c(OC)c(OC)c3)O2)cc(N(CC)C(=O)N(C)O)c1OCCC
+COc1cc(CCc2ccc(C3=Nc4ccccc4C4=NCCN34)cc2)cc(OC)c1OC
+COc1cc(CCc2ccc(C3=Cc4ccccc4C4=NC(C)CN34)cc2)cc(OC)c1OC
+COc1cc(CCc2ccc(C3=Cc4ccsc4C4=NCCN34)cc2)cc(OC)c1OC
+COc1cc(CCc2ccc(C3=Cc4oc(C)cc4C4=NCCN34)cc2)cc(OC)c1OC
+COc1cc(CCc2ccc(-c3cc4ccccc4c4nccn34)cc2)cc(OC)c1OC
+COc1cc(CCc2ccc(C3=Cc4ccccc4C4=NC(C)(C)CN34)cc2)cc(OC)c1OC
+COc1cc(CCc2ccc(-c3cc4ccccc4c4nc(C)cn34)cc2)cc(OC)c1OC
+COc1cc(CCc2ccc(C3=Cc4ccccc4C4=NCCN34)cc2)cc(OC)c1OC
+COc1cc(CCc2ccc(C3=Cc4ccccc4C4=NCC(C)(C)CN34)cc2)cc(OC)c1OC

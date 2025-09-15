@@ -1,0 +1,11 @@
+smiles
+CNC(=O)CN1CN(c2ccccc2)C2(CCN(C(=O)OCc3cc4c(cc3Cl)OCO4)CC2)C1=O
+O=C(OCCc1ccc(F)cc1)N1CCN(CCCC(c2ccc(F)cc2)c2ccc(F)cc2)CC1
+CN1CCc2cc(Cl)c(O)cc2[C@@H](c2ccccc2)C1
+CN1CCc2cc(Cl)c(O)cc2[C@@H](c2ccccc2)C1.O=C(O)/C=C\C(=O)O
+CN1CCc2cc(Cl)c(O)cc2C(c2ccccc2)C1
+Cn1c2ccccc2c(=O)c2c(=O)n(-c3ccccc3)c(C3CC3)nc21
+Cn1c2ccccc2c(=O)c2c(=O)[nH]c(C3CCCC3)nc21
+COc1ccc(-n2c(CC3CCCCC3)nc3c(c(=O)c4ccccc4n3C)c2=O)cc1Cl
+Cn1c2ccccc2c(=O)c2c(=O)n(-c3cccc(Cl)c3)c(CC3CCCCC3)nc21
+Cn1c2ccccc2c(=O)c2c(=O)n(-c3ccc(Cl)cc3)c(CC3CCCCC3)nc21

@@ -1,0 +1,11 @@
+smiles
+CNC[C@H](O)c1cccc(O)c1
+Cc1ccccc1N1CCN(CCCCN2CCCC2=O)CC1.Cl
+Cl.O=C1CCCN1CCCCN1CCN(C(c2ccc(F)cc2)c2ccc(F)cc2)CC1
+Cl.O=C1CCCN1CCCCN1CCN(c2ccccc2O)CC1
+Cl.O=C1CCCN1CCCCN1CCN(c2ccc(F)cc2F)CC1
+Cl.O=C1CCCN1CCCCN1CCN(c2ccccc2Cl)CC1
+Cl.O=C1CCCN1CCCCN1CCN(C(c2ccccc2)c2ccccc2)CC1
+COc1cc2nc(N3CCN(C(=O)C4CCCO4)CC3)nc(N)c2cc1OC
+O=C(Nc1cccc(C(=O)Nc2cc(C(=O)Nc3ccc(S(=O)(=O)[O-])c4cc(S(=O)(=O)[O-])cc(S(=O)(=O)[O-])c34)ccc2F)c1)Nc1cccc(C(=O)Nc2cc(C(=O)Nc3ccc(S(=O)(=O)[O-])c4cc(S(=O)(=O)[O-])cc(S(=O)(=O)[O-])c34)ccc2F)c1.[Na+].[Na+].[Na+].[Na+].[Na+].[Na+]
+CN1CCN(c2cc(N3CCC[C@@H](C(=O)NCCc4ccc(C#N)cc4)C3)nc(C(F)(F)F)n2)CC1

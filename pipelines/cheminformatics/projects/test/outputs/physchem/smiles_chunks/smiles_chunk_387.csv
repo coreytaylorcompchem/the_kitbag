@@ -1,0 +1,11 @@
+smiles
+O=C(O[C@H]1C[N+]2(CCCOc3ccccc3)CCC1CC2)[C@](O)(c1cccs1)C1CCCC1.[Br-]
+O=C(O[C@H]1C[N+]2(CCCOc3ccccc3)CCC1CC2)[C@@](O)(c1cccs1)C1CCCC1.[Br-]
+CC1(C(=O)O[C@H]2C[N+]3(CCCOc4ccccc4)CCC2CC3)c2ccccc2Oc2ccccc21.[Br-]
+CC1(C(=O)O[C@H]2C[N+]3(CCCOc4ccccc4)CCC2CC3)c2ccccc2-c2ccccc21.[Br-]
+O=C(O[C@H]1C[N+]2(CCCOc3ccccc3)CCC1CC2)C(c1cccs1)c1cccs1.[Br-]
+O=C(O[C@H]1C[N+]2(CCCOc3ccccc3)CCC1CC2)C(O)(c1ccsc1)c1ccsc1.[Br-]
+CC(C(=O)O[C@H]1C[N+]2(CCCOc3ccccc3)CCC1CC2)(c1cccs1)c1cccs1.[Br-]
+O=C(O[C@H]1C[N+]2(CCCOc3ccccc3)CCC1CC2)[C@@](O)(c1ccccc1)c1cccs1.[Br-]
+O=C(O[C@H]1C[N+]2(CCCOc3ccccc3)CCC1CC2)[C@](O)(c1ccccc1)c1cccs1.[Br-]
+CC(C)[N+]1(C)C2CCC1CC(OC(=O)C(CO)c1ccccc1)C2.O.[Br-]
