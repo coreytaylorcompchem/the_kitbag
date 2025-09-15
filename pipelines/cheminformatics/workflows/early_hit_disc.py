@@ -74,7 +74,7 @@ def physchem_filtering_parallel_workflow(config):
 
 @register_workflow(
     "physchem_toxic_reactive_filtering",
-    description="Physchem filtering in parallel + toxic/reactive SMARTS filtering"
+    description="Physchem filtering + toxic/reactive SMARTS filtering"
 )
 def physchem_toxic_reactive_parallel_workflow(config):
     logger.info("Starting physchem_toxic_reactive_parallel_workflow")

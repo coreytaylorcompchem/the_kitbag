@@ -25,9 +25,11 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 INFO 
 Available Tasks:
 INFO  - physchem_filtering: Physchem filtering with mandatory and optional cutoffs + conformer generation
+INFO  - toxic_reactive_filtering: Toxic and reactive SMARTS matching for molecules
 INFO 
 Available Workflows:
-INFO  - physchem_filtering: Parallel physchem filtering using RDKit descriptors
+INFO  - physchem_filtering: Physchem filtering using calculated descriptors
+INFO  - physchem_toxic_reactive_filtering: Physchem filtering + toxic/reactive SMARTS filtering
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
