@@ -1,2 +1,2 @@
-smiles,mw,hbd,hba,logp,qed,stereocenters,tpsa,rotatable_bonds
-CCCCc1ncc(/C=C2/C(=O)N(CCCC)C(=O)N2CCCC)n1Cc1ccc(C(=O)OC)cc1,494.6360000000003,0,6,5.265900000000006,0.21525655321774803,0,84.74000000000001,13
+smiles,mw,hbd,hba,logp,tpsa,stereocenters,rotatable_bonds,qed
+CCCCc1ncc(/C=C2/C(=O)N(CCCC)C(=O)N2CCCC)n1Cc1ccc(C(=O)OC)cc1,494.6360000000003,0,6,5.265900000000006,84.74000000000001,0,13,0.21525655321774803

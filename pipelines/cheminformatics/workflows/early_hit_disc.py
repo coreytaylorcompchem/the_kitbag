@@ -25,7 +25,7 @@ def physchem_workflow_single(chunk_file: str):
 
 @register_workflow(
     "physchem_filtering",
-    description="Parallel physchem filtering using RDKit descriptors"
+    description="Physchem filtering using calculated descriptors"
 )
 def physchem_filtering_parallel_workflow(config):
     input_file = config.get("input_file")

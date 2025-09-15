@@ -1,3 +1,3 @@
-smiles,mw,hbd,hba,logp,qed,stereocenters,tpsa,rotatable_bonds
-O=c1n(Cc2nnc(Cc3ccccc3F)[nH]2)nc(-c2ccc(Cl)cc2)n1C[C@H](O)C(F)(F)F,496.8520000000002,2,7,3.1847000000000016,0.3826599349389035,1,101.62000000000002,7
-O=c1n(Cc2nnc(-c3ccccc3Cl)[nH]2)nc(-c2ccc(Cl)cc2)n1C[C@H](O)C(F)(F)F,499.2800000000002,2,7,3.775200000000002,0.4208166364278167,1,101.62000000000002,6
+smiles,mw,hbd,hba,logp,tpsa,stereocenters,rotatable_bonds,qed
+O=c1n(Cc2nnc(Cc3ccccc3F)[nH]2)nc(-c2ccc(Cl)cc2)n1C[C@H](O)C(F)(F)F,496.8520000000002,2,7,3.1847000000000016,101.62000000000002,1,7,0.3826599349389035
+O=c1n(Cc2nnc(-c3ccccc3Cl)[nH]2)nc(-c2ccc(Cl)cc2)n1C[C@H](O)C(F)(F)F,499.2800000000002,2,7,3.775200000000002,101.62000000000002,1,6,0.4208166364278167

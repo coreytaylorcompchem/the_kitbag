@@ -1,2 +1,2 @@
-smiles,mw,hbd,hba,logp,qed,stereocenters,tpsa,rotatable_bonds
-CCOP(=O)(OCC)C1(c2ccccc2)N=CC2C(=O)N(c3ccc(F)c(Cl)c3)C(=O)C21,478.8440000000002,0,6,4.788200000000004,0.4217806683225167,3,85.27000000000001,7
+smiles,mw,hbd,hba,logp,tpsa,stereocenters,rotatable_bonds,qed
+CCOP(=O)(OCC)C1(c2ccccc2)N=CC2C(=O)N(c3ccc(F)c(Cl)c3)C(=O)C21,478.8440000000002,0,6,4.788200000000004,85.27000000000001,3,7,0.4217806683225167

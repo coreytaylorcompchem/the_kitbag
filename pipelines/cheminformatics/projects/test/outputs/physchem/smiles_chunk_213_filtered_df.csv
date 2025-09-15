@@ -1,2 +1,2 @@
-smiles,mw,hbd,hba,logp,qed,stereocenters,tpsa,rotatable_bonds
-O=C(O)Cn1c(C(=O)Nc2nc(-c3ccccc3Cl)cs2)cc2ccccc21,411.8700000000001,2,5,4.755100000000002,0.4957458681975341,0,84.22,5
+smiles,mw,hbd,hba,logp,tpsa,stereocenters,rotatable_bonds,qed
+O=C(O)Cn1c(C(=O)Nc2nc(-c3ccccc3Cl)cs2)cc2ccccc21,411.8700000000001,2,5,4.755100000000002,84.22,0,5,0.4957458681975341

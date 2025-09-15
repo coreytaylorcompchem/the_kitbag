@@ -1,3 +1,3 @@
-smiles,mw,hbd,hba,logp,qed,stereocenters,tpsa,rotatable_bonds
-CCCC(=O)Nc1cc(C)c2nc(CCC)n(Cc3ccc(-c4ccccc4C(=O)O)cc3)c2c1,469.58500000000015,2,4,6.449320000000006,0.2950134481183773,0,84.22,9
-CCCc1nc2c(C)cc(C(=O)N3CCCCC3)cc2n1Cc1ccc(-c2ccccc2C(=O)O)cc1,495.62300000000016,1,4,6.336820000000007,0.32474314715644687,0,75.43,7
+smiles,mw,hbd,hba,logp,tpsa,stereocenters,rotatable_bonds,qed
+CCCC(=O)Nc1cc(C)c2nc(CCC)n(Cc3ccc(-c4ccccc4C(=O)O)cc3)c2c1,469.58500000000015,2,4,6.449320000000006,84.22,0,9,0.2950134481183773
+CCCc1nc2c(C)cc(C(=O)N3CCCCC3)cc2n1Cc1ccc(-c2ccccc2C(=O)O)cc1,495.62300000000016,1,4,6.336820000000007,75.43,0,7,0.32474314715644687

@@ -1,2 +1,2 @@
-smiles,mw,hbd,hba,logp,qed,stereocenters,tpsa,rotatable_bonds
-O=C(O)c1cc(-c2ccc(C3=C[C@H]4CC[C@@H]3CN4)cc2)c2ccc(-c3ccc(C(F)(F)F)cc3)cc2c1,499.5320000000001,2,2,7.656000000000005,0.3031464825653651,2,49.33,4
+smiles,mw,hbd,hba,logp,tpsa,stereocenters,rotatable_bonds,qed
+O=C(O)c1cc(-c2ccc(C3=C[C@H]4CC[C@@H]3CN4)cc2)c2ccc(-c3ccc(C(F)(F)F)cc3)cc2c1,499.5320000000001,2,2,7.656000000000005,49.33,2,4,0.3031464825653651
