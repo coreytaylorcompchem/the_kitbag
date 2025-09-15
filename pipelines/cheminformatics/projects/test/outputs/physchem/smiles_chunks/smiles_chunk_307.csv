@@ -1,0 +1,11 @@
+smiles
+C=CCc1cc(C(=O)N[C@H](C)CCCc2cccnc2)ccc1-c1ccc(OC)c(OC)c1
+COc1ccc(-c2ccc(C(S)=NCCCCc3cccnc3)cc2)cc1OC
+O=C(NCCCCc1cccnc1)c1ccc(-c2cccc(OC3=CC=CC=CC3)c2)cc1
+O=C(NCCCCc1cccnc1)c1ccc(-c2cccc(F)c2)c(F)c1
+COc1ccc(-c2ccc(C(=O)NCCCCc3cccnc3)cc2)cc1OC
+COc1ccc(-c2ccc(C(=O)N[C@H](C)CCCc3cccnc3)cc2)cc1OC
+COc1ccc(-c2ccc(C(=O)NCCCCc3cccnc3)cc2OC)cc1OC
+C[C@H](CCCc1cccnc1)NC(=O)c1ccc(-c2ccccc2)c(-c2ccccc2)c1
+CCCCc1cc(C(=O)N[C@H](C)CCCc2cccnc2)ccc1-c1ccc(OC)c(OC)c1
+O=C(NCCCCc1cccnc1)c1ccc(-c2cccc(O)c2)cc1

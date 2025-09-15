@@ -1,0 +1,11 @@
+smiles
+Fc1ccccc1-c1ccncc1CN1C(c2ccco2)=NOC1c1cc(C(F)(F)F)cc(C(F)(F)F)c1Cl
+Fc1ccccc1-c1ccncc1CN1C(c2ccco2)=NOC1c1cc(C(F)(F)F)cc(C(F)(F)F)c1
+Fc1ccccc1-c1ccncc1CN1C(c2ccccc2)=NOC1c1cc(C(F)(F)F)cc(C(F)(F)F)c1
+O=C(c1cccnc1Oc1cccc(C(F)(F)F)c1)N1CCCc2ccccc21
+O=C(Nc1nnn[nH]1)c1cc(Cl)c(Oc2ncccc2C(=O)N2CCN(C3CC3)c3ccccc32)cc1Cl
+COc1ccc(S(=O)(=O)N2CCCN(S(=O)(=O)c3ccc(OC)c(OC)c3)CC2)cc1OC
+O=C(c1cccnc1Oc1cc(Cl)ccc1Cl)N1CCN(C2COC2)c2ccccc21
+O=C(NCCO)c1cc(Cl)c(Oc2ncccc2C(=O)N2CCCc3ccccc32)cc1Cl
+O=C(O)CCc1cc(Cl)c(Oc2ncccc2C(=O)N2CCCc3ccccc32)cc1Cl
+O=C(O)CNC(=O)CCc1cc(Cl)c(Oc2ncccc2C(=O)N2CCCc3ccccc32)cc1Cl

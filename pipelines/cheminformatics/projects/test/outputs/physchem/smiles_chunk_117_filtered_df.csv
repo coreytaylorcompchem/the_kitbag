@@ -1,0 +1,3 @@
+smiles,mw,hbd,hba,rotatable_bonds,stereocenters,qed,tpsa,logp
+COc1cc2c(cc1-c1c(C)noc1C)ncc1[nH]c(=O)n([C@H](C)c3ccccn3)c12,415.45300000000015,1,7,4,1,0.47313551224422074,98.83,4.162540000000002
+O=C(Nc1ccc(C(=O)N2CCCCc3ccccc32)cc1)c1ccccc1-c1ccccc1,446.55000000000007,1,2,4,0,0.38444677348955736,49.410000000000004,6.589000000000006

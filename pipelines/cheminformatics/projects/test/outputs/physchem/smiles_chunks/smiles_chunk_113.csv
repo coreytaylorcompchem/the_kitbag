@@ -1,0 +1,11 @@
+smiles
+O=CNC(CNC(=O)Cn1nc(-c2ccc(Cl)cc2)n(C[C@H](O)C(F)(F)F)c1=O)c1cccc(C(F)(F)F)c1
+CC(=O)NC(C)(CNC(=O)Cn1nc(-c2ccc(Cl)cc2)n(C[C@H](O)C(F)(F)F)c1=O)c1cccc(C(F)(F)F)c1
+NC(=O)OC(CNC(=O)Cn1nc(-c2ccc(Cl)cc2)n(C[C@H](O)C(F)(F)F)c1=O)c1ccccc1C(F)(F)F
+NC(=O)OC(CNC(=O)Cn1nc(-c2ccc(Cl)cc2)n(C[C@H](O)C(F)(F)F)c1=O)c1ccccc1Cl
+NC(=O)OC(CNC(=O)Cn1nc(-c2ccc(Cl)cc2)n(C[C@H](O)C(F)(F)F)c1=O)c1cccc(Cl)c1Cl
+O=C(Cn1nc(-c2ccc(Cl)cc2)n(C[C@H](O)C(F)(F)F)c1=O)N[C@@H](CO)Cc1cccc(C(F)(F)F)c1
+NC(=O)OC(CNC(=O)Cn1nc(-c2ccc(Cl)cc2)n(Cc2ccccc2F)c1=O)c1ccccc1Cl
+NC(=O)OC(CNC(=O)Cn1nc(-c2ccc(Cl)cc2)n(CCC(F)(F)F)c1=O)c1ccccc1Cl
+COCCn1c(-c2ccc(Cl)s2)nn(CC(=O)NCC(NC(=O)OC(C)(C)C)c2ccccc2C(F)(F)F)c1=O
+CC(C)(C)OC(=O)NC(CNC(=O)Cn1nc(-c2ccc(Cl)s2)n(Cc2ccccc2F)c1=O)c1ccccc1C(F)(F)F

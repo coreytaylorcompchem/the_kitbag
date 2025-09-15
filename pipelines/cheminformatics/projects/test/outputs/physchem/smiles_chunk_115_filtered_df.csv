@@ -1,0 +1,3 @@
+smiles,mw,hbd,hba,rotatable_bonds,stereocenters,qed,tpsa,logp
+O=c1n(Cc2ncc(Cc3cccc(C(F)(F)F)c3)s2)nc(-c2ccc(Cl)cc2)n1C1CC1,490.93800000000016,0,6,6,0,0.34229731846705896,52.71,5.814500000000004
+O=c1n(Cc2ncc(Cc3cccc(C(F)(F)F)c3)[nH]2)nc(-c2ccc(Cl)cc2)n1C1CC1,473.88600000000014,1,5,6,0,0.4243232092795873,68.5,5.081100000000004

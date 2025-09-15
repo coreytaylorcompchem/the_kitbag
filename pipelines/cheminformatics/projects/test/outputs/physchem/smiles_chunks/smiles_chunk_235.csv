@@ -1,0 +1,11 @@
+smiles
+CCCCC[C@H](O)/C=C/C=C\C=C\C=C\[C@@H](O)[C@@H](O)CCCC(=O)O
+CCCCC[C@@H](O)c1nc(-c2ccccc2)n(-c2ccccc2)c1/C=C/[C@@H](O)[C@@H](O)CCCC(=O)OC
+CCCCC[C@H](O)c1nc(-c2ccccc2)n(-c2ccccc2)c1/C=C/[C@@H](O)[C@@H](O)CCCC(=O)OC
+CCCCC[C@@H](O)c1nc(-c2ccccc2)oc1/C=C/[C@@H](O)[C@@H](O)CCCC(=O)OC(C)C
+CCCCC[C@H](O)c1nc(-c2ccccc2)oc1/C=C/[C@@H](O)[C@@H](O)CCCC(=O)OC(C)C
+CCCCC[C@@H](O)c1c(/C=C/[C@@H](O)[C@@H](O)CCCC(=O)OC)nc(C)n1C
+CCCCC[C@H](O)c1c(/C=C/[C@@H](O)[C@@H](O)CCCC(=O)OC)nc(C)n1C
+CCC[C@@H](O)c1c(/C=C/[C@@H](O)[C@@H](O)CCCC(=O)OC)nc(C)n1C
+CCC[C@H](O)c1c(/C=C/[C@@H](O)[C@@H](O)CCCC(=O)OC)nc(C)n1C
+COC(=O)CCC[C@H](O)[C@H](O)/C=C/c1nc(C)n(C)c1[C@@H](C)O

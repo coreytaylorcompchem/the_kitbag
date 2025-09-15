@@ -1,0 +1,11 @@
+smiles
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(Cl)cc2)c(F)c1
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(Br)cc2)c(F)c1
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(C#N)cc2)c(F)c1
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(C)cc2)c(F)c1
+COc1ccc(NC(=O)N[C@@H]2C(=O)NC[C@H]2c2c(F)cc(OC)cc2F)cc1
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(F)c(F)c2)c(F)c1
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(F)c(O)c2)c(F)c1
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(Cl)c(O)c2)c(F)c1
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(C)c(O)c2)c(F)c1
+COc1cc(F)c([C@@H]2CNC(=O)[C@H]2NC(=O)Nc2ccc(Cl)cn2)c(F)c1

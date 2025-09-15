@@ -1,0 +1,11 @@
+smiles
+O=c1[nH]c(N2CCCC2)nc2nccc(-c3ccc(Cl)cc3)c12
+Cc1ccc(C(=O)Nc2c(CC(=O)NC3CCCC3)[nH]c3ccccc23)cc1
+Cn1cnc2c1c(=O)[nH]c(=O)n2C
+Cn1c(=O)c2c(ncn2C)n(C)c1=O
+CCn1c(=O)c2nc(-c3ccccc3)[nH]c2n(CC)c1=O
+COc1cc2c(c(OC)c1OC)Cc1sc(N)nc1-2.I
+I.Nc1nc2c(s1)Cc1c(OC(=O)C3CCCC3)cccc1-2
+CC(=O)Oc1cccc2c1Cc1sc(N)nc1-2.I
+COc1cc2c(cc1OC)-c1nc(N)sc1C2.I
+Cc1ccc2c(c1)-c1nc(N)sc1C2.I

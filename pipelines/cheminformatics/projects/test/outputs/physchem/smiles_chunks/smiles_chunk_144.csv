@@ -1,0 +1,11 @@
+smiles
+CCc1ccc2sc(C(=O)NC3CCN(Cc4ccc(OC5CCNCC5)c(Br)c4)CC3)cc2c1
+COc1ccc2sc(C(=O)NC3CCN(Cc4ccc(OC5CCNCC5)c(Br)c4)CC3)cc2c1
+O=C(NC1CCN(Cc2ccc(OC3CCNCC3)c(Br)c2)CC1)c1cc2cc(-c3ccccc3)ccc2s1
+O=C(NC1CCN(Cc2ccc(OC3CCNCC3)c(Br)c2)CC1)c1cc2ccc(-c3ccccc3)cc2s1
+COc1ccccc1-c1ccc2cc(C(=O)NC3CCN(Cc4ccc(OC5CCNCC5)c(Br)c4)CC3)sc2c1
+COc1cccc(-c2ccc3cc(C(=O)NC4CCN(Cc5ccc(OC6CCNCC6)c(Br)c5)CC4)sc3c2)c1
+COc1ccc(-c2ccc3cc(C(=O)NC4CCN(Cc5ccc(OC6CCNCC6)c(Br)c5)CC4)sc3c2)cc1
+Cc1ccc(-c2ccc3cc(C(=O)NC4CCN(Cc5ccc(OC6CCNCC6)c(Br)c5)CC4)sc3c2)cc1
+O=C(NC1CCN(Cc2ccc(OC3CCNCC3)c(Br)c2)CC1)c1cc2ccc(-c3ccc(F)cc3)cc2s1
+O=C(NC1CCN(Cc2ccc(OC3CCNCC3)c(Br)c2)CC1)c1cc2ccc(-c3ccc(Cl)cc3)cc2s1

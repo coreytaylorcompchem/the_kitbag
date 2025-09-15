@@ -1,0 +1,11 @@
+smiles
+Cc1cc(Cn2cnc3c2C[C@@H](C(=O)O)N(C(=O)C(c2ccccc2)c2ccccc2)C3)cc(I)c1O
+CCc1nc2ccc(NC(=O)N(C)C(C)C)cc2c(=O)n1Cc1ccc(-c2ccccc2S(=O)(=O)NC(=O)OCCC(C)C)cc1F
+CCc1nc2ccc(NC(=O)N3CCOCC3)cc2c(=O)n1Cc1ccc(-c2ccccc2S(=O)(=O)NC(=O)OCCC(C)C)cc1F
+Cc1nc2ccc(NC(=O)N(C)C)cc2c(=O)n1Cc1ccc(-c2ccccc2S(=O)(=O)NC(=O)OCCC2CC2)cc1F
+CCCCc1ncc(/C=C2/C(=O)N(CCCC)C(=O)N2CCCC)n1Cc1ccc(C(=O)OC)cc1
+CCNC(=O)Nc1ccc2nc(CC)n(Cc3ccc(-c4ccccc4S(=O)(=O)NC(=O)OCCC4CC4)cc3F)c(=O)c2c1
+CCCCc1ncc(/C=C2/C(=O)NC(=O)N2CCCC)n1Cc1ccc(-c2ccccc2-c2nn[nH]n2)cc1
+Cc1cc(Cn2cnc3c2C[C@@H](C(=O)O)N(C(=O)C(c2ccccc2)c2ccccc2)C3)ccc1NCCCCCCNC(=O)CCNc1ccc([N+](=O)[O-])c2nonc12
+CCCc1nc2ccc(NC(=O)NC(C)C)cc2c(=O)n1Cc1ccc(-c2ccccc2S(=O)(=O)NC(=O)COCC(C)C)cc1F
+CCCCOC(=O)NS(=O)(=O)c1ccccc1-c1ccc(Cn2c(CCCC)nc3ccc(NC(=O)N(C)C(C)C)cc3c2=O)c(F)c1
