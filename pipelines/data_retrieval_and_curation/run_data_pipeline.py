@@ -19,7 +19,7 @@ def load_yaml(path):
 def main():
     this_dir = os.path.dirname(os.path.abspath(__file__))
     import_modules_from_dir(os.path.join(this_dir, "workflows"), "workflows")
-    import_modules_from_dir(os.path.join(this_dir, "tasks"), "tasks")
+    import_modules_from_dir(os.path.join(this_dir, "modules"), "modules")
 
     # Load config from file
     parser = argparse.ArgumentParser()

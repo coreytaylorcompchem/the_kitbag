@@ -34,4 +34,4 @@ def load_all_workflows():
         try:
             importlib.import_module(f"{workflows.__name__}.{name}")
         except Exception as e:
-            logger.info(f"[load_all_workflows] ⚠️ Failed to import workflow module '{name}': {e}")
+            logger.info(f"[load_all_workflows] Failed to import workflow module '{name}': {e}")
