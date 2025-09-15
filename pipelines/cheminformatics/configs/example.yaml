@@ -1,5 +1,5 @@
 backend: rdkit
-input_file: data/input_mols.sdf
+input_file: data/input_mols.smi
 
 workflow: early_hit_discovery
 tasks:

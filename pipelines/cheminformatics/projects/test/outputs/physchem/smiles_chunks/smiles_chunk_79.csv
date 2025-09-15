@@ -1,0 +1,11 @@
+smiles
+CCN1CC[C@@H](c2ccccc2)[C@@H](C(=O)OCCc2ccccc2)C1.O=C(O)C(=O)O
+CCN1CCC(c2ccccc2)=C(C(=O)OCCc2ccc(OC)cc2)C1.O=C(O)C(=O)O
+CCCCCCOC(=O)C1CN(CC)CC=C1c1ccccc1.O=C(O)C(=O)O
+CCN1CC=C(c2ccccc2)C(C(=O)OCC2CCCCC2)C1.O=C(O)C(=O)O
+CCCCCCOC(=O)C1=C(c2ccccc2)CCN(CC)C1.O=C(O)C(=O)O
+CCCCOC(=O)C1=C(c2ccccc2)CCN(CC)C1.O=C(O)C(=O)O
+CCCCCCCCCCOC(=O)C1=C(c2ccccc2)CCN(CC)C1
+CCN1CC=C(c2ccccc2)C(C(=O)OCc2ccccc2)C1.Cl
+CCN1CCC(c2ccccc2)=C(C(=O)OCCc2ccc(C)cc2)C1.O=C(O)C(=O)O
+CCN1CC=C(c2ccccc2)C(C(=O)OCCCc2ccccc2)C1.Cl

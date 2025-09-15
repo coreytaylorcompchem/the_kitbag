@@ -1,0 +1,11 @@
+smiles
+O=C(O)c1cc(NC(=O)c2ccc(C(F)(F)F)cc2)cc(-c2ccc(-c3cc(CO)on3)cc2)c1
+O=C(O)c1cc(-c2ccc(C3CCNCC3)cc2)cc(-n2cc(-c3ccc(C(F)(F)F)cc3)nn2)n1
+O=C(O)c1cc(-c2ccc(C3CCNCC3)cc2)nc(-n2cc(-c3ccc(C(F)(F)F)cc3)nn2)c1
+O=C(O)c1cc(-n2cc(-c3ccc(C(F)(F)F)cc3)nn2)cc(-c2ccc(C3CCNCC3)cc2)n1
+CCN(CC)CC.CCN(CC)CC.O=c1ccn([C@@H]2O[C@H](COP(=O)(O)CP(=O)(O)O)[C@@H](O)[C@H]2O)c(=O)[nH]1
+CCN(CC)CC.CCN(CC)CC.O=c1[nH]c(=O)n([C@@H]2O[C@H](COP(=O)(O)CP(=O)(O)O)[C@@H](O)[C@H]2O)cc1F
+CCN(CC)CC.CCN(CC)CC.O=c1[nH]c(=O)n([C@@H]2O[C@H](COP(=O)(O)CP(=O)(O)O)[C@@H](O)[C@H]2O)cc1Cl
+CCN(CC)CC.CCN(CC)CC.O=c1[nH]/c(=N\OCc2ccccc2)c(F)cn1[C@@H]1O[C@H](COP(=O)(O)CP(=O)(O)O)[C@@H](O)[C@H]1O
+CCN(CC)CC.CCN(CC)CC.O=C(/N=c1/ccn([C@@H]2O[C@H](COP(=O)(O)CP(=O)(O)O)[C@@H](O)[C@H]2O)c(=O)[nH]1)c1ccccc1
+Cc1c(C(=O)O)cc(-c2ccc(C3CCNCC3)cc2)c2ccc(-c3ccc(C(F)(F)F)cc3)cc12

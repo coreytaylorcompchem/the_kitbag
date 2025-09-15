@@ -1,0 +1,11 @@
+smiles
+O=C1c2ccccc2C(=O)N1Cc1ccc(CCN2CCN(c3ccc(C(F)(F)F)cc3)CC2)cc1
+CS(=O)(=O)c1ccccc1N1CCN(CCc2ccc(CN3C(=O)c4ccccc4C3=O)cc2)CC1
+CC(=O)c1ccc(N2CCN(CCc3ccc(CN4C(=O)c5ccccc5C4=O)cc3)CC2)cc1
+COc1ccccc1N1CCN(CC(O)COc2cccc3ccccc23)CC1
+C[C@@H](c1cccc(C#N)c1)n1cc(Cl)cc(C(N)=O)c1=N.Cl
+C[C@@H]1CCNC(=O)c2cc3ccc(C(=O)Nc4nc5ccccc5n4CCCN(C)C)cc3n21
+CCCc1cc(C)[nH]c(=O)c1CNC(=O)c1cc(-c2ccnc(N3CCN(C)CC3)c2)cc2c1cnn2C(C)C
+O=C(/C=C/N1C[C@H]2C[C@@H]1CN2c1ccccn1)c1ccccc1O
+O=C(O)/C=C/C(=O)O.[2H]C([2H])(Cc1c[nH]c2ccccc12)N(C)C
+CN(C)CCc1c[nH]c2ccccc12.O=C(O)/C=C/C(=O)O

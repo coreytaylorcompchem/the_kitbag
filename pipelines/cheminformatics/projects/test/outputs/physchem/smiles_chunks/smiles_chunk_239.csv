@@ -1,0 +1,11 @@
+smiles
+O=C(Nc1ccc(Br)cc1)NC1(C(=O)Nc2ccc(Cl)nc2)CCCC1
+CC(C)C[C@H](NC(=O)Nc1ccc(Br)cc1)C(=O)NCC(=O)O
+CC(C)C[C@@H](NC(=O)Nc1ccc(Br)cc1)C(=O)NCC(=O)O
+CC(C)C[C@H](NC(=O)Nc1ccc(Br)cc1F)C(=O)NCC(=O)O
+COc1ccc(NC(=O)N[C@H](Cc2ccc(C#N)cc2)C(=O)NCC2(c3ccc(O)cc3)CC2)cc1
+COc1ccc(NC(=O)N[C@H](Cc2ccc(C#N)cc2)C(=O)NCC2(c3cccc(O)c3)CC2)cc1
+COc1cccc(Cc2c(-c3ccccc3)c(C)nn(CC(=O)Nc3ccc(Br)cc3)c2=O)c1
+Cc1cccc(C2(NC(=O)N[C@@H]3C(=O)NC[C@H]3c3c(F)cc(Br)cc3F)CC2)n1
+Cc1cccc(C2(NC(=O)N[C@@H]3C(=O)NC[C@H]3c3c(F)cc(Cl)cc3F)CC2)n1
+O=C(Nc1ccc(Cl)cc1F)N[C@@H]1CCN(c2ccc(-c3cnn(C(F)F)c3)c(F)c2F)C1=O

@@ -1,0 +1,3 @@
+smiles,mw,hbd,hba,logp,qed,stereocenters,tpsa,rotatable_bonds
+CC(C)N(C(=O)CN(C(=O)CNC(=O)Nc1ccccc1)c1ccccc1)c1ccccc1,444.53500000000014,2,3,4.282900000000003,0.5440413948942424,0,81.75,8
+CCC(C)(C)C(=O)CN1C(=O)C(NC(=O)Nc2cccc(C)c2)N=C(c2ccccc2)c2ccccc21,496.6110000000002,2,4,5.332120000000005,0.46307654717861907,1,90.87,7

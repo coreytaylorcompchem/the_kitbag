@@ -1,0 +1,11 @@
+smiles
+CCCn1c(=O)c2nc(C3CCCC3)[nH]c2n(CCCCC(=O)c2ccc(S(=O)(=O)F)cc2)c1=O
+CC(=O)NCCNc1[nH]c(-c2ccccc2)nc2nc(C)c(C)c1-2
+CCCn1c(=O)c2[nH]c(C3CCCC3)nc2n(CCC)c1=O
+Cc1[nH]c2nc(-c3ccccc3)nc(N[C@@H]3CCCCNC3=O)c2c1C
+Cc1[nH]c2nc(-c3ccccc3)nc(NCCN3CCNC3=O)c2c1C
+Cc1nc2nc(-c3ccccc3)[nH]c(N[C@H](CO)CC(C)C)c-2c1C
+Cc1[nH]c2nc(-c3ccccc3)nc(NCc3ccncc3)c2c1C
+Cc1[nH]c2nc(-c3ccccc3)nc(NCCCN3CCCC3=O)c2c1C
+Cc1nc2nc(-c3ccccc3)[nH]c(N[C@H](C)c3ccccc3)c-2c1C
+Cc1[nH]c2nc(-c3ccccc3)nc(N[C@H]3CC[C@H](O)CC3)c2c1C

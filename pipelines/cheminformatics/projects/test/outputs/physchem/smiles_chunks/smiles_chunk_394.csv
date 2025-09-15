@@ -1,0 +1,7 @@
+smiles
+O=C(N[C@H]1C[N+]2(CCCc3cccs3)CCC1CC2)C(O)(c1cccs1)c1cccs1.[Br-]
+O=C(N[C@H]1C[N+]2(CCCc3ccccc3)CCC1CC2)C(O)(c1cccs1)c1cccs1.[Br-]
+CN(C(=O)C1c2ccccc2Oc2ccccc21)[C@H]1CN2CCC1CC2
+O=C(N[C@H]1CN2CCC1CC2)C1c2ccccc2Oc2ccccc21
+O=C(N[C@H]1CN2CCC1CC2)C1(O)c2ccccc2-c2ccccc21
+CCC(O)(C(=O)N[C@H]1CN2CCC1CC2)c1cccs1

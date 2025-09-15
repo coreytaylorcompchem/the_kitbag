@@ -1,0 +1,2 @@
+smiles,mw,hbd,hba,logp,qed,stereocenters,tpsa,rotatable_bonds
+O=C(NCCCCCCNc1ncnc2c1ncn2[C@@H]1O[C@H](CO)[C@@H](O)[C@H]1O)C1=CC2C=CC1CC2,498.5840000000003,5,10,1.0486999999999997,0.2257906671683721,6,154.64999999999998,11

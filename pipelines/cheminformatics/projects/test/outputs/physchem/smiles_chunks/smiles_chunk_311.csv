@@ -1,0 +1,11 @@
+smiles
+C[Si](C)(C)c1ccc(C2=Cc3ccccc3C3=NCCN23)cc1
+C=CCN(CC=C)Cc1ccc(C2=Cc3ccccc3C3=NCCN23)cc1
+C1=C(c2ccc3c(c2)OCO3)N2CCN=C2c2ccccc21
+C1=C(c2cccs2)N2CCN=C2c2ccccc21
+CC1CCCCN1Cc1ccc(C2=Cc3ccccc3C3=NCCN23)cc1
+C1=C(c2ccc(-c3ccccc3)cc2)N2CCN=C2c2ccccc21
+Oc1ccc(C2=Cc3ccccc3C3=NCCN23)cc1
+C1=C(c2ccc(CN3CCCCC3)cc2)N2CCN=C2c2ccccc21
+C1=C(c2ccc(CN3CCCC3)cc2)N2CCN=C2c2ccccc21
+Clc1ccccc1C1=Cc2ccccc2C2=NCCN12
