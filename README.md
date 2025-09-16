@@ -1,10 +1,8 @@
 ![The Kitbag logo](_images/the_kitbag2.jpeg)
 
-<img src="_images/the_kitbag3.jpeg" alt="The Kitbag logo" width="400" align="left" style="margin-right: 10px;" />
-
 Here's where all my end-to-end comp chem software pipelines live. Generally knitting together a bunch of stuff using Python. The aim is to make these able to run as independent pipelines or interoperate. Anyone who has ideas for how to best do that, drop me a message.
 
-The code is organised into sections that reflect various computational chem software for various computational chem pipelines;
+<img src="_images/the_kitbag3.jpeg" alt="The Kitbag logo" width="350" align="left" style="margin-right: 10px;" />The code is organised into sections that reflect various computational chem software for various computational chem pipelines;
 
 * Cheminformatics
     * Various data-driven use cases for:
