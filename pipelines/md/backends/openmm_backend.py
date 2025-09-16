@@ -25,7 +25,7 @@ class OpenMMBackend:
     def add_solvent(self, modeller, ionic_strength, box_padding):
         forcefield = ForceField(*self.config["system"]["forcefield"])
         modeller.addSolvent(forcefield, model='tip3p', ionicStrength=ionic_strength*molar, padding=box_padding*nanometers)
-        return modeller  # Return the updated modeller object
+        return modeller
     
     def fix_pdb(self, pdb_file, pH=7.0):
         fixer = PDBFixer(filename=pdb_file)
@@ -62,7 +62,9 @@ class OpenMMBackend:
 
     def mutate_residue_in_pdb(self, input_pdb_path, output_pdb_path, from_resname, to_resname):
         """
-        Converts specified residues (e.g., SEP → SER) and removes non-standard atoms (e.g., phosphate group).
+        Helper to convert specified residues (e.g., SEP → SER) and removes non-standard atoms (e.g., phosphate group).
+        TODO: make this work with other non-standard residues.
+        It'll take in other residues than SEP/SER but it won't fix them correctly at present.
         """
         phosphate_atoms = {"P", "OP1", "OP2", "OP3", "O1P", "O2P", "O3P"}
 
@@ -78,7 +80,7 @@ class OpenMMBackend:
                 if resname == from_resname:
                     if atom_name in phosphate_atoms:
                         continue  # Skip phosphate atoms
-                    # Replace the residue name (e.g., SEP → SER)
+                    # Simple replacement of residue name (e.g., SEP → SER)
                     line = line[:17] + to_resname.ljust(3) + line[20:]
 
             new_lines.append(line)
@@ -93,13 +95,11 @@ class OpenMMBackend:
         mutated_pdb = self.config["system"]["pdb_file"].replace(".pdb", "_mutated.pdb")
         self.mutate_residue_in_pdb(self.config["system"]["pdb_file"], mutated_pdb, 'SEP', 'SER')
 
-        # Fix using PDBFixer (adds missing atoms and hydrogens)
+        # PDBFixer run
         fixed_pdb_file = self.fix_pdb(mutated_pdb, pH=self.config["simulation"]["pH"])
-
-        # Load fixed structure
         pdb = PDBFile(fixed_pdb_file)
 
-        # Collect atoms to keep: only protein and waters
+        # Delete anything other than protein and HOH.
         atoms_to_keep = [atom for atom in pdb.topology.atoms()
                  if (atom.residue.name in ('HOH', 'WAT'))]
 
@@ -119,7 +119,7 @@ class OpenMMBackend:
 
         logger.info(f"Done solvating the system for heating/equilibration.")
 
-        # Create system
+        # Compile the complete system
         self.system = forcefield.createSystem(
             modeller.topology,
             nonbondedMethod=PME,

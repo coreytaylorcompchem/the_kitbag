@@ -24,7 +24,6 @@ def main():
 
     logger.info(f"Registered workflows: {list_workflows()}")
 
-    # Parse CLI
     parser = argparse.ArgumentParser()
     parser.add_argument('--params', required=True, help='Path to YAML config file')
     args = parser.parse_args()
@@ -47,7 +46,6 @@ def main():
 
     result = workflow_func(config)
 
-    # Handle output if applicable
     if isinstance(result, dict) and "df" in result:
         result_df = result["df"]
         output_cfg = config.get("output", {})

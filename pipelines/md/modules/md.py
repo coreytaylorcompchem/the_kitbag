@@ -16,7 +16,6 @@ class MDWorkflow:
         self.simulation = None
 
     def prepare_system(self):
-        # Call the backend method that actually prepares the system
         self.backend.prepare_system()
         self.system = self.backend.system
         self.topology = self.backend.topology
@@ -37,14 +36,14 @@ class MDWorkflow:
         self.simulation.minimizeEnergy()
 
     def heat_and_equilibrate(self):
-    # Config params with defaults
+    # Config params fed in here.
         heating_config = self.config.get("heating_and_equilibration", {})
         num_steps = heating_config.get("num_heating_steps", 6)
-        heating_increment = heating_config.get("heating_increment", 298.15 / num_steps)  # Default to room temp / steps
+        heating_increment = heating_config.get("heating_increment", 298.15 / num_steps)
         restraints = heating_config.get("restraint_strengths", [5.0, 4.0, 3.0, 2.0, 1.0, 0.0])
         steps_per_round = heating_config.get("steps_per_round", 5000)
 
-        # Pre-identify backbone atom indices for restraint
+        # Backbone atoms heating/equil constraints
         backbone_atoms = [atom.index for atom in self.topology.atoms() if atom.name in {"N", "CA", "C", "O"}]
 
         logger.info(f"Setting up {num_steps} heating/equilibration steps.")
@@ -57,8 +56,6 @@ class MDWorkflow:
 
             self.integrator.setTemperature(temp * kelvin)
 
-            # Remove any existing restraint forces before adding new ones
-            # (Assuming only one CustomExternalForce per iteration)
             for idx in reversed(range(self.system.getNumForces())):
                 force = self.system.getForce(idx)
                 if isinstance(force, CustomExternalForce):
@@ -71,34 +68,26 @@ class MDWorkflow:
                 force.addPerParticleParameter("z0")
                 force.addGlobalParameter("k", restraint_k)
 
-                # Get current positions
                 state = self.simulation.context.getState(getPositions=True)
                 positions = state.getPositions()
 
-                # Add backbone atoms to force
                 for atom_idx in backbone_atoms:
                     pos = positions[atom_idx]
                     force.addParticle(atom_idx, [pos.x, pos.y, pos.z])
 
                 self.system.addForce(force)
-                # Reinitialize context to update system forces
-                # Save current positions
                 positions = self.simulation.context.getState(getPositions=True).getPositions()
-
-                # Reinitialize context without arguments
                 self.simulation.context.reinitialize()
-
-                # Restore positions
                 self.simulation.context.setPositions(positions)
 
             self.simulation.step(steps_per_round)
 
     def run_production(self):
         ns = self.config["production"]["length_ns"]
-        timestep = self.integrator.getStepSize()  # Quantity with units
+        timestep = self.integrator.getStepSize() 
         
-        # Convert timestep to nanoseconds as a float (no units)
-        timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0  # picoseconds -> nanoseconds as float
+        # Timestep -> ns
+        timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0
 
         steps_per_ns = int(1.0 / timestep_ns)
         total_steps = int(ns * steps_per_ns)
@@ -106,7 +95,6 @@ class MDWorkflow:
         output_trajectory = self.config["production"]["output_trajectory"]
         output_logfile = self.config["production"]["output_logfile"]
 
-        # Ensure output directory exists
         output_dir = os.path.dirname(output_trajectory)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
