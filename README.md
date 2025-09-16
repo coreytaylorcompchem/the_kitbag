@@ -1,4 +1,4 @@
-![The Kitbag logo](_images/the_kitbag2.jpeg)
+![The Kitbag logo](_images/the_kitbag.jpg)
 
 <!-- <img src="_images/the_kitbag.jpg" alt="The Kitbag logo" width="400" align="left" style="margin-right: 20px;" /> -->
 
