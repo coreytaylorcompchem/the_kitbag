@@ -4,7 +4,7 @@ Here's where all my end-to-end comp chem software pipelines live. Generally knit
 
 The code is organised into sections that reflect various computational chem software for various computational chem pipelines;
 
-* Cheminformatics <img src="_images/the_kitbag3.jpeg" alt="The Kitbag logo" width="350" align="right" style="margin-right: 10px;" />
+* Cheminformatics <img src="_images/the_kitbag3.jpeg" alt="The Kitbag logo" width="300" align="left" style="margin-right: 10px;" />
     * Various data-driven use cases for:
         * Hit discovery
         * Lead opt
