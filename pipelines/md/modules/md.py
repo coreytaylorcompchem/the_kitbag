@@ -4,6 +4,8 @@ from openmm.unit import *
 import os
 from openmm.unit import picoseconds
 
+from tqdm import tqdm
+
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
@@ -99,8 +101,16 @@ class MDWorkflow:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        step_chunk = 1000  # Steps per update
 
-        self.simulation.reporters.append(DCDReporter(output_trajectory, 1000))
+        output_dir = os.path.dirname(output_trajectory)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # Save checkpoint as "restart.chk" in the output directory
+        checkpoint_file = os.path.join(output_dir, "restart.chk")
+
+        self.simulation.reporters.append(DCDReporter(output_trajectory, step_chunk))
         self.simulation.reporters.append(StateDataReporter(output_logfile,
                                                         1000, step=True, temperature=True,
                                                         progress=True, remainingTime=True,
@@ -109,4 +119,15 @@ class MDWorkflow:
 
         logger.info(f"Running Production stage for {ns} ns")
 
-        self.simulation.step(total_steps)
+        
+        with tqdm(total=total_steps, desc="Production", unit="steps") as pbar:
+            for _ in range(0, total_steps, step_chunk):
+                steps_to_run = min(step_chunk, total_steps - self.simulation.currentStep)
+                self.simulation.step(steps_to_run)
+
+                # Save restart every 1000 steps.
+                self.simulation.saveCheckpoint(checkpoint_file)
+
+                logger.debug(f"Saving checkpoint to {checkpoint_file} every {steps_to_run} steps. Current step: {self.simulation.currentStep}")
+
+                pbar.update(steps_to_run)

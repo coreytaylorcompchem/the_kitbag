@@ -7,6 +7,8 @@ from pipeline.import_utilities import import_modules_recursively
 from workflows import get_workflow, load_all_workflows, list_workflows
 from pipeline.logger import setup_logger
 
+from pipeline.dependency_checker import check_dependencies, fail_if_missing
+
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def load_yaml(path):
@@ -16,6 +18,19 @@ def load_yaml(path):
 def main():
     project_root = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, project_root)
+
+    # Define what dependencies your pipeline expects (based on config)
+    required_deps = {
+        "openmm": "pip install openmm",
+        "rdkit": "conda install -c conda-forge rdkit",
+        "openff.toolkit": "conda install -c conda-forge openff-toolkit",
+        "pdbfixer": "pip install pdbfixer",
+        "tqdm": "pip install tqdm",
+    }
+
+    # Check and exit early if anything's missing
+    missing = check_dependencies(required_deps)
+    fail_if_missing(missing)
 
     # Import all modules and workflows
     import_modules_recursively(os.path.join(project_root, "modules"), "modules")

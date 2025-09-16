@@ -1,14 +1,17 @@
+from backends.utils.add_terminal_caps import CapTermini
+from backends.utils.load_ligand import load_ligand_from_sdf
+
 from openmm.app import *
 from openmm import *
 from openmm.unit import *
 import os
 from pdbfixer import PDBFixer
-from openmm.app import PDBFile
+from openmm.app import PDBFile, Modeller, ForceField
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+from simtk.openmm.app import PDBFile
 
-from backends.utils.add_terminal_caps import CapTermini
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class OpenMMBackend:
     def __init__(self, config):
@@ -91,35 +94,44 @@ class OpenMMBackend:
         return output_pdb_path
     
     def prepare_system(self):
-        # Mutate SEP -> SER
-        mutated_pdb = self.config["system"]["pdb_file"].replace(".pdb", "_mutated.pdb")
-        self.mutate_residue_in_pdb(self.config["system"]["pdb_file"], mutated_pdb, 'SEP', 'SER')
+        config = self.config
+        ligand_file = config["system"].get("ligand_file")
 
-        # PDBFixer run
-        fixed_pdb_file = self.fix_pdb(mutated_pdb, pH=self.config["simulation"]["pH"])
+        # Mutate SEP -> SER
+        mutated_pdb = config["system"]["pdb_file"].replace(".pdb", "_mutated.pdb")
+        self.mutate_residue_in_pdb(config["system"]["pdb_file"], mutated_pdb, 'SEP', 'SER')
+
+        # Fix with PDBFixer
+        fixed_pdb_file = self.fix_pdb(mutated_pdb, pH=config["simulation"]["pH"])
         pdb = PDBFile(fixed_pdb_file)
 
-        # Delete anything other than protein and HOH.
-        atoms_to_keep = [atom for atom in pdb.topology.atoms()
-                 if (atom.residue.name in ('HOH', 'WAT'))]
-
         modeller = Modeller(pdb.topology, pdb.positions)
+
+        # Remove non-protein, non-water atoms (e.g., crystallographic ligands, ions)
+        atoms_to_keep = [
+            atom for atom in modeller.topology.atoms()
+            if atom.residue.name in ('HOH', 'WAT') or atom.residue.chain.id in {'A'}
+        ]
         modeller.delete([atom for atom in modeller.topology.atoms() if atom not in atoms_to_keep])
-        
-        # Solvate system
-        forcefield_files = self.config["system"]["forcefield"]
-        forcefield = ForceField(*forcefield_files)
+        logger.info("Removing non-protein atoms, retaining any crystal waters.")
 
-        ionic_strength = self.config["system"].get("ionic_strength", 0.0)
-        box_padding = self.config["system"].get("box_padding", 1.0)
+        # If ligand is provided in the yaml, load and add it to the system
+        if ligand_file:
+            logger.info(f"Ligand file specified: {ligand_file}")
+            ligand_pdb_path = load_ligand_from_sdf(ligand_file)
+            ligand = PDBFile(ligand_pdb_path)
+            modeller.add(ligand.topology, ligand.positions)
+            logger.info("Ligand merged into system.")
 
-        logger.info(f"Solvating the system for heating/equilibration.")
+        # Solvate
+        forcefield_files = config["system"]["forcefield"]
+        ionic_strength = config["system"].get("ionic_strength", 0.0)
+        box_padding = config["system"].get("box_padding", 1.0)
 
         modeller = self.add_solvent(modeller, ionic_strength=ionic_strength, box_padding=box_padding)
 
-        logger.info(f"Done solvating the system for heating/equilibration.")
-
-        # Compile the complete system
+        # Final system creation
+        forcefield = ForceField(*forcefield_files)
         self.system = forcefield.createSystem(
             modeller.topology,
             nonbondedMethod=PME,
@@ -128,4 +140,21 @@ class OpenMMBackend:
 
         self.topology = modeller.topology
         self.positions = modeller.positions
+
+        # Determine output dir to save topology
+        output_trajectory = self.config["production"]["output_trajectory"]
+        output_dir = os.path.dirname(output_trajectory)
+        
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        topology_filename = "topology.pdb"
+        topology_path = os.path.join(output_dir, topology_filename)
+
+        # Save topology
+        with open(topology_path, "w") as f:
+            PDBFile.writeFile(self.topology, self.positions, f)
+
+        logger.info(f"Saved prepared system topology to {topology_path}")
+
 
