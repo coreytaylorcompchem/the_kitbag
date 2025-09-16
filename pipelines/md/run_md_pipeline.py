@@ -31,6 +31,10 @@ def main():
 
     config = load_yaml(args.params)
 
+    platform = config["simulation"]["platform"]
+
+    logger.info(f"Running on platform: {platform}")
+
     workflow_name = config.get("workflow_name")
     if not workflow_name:
         raise ValueError("Missing 'workflow_name' in config")

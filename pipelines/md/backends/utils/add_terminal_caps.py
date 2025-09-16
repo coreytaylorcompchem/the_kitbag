@@ -27,7 +27,8 @@ class CapTermini:
 
         io = PDBIO()
         io.set_structure(self.structure)
-        io.save(self.output_pdb, select=SelectAll())
+        with open(self.output_pdb, 'w') as f:
+            PDBFile.writeFile(fixer.topology, fixer.positions, f)
 
         return self.output_pdb
 
@@ -53,12 +54,13 @@ class CapTermini:
         res = Residue((' ', resseq, ' '), resname, '')
 
         for atom_name, coord, element in atoms[resname]:
-            # 🛡️ Ensure element is valid (1 or 2-letter symbol, uppercase)
             element = element.capitalize()
-            if not element or not isinstance(element, str):
-                raise ValueError(f"Invalid element '{element}' for atom '{atom_name}'")
 
-            atom = Atom(atom_name, coord, 1.0, 1.0, '', atom_name, 0, element=element)
+            if len(element) > 2 or not element.isalpha():
+                raise ValueError(f"Invalid element symbol: '{element}' for atom '{atom_name}'")
+
+            fullname = "{:<4}".format(atom_name)  # Ensure 4-character fullname
+            atom = Atom(atom_name, coord, 1.0, 1.0, ' ', fullname, 0, element=element)
             res.add(atom)
 
         return res

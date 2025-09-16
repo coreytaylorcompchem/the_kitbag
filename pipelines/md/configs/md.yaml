@@ -6,31 +6,24 @@ system:
   forcefield: ["amber14-all.xml", "amber14/tip3p.xml"]
   ionic_strength: 0.15
   box_padding: 1.0
-  add_terminal_caps: true
 
 simulation: 
-  platform: "CUDA"  # CPU, if you're crazy
-  add_missing_residues: true
-  add_missing_atoms: true
-  add_hydrogens: true
-  add_solvent: true
-  solvent_box: [6.0, 6.0, 6.0]  # in nanometers
-  ionic_strength: 0.15
+  platform: "CPU"  # CPU, if you're crazy. CUDA if you're sane.
   pH: 7.0
   timestep: 2.0  # fs
   temperature: 300  # K
-  friction: 1.0
+  # friction: 1.0
 
-heating:
-  n_steps: 6
+heating_and_equilibration:
+  num_heating_steps: 6
   target_temp: 300
-  steps_per_temp: 5000
-  restraint_schedule: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
-
-equilibration:
-  steps: 10000
+  steps_per_round: 100
+  restraint_strengths: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
 
 production:
-  length_ns: 1.0
-  output_dcd: "trajectory.dcd"
-  output_log: "log.txt"
+  length_ns: 1
+  output_trajectory: "output/trajectory.dcd"
+  output_logfile: "output/log.txt"
+
+output:
+  overwrite: true

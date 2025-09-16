@@ -2,6 +2,11 @@ from openmm.app import *
 from openmm import *
 from openmm.unit import *
 import os
+from openmm.unit import picoseconds
+
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class MDWorkflow:
     def __init__(self, backend, config):
@@ -18,6 +23,7 @@ class MDWorkflow:
         self.positions = self.backend.positions
 
     def setup_simulation(self):
+        logger.info(f"Setting up integrator.")
         self.integrator = LangevinIntegrator(
             self.config["simulation"]["temperature"]*kelvin,
             1.0/picosecond,
@@ -27,40 +33,92 @@ class MDWorkflow:
         self.simulation.context.setPositions(self.positions)
 
     def minimize(self):
+        logger.info(f"Performing initial minimisation.")
         self.simulation.minimizeEnergy()
 
     def heat_and_equilibrate(self):
-        num_steps = self.config["equilibration"]["num_heating_steps"]
-        increment = self.config["equilibration"]["heating_increment"]
-        restraints = self.config["equilibration"]["restraint_strengths"]
+    # Config params with defaults
+        heating_config = self.config.get("heating_and_equilibration", {})
+        num_steps = heating_config.get("num_heating_steps", 6)
+        heating_increment = heating_config.get("heating_increment", 298.15 / num_steps)  # Default to room temp / steps
+        restraints = heating_config.get("restraint_strengths", [5.0, 4.0, 3.0, 2.0, 1.0, 0.0])
+        steps_per_round = heating_config.get("steps_per_round", 5000)
+
+        # Pre-identify backbone atom indices for restraint
+        backbone_atoms = [atom.index for atom in self.topology.atoms() if atom.name in {"N", "CA", "C", "O"}]
+
+        logger.info(f"Setting up {num_steps} heating/equilibration steps.")
 
         for i in range(num_steps):
-            temp = increment * (i + 1)
-            k = restraints[i] if i < len(restraints) else 0
+            temp = heating_increment * (i + 1)
+            restraint_k = restraints[i] if i < len(restraints) else 0
+
+            logger.info(f"Heating step {i + 1}/{num_steps}: Temperature = {temp:.2f} K, Restraint strength = {restraint_k}")
 
             self.integrator.setTemperature(temp * kelvin)
 
-            if k > 0:
+            # Remove any existing restraint forces before adding new ones
+            # (Assuming only one CustomExternalForce per iteration)
+            for idx in reversed(range(self.system.getNumForces())):
+                force = self.system.getForce(idx)
+                if isinstance(force, CustomExternalForce):
+                    self.system.removeForce(idx)
+
+            if restraint_k > 0:
                 force = CustomExternalForce("k*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
                 force.addPerParticleParameter("x0")
                 force.addPerParticleParameter("y0")
                 force.addPerParticleParameter("z0")
-                force.addGlobalParameter("k", k)
-                for idx, atom in enumerate(self.topology.atoms()):
-                    pos = self.simulation.context.getState(getPositions=True).getPositions()[idx]
-                    force.addParticle(idx, [pos.x, pos.y, pos.z])
-                self.system.addForce(force)
+                force.addGlobalParameter("k", restraint_k)
 
-            self.simulation.step(5000)
+                # Get current positions
+                state = self.simulation.context.getState(getPositions=True)
+                positions = state.getPositions()
+
+                # Add backbone atoms to force
+                for atom_idx in backbone_atoms:
+                    pos = positions[atom_idx]
+                    force.addParticle(atom_idx, [pos.x, pos.y, pos.z])
+
+                self.system.addForce(force)
+                # Reinitialize context to update system forces
+                # Save current positions
+                positions = self.simulation.context.getState(getPositions=True).getPositions()
+
+                # Reinitialize context without arguments
+                self.simulation.context.reinitialize()
+
+                # Restore positions
+                self.simulation.context.setPositions(positions)
+
+            self.simulation.step(steps_per_round)
 
     def run_production(self):
-        ns = self.config["simulation"]["total_ns"]
-        steps = int(ns * self.config["simulation"]["steps_per_ns"])
+        ns = self.config["production"]["length_ns"]
+        timestep = self.integrator.getStepSize()  # Quantity with units
+        
+        # Convert timestep to nanoseconds as a float (no units)
+        timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0  # picoseconds -> nanoseconds as float
 
-        self.simulation.reporters.append(DCDReporter(self.config["output"]["trajectory"], 1000))
-        self.simulation.reporters.append(StateDataReporter(self.config["output"]["logfile"],
-                                                           1000, step=True, temperature=True,
-                                                           progress=True, remainingTime=True,
-                                                           speed=True, totalSteps=steps,
-                                                           separator='\t'))
-        self.simulation.step(steps)
+        steps_per_ns = int(1.0 / timestep_ns)
+        total_steps = int(ns * steps_per_ns)
+
+        output_trajectory = self.config["production"]["output_trajectory"]
+        output_logfile = self.config["production"]["output_logfile"]
+
+        # Ensure output directory exists
+        output_dir = os.path.dirname(output_trajectory)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+
+        self.simulation.reporters.append(DCDReporter(output_trajectory, 1000))
+        self.simulation.reporters.append(StateDataReporter(output_logfile,
+                                                        1000, step=True, temperature=True,
+                                                        progress=True, remainingTime=True,
+                                                        speed=True, totalSteps=total_steps,
+                                                        separator='\t'))
+
+        logger.info(f"Running Production stage for {ns} ns")
+
+        self.simulation.step(total_steps)
