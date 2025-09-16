@@ -1,4 +1,4 @@
-![The Kitbag logo](_images/the_kitbag4.jpg)
+![The Kitbag logo](_images/the_kitbag.jpg)
 
 Here's where all my end-to-end comp chem software pipelines live. Generally knitting together a bunch of stuff using Python. The aim is to make these able to run as independent pipelines or interoperate. Anyone who has ideas for how to best do that, drop me a message.
 
