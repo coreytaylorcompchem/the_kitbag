@@ -24,7 +24,7 @@ def main():
         "openmm": "pip install openmm",
         "rdkit": "conda install -c conda-forge rdkit",
         "openff.toolkit": "conda install -c conda-forge openff-toolkit",
-        "pdbfixer": "pip install pdbfixer",
+        "pdbfixer": "conda install pdbfixer",
         "tqdm": "pip install tqdm",
     }
 
