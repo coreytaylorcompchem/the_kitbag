@@ -3,8 +3,9 @@
 <!-- <img src="_images/the_kitbag.jpg" alt="The Kitbag logo" width="400" align="left" style="margin-right: 20px;" /> -->
 
 # The Kitbag
+## End-to-end and modular Python pipelines for computational chemistry
 
-Here's where all my end-to-end comp chem software pipelines live. Generally knitting together a bunch of stuff using Python. The aim is to make these able to run as independent pipelines or interoperate. Anyone who has ideas for how to best do that, drop me a message.
+Here's where all my end-to-end comp chem software pipelines live. Generally knitting together a bunch of stuff using Python, yamls and workflows. The aim is to make these able to run as independent pipelines or interoperate. Anyone who has ideas for how to best do that, drop me a message.
 
 ## What does / will it do?
 
