@@ -11,6 +11,14 @@ logger = setup_logger(
 )
 
 class UniDockBackend(BaseBackend):
+    supported_tasks = [
+        "standardise_ligand",
+        "generate_conformers",
+        "cluster_conformers",
+        "save_final_conformers",
+        "convert_to_pdbqt", 
+        "prepare_receptor_pdbqt",
+        "dock", ]
     def __init__(self, executable_path: str = "unidock", use_gpu: bool = True):
         super().__init__(executable_path=executable_path, use_gpu=use_gpu)
 
@@ -41,7 +49,7 @@ class UniDockBackend(BaseBackend):
 
         for i, conf_path in enumerate(conformer_paths):
             conf_path = Path(conf_path)
-            output_path = Path(config["output_dir"]) / f"{ligand['name']}_conf{i}_unidock.pdbqt"
+            output_path = Path(config["output_dir"]) / f"{ligand['name']}_conf{i}_docked.pdbqt"
 
             cmd = [
                 str(self.executable_path),

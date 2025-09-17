@@ -6,6 +6,9 @@ class BaseBackend(ABC):
         self.executable_path = Path(executable_path)
         self.use_gpu = use_gpu
         self.cache = {}
+    
+    def supports_task(self, task_name: str) -> bool:
+        return task_name in self.supported_tasks
 
     @abstractmethod
     def dock(self, ligand: dict, config: dict):

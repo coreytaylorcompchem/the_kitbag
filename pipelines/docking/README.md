@@ -25,16 +25,25 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 ```
 Available Backends:
+ - base
  - gnina
+ - unidock
 
 Available Tasks:
- - standardize_ligand: Prep: standardise ligand from SMILES.
- - generate_conformers: Prep: generate RDKit conformers.
- - cluster_conformers: Prep: cluster and select conformers.
- - optimize_with_xtb: Prep: optimise conformers using GFN1-xTB.
- - save_final_conformers: Prep: save final conformers to sdf.
- - convert_to_pdbqt: Prep: convert final conformers to PDBQT for docking.
- - dock: Docking: run docking.
+ - prepare_receptor_pdbqt: Prepare the receptor for docking. Format: pdbqt
+   ↳ Backends: gnina, unidock
+ - standardise_ligand: Prepare and generate 3D coords for each ligand.
+   ↳ Backends: gnina, unidock
+ - generate_conformers: Generate multiple feasible conformers from ligands.
+   ↳ Backends: gnina, unidock
+ - cluster_conformers: Cluster conformers by specified energy and RMSD criteria.
+   ↳ Backends: gnina, unidock
+ - save_final_conformers: Save conformers that meet energy and RMSD criteria.
+   ↳ Backends: gnina, unidock
+ - convert_to_pdbqt: Convert ligands to pdbqt for docking.
+   ↳ Backends: gnina, unidock
+ - dock: Dock with backend specified in yaml.
+   ↳ Backends: gnina, unidock
 
 Available Workflows:
  - constrained_docking: Prepare, dock and score with core constraints.
@@ -46,6 +55,6 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 ## TODO
 
-* Add more docking backends ([Uni-dock](https://github.com/dptech-corp/Uni-Dock) and ML-based backends like [Diffdock](https://github.com/gcorso/DiffDock) and [Equibind](https://github.com/HannesStark/EquiBind)).
+* Add ML-based docking backends like [Diffdock](https://github.com/gcorso/DiffDock) and [Equibind](https://github.com/HannesStark/EquiBind)).
 * Add other docking modes (constrained core, ensemble, etc.)
 * Run docking on multiple targets. 

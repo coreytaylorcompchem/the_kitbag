@@ -2,6 +2,7 @@ task: workflow
 workflow_name: vanilla_docking  # corresponds to workflows/vanilla_docking.py
 
 workflow:
+  - prepare_receptor_pdbqt
   - standardise_ligand
   - generate_conformers
   - cluster_conformers

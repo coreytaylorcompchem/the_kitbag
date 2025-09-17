@@ -5,7 +5,7 @@ from pathlib import Path
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from tqdm import tqdm
-from docking_task_registry import register_task
+from pipeline.docking_task_registry import register_task
 from pipeline.logger import setup_logger
 
 logger = setup_logger(
@@ -13,6 +13,46 @@ logger = setup_logger(
     debug_mode=False,
     simple_format=True
 )
+
+def get_protein_preparer(backend, config):
+    if "protein_preparer" not in backend.cache:
+        protein_path = Path(config["protein"]["pdb_path"])
+        backend.cache["protein_preparer"] = ProteinPreparer(pdb_path=protein_path)
+    return backend.cache["protein_preparer"]
+
+
+class ProteinPreparer:
+    def __init__(self, pdb_path: Path, name: str = "receptor", method: str = "autodocktools"):
+        self.pdb_path = Path(pdb_path)
+        self.name = name
+        self.method = method.lower()
+        self.pdbqt_path = None
+
+    def prepare(self, output_dir: Path):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        self.pdbqt_path = output_dir / f"{self.name}.pdbqt"
+
+        if self.pdbqt_path.exists():
+            logger.info(f"[Protein] Using existing receptor PDBQT at: {self.pdbqt_path}")
+            return self.pdbqt_path
+
+        logger.info(f"[Protein] Preparing receptor using Open Babel")
+
+        cmd = [
+            "obabel",
+            str(self.pdb_path),
+            "-O", str(self.pdbqt_path),
+            "-xr",  # Remove water
+            "--partialcharge", "gasteiger"
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"[Protein] Open Babel failed:\n{result.stderr}")
+            raise RuntimeError("Protein preparation failed.")
+
+        logger.info(f"[Protein] Receptor PDBQT saved at: {self.pdbqt_path}")
+        return self.pdbqt_path
 
 def get_ligand_preparer(backend, ligand):
     if "ligand_preparers" not in backend.cache:
@@ -165,22 +205,30 @@ class LigandPreparer:
 
         return pdbqt_paths
 
-# Tasks registration:
+# Task registration:
 
-@register_task("standardise_ligand")
+@register_task("prepare_receptor_pdbqt", description="Prepare the receptor for docking. Format: pdbqt")
+def prepare_receptor_pdbqt(backend, ligand, config):
+    preparer = get_protein_preparer(backend, config)
+    output_dir = Path(config.get("output_dir", "output"))
+    pdbqt_path = preparer.prepare(output_dir)
+
+    backend.cache["receptor_pdbqt"] = pdbqt_path
+
+@register_task("standardise_ligand", description="Prepare and generate 3D coords for each ligand.")
 def standardise_ligand(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     preparer.standardise()
     logger.info(f"Standardised ligand {ligand['name']}.")
 
-@register_task("generate_conformers")
+@register_task("generate_conformers", description="Generate multiple feasible conformers from ligands.")
 def generate_conformers(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     n_confs = config.get("docking", {}).get("initial_n_conformers", 250)
     preparer.generate_conformers(n_confs=n_confs)
     logger.info(f"Generated {n_confs} conformers for ligand {ligand['name']}.")
 
-@register_task("cluster_conformers")
+@register_task("cluster_conformers", description="Cluster conformers by specified energy and RMSD criteria.")
 def cluster_conformers(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     final_n = config.get("docking", {}).get("final_n_conformers", 5)
@@ -188,7 +236,7 @@ def cluster_conformers(backend, ligand, config):
     energy_gap = config.get("docking", {}).get("min_energy_gap", 0.5)
     preparer.cluster_and_select(final_n=final_n, rmsd_threshold=rmsd, min_energy_gap=energy_gap)
 
-@register_task("save_final_conformers")
+@register_task("save_final_conformers", description="Save conformers that meet energy and RMSD criteria.")
 def save_final_conformers(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     out_dir = Path(config.get("output_dir", "output"))
@@ -199,7 +247,7 @@ def save_final_conformers(backend, ligand, config):
         writer.close()
     logger.info(f"Saved final conformers for ligand {ligand['name']}.")
 
-@register_task("convert_to_pdbqt")
+@register_task("convert_to_pdbqt", description="Convert ligands to pdbqt for docking.")
 def convert_to_pdbqt(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     output_dir = Path(config.get("output_dir", "output"))
@@ -209,7 +257,7 @@ def convert_to_pdbqt(backend, ligand, config):
     ligand['pdbqt_paths'] = [str(p) for p in pdbqt_paths]
     logger.info(f"Converted conformers to PDBQT for ligand: {ligand['name']}.")
 
-@register_task("dock")
+@register_task("dock", description="Dock with backend specified in yaml.")
 def dock(backend, ligand, config):
     pdbqt_paths = ligand.get("pdbqt_paths", [])
     if not pdbqt_paths:

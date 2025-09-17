@@ -12,6 +12,14 @@ logger = setup_logger(
 )
 
 class GninaBackend(BaseBackend):
+    supported_tasks = [
+        "standardise_ligand",
+        "generate_conformers",
+        "cluster_conformers",
+        "save_final_conformers",
+        "convert_to_pdbqt", 
+        "prepare_receptor_pdbqt",
+        "dock", ]
     def __init__(self, executable_path: str = "gnina", use_gpu: bool = True):
         """
         Initialize Gnina backend.
@@ -36,7 +44,7 @@ class GninaBackend(BaseBackend):
         - output_dir from config['output_dir']
         """
 
-        # Defensive check: fail fast if someone passed unexpected args
+        # Quick check: fail fast if someone passed unexpected args
         if kwargs:
             raise TypeError(f"[FATAL] GninaBackend.dock() got unexpected keyword arguments: {', '.join(kwargs.keys())}")
 
@@ -68,7 +76,7 @@ class GninaBackend(BaseBackend):
             "--size_y", str(size[1]),
             "--size_z", str(size[2]),
             "-o", str(output_path),
-            "--num_modes", "20",
+            "--num_modes", "1   0",
             "--exhaustiveness", "8"
         ]
 
