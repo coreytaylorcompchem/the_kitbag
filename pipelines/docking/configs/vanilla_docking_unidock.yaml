@@ -1,0 +1,41 @@
+task: workflow
+workflow_name: vanilla_docking  # corresponds to workflows/vanilla_docking.py
+
+workflow:
+  - standardise_ligand
+  - generate_conformers
+  - cluster_conformers
+  - save_final_conformers
+  - convert_to_pdbqt
+  - dock
+
+backend:
+  name: unidock
+  executable_path: "/usr/local/bin/unidock"
+  use_gpu: true
+
+protein:
+  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
+  pH: 7.4
+
+generate_ligands_from_list: true
+ligands_txt: "ligs.txt"    # Only used if generate_ligands_from_list is true
+# ligands_csv: "ligands.csv"         # Will be created if needed, or used directly if list is false
+
+docking:
+  output_dir: "output_unidock"
+  docking_mode: ensemble # or 'lowest_energy'
+  final_n_conformers: 2
+  rmsd_threshold: 0.75
+  min_energy_gap: 0.5  # in eV
+  # Option 1: Explicit center
+  # center: [10.5, 22.1, 15.7]
+  # size: [15.0, 15.0, 15.0]
+
+  # Option 2: Reference ligand path
+  # ref_ligand_path: "/path/to/reference_ligand.sdf"
+  # size: [15.0, 15.0, 15.0]
+
+  # Option 3: Use crystallized ligand
+  use_crystal_ligand: true
+  size: [15.0, 15.0, 15.0]

@@ -2,53 +2,63 @@ import subprocess
 from pathlib import Path
 from typing import Tuple, Optional
 
+from backends.base import BaseBackend
+from pipeline.logger import setup_logger
 
-class GninaBackend:
-    def __init__(self, gnina_executable: str = "gnina", use_gpu: bool = True):
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
+class GninaBackend(BaseBackend):
+    def __init__(self, executable_path: str = "gnina", use_gpu: bool = True):
         """
         Initialize Gnina backend.
 
         Parameters:
         -----------
-        gnina_executable : str
+        executable_path : str
             Path to gnina binary.
         use_gpu : bool
             If False, adds --cpu flag to force CPU mode.
         """
-        self.gnina_executable = gnina_executable
-        self.use_gpu = use_gpu
-        self.cache = {}
+        super().__init__(executable_path=executable_path, use_gpu=use_gpu)
 
-    def dock(
-        self,
-        receptor_path: Path,
-        ligand_path: Path,
-        output_path: Path,
-        center: Tuple[float, float, float],
-        size: Tuple[float, float, float],
-        extra_args: Optional[list] = None
-    ):
+    def dock(self, ligand: dict, config: dict, **kwargs):
         """
-        Run docking using gnina.
+        Run docking using GNINA for a single ligand.
 
-        Parameters:
-        -----------
-        receptor_path : Path
-            Path to the prepared receptor PDBQT file.
-        ligand_path : Path
-            Path to the prepared ligand PDBQT file.
-        output_path : Path
-            Path to write the docking result (usually SDF).
-        center : Tuple[float, float, float]
-            Docking box center coordinates (x, y, z).
-        size : Tuple[float, float, float]
-            Docking box dimensions (x, y, z).
-        extra_args : list, optional
-            Additional arguments to pass to gnina command.
+        Expects:
+        - receptor_pdbqt: in backend.cache["receptor_pdbqt"]
+        - ligand_pdbqt: in ligand["pdbqt_path"]
+        - docking center and size in config['docking']['center'] and ['size']
+        - output_dir from config['output_dir']
         """
 
+        # Defensive check: fail fast if someone passed unexpected args
+        if kwargs:
+            raise TypeError(f"[FATAL] GninaBackend.dock() got unexpected keyword arguments: {', '.join(kwargs.keys())}")
+
+        # Required paths
+        receptor_path = self.cache.get("receptor_pdbqt")
+        if receptor_path is None:
+            raise ValueError("Receptor PDBQT not set in backend.cache['receptor_pdbqt'].")
+
+        ligand_path = ligand.get("pdbqt_path")
+        if ligand_path is None:
+            raise ValueError(f"Missing 'pdbqt_path' for ligand '{ligand['name']}'.")
+
+        output_path = Path(config["output_dir"]) / f"{ligand['name']}_docked.sdf"
+
+        # Docking box
+        docking_cfg = config["docking"]
+        center: Tuple[float, float, float] = docking_cfg["center"]
+        size: Tuple[float, float, float] = docking_cfg["size"]
+
+        # Build GNINA command
         cmd = [
-            self.gnina_executable,
+            str(self.executable_path),
             "-r", str(receptor_path),
             "-l", str(ligand_path),
             "--center_x", str(center[0]),
@@ -62,20 +72,22 @@ class GninaBackend:
             "--exhaustiveness", "8"
         ]
 
-        # Use --cpu only if GPU is explicitly disabled
         if not self.use_gpu:
             cmd.append("--cpu")
 
+        extra_args: Optional[list] = docking_cfg.get("extra_args")
         if extra_args:
             cmd.extend(extra_args)
 
-        print(f"[INFO] Running gnina command:\n{' '.join(cmd)}")
+        # Run docking
+        logger.info(f"Running GNINA for ligand: {ligand['name']}")
+        print(f"Command: {' '.join(cmd)}")
 
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode != 0:
-            print(f"[ERROR] GNINA failed:\n{result.stderr}")
-            raise RuntimeError(f"GNINA docking failed. Check logs above.")
+            logger.info(f"[ERROR] GNINA failed:\n{result.stderr}")
+            raise RuntimeError(f"GNINA docking failed for {ligand['name']}")
 
-        print(f"[INFO] Docking completed successfully. Output: {output_path}")
+        logger.info(f"Docking completed for {ligand['name']}. Output: {output_path}")
         return output_path

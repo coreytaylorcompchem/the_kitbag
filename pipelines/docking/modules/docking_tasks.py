@@ -1,110 +1,266 @@
+import subprocess
+import tempfile
+import shutil
 from pathlib import Path
-from modules.vanilla_docking import LigandPreparer
-from docking_task_registry import register_task
-
 from rdkit import Chem
+from rdkit.Chem import AllChem
 from tqdm import tqdm
+from docking_task_registry import register_task
+from pipeline.logger import setup_logger
 
-@register_task("standardize_ligand", description="Prep: standardise ligand from SMILES.")
-def standardize_ligand(backend, ligand_info, config):
-    lp = LigandPreparer(smiles=ligand_info['smiles'], name=ligand_info['name'])
-    lp.standardize()
-    backend.cache[ligand_info['name']] = lp
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
 
-@register_task("generate_conformers", description="Prep: generate RDKit conformers.")
-def generate_conformers(backend, ligand_info, config):
-    lp = backend.cache.get(ligand_info['name'])
-    if not lp:
-        raise ValueError("Ligand not found in cache. Did you run 'standardize_ligand'?")
-    n_confs = config.get("n_conformers", 250)
-    lp.generate_conformers(n_confs=n_confs)
+def get_ligand_preparer(backend, ligand):
+    if "ligand_preparers" not in backend.cache:
+        backend.cache["ligand_preparers"] = {}
 
-@register_task("cluster_conformers", description="Prep: cluster and select conformers.")
-def cluster_conformers(backend, ligand_info, config):
-    lp = backend.cache.get(ligand_info['name'])
-    if not lp:
-        raise ValueError("Ligand not found in cache.")
-
-    docking_cfg = config.get("docking", {})
-    final_n = docking_cfg.get("final_n_conformers", 5)
-    rmsd_thresh = docking_cfg.get("rmsd_threshold", 0.75)
-    min_gap = docking_cfg.get("min_energy_gap", 0.5)
-
-    lp.cluster_and_select(
-        final_n=final_n,
-        rmsd_threshold=rmsd_thresh,
-        min_energy_gap=min_gap
-    )
-
-@register_task("optimize_with_xtb", description="Prep: optimise conformers using GFN1-xTB.")
-def optimize_with_xtb(backend, ligand_info, config):
-    lp = backend.cache.get(ligand_info['name'])
-    if not lp:
-        raise ValueError("Ligand not found in cache.")
-    output_dir = Path(config['output_dir'])
-    output_dir.mkdir(exist_ok=True, parents=True)
-    lp.optimize_with_xtb(output_dir=output_dir)
-
-@register_task("save_final_conformers", description="Prep: save final conformers to sdf.")
-def save_final_conformers(backend, ligand_info, config):
-    lp = backend.cache.get(ligand_info['name'])
-    if not lp:
-        raise ValueError("Ligand not found in cache.")
-    output_dir = Path(config['output_dir'])
-    sdf_path = lp.save_final_conformers(output_dir)
-    backend.cache[f"{ligand_info['name']}_sdf_path"] = sdf_path
-
-@register_task("convert_to_pdbqt", description="Prep: convert final conformers to PDBQT for docking.")
-def convert_to_pdbqt(backend, ligand_info, config):
-    lp = backend.cache.get(ligand_info['name'])
-    if not lp:
-        raise ValueError("Ligand not found in cache.")
-    
-    output_dir = Path(config['output_dir'])
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    docking_mode = config.get("docking", {}).get("docking_mode", "ensemble")
-
-    # Use the mode from config, and let lp handle all file creation
-    pdbqt_paths = lp.convert_to_pdbqt(output_dir=output_dir, mode=docking_mode)
-
-    # Cache the generated PDBQT paths
-    backend.cache[f"{ligand_info['name']}_pdbqt_path"] = pdbqt_paths
-
-    print(f"[INFO] Converted {len(pdbqt_paths)} conformers to PDBQT for {ligand_info['name']}")
-
-
-@register_task("dock", description="Docking: run docking.", supported_backends=["gnina"])
-def dock(backend, ligand_info, config):
-    output_dir = Path(config['output_dir'])
-    ligand_name = ligand_info['name']
-    
-    pdbqt_paths = backend.cache.get(f"{ligand_name}_pdbqt_path")
-    if pdbqt_paths is None:
-        raise ValueError(f"PDBQT path not found for ligand '{ligand_name}'. Did you run 'convert_to_pdbqt'?")
-
-    if not isinstance(pdbqt_paths, list):
-        pdbqt_paths = [pdbqt_paths]  # Backward compatibility
-
-    receptor_pdbqt = backend.cache.get("receptor_pdbqt")
-    if receptor_pdbqt is None:
-        raise ValueError("Receptor PDBQT path not found in backend cache.")
-
-    docking_cfg = config.get("docking", {})
-    docking_mode = docking_cfg.get("docking_mode", "ensemble")
-
-    if 'center' not in docking_cfg or 'size' not in docking_cfg:
-        raise ValueError("Docking 'center' and 'size' must be specified in config under 'docking'.")
-
-    center = tuple(docking_cfg['center'])
-    size = tuple(docking_cfg['size'])
-
-    for i, pdbqt_path in enumerate(tqdm(pdbqt_paths, desc=f"[GNINA] Docking {ligand_name}", unit="conf")):
-        output_path = output_dir / f"{ligand_name}_conf{i}_docked.sdf"
-        backend.dock(
-            receptor_path=receptor_pdbqt,
-            ligand_path=pdbqt_path,
-            output_path=output_path,
-            center=center,
-            size=size
+    if ligand["name"] not in backend.cache["ligand_preparers"]:
+        backend.cache["ligand_preparers"][ligand["name"]] = LigandPreparer(
+            smiles=ligand["smiles"], name=ligand["name"]
         )
+    return backend.cache["ligand_preparers"][ligand["name"]]
+
+class LigandPreparer:
+    def __init__(self, smiles: str, name: str, xtb_path: str = "xtb"):
+        self.smiles = smiles
+        self.name = name
+        self.xtb_path = xtb_path
+        self.mol = None
+        self.conformers = []
+        self.conformer_energies = []
+
+    def standardise(self):
+        mol = Chem.MolFromSmiles(self.smiles)
+        if mol is None:
+            raise ValueError(f"Invalid SMILES: {self.smiles}")
+        self.mol = Chem.AddHs(mol)
+
+    def generate_conformers(self, n_confs: int = 250):
+        if self.mol is None:
+            raise RuntimeError("Molecule must be standardised before generating conformers.")
+
+        params = AllChem.ETKDGv3()
+        ids = AllChem.EmbedMultipleConfs(self.mol, numConfs=n_confs, params=params)
+
+        results = AllChem.MMFFOptimizeMoleculeConfs(self.mol)
+        self.conformer_energies = [(conf_id, result[1]) for conf_id, result in zip(ids, results)]
+        self.conformers = [x[0] for x in self.conformer_energies]
+
+    def get_lowest_energy_conformer(self):
+        if not self.conformer_energies:
+            raise RuntimeError("No conformer energies available.")
+        return min(self.conformer_energies, key=lambda x: x[1])[0]
+
+    def cluster_and_select(self, final_n: int = 5, rmsd_threshold: float = 0.75, min_energy_gap: float = 0.5):
+        if not self.conformers:
+            raise RuntimeError("No conformers generated. Run generate_conformers() first.")
+
+        rmslist = AllChem.GetConformerRMSMatrix(self.mol, prealigned=False)
+        clusters = [[0]]
+
+        for i in range(1, len(self.conformers)):
+            added = False
+            for cluster in clusters:
+                rmsds = [rmslist[min(i, j) * (max(i, j) - 1) // 2] for j in cluster]
+                if all(r < rmsd_threshold for r in rmsds):
+                    cluster.append(i)
+                    added = True
+                    break
+            if not added:
+                clusters.append([i])
+
+        logger.info(f"Found {len(clusters)} conformer clusters at RMSD threshold {rmsd_threshold}")
+
+        # Use MMFF energies for clustering selection
+        energies = [AllChem.MMFFGetMoleculeForceField(self.mol, AllChem.MMFFGetMoleculeProperties(self.mol)).CalcEnergy() for _ in self.conformers]
+
+        selected = []
+        used = set()
+        for cluster in clusters:
+            sorted_cluster = sorted(cluster, key=lambda idx: energies[idx])
+            for idx in sorted_cluster:
+                if all(abs(energies[idx] - energies[u]) >= min_energy_gap for u in used):
+                    selected.append(idx)
+                    used.add(idx)
+                    break
+            if len(selected) >= final_n:
+                break
+
+        self.conformers = selected
+        logger.info(f"Selected {len(selected)} conformers based on energy and RMSD")
+        for i, conf_id in enumerate(self.conformers):
+            logger.info(f"  - Conf {conf_id:3d}: Energy = {energies[conf_id]:.4f}")
+
+    def optimize_with_xtb(self, output_dir: Path):
+        self.conformer_energies = []
+
+        for idx, conf_id in enumerate(tqdm(self.conformers, desc=f"[xTB] Optimizing {self.name}", unit="conf")):
+            mol_block = Chem.MolToMolBlock(self.mol, confId=conf_id)
+            temp_dir = tempfile.mkdtemp()
+            mol_file = Path(temp_dir) / "input.mol"
+
+            with open(mol_file, 'w') as f:
+                f.write(mol_block)
+
+            cmd = [self.xtb_path, str(mol_file), "--opt", "--gfn", "1", "--chrg", "0", "--uhf", "0"]
+            subprocess.run(cmd, cwd=temp_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            xtb_xyz = Path(temp_dir) / "xtbopt.xyz"
+            xtb_log = Path(temp_dir) / "xtbopt.log"
+
+            if xtb_xyz.exists():
+                dest = output_dir / f"{self.name}_conf{idx}.xyz"
+                shutil.copy(xtb_xyz, dest)
+
+            energy = None
+            if xtb_log.exists():
+                with open(xtb_log, 'r') as f:
+                    for line in f:
+                        if "TOTAL ENERGY" in line.upper():
+                            try:
+                                energy = float(line.strip().split()[-1])
+                            except Exception:
+                                pass
+
+            if energy is None:
+                logger.warning(f"Could not read energy for conformer {conf_id}")
+
+            self.conformer_energies.append((conf_id, energy))
+            shutil.rmtree(temp_dir)
+
+        # Sort conformers by energy after optimization
+        self.conformer_energies.sort(key=lambda x: (x[1] if x[1] is not None else float('inf')))
+        self.conformers = [conf_id for conf_id, _ in self.conformer_energies]
+
+    def convert_to_pdbqt(self, output_dir: Path, mode: str = "ensemble"):
+        if not self.conformers:
+            raise RuntimeError("No conformers available to convert. Run generation and selection first.")
+
+        pdbqt_paths = []
+
+        if mode == "ensemble":
+            conformers_to_convert = self.conformers
+        elif mode == "lowest_energy":
+            conformers_to_convert = [self.get_lowest_energy_conformer()]
+        else:
+            raise ValueError(f"Unknown docking mode: {mode}")
+
+        for idx, conf_id in enumerate(conformers_to_convert):
+            sdf_path = output_dir / f"{self.name}_conf{idx}.sdf"
+            pdbqt_path = output_dir / f"{self.name}_conf{idx}.pdbqt"
+
+            writer = Chem.SDWriter(str(sdf_path))
+            writer.write(self.mol, confId=conf_id)
+            writer.close()
+
+            # Convert using Open Babel with Gasteiger charges
+            cmd = ["obabel", str(sdf_path), "-O", str(pdbqt_path), "--partialcharge", "gasteiger"]
+            subprocess.run(cmd, check=True)
+
+            pdbqt_paths.append(pdbqt_path)
+
+        return pdbqt_paths
+
+# Tasks registration:
+
+@register_task("standardise_ligand")
+def standardise_ligand(backend, ligand, config):
+    preparer = get_ligand_preparer(backend, ligand)
+    preparer.standardise()
+    logger.info(f"Standardised ligand {ligand['name']}.")
+
+@register_task("generate_conformers")
+def generate_conformers(backend, ligand, config):
+    preparer = get_ligand_preparer(backend, ligand)
+    n_confs = config.get("docking", {}).get("initial_n_conformers", 250)
+    preparer.generate_conformers(n_confs=n_confs)
+    logger.info(f"Generated {n_confs} conformers for ligand {ligand['name']}.")
+
+@register_task("cluster_conformers")
+def cluster_conformers(backend, ligand, config):
+    preparer = get_ligand_preparer(backend, ligand)
+    final_n = config.get("docking", {}).get("final_n_conformers", 5)
+    rmsd = config.get("docking", {}).get("rmsd_threshold", 0.75)
+    energy_gap = config.get("docking", {}).get("min_energy_gap", 0.5)
+    preparer.cluster_and_select(final_n=final_n, rmsd_threshold=rmsd, min_energy_gap=energy_gap)
+
+@register_task("save_final_conformers")
+def save_final_conformers(backend, ligand, config):
+    preparer = get_ligand_preparer(backend, ligand)
+    out_dir = Path(config.get("output_dir", "output"))
+    for idx, conf_id in enumerate(preparer.conformers):
+        sdf_path = out_dir / f"{ligand['name']}_final_conf{idx}.sdf"
+        writer = Chem.SDWriter(str(sdf_path))
+        writer.write(preparer.mol, confId=conf_id)
+        writer.close()
+    logger.info(f"Saved final conformers for ligand {ligand['name']}.")
+
+@register_task("convert_to_pdbqt")
+def convert_to_pdbqt(backend, ligand, config):
+    preparer = get_ligand_preparer(backend, ligand)
+    output_dir = Path(config.get("output_dir", "output"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    mode = config.get("docking", {}).get("mode", "ensemble")
+    pdbqt_paths = preparer.convert_to_pdbqt(output_dir, mode=mode)
+    ligand['pdbqt_paths'] = [str(p) for p in pdbqt_paths]
+    logger.info(f"Converted conformers to PDBQT for ligand: {ligand['name']}.")
+
+@register_task("dock")
+def dock(backend, ligand, config):
+    pdbqt_paths = ligand.get("pdbqt_paths", [])
+    if not pdbqt_paths:
+        logger.warning(f"No PDBQT paths found for ligand {ligand['name']}, skipping docking.")
+        return
+
+    docking_mode = config.get("docking", {}).get("docking_mode", "ensemble").lower()
+
+    if docking_mode == "lowest_energy":
+        # Use only the first (lowest energy) conformer
+        pdbqt_path = pdbqt_paths[0]
+        ligand["pdbqt_path"] = pdbqt_path
+
+        try:
+            output_path = backend.dock(ligand, config)
+
+            ligand["docking_results"] = [{
+                "conformer_idx": 0,
+                "pdbqt_path": pdbqt_path,
+                "docked_sdf": str(output_path)
+            }]
+            logger.info(f"[INFO] Docked lowest-energy conformer for ligand {ligand['name']}.")
+
+        except Exception as e:
+            logger.info(f"[ERROR] Docking failed for ligand {ligand['name']}: {e}")
+            ligand["docking_results"] = []
+
+    elif docking_mode == "ensemble":
+        # Dock all conformers individually
+        docking_results = []
+
+        logger.info(f"Docking ligand {ligand['name']} with {len(pdbqt_paths)} conformers...")
+
+        for idx, pdbqt_path in enumerate(pdbqt_paths):
+            ligand["pdbqt_path"] = pdbqt_path
+
+            try:
+                output_path = backend.dock(ligand, config)
+
+                docking_results.append({
+                    "conformer_idx": idx,
+                    "pdbqt_path": pdbqt_path,
+                    "docked_sdf": str(output_path)
+                })
+
+            except Exception as e:
+                print(f"[ERROR] Docking failed for ligand {ligand['name']} conformer {idx}: {e}")
+
+        ligand["docking_results"] = docking_results
+        logger.info(f"Docked ligand {ligand['name']} with {len(docking_results)} successful results.")
+
+    else:
+        raise ValueError(f"[ERROR] Unknown docking_mode: {docking_mode}")
+

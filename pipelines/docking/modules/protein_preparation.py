@@ -1,6 +1,13 @@
 import subprocess
 from pathlib import Path
 from openbabel import pybel
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
 
 class ProteinPreparer:
     def __init__(self, pdb_path: Path, work_dir: Path, pH: float = 7.4):
@@ -40,10 +47,10 @@ class ProteinPreparer:
             ]
             subprocess.run(cmd, check=True)
             self.protonated_pdb = protonated
-            print("[INFO] Protonation with PROPKA + pdb2pqr succeeded.")
+            logger.info(f"Protonation with PROPKA + pdb2pqr succeeded.")
             return True
         except Exception as e:
-            print(f"[WARNING] PROPKA protonation failed, falling back to Open Babel: {e}")
+            logger.warning(f"PROPKA protonation failed, falling back to Open Babel: {e}")
             return False
 
     def fallback_protonation_openbabel(self):

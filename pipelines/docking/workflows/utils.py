@@ -1,6 +1,13 @@
 import csv
 from pathlib import Path
 from rdkit import Chem
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
 
 # --------------------------
 # Utility: CSV Generation
@@ -18,7 +25,7 @@ def generate_ligands_csv_from_txt(txt_path: Path, csv_path: Path):
         for i, smi in enumerate(smiles_list, start=1):
             writer.writerow([f"ligand{i}", smi])
 
-    print(f"[INFO] Generated ligands.csv at {csv_path} with {len(smiles_list)} ligands.")
+    logger.info(f"Generated ligands.csv at {csv_path} with {len(smiles_list)} ligands.")
 
 # --------------------------
 # Utility: CSV Validation
@@ -97,4 +104,4 @@ def validate_config(config, required_fields):
             missing_fields.append(field)
     
     if missing_fields:
-        print(f"[WARNING] Required config fields are missing: {missing_fields}")
+        logger.warning(f"Required config fields are missing: {missing_fields}")

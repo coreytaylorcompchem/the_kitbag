@@ -8,6 +8,14 @@ from rdkit.ML.Cluster import Butina
 import numpy as np
 from tqdm import tqdm
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
+
 class LigandPreparer:
     def __init__(self, smiles: str, name: str, xtb_path: str = "xtb"):
         self.smiles = smiles
@@ -16,7 +24,7 @@ class LigandPreparer:
         self.mol = None
         self.conformers = []
 
-    def standardize(self):
+    def standardise(self):
         mol = Chem.MolFromSmiles(self.smiles)
         if mol is None:
             raise ValueError(f"Invalid SMILES: {self.smiles}")
@@ -24,7 +32,7 @@ class LigandPreparer:
 
     def generate_conformers(self, n_confs: int = 250):
         if self.mol is None:
-            raise RuntimeError("Molecule must be standardized before generating conformers.")
+            raise RuntimeError("Molecule must be standardised before generating conformers.")
 
         params = AllChem.ETKDGv3()
         ids = AllChem.EmbedMultipleConfs(self.mol, numConfs=n_confs, params=params)
@@ -64,7 +72,7 @@ class LigandPreparer:
             if not added:
                 clusters.append([i])
 
-        print(f"[INFO] Found {len(clusters)} conformer clusters at RMSD threshold {rmsd_threshold}")
+        logger.info(f"Found {len(clusters)} conformer clusters at RMSD threshold {rmsd_threshold}")
 
         # For each cluster, pick the lowest energy conformer (fake energy here for demo)
         selected = []
@@ -82,7 +90,7 @@ class LigandPreparer:
                 break
 
         self.conformers = selected
-        print(f"[INFO] Selected {len(selected)} conformers based on energy and RMSD")
+        logger.info(f"Selected {len(selected)} conformers based on energy and RMSD")
         for i, conf_id in enumerate(self.conformers):
             print(f"  - Conf {conf_id:3d}: Energy = {energies[conf_id]:.4f}")
 
@@ -124,7 +132,7 @@ class LigandPreparer:
                                 pass
 
             if energy is None:
-                print(f"[WARNING] Energy not found for conf {conf_id}, skipping.")
+                logger.warning(f"Energy not found for conf {conf_id}, skipping.")
             else:
                 self.conformer_energies.append((conf_id, energy))
 
@@ -155,38 +163,26 @@ class LigandPreparer:
             List[Path]: Paths to generated PDBQT files.
         """
         pdbqt_paths = []
-
         if not self.conformers:
             raise RuntimeError("No conformers selected. Run conformer generation and selection first.")
 
-        # Determine which conformers to convert
         if mode == "ensemble":
             conformers_to_process = self.conformers
-
         elif mode == "lowest_energy":
             conformers_to_process = [self.get_lowest_energy_conformer()]
-
         else:
-            raise ValueError(f"Unknown docking mode: '{mode}' (expected 'ensemble' or 'lowest_energy')")
+            raise ValueError(f"Unknown docking mode: '{mode}'")
 
         for idx, conf_id in enumerate(conformers_to_process):
             sdf_path = output_dir / f"{self.name}_conf{idx}.sdf"
             pdbqt_path = output_dir / f"{self.name}_conf{idx}.pdbqt"
 
-            # Save the conformer as an SDF file
             writer = Chem.SDWriter(str(sdf_path))
             writer.write(self.mol, confId=conf_id)
             writer.close()
 
-            # Convert to PDBQT using Open Babel
-            cmd = [
-                "obabel",
-                str(sdf_path),
-                "-O", str(pdbqt_path),
-                "--partialcharge", "gasteiger"
-            ]
+            cmd = ["obabel", str(sdf_path), "-O", str(pdbqt_path), "--partialcharge", "gasteiger"]
             subprocess.run(cmd, check=True)
-
             pdbqt_paths.append(pdbqt_path)
 
         return pdbqt_paths

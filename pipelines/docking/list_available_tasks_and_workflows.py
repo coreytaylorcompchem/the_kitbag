@@ -1,12 +1,12 @@
 from modules import load_all_tasks
 from workflows import load_all_workflows, list_workflows, get_workflow_metadata
-from backends import load_all_backends, list_backends
+from backends import discover_backends, list_backends
 from docking_task_registry import list_tasks, get_task_metadata
 
 def main():
     load_all_tasks()
     load_all_workflows()
-    load_all_backends()
+    discover_backends()
 
     print("Available Backends:")
     for backend in list_backends():
@@ -18,7 +18,7 @@ def main():
         desc = meta.get('description', '')
         supported = ', '.join(meta.get('supported_backends', []))
         print(f" - {task}: {desc}")
-        #print(f"   ↳ Backends: {supported or 'None'}")
+        # print(f"   ↳ Backends: {supported or 'None'}")
 
     print("\nAvailable Workflows:")
     for wf in list_workflows():
