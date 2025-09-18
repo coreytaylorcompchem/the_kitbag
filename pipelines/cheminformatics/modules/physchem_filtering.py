@@ -6,7 +6,11 @@ from pipeline.logger import setup_logger
 from pathlib import Path
 import pandas as pd
 
-logger = setup_logger(__name__)
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
 
 MANDATORY_KEYS = ["mw", "hbd", "hba"]
 OPTIONAL_KEYS = {"logp", "rotatable_bonds", "tpsa", "qed", "stereocenters"}
@@ -53,6 +57,74 @@ def generate_conformer(mol, max_attempts=10):
     return None
 
 
+@register_task("basic_lipinski_filtering", description="Basic Lipinski Rule of 5 filtering")
+def basic_lipinski(config, data=None):
+    input_file = config.get("input_file")
+    if input_file is None:
+        raise ValueError("No input_file specified in config")
+    input_path = Path(input_file)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input file does not exist: {input_file}")
+
+    df = pd.read_csv(input_file)
+    if "smiles" not in df.columns:
+        raise ValueError("Input CSV must contain a 'smiles' column.")
+
+    accepted_rows = []
+
+    # Lipinski cutoffs - can override via config.basic_lipinski.{key}_cutoff
+    mw_cutoff = config.get("basic_lipinski", {}).get("mw_cutoff", 500)
+    hbd_cutoff = config.get("basic_lipinski", {}).get("hbd_cutoff", 5)
+    hba_cutoff = config.get("basic_lipinski", {}).get("hba_cutoff", 10)
+    logp_cutoff = config.get("basic_lipinski", {}).get("logp_cutoff", 5.0)
+
+    for idx, row in df.iterrows():
+        smi = row.get("smiles")
+        if not smi or pd.isna(smi):
+            continue
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            logger.debug(f"Failed to parse SMILES: {smi}")
+            continue
+
+        mw = Descriptors.MolWt(mol)
+        hbd = Descriptors.NumHDonors(mol)
+        hba = Descriptors.NumHAcceptors(mol)
+        logp = Descriptors.MolLogP(mol)
+
+        if mw <= mw_cutoff and hbd <= hbd_cutoff and hba <= hba_cutoff and logp <= logp_cutoff:
+            accepted_rows.append(row.to_dict())
+
+    if not accepted_rows:
+        logger.debug("No molecules in this batch passed filters/conformer generation.")
+        empty_df = pd.DataFrame(columns=["smiles"] + MANDATORY_KEYS + list(OPTIONAL_KEYS))
+        return (Path(input_file).stem, empty_df)
+
+    filtered_df = pd.DataFrame(accepted_rows)
+
+    # --- New: Canonicalize SMILES ---
+    def canonicalize_smi(smi):
+        try:
+            mol = Chem.MolFromSmiles(smi)
+            if mol:
+                return Chem.MolToSmiles(mol, canonical=True)
+        except Exception:
+            pass
+        return None
+
+    filtered_df["smiles"] = filtered_df["smiles"].astype(str).str.strip()
+    filtered_df["smiles"] = filtered_df["smiles"].apply(canonicalize_smi)
+    filtered_df = filtered_df[filtered_df["smiles"].notna()].reset_index(drop=True)
+    # ------------------------------
+
+    logger.debug(f"Number of molecules before filtering: {df.shape[0]}")
+    logger.debug(f"Number of molecules after filtering: {filtered_df.shape[0]}")
+
+    logger.debug(f"basic_lipinski_filtering: {len(filtered_df)} molecules passed filters")
+
+    return (input_path.stem, filtered_df)
+
+
 @register_task("physchem_filtering", description="Physchem filtering with mandatory and optional cutoffs + conformer generation")
 def physchem_filtering(config, data=None):
     input_file = config.get("input_file")
@@ -65,70 +137,73 @@ def physchem_filtering(config, data=None):
     df = pd.read_csv(input_file)
     if "smiles" not in df.columns:
         raise ValueError("Input CSV must contain a 'smiles' column.")
-    smiles_list = df["smiles"].dropna().unique().tolist()
-    logger.debug(f"[physchem_filtering] Loaded {len(smiles_list)} SMILES")
 
-    # Extract cutoff configs - keys and default values
-    mandatory_cutoffs = {
-        key: config.get("basic_lipinski", {}).get(f"{key}_cutoff", {
-            "mw": 500,
-            "logp": 5.0,
-            "hbd": 5,
-            "hba": 10,
-        }[key])
-        for key in MANDATORY_KEYS
-    }
+    mandatory_cutoffs = config.get("mandatory_cutoffs", {})
+    optional_cutoffs = config.get("optional_cutoffs", {})
 
-    optional_cutoffs = {
-        key: config.get("physchem", {}).get(f"{key}_cutoff")
-        for key in OPTIONAL_KEYS
-        if config.get("physchem", {}).get(f"{key}_cutoff") is not None
-    }
+    accepted_props = []
+    mols = []
 
-    accepted = []
-    for smi in smiles_list:
+    for idx, row in df.iterrows():
+        smi = row.get("smiles")
+        if not smi or pd.isna(smi):
+            continue
+
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
+            logger.debug(f"Invalid SMILES skipped: {smi}")
             continue
+
         props = compute_physchem(mol)
-        if not apply_mandatory_filters(props, mandatory_cutoffs):
-            continue
-        if optional_cutoffs and not apply_optional_filters(props, optional_cutoffs):
-            continue
-        confmol = generate_conformer(mol)
-        if confmol is None:
-            continue
-        props["mol"] = confmol
-        accepted.append(props)
 
-    if not accepted:
-        logger.warning("No molecules in this batch passed filters/conformer generation.")
-        return {"mols": [], "df": pd.DataFrame()}
+        # Check mandatory cutoffs
+        if not all(props.get(k, float('inf')) <= mandatory_cutoffs.get(k, float('inf')) for k in MANDATORY_KEYS):
+            continue
 
-    # Save SMILES and SDF
-    output_dir = Path(config.get("output", {}).get("directory", "outputs/physchem"))
+        # Filter out None from optional cutoffs and apply
+        filtered_optional_cutoffs = {k: v for k, v in optional_cutoffs.items() if v is not None}
+        if not all(props.get(k, float('inf')) <= v for k, v in filtered_optional_cutoffs.items()):
+            continue
+
+        conf_mol = generate_conformer(mol)
+        if conf_mol is None:
+            continue
+
+        mols.append(conf_mol)
+        accepted_props.append(props)
+
+    if not accepted_props:
+        logger.debug("No molecules passed filters or conformer generation.")
+        empty_df = pd.DataFrame(columns=list(MANDATORY_KEYS) + list(OPTIONAL_KEYS) + ["smiles"])
+        return (input_path.stem, empty_df)
+
+    output_df = pd.DataFrame(accepted_props)
+    logger.debug(f"physchem_filtering: {len(output_df)} molecules passed filters and conformer generation.")
+
+    # Write output files if specified
+    output_dir = Path(config.get("output", {}).get("directory", "."))
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    smiles_out = output_dir / "filtered_mols.smi"
-    sdf_out = output_dir / "filtered_mols.sdf"
+    base_filename = config.get("output", {}).get("filename", input_path.stem)
 
-    with open(smiles_out, "w") as f_sm:
-        for p in accepted:
-            f_sm.write(p["smiles"] + "\n")
+    smi_file = output_dir / f"{base_filename}.smi"
+    sdf_file = output_dir / f"{base_filename}.sdf"
 
-    writer = Chem.SDWriter(str(sdf_out))
-    for p in accepted:
-        writer.write(p["mol"])
-    writer.close()
+    try:
+        with open(smi_file, "w") as f:
+            for smi in output_df["smiles"].dropna():
+                f.write(smi + "\n")
+        logger.debug(f"SMILES written to {smi_file}")
+    except Exception as e:
+        logger.error(f"Failed to write SMILES file {smi_file}: {e}")
 
-    logger.debug(f"Saved {len(accepted)} molecules to {smiles_out} and {sdf_out}")
+    try:
+        writer = Chem.SDWriter(str(sdf_file))
+        for mol in mols:
+            writer.write(mol)
+        writer.close()
+        logger.debug(f"SDF file written to {sdf_file}")
+    except Exception as e:
+        logger.error(f"Failed to write SDF file {sdf_file}: {e}")
 
-    df_rows = []
-    for p in accepted:
-        row = {k: p.get(k) for k in ["smiles"] + MANDATORY_KEYS + list(OPTIONAL_KEYS)}
-        df_rows.append(row)
-
-    return {
-        "mols": [p["mol"] for p in accepted],
-        "df": pd.DataFrame(df_rows)
-    }
+    return (input_path.stem, output_df)

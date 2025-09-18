@@ -1,17 +1,12 @@
-task: workflow
-workflow_name: physchem_toxic_reactive_filtering
+workflow_name: dynamic_task_runner
 
-backend: rdkit
 input_file: data/class_a_gpcr_bioactivity_small.csv
-
-chunk_size: 10 # how much to break up the dataset for processing 
+chunk_size: 10
 
 workflow:
-  - basic_lipinski # compulsory filters (MW, HBD, etc.)
-  - physchem # QED, TPSA, etc.
-  - physchem_toxic_reactive_filtering
-
-toxic_reactive_file: data/toxic_reactive.csv  # CSV containing toxic/reactive SMARTS
+  - basic_lipinski_filtering
+  - physchem_filtering
+  - toxic_reactive_filtering
 
 basic_lipinski:
   mw_cutoff: 450
@@ -24,7 +19,11 @@ physchem:
   qed_cutoff: 0.4
   stereocenters_cutoff: 2
 
+toxic_reactive_file: data/toxic_reactive.csv
+
 output:
   directory: outputs/physchem
-  filename: class_a_gpcr_physchem.csv
+  filename: class_a_gpcr_physchem_tox_filtered.csv
   overwrite: true
+
+cleanup: true  # deletes intermediate steps after success

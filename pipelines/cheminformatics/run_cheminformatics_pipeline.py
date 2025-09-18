@@ -6,7 +6,7 @@ import sys
 from pipeline.import_utilities import import_modules_recursively
 from pipeline.task_registry import list_tasks
 from pipeline.logger import setup_logger
-from workflows import get_workflow, load_all_workflows
+from workflows import get_workflow, load_all_workflows, list_workflows
 
 logger = setup_logger(
     __name__,
@@ -22,12 +22,13 @@ def main():
     project_root = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, project_root)
 
-    # Import all workflows recursively
-    import_modules_recursively(
-        base_dir=os.path.join(project_root, "modules"),
-        base_package="modules"
-    )
+    # # Import all workflows recursively
+    # import_modules_recursively(
+    #     base_dir=os.path.join(project_root, "workflows"),
+    #     base_package="workflows"
+    # )
     load_all_workflows()  # if this does extra workflow discovery
+    logger.info(f"Discovered workflows: {list_workflows()}")
 
     # Import all tasks recursively
     import_modules_recursively(
@@ -60,11 +61,16 @@ def main():
     # Run the workflow
     result = workflow_func(config)
 
-    # Determine if the result is a dict containing a DataFrame
-    if isinstance(result, dict) and "df" in result:
-        result_df = result["df"]
+    # Check for valid result structure
+    if isinstance(result, dict):
+        if "df" in result:
+            result_df = result["df"]
+        else:
+            logger.error(f"Workflow result does not contain 'df' key: {result}")
+            result_df = pd.DataFrame()  # fallback to empty DataFrame
     else:
-        result_df = result
+        logger.error(f"Unexpected result type: {type(result)}")
+        result_df = pd.DataFrame()  # fallback to empty DataFrame
 
     # Output handling for workflows that do NOT write their own output
     workflows_that_handle_output = {

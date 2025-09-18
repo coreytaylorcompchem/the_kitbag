@@ -47,44 +47,72 @@ class ParallelWorkflowRunner:
 
     def _run_for_single(self, identifier):
         try:
-            if self.input_is_pair:
-                result = self.workflow_func(identifier)
-            else:
-                # `identifier` is the chunk file path (string)
-                result = self.workflow_func(identifier)
+            result = self.workflow_func(identifier)
         except Exception as e:
             logger.info(f"[{identifier}] Error: {e}")
             return pd.DataFrame()
 
-        # Handle result as (filename_key, df)
-        if isinstance(result, tuple) and len(result) == 2:
-            filename_key, result_df = result
+        logger.debug(f"[{identifier}] Result type: {type(result)}")
+        if isinstance(result, tuple):
+            logger.debug(f"[{identifier}] Tuple length: {len(result)}")
+            logger.debug(f"[{identifier}] Tuple content: {result}")
+        elif isinstance(result, dict):
+            logger.debug(f"[{identifier}] Dict keys: {list(result.keys())}")
+
+        # Extract DataFrame and filename_key from known result structures
+        if isinstance(result, tuple):
+            # Defensive: ensure second element is DataFrame
+            if len(result) >= 2 and isinstance(result[1], pd.DataFrame):
+                filename_key, result_df = result[0], result[1]
+            else:
+                logger.info(f"[{identifier}] Tuple result does not contain expected DataFrame at index 1.")
+                return pd.DataFrame()
         elif isinstance(result, pd.DataFrame):
             filename_key = identifier
             result_df = result
+        elif isinstance(result, dict) and "df" in result and isinstance(result["df"], pd.DataFrame):
+            filename_key = identifier
+            result_df = result["df"]
         else:
             logger.info(f"[{identifier}] Unsupported result type: {type(result)}")
             return pd.DataFrame()
 
-        if result_df.empty:
-            logger.debug(f"[{filename_key}] No data returned.")
+        if not isinstance(result_df, pd.DataFrame):
+            logger.info(f"[{identifier}] result_df is not a DataFrame: {type(result_df)}")
             return pd.DataFrame()
 
-        # Ensure filename_key is string
+        if result_df.empty:
+            logger.debug(f"[{identifier}] No data returned (empty DataFrame).")
+            return pd.DataFrame()
+
+        # Sanitize filename_key string
         if not isinstance(filename_key, str):
             filename_key = str(filename_key)
-        if Path(filename_key).suffix:
-            filename_key = Path(filename_key).stem
+
+        try:
+            filename_path = Path(filename_key)
+            if filename_path.suffix:
+                filename_key = filename_path.stem
+        except Exception as e:
+            logger.warning(f"[{identifier}] Failed to parse filename_key '{filename_key}': {e}")
+            filename_key = str(identifier)
 
         try:
             filename = self.filename_pattern.format(**{self.output_key: filename_key})
         except KeyError:
-            # fallback if the pattern used "chunk_file" or something else
             filename = f"{filename_key}.csv"
 
         output_path = self.output_dir / filename
-        result_df.to_csv(output_path, index=False)
-        logger.debug(f"[{filename_key}] Saved: {output_path}")
+        try:
+            result_df.to_csv(output_path, index=False)
+            logger.debug(f"[{filename_key}] Saved: {output_path}")
+        except Exception as e:
+            logger.error(f"[{filename_key}] Failed to write CSV: {e}")
+            return pd.DataFrame()
+
+        # Return only the DataFrame for later combining
+        logger.debug(f"[{identifier}] Returning DataFrame shape: {result_df.shape}")
+        logger.debug(f"[{identifier}] DataFrame columns: {result_df.columns.tolist()}")
         return result_df
 
     def run(self):
@@ -100,13 +128,13 @@ class ParallelWorkflowRunner:
                 results = []
                 for result in tqdm(results_iter, total=len(self.inputs), desc="Tasks"):
                     results.append(result)
-
         else:
             logger.info("Running in serial mode (no multiprocessing).")
             results = []
             for i in tqdm(self.inputs, desc="Tasks"):
                 results.append(self._run_for_single(i))
 
+        # Combine only non-empty DataFrames
         valid_dfs = [df for df in results if isinstance(df, pd.DataFrame) and not df.empty]
         if not valid_dfs:
             logger.info("No valid results to combine.")
@@ -114,7 +142,11 @@ class ParallelWorkflowRunner:
 
         combined_df = pd.concat(valid_dfs, ignore_index=True)
         combined_path = self.output_dir / self.combined_filename
-        combined_df.to_csv(combined_path, index=False)
-        logger.info(f"\nCombined output saved to {combined_path}")
+        try:
+            combined_df.to_csv(combined_path, index=False)
+            logger.info(f"\nCombined output saved to {combined_path}")
+        except Exception as e:
+            logger.error(f"Failed to write combined output CSV: {e}")
+            return pd.DataFrame()
 
         return combined_df
