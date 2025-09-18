@@ -9,7 +9,7 @@ Here's where all my end-to-end comp chem software pipelines live. Generally knit
 
 ## How does it work?
 
-At the moment, the pipelines are separately stored and run in `pipelines`. You'll find example workflow and yamls there. I haven't gotten around to putting together a `env.yml` for them, so you'll be chasing Pythong deps for now.
+At the moment, the pipelines are separately stored and run in `pipelines`. You'll find example workflow and yamls there. I haven't gotten around to putting together a `env.yml` for them, so you'll be chasing Python deps for now.
 
 ## What does / will it do?
 
