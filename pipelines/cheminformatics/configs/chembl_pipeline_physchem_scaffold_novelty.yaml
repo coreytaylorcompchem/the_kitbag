@@ -1,7 +1,7 @@
 workflow_name: dynamic_task_runner
 
 input_file: data/class_a_gpcr_bioactivity_small.csv
-chunk_size: 10
+chunk_size: 500
 
 workflow:
   - basic_lipinski_filtering
