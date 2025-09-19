@@ -1,0 +1,32 @@
+workflow_name: dynamic_task_runner
+
+input_file: data/class_a_gpcr_bioactivity_small.csv
+chunk_size: 10
+
+workflow:
+  - basic_lipinski_filtering
+  - physchem_filtering
+  - adme_prediction
+
+basic_lipinski:
+  mw_cutoff: 450
+  hbd_cutoff: 5
+  hba_cutoff: 10
+  rotatable_bonds_cutoff: 10
+physchem:
+  logp_cutoff: 4.5
+  tpsa_cutoff: 140
+  qed_cutoff: 0.4
+  stereocenters_cutoff: 2
+
+toxic_reactive_file: data/toxic_reactive.csv
+
+adme_models:
+  - cyp3a4
+
+output:
+  directory: outputs/physchem_tox_adme
+  filename: class_a_gpcr_physchem_tox_adme_filtered.csv
+  overwrite: true
+
+cleanup: true  # deletes intermediate steps after success
