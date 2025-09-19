@@ -102,7 +102,6 @@ def basic_lipinski(config, data=None):
 
     filtered_df = pd.DataFrame(accepted_rows)
 
-    # --- New: Canonicalize SMILES ---
     def canonicalize_smi(smi):
         try:
             mol = Chem.MolFromSmiles(smi)
@@ -115,7 +114,6 @@ def basic_lipinski(config, data=None):
     filtered_df["smiles"] = filtered_df["smiles"].astype(str).str.strip()
     filtered_df["smiles"] = filtered_df["smiles"].apply(canonicalize_smi)
     filtered_df = filtered_df[filtered_df["smiles"].notna()].reset_index(drop=True)
-    # ------------------------------
 
     logger.debug(f"Number of molecules before filtering: {df.shape[0]}")
     logger.debug(f"Number of molecules after filtering: {filtered_df.shape[0]}")

@@ -1,0 +1,35 @@
+workflow_name: dynamic_task_runner
+
+input_file: data/class_a_gpcr_bioactivity_small.csv
+chunk_size: 10
+
+workflow:
+  - basic_lipinski_filtering
+  - physchem_filtering
+  # - toxic_reactive_filtering
+  - fragment_novelty_filtering
+
+basic_lipinski:
+  mw_cutoff: 450
+  hbd_cutoff: 5
+  hba_cutoff: 10
+  rotatable_bonds_cutoff: 10
+physchem:
+  logp_cutoff: 4.5
+  tpsa_cutoff: 140
+  qed_cutoff: 0.4
+  stereocenters_cutoff: 2
+fragment_novelty_filtering:
+  min_heavy_atoms: 8
+  scaffold_max_similarity: 0.4
+# scaffold_max_similarity = 0.9 → allow more similar scaffolds → larger dataset
+# scaffold_max_similarity = 0.4 → allow fewer similar scaffolds → smaller dataset
+  reference_set: data/core_set.csv
+  drop_duplicates: true
+
+output:
+  directory: outputs/physchem_fragment_novelty
+  filename: class_a_gpcr_physchem_fragment_novelty.csv
+  overwrite: true
+
+cleanup: true  # deletes intermediate steps after success

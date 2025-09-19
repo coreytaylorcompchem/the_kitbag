@@ -2,6 +2,7 @@ import argparse
 import yaml
 import os
 import sys
+import pandas as pd
 
 from pipeline.import_utilities import import_modules_recursively
 from pipeline.task_registry import list_tasks
