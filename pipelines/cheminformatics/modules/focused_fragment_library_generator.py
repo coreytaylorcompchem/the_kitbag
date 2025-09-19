@@ -1,0 +1,104 @@
+from pipeline.task_registry import register_task
+from rdkit import Chem
+from rdkit.Chem import BRICS, MACCSkeys
+from collections import Counter, defaultdict
+import pandas as pd
+from pathlib import Path
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+@register_task("focused_fragment_library_generator", description="Generate a focused library by fragment frequency")
+def focused_fragment_library_generator(config, data=None):
+    input_file = config.get("input_file")
+    input_path = Path(input_file)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input file does not exist: {input_file}")
+
+    df = pd.read_csv(input_path)
+    if "smiles" not in df.columns:
+        raise ValueError("Input CSV must contain a 'smiles' column.")
+    
+    fragment_type = config.get("focused_fragment_library", {}).get("fragment_type", "BRICS").upper()
+    frequency_threshold = config.get("focused_fragment_library", {}).get("frequency_threshold", 0.3)
+    max_fragments = config.get("focused_fragment_library", {}).get("max_fragments", None)
+    group_by_target = config.get("focused_fragment_library", {}).get("group_by_target", False)
+
+    output_fragments = config.get("focused_fragment_library", {}).get("output_fragments", True)
+
+    # --- Step 1: Group by target if requested ---
+    if group_by_target and "target" not in df.columns:
+        logger.warning("group_by_target is True but 'target' column not found. Proceeding without grouping.")
+        group_by_target = False
+
+    grouped = [("all", df)] if not group_by_target else df.groupby("target")
+
+    results = []
+
+    for group_name, group_df in grouped:
+        frag_counter = Counter()
+        total_mols = 0
+
+        for smi in group_df["smiles"].dropna().unique():
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                continue
+            total_mols += 1
+            fragments = get_fragments(mol, method=fragment_type)
+            frag_counter.update(fragments)
+
+        if total_mols == 0:
+            logger.warning(f"No valid molecules for group '{group_name}'")
+            continue
+
+        # Step 2: Filter fragments by frequency
+        frequent_frags = {
+            frag: count / total_mols
+            for frag, count in frag_counter.items()
+            if (count / total_mols) >= frequency_threshold
+        }
+
+        # Step 3: Sort and trim
+        sorted_frags = sorted(frequent_frags.items(), key=lambda x: x[1], reverse=True)
+        if max_fragments:
+            sorted_frags = sorted_frags[:max_fragments]
+
+        for frag, freq in sorted_frags:
+            results.append({
+                "group": group_name,
+                "fragment_smiles": frag,
+                "frequency": round(freq, 4),
+                "count": frag_counter[frag],
+                "total_molecules": total_mols
+            })
+
+    result_df = pd.DataFrame(results)
+    logger.info(f"[focused_fragment_library_generator] Extracted {len(result_df)} frequent fragments")
+
+    # Optionally write to file
+    if output_fragments:
+        output_dir = Path(config.get("output", {}).get("directory", "."))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out_file = output_dir / config.get("output", {}).get("filename", "focused_library.csv")
+        result_df.to_csv(out_file, index=False)
+        logger.info(f"Fragments written to: {out_file}")
+
+    return (input_path.stem, result_df)
+
+
+def get_fragments(mol, method="BRICS"):
+    """
+    Return a list of fragment SMILES from the molecule.
+    """
+    if method == "BRICS":
+        try:
+            frags = BRICS.BRICSDecompose(mol)
+            return list(frags)
+        except Exception:
+            return []
+    elif method == "MACCS":
+        keys = MACCSkeys.GenMACCSKeys(mol)
+        # Convert to bitstring index representation
+        return [f"MACCS_{i}" for i, bit in enumerate(keys) if bit]
+    else:
+        raise ValueError(f"Unsupported fragment type: {method}")

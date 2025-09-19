@@ -1,0 +1,25 @@
+workflow_name: dynamic_task_runner
+
+input_file: data/class_a_gpcr_bioactivity_small.csv
+chunk_size: 1000
+
+workflow:
+  - activity_filtering
+  - focused_fragment_library_generator
+
+activity:
+  value_cutoff_nM: 1000
+
+focused_fragment_library:
+  fragment_type: BRICS  # or MACCS
+  frequency_threshold: 0.3
+  max_fragments: 100  # Optional limit on number of fragments to keep
+  group_by_target: true  # Optional: group by target or analyze across all
+  output_fragments: true
+
+output:
+  directory: outputs/focused_library
+  filename: class_a_gpcr_focused_library.csv
+  overwrite: true
+
+cleanup: true

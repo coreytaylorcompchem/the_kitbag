@@ -114,17 +114,23 @@ def dynamic_task_runner(config):
         chunk_dir.mkdir(parents=True, exist_ok=True)
 
     chunk_files = []
-    for i in range(0, len(smiles_list), chunk_size):
-        chunk = smiles_list[i: i + chunk_size]
-        chunk_file = chunk_dir / f"chunk_{i//chunk_size}.csv"
-        chunk_df = pd.DataFrame({"smiles": clean_smiles(pd.Series(chunk))})
-        chunk_df.to_csv(chunk_file, index=False, quoting=csv.QUOTE_ALL, quotechar='"', escapechar='\\')
+    for i in range(0, len(df), chunk_size):
+        chunk_df = df.iloc[i: i + chunk_size].copy()
+        chunk_df["smiles"] = clean_smiles(chunk_df["smiles"])
+        chunk_file = chunk_dir / f"chunk_{i // chunk_size}.csv"
+        chunk_df.to_csv(
+            chunk_file,
+            index=False,
+            quoting=csv.QUOTE_ALL,
+            quotechar='"',
+            escapechar='\\'
+        )
         chunk_files.append(str(chunk_file))
 
         # Optional check
         try:
             test_df = pd.read_csv(chunk_file, sep=",", quotechar='"', escapechar='\\', engine="python")
-            if "smiles" not in test_df.columns or test_df.shape[1] != 1:
+            if "smiles" not in test_df.columns:
                 logger.error(f"[Chunk Write Check] {chunk_file} malformed: columns={test_df.columns.tolist()}")
         except Exception as e:
             logger.error(f"[Chunk Write Check] Failed to read {chunk_file}: {e}")
