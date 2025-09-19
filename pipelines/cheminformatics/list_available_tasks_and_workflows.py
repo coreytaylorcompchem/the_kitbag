@@ -11,7 +11,7 @@ from pipeline.logger import setup_logger
 logger = setup_logger(
     __name__,
     debug_mode=False,
-    minimalist_format=True
+    spartan_format=True
 )
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))

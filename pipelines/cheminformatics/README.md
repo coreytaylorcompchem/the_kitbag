@@ -22,14 +22,17 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 `python list_available_tasks_and_workflows.py`
 
 ```
-INFO 
 Available Tasks:
-INFO  - physchem_filtering: Physchem filtering with mandatory and optional cutoffs + conformer generation
-INFO  - toxic_reactive_filtering: Toxic and reactive SMARTS matching for molecules
-INFO 
+ - activity_filtering: Filter molecules based on activity cutoff
+ - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups (WIP).
+ - focused_fragment_library_generator: Generate a focused library by fragment frequency (WIP).
+ - fragment_novelty_filtering: Scaffold-based fragment selection for novelty filtering
+ - basic_lipinski_filtering: Basic Lipinski Rule of 5 filtering
+ - physchem_filtering: Physchem filtering with mandatory and optional cutoffs + conformer generation
+ - toxic_reactive_filtering: Toxic and reactive SMARTS matching for molecules
+
 Available Workflows:
-INFO  - physchem_filtering: Physchem filtering using calculated descriptors
-INFO  - physchem_toxic_reactive_filtering: Physchem filtering + toxic/reactive SMARTS filtering
+ - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.

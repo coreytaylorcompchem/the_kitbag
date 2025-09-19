@@ -8,7 +8,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_task("focused_fragment_library_generator", description="Generate a focused library by fragment frequency")
+@register_task("focused_fragment_library_generator", description="Generate a focused library by fragment frequency (WIP).")
 def focused_fragment_library_generator(config, data=None):
     input_file = config.get("input_file")
     input_path = Path(input_file)
@@ -26,7 +26,6 @@ def focused_fragment_library_generator(config, data=None):
 
     output_fragments = config.get("focused_fragment_library", {}).get("output_fragments", True)
 
-    # --- Step 1: Group by target if requested ---
     if group_by_target and "target" not in df.columns:
         logger.warning("group_by_target is True but 'target' column not found. Proceeding without grouping.")
         group_by_target = False
@@ -51,14 +50,12 @@ def focused_fragment_library_generator(config, data=None):
             logger.warning(f"No valid molecules for group '{group_name}'")
             continue
 
-        # Step 2: Filter fragments by frequency
         frequent_frags = {
             frag: count / total_mols
             for frag, count in frag_counter.items()
             if (count / total_mols) >= frequency_threshold
         }
 
-        # Step 3: Sort and trim
         sorted_frags = sorted(frequent_frags.items(), key=lambda x: x[1], reverse=True)
         if max_fragments:
             sorted_frags = sorted_frags[:max_fragments]
