@@ -45,7 +45,6 @@ def main(config):
 
     # Return or save predictions as needed, e.g. as dataframe
     df = pd.DataFrame({'smiles': smiles_list, 'predicted_value': preds})
-    print(df)
     return df
 
 if __name__ == "__main__":

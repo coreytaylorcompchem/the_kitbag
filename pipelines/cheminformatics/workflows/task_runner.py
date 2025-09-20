@@ -213,7 +213,7 @@ def dynamic_task_runner(config):
         except Exception as e:
             logger.error(f"Failed to write SDF file: {e}")
     else:
-        logger.warning("[dynamic_parallel_task_runner] No RDKit mols to write SDF.")
+        logger.debug("[dynamic_parallel_task_runner] No RDKit mols to write SDF.")
 
     if config.get("cleanup", True):
         try:

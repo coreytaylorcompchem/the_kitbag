@@ -125,7 +125,7 @@ def mol_to_graph(smiles: str, label: float = None):
     except:
         pass
 
-    atom_features = [get_atom_features(atom, mol) for atom in mol.GetAtoms()]
+    atom_features = np.array([get_atom_features(atom, mol) for atom in mol.GetAtoms()])
     x = torch.tensor(atom_features, dtype=torch.float)
 
     edge_index = []

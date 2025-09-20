@@ -1,7 +1,5 @@
-C[S+]([O-])c1ccc(-c2nc(-c3ccc(F)cc3)c(-c3ccncc3)[nH]2)cc1
-COc1cc(OC(C)C)cc(S(=O)(=O)c2ccc3c(c2)O[C@H]2CNCC[C@@H]32)c1.Cl
-N=C(Nc1ccc2c(c1)CCN2C1CCNCC1)c1cccs1
-CCN1CCC(c2ccccc2)=C(C(=O)OCCc2ccc(C)cc2)C1
-CCN1CCC(c2ccccc2)=C(C(=O)OC)C1
-CCN1CCC(c2ccccc2)=C(C(=O)OCCc2ccc(OC)cc2)C1
-O=C(CN1CCN2CCC[C@H]2C1)NC1CCCCC1
+O=C1CCc2ccccc2N1CCCN1CCC(CCCCCO)CC1
+O=C1CCc2ccccc2N1CCCN1CCC(CCCCCCCO)CC1
+CN1[C@@H]2C[C@@H](OC(=O)[C@H](CO)c3ccccc3)C[C@H]1[C@@H]1O[C@@H]12
+CN1CCN(CC(=O)N2c3ccccc3C(=O)Nc3cccnc32)CC1
+CCCCC1CCN(CCCN2C(=O)CCc3ccccc32)CC1

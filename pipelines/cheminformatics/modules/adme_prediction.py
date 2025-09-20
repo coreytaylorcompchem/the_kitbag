@@ -5,26 +5,29 @@ from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
 # Import featurization and model classes
-from models.featurisation_cyp import mol_to_graph
-from models.model_defs import GINRegressor
-# TODO: Import other model classes as needed (e.g., HERGClassifier, LogDModel)
+from models.featurisation_cyp import mol_to_graph as mol_to_graph_cyp
+from models.featurisation_logd import mol_to_graph as mol_to_graph_logd  # assuming this exists
+from models.model_defs import GINRegressor, GATv2Regressor
+
+import torch_geometric
+from torch_geometric.data import Data
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-
 def get_available_adme_models():
-    """Map model names to file paths and architecture classes."""
     model_dir = Path(__file__).resolve().parent.parent / "models"
     return {
         "cyp3a4": {
             "path": model_dir / "cyp_3a4_gin.pt",
-            "class": GINRegressor
+            "class": GINRegressor,
+            "featuriser": mol_to_graph_cyp
         },
-        # Add others here as needed:
-        # "herg": {"path": model_dir / "herg_gnn.pt", "class": HERGClassifier},
-        # "logd": {"path": model_dir / "logd_gat.pt", "class": LogDModel},
+        "logd": {
+            "path": model_dir / "logd_gat.pt",
+            "class": GATv2Regressor,
+            "featuriser": mol_to_graph_logd
+        }
     }
-
 
 @register_task("adme_prediction", description="Predict ADME properties (hERG, LogD, CYP3A4) from SMILES using PyTorch models")
 def adme_prediction(config, data=None):
@@ -35,7 +38,6 @@ def adme_prediction(config, data=None):
     all_models = get_available_adme_models()
 
     if not requested_models:
-        # Default to all available models
         model_configs = all_models
     else:
         model_configs = {}
@@ -44,44 +46,11 @@ def adme_prediction(config, data=None):
                 raise ValueError(f"Unknown ADME model: '{name}'")
             model_configs[name] = all_models[name]
 
-    # Load input directly from yaml.
-
     input_file = config.get("input_file")
     if not input_file:
         raise ValueError("Missing 'input_file' in config.")
 
     df = pd.read_csv(input_file)
-
-    ### Not quite working and not sure why, as it dumps columns when making ADME predictions. Also it's slow.
-    # To investigate.
-
-    # input_file = config.get("input_file", None)
-
-    # if isinstance(data, dict):
-    #     first_key = next(iter(data))
-    #     df = data[first_key]
-    #     if not isinstance(df, pd.DataFrame):
-    #         raise ValueError(f"Expected DataFrame for key {first_key}, got {type(df)}")
-    # else:
-    #     if not input_file:
-    #         raise ValueError("Missing 'input_file' in config")
-    #     df = pd.read_csv(input_file)
-
-    # if df.empty:
-    #     logger.info("Input DataFrame is empty after filtering — skipping ADME prediction")
-    #     # Return empty DataFrame with smiles and model columns
-    #     model_names = config.get("adme_models", [])
-    #     if isinstance(model_names, list):
-    #         model_columns = model_names
-    #     elif isinstance(model_names, dict):
-    #         model_columns = list(model_names.keys())
-    #     else:
-    #         model_columns = []
-
-    #     empty_result_df = pd.DataFrame(columns=["smiles"] + model_columns)
-    #     # Return safe stem name or fallback string
-    #     stem_name = Path(input_file).stem if input_file else "chunk_empty"
-    #     return (stem_name, empty_result_df)
 
     if "smiles" not in df.columns:
         raise ValueError("Input file must contain a 'smiles' column.")
@@ -90,7 +59,9 @@ def adme_prediction(config, data=None):
     df = df[df["smiles"].notna() & df["smiles"].str.len() > 0].copy()
 
     result_df = df[["smiles"]].copy()
+
     device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+    logger.debug(f"Using device: {device}")
 
     for model_name, info in model_configs.items():
         model_path = info["path"]
@@ -99,11 +70,15 @@ def adme_prediction(config, data=None):
 
         try:
             checkpoint = torch.load(model_path, map_location=device)
-            model = model_class(
-                input_dim=checkpoint["input_dim"],
-                hidden_dim=checkpoint["hidden_dim"],
-                global_feat_dim=checkpoint.get("global_feat_dim", 0)
-            )
+            model_args = {
+                "input_dim": checkpoint["input_dim"],
+                "hidden_dim": checkpoint.get("hidden_dim", 128),
+                "global_feat_dim": checkpoint.get("global_feat_dim", 0)
+            }
+            if "edge_dim" in checkpoint and "edge_dim" in model_class.__init__.__code__.co_varnames:
+                model_args["edge_dim"] = checkpoint["edge_dim"]
+
+            model = model_class(**model_args)
             model.load_state_dict(checkpoint["model_state_dict"])
             model.to(device)
             model.eval()
@@ -112,15 +87,20 @@ def adme_prediction(config, data=None):
             result_df[model_name] = None
             continue
 
+        preds = []
         try:
             preds = []
+            featuriser = info.get("featuriser")  # use model-specific featuriser
             for smi in df["smiles"]:
-                graph_data = mol_to_graph(smi)
+                graph_data = featuriser(smi)
                 if graph_data is None:
+                    logger.error(f"[model] Prediction failed for SMILES: '{smi}' — featuriser returned None")
                     preds.append(None)
                     continue
-
+                
+                logger.debug(f"graph_data type: {type(graph_data)} for SMILES: {smi}")
                 graph_data = graph_data.to(device)
+
                 with torch.no_grad():
                     output = model(graph_data)
                     preds.append(output.item() if isinstance(output, torch.Tensor) else float(output))

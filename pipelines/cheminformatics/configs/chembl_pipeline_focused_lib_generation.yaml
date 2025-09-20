@@ -11,11 +11,12 @@ activity:
   value_cutoff_nM: 1000
 
 focused_fragment_library:
-  fragment_type: BRICS  # or MACCS
-  frequency_threshold: 0.3
+  fragment_type: BRICS  # or MACCS or RECAP or MURCKO
+  frequency_threshold: 0.3 # set higher to limit matches if you get too many
   max_fragments: 100  # Optional limit on number of fragments to keep
   group_by_target: true  # Optional: group by target or analyze across all
   output_fragments: true
+  output_sdf_per_fragment: true
 
 output:
   directory: outputs/focused_library

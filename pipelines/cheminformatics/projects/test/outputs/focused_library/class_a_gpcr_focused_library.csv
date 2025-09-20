@@ -1,6 +1,6 @@
 group,fragment_smiles,frequency,count,total_molecules
-all,[3*]O[3*],0.4038,21,52
 all,[16*]c1ccccc1,0.4038,21,52
+all,[3*]O[3*],0.4038,21,52
 all,[3*]O[3*],0.3013,182,604
 all,[5*]N[5*],0.5854,449,767
 all,[8*]C[8*],0.3312,254,767
