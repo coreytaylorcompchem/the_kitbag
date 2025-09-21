@@ -2,6 +2,8 @@
 
 Here's where we can curate and combine affinity, ADME, etc, data from multiple sources. 
 
+![Data curation logo](_images/data_curation_logo.jpg)
+
 ## Setup and dependencies
 
 Mainly Python libs and the [Chembl webresource_client](https://github.com/chembl/chembl_webresource_client).
