@@ -2,6 +2,8 @@
 
 Perform different types of MD in automated, end-to-end fashion. 
 
+![Molecular dynamics logo](_images/md_logo.png)
+
 ## Setup and dependencies
 
 * Mainly Python libs

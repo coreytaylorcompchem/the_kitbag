@@ -10,7 +10,7 @@ system:
   box_padding: 1.0
 
 simulation: 
-  platform: "CPU"  # CPU, if you're crazy. CUDA if you're sane.
+  platform: "CUDA"  # CPU, if you're crazy. CUDA if you're sane.
   pH: 7.0
   timestep: 2.0  # fs
   temperature: 300  # K
