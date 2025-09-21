@@ -57,7 +57,7 @@ def generate_conformer(mol, max_attempts=10):
     return None
 
 
-@register_task("basic_lipinski_filtering", description="Basic Lipinski Rule of 5 filtering")
+@register_task("basic_lipinski_filtering", category="Filtering", description="Basic Lipinski Rule of 5 filtering")
 def basic_lipinski(config, data=None):
     input_file = config.get("input_file")
     if input_file is None:
@@ -123,7 +123,7 @@ def basic_lipinski(config, data=None):
     return (input_path.stem, filtered_df)
 
 
-@register_task("physchem_filtering", description="Physchem filtering with mandatory and optional cutoffs + conformer generation")
+@register_task("physchem_filtering", category="Filtering", description="Physchem filtering with mandatory and optional cutoffs + conformer generation")
 def physchem_filtering(config, data=None):
     input_file = config.get("input_file")
     if input_file is None:

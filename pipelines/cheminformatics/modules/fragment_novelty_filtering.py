@@ -48,7 +48,7 @@ def deduplicate_by_similarity(mols, threshold=0.7, max_to_keep=100):
     return selected
 
 
-@register_task("fragment_novelty_filtering", description="Scaffold-based fragment selection for novelty filtering")
+@register_task("fragment_novelty_filtering", category="Filtering", description="Scaffold-based fragment selection for novelty filtering")
 def fragment_novelty_filtering(config, data=None):
     input_file = config.get("input_file")
     if input_file is None:

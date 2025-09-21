@@ -5,7 +5,7 @@ import pandas as pd
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_task("activity_filtering", description="Filter molecules based on activity cutoff")
+@register_task("activity_filtering", category="Filtering", description="Filter molecules based on activity cutoff")
 def activity_filtering(config, data=None):
     input_file = config.get("input_file")
     if input_file is None:

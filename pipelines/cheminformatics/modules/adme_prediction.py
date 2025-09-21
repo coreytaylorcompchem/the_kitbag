@@ -29,7 +29,7 @@ def get_available_adme_models():
         }
     }
 
-@register_task("adme_prediction", description="Predict ADME properties (hERG, LogD, CYP3A4) from SMILES using PyTorch models")
+@register_task("adme_prediction", category="Prediction", description="Predict ADME properties (hERG, LogD, CYP3A4) from SMILES using PyTorch models")
 def adme_prediction(config, data=None):
     requested_models = config.get("adme_models", [])
     if not isinstance(requested_models, list):

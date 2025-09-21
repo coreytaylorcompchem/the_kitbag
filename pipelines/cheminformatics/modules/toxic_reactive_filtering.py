@@ -21,7 +21,7 @@ def match_smarts(mol, smarts_list):
     
     return toxic_matches, reactive_matches
 
-@register_task("toxic_reactive_filtering", description="Toxic and reactive SMARTS matching for molecules")
+@register_task("toxic_reactive_filtering", category="Filtering", description="Toxic and reactive SMARTS matching for molecules")
 def toxic_reactive_filtering(config, data=None):
     input_file = config.get("input_file")
     toxic_reactive_file = config.get("toxic_reactive_file")

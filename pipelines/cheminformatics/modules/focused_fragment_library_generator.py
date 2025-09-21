@@ -12,7 +12,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_task("focused_fragment_library_generator", description="Generate a focused library by fragment frequency (WIP).")
+@register_task("focused_fragment_library_generator", category="Library generation", description="Generate a focused library by fragment frequency (WIP).")
 def focused_fragment_library_generator(config, data=None):
     input_file = config.get("input_file")
     input_path = Path(input_file)

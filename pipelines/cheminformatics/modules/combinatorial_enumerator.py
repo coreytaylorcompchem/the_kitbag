@@ -7,7 +7,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_task("combinatorial_enumerator", description="Generate combinatorial library from fragments and R-groups (WIP).")
+@register_task("combinatorial_enumerator", category="Library generation", description="Generate combinatorial library from fragments and R-groups (WIP).")
 def combinatorial_enumerator(config: dict, data: dict = None) -> dict:
     if data is None or "df" not in data:
         raise ValueError("Input data must contain a DataFrame under 'df'")
