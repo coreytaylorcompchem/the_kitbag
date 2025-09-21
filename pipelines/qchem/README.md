@@ -2,6 +2,8 @@
 
 Here's where we can run some quantum chemistry calculations. 
 
+![Quantum chemistry logo](_images/qchem.png)
+
 ## Setup and dependencies
 
 You'll need `psi4` and several others. Will create an env.yaml in time. Further explanations on what the other bits do - soon.
