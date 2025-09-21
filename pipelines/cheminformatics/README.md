@@ -23,17 +23,17 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 ```
 Available Tasks:
- - activity_filtering: Filter molecules based on activity cutoff
- - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4) from SMILES using PyTorch models
- - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups (WIP).
- - focused_fragment_library_generator: Generate a focused library by fragment frequency (WIP).
- - fragment_novelty_filtering: Scaffold-based fragment selection for novelty filtering
- - basic_lipinski_filtering: Basic Lipinski Rule of 5 filtering
- - physchem_filtering: Physchem filtering with mandatory and optional cutoffs + conformer generation
- - toxic_reactive_filtering: Toxic and reactive SMARTS matching for molecules
-
-Available Workflows:
- - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI
+  [Filtering]:
+    - activity_filtering: Filter molecules based on activity cutoff
+    - basic_lipinski_filtering: Basic Lipinski Rule of 5 filtering
+    - fragment_novelty_filtering: Scaffold-based fragment selection for novelty filtering
+    - physchem_filtering: Physchem filtering with mandatory and optional cutoffs + conformer generation
+    - toxic_reactive_filtering: Toxic and reactive SMARTS matching for molecules
+  [Library generation]:
+    - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups (WIP).
+    - focused_fragment_library_generator: Generate a focused library by fragment frequency (WIP).
+  [Prediction]:
+    - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4) from SMILES using PyTorch models
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
