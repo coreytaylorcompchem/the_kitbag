@@ -2,7 +2,7 @@
 
 Here's where we can curate and combine affinity, ADME, etc, data from multiple sources. 
 
-![Data curation logo](_images/data_curation_logo.jpg)
+![Data curation logo](_images/data_curation_logo.png)
 
 ## Setup and dependencies
 
