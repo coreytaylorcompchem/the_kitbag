@@ -1,5 +1,7 @@
 # Cheminformatics pipeline
 
+![Cheminformatics logo](_images/cheminfo_logo.png)
+
 Perform all sorts of cheminf calculations from basic physchem filtering to more advanced analyses. The overall goal is to squeeze down huge lists of molecules from data extraction to something more manageable and representative for virtual screening.
 
 ## Setup and dependencies
