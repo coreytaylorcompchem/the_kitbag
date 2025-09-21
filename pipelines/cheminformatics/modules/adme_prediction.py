@@ -1,18 +1,16 @@
 import torch
 import pandas as pd
 from pathlib import Path
+from torch_geometric.loader import DataLoader
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
 # Import featurization and model classes
 from models.featurisation_cyp import mol_to_graph as mol_to_graph_cyp
-from models.featurisation_logd import mol_to_graph as mol_to_graph_logd  # assuming this exists
+from models.featurisation_logd import mol_to_graph as mol_to_graph_logd 
 from models.model_defs import GINRegressor, GATv2Regressor
 
-import torch_geometric
-from torch_geometric.data import Data
-
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 def get_available_adme_models():
     model_dir = Path(__file__).resolve().parent.parent / "models"
@@ -70,45 +68,62 @@ def adme_prediction(config, data=None):
 
         try:
             checkpoint = torch.load(model_path, map_location=device)
+
+            required_keys = ['input_dim', 'global_feat_dim', 'model_state_dict']
+            missing_keys = [k for k in required_keys if k not in checkpoint]
+            if missing_keys:
+                logger.error(f"Checkpoint missing keys: {missing_keys}")
+                continue
+
             model_args = {
                 "input_dim": checkpoint["input_dim"],
                 "hidden_dim": checkpoint.get("hidden_dim", 128),
                 "global_feat_dim": checkpoint.get("global_feat_dim", 0)
             }
-            if "edge_dim" in checkpoint and "edge_dim" in model_class.__init__.__code__.co_varnames:
+            if model_class is GATv2Regressor:
+                if "edge_dim" not in checkpoint:
+                    raise ValueError(f"Missing 'edge_dim' in checkpoint for model '{model_name}'")
                 model_args["edge_dim"] = checkpoint["edge_dim"]
 
             model = model_class(**model_args)
-            model.load_state_dict(checkpoint["model_state_dict"])
+            load_result = model.load_state_dict(checkpoint["model_state_dict"])
+            logger.debug(f"load_state_dict result for '{model_name}': {load_result}")
             model.to(device)
             model.eval()
+
         except Exception as e:
             logger.error(f"Failed to load model '{model_name}': {e}")
             result_df[model_name] = None
             continue
 
         preds = []
-        try:
-            preds = []
-            featuriser = info.get("featuriser")  # use model-specific featuriser
-            for smi in df["smiles"]:
+        featuriser = info.get("featuriser")
+
+        for smi in df["smiles"]:
+            try:
                 graph_data = featuriser(smi)
                 if graph_data is None:
-                    logger.error(f"[model] Prediction failed for SMILES: '{smi}' — featuriser returned None")
+                    logger.error(f"[{model_name}] Featuriser returned None for SMILES: '{smi}'")
                     preds.append(None)
                     continue
-                
-                logger.debug(f"graph_data type: {type(graph_data)} for SMILES: {smi}")
-                graph_data = graph_data.to(device)
+
+                loader = DataLoader([graph_data], batch_size=1, shuffle=False)
 
                 with torch.no_grad():
-                    output = model(graph_data)
-                    preds.append(output.item() if isinstance(output, torch.Tensor) else float(output))
+                    for batch in loader:
+                        batch = batch.to(device)
+                        output = model(batch)
+                        if output is None:
+                            logger.error(f"[{model_name}] Model returned None for SMILES: {smi}")
+                            preds.append(None)
+                        else:
+                            preds.append(output.item() if isinstance(output, torch.Tensor) else float(output))
 
-            result_df[model_name] = preds
+            except Exception as e:
+                logger.error(f"[{model_name}] Inference failed for SMILES '{smi}': {e}")
+                preds.append(None)
 
-        except Exception as e:
-            logger.error(f"Prediction failed for model '{model_name}': {e}")
-            result_df[model_name] = None
+
+        result_df[model_name] = preds
 
     return (Path(input_file).stem, result_df)

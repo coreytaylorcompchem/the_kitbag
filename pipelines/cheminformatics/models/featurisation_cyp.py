@@ -148,7 +148,7 @@ def mol_to_graph(smiles: str, label: float = None):
         except:
             val = 0.0
         global_features.append(val)
-    global_features = torch.tensor(global_features, dtype=torch.float32).unsqueeze(0)
+    global_features = torch.tensor(global_features, dtype=torch.float32)
 
     data = MoleculeData(x=x, edge_index=edge_index, edge_attr=edge_attr, global_features=global_features)
 

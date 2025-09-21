@@ -163,17 +163,19 @@ def get_bond_features(bond):
     return np.array(features, dtype=np.float32)
 
 class MoleculeData(Data):
-    def __inc__(self, key, value, *args, **kwargs):
-        return super().__inc__(key, value)
+    def __init__(self, x, edge_index, edge_attr, global_features):
+        super().__init__(x=x, edge_index=edge_index, edge_attr=edge_attr)
+        self.global_features = global_features
 
     def __cat_dim__(self, key, value, *args, **kwargs):
         if key == 'global_features':
-            return None  # do not concatenate along any dimension
+            return None
         return super().__cat_dim__(key, value)
 
     def to(self, device):
-        # Use the parent's to() method, which moves tensors to device
-        return super().to(device)
+        out = super().to(device)  # Let torch_geometric handle all attributes
+        out.global_features = self.global_features.to(device)
+        return out
 
 def mol_to_graph(smiles: str, label: float = None, radius=2, nBits=1024):
     print(f"[mol_to_graph] Processing SMILES: {smiles}")
@@ -234,6 +236,8 @@ def mol_to_graph(smiles: str, label: float = None, radius=2, nBits=1024):
         global_features = torch.tensor(global_features, dtype=torch.float32)
         print(f"[mol_to_graph] Global features shape: {global_features.shape}")
 
+        if not isinstance(global_features, torch.Tensor):
+            print(f"[mol_to_graph] WARNING: global_features is not a tensor, type={type(global_features)}")
         data = MoleculeData(x=x, edge_index=edge_index, edge_attr=edge_attr, global_features=global_features)
 
         if label is not None:

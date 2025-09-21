@@ -3,25 +3,33 @@ from torch_geometric.loader import DataLoader
 import pandas as pd
 from pathlib import Path
 
-from model_defs import GATv2Regressor
-from featurisation_logd import mol_to_graph, descriptor_functions
+from models.model_defs import GATv2Regressor
+from models.featurisation_logd import mol_to_graph, descriptor_functions
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 def load_model(model_path, device):
-    """
-    Load model from checkpoint dictionary.
-    """
+    logger.debug(f"Loading model from: {model_path} to device: {device}")
     checkpoint = torch.load(model_path, map_location=device)
 
-    model = GATv2Regressor(
-        input_dim=checkpoint["input_dim"],
-        edge_dim=checkpoint["edge_dim"],
-        hidden_dim=checkpoint["hidden_dim"],
-        global_feat_dim=checkpoint["global_feat_dim"]
-    )
-
-    model.load_state_dict(checkpoint["model_state_dict"])
+    try:
+        model = GATv2Regressor(
+            input_dim=checkpoint["input_dim"],
+            edge_dim=checkpoint["edge_dim"],
+            hidden_dim=checkpoint["hidden_dim"],
+            global_feat_dim=checkpoint["global_feat_dim"]
+        )
+    except Exception as e:
+        logger.error(f"Failed to instantiate GATv2Regressor: {e}", exc_info=True)
+        raise  # Optional: re-raise if you want it to stop here
+    
+    load_result = model.load_state_dict(checkpoint["model_state_dict"])
+    logger.debug(f"load_state_dict result: {load_result}")
+    
     model.to(device)
     model.eval()
+    logger.debug(f"Model loaded and moved to {device}")
 
     return model
 

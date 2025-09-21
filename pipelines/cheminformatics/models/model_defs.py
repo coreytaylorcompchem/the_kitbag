@@ -66,41 +66,10 @@ class GATv2Regressor(torch.nn.Module):
         x, edge_index, edge_attr, batch = x.to(device), edge_index.to(device), edge_attr.to(device), batch.to(device)
         edge_attr = self.edge_encoder(edge_attr)
 
-        # Extract attention weights from GATv2Conv layers
-        x, attn1 = self.gat1(x, edge_index, edge_attr, return_attention_weights=True)
-        self.attentions['layer1'] = attn1  # attn1 is tuple (edge_index, attention_weights)
+        x = self.gat1(x, edge_index, edge_attr)
         x = F.elu(x)
 
-        x, attn2 = self.gat2(x, edge_index, edge_attr, return_attention_weights=True)
-        self.attentions['layer2'] = attn2
-        x = F.elu(x)
-
-        x = global_mean_pool(x, batch)  # [batch_size, hidden_dim]
-
-        if hasattr(data, 'global_features'):
-            global_features = data.global_features.to(x.device)
-            g_feat = self.global_mlp(global_features)
-            x = torch.cat([x, g_feat], dim=1)
-
-        return self.lin(x).squeeze(1)
-
-    
-    def forward_with_attention(self, data):
-        x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
-        device = next(self.parameters()).device
-
-        x, edge_index, edge_attr, batch = x.to(device), edge_index.to(device), edge_attr.to(device), batch.to(device)
-        edge_attr = self.edge_encoder(edge_attr)
-
-        # Capture attention weights here (GATv2Conv returns them if return_attention_weights=True)
-        # Layer 1 with attention extraction
-        x, (edge_idx1, attn1) = self.gat1(x, edge_index, edge_attr, return_attention_weights=True)
-        self.attentions['layer1'] = attn1  # store attention (tuple: (edge_index, attention_weights))
-        x = F.elu(x)
-
-        # Layer 2 with attention extraction
-        x, attn2 = self.gat2(x, edge_index, edge_attr, return_attention_weights=True)
-        self.attentions['layer2'] = attn2
+        x = self.gat2(x, edge_index, edge_attr)
         x = F.elu(x)
 
         x = global_mean_pool(x, batch)
@@ -110,5 +79,4 @@ class GATv2Regressor(torch.nn.Module):
             g_feat = self.global_mlp(global_features)
             x = torch.cat([x, g_feat], dim=1)
 
-        out = self.lin(x).squeeze(1)
-        return out, attn1, edge_idx1
+        return self.lin(x).squeeze(1)
