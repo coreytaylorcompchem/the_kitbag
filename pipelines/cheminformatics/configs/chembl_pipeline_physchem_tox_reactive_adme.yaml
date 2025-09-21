@@ -22,8 +22,9 @@ physchem:
 toxic_reactive_file: data/toxic_reactive.csv
 
 adme_models:
-  - cyp3a4
-  - logd
+  - herg # Predicts 0/1 probability of being active vs hERG
+  - cyp3a4 # Predicts pIC50
+  - logd # Predicts LogD
 
 output:
   directory: outputs/physchem_tox_adme

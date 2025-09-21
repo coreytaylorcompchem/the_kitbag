@@ -5,6 +5,10 @@ from torch_geometric.loader import DataLoader
 import pandas as pd
 from pathlib import Path
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
 def load_model(model_path, input_dim, global_feat_dim, device):
     model = GINRegressor(input_dim=input_dim, global_feat_dim=global_feat_dim)
     model.load_state_dict(torch.load(model_path, map_location=device))

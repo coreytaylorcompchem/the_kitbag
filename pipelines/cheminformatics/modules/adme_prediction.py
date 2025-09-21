@@ -7,10 +7,11 @@ from pipeline.logger import setup_logger
 
 # Import featurization and model classes
 from models.featurisation_cyp import mol_to_graph as mol_to_graph_cyp
-from models.featurisation_logd import mol_to_graph as mol_to_graph_logd 
-from models.model_defs import GINRegressor, GATv2Regressor
+from models.featurisation_logd import mol_to_graph as mol_to_graph_logd
+from models.featurisation_herg import mol_to_graph as mol_to_graph_herg 
+from models.model_defs import GINRegressor, GATv2Regressor, GCN
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def get_available_adme_models():
     model_dir = Path(__file__).resolve().parent.parent / "models"
@@ -24,7 +25,13 @@ def get_available_adme_models():
             "path": model_dir / "logd_gat.pt",
             "class": GATv2Regressor,
             "featuriser": mol_to_graph_logd
-        }
+        },
+        "herg": {
+            "path": model_dir / "herg_gnn_latest.pt",
+            "class": GCN,
+            "apply_sigmoid": True,
+            "featuriser": mol_to_graph_herg
+        },
     }
 
 @register_task("adme_prediction", category="Prediction", description="Predict ADME properties (hERG, LogD, CYP3A4) from SMILES using PyTorch models")
@@ -69,7 +76,7 @@ def adme_prediction(config, data=None):
         try:
             checkpoint = torch.load(model_path, map_location=device)
 
-            required_keys = ['input_dim', 'global_feat_dim', 'model_state_dict']
+            required_keys = ['input_dim', 'model_state_dict']
             missing_keys = [k for k in required_keys if k not in checkpoint]
             if missing_keys:
                 logger.error(f"Checkpoint missing keys: {missing_keys}")
@@ -78,11 +85,15 @@ def adme_prediction(config, data=None):
             model_args = {
                 "input_dim": checkpoint["input_dim"],
                 "hidden_dim": checkpoint.get("hidden_dim", 128),
-                "global_feat_dim": checkpoint.get("global_feat_dim", 0)
             }
-            if model_class is GATv2Regressor:
+
+            if model_class in [GINRegressor, GATv2Regressor]:
+                model_args["global_feat_dim"] = checkpoint.get("global_feat_dim", 0)
+
+            if model_class in [GATv2Regressor, GCN]:
                 if "edge_dim" not in checkpoint:
-                    raise ValueError(f"Missing 'edge_dim' in checkpoint for model '{model_name}'")
+                    logger.error(f"Missing 'edge_dim' in checkpoint for model '{model_name}'")
+                    continue
                 model_args["edge_dim"] = checkpoint["edge_dim"]
 
             model = model_class(**model_args)
@@ -92,12 +103,11 @@ def adme_prediction(config, data=None):
             model.eval()
 
         except Exception as e:
-            logger.error(f"Failed to load model '{model_name}': {e}")
-            result_df[model_name] = None
-            continue
+            logger.exception(f"Error loading model '{model_name}': {e}")
 
         preds = []
-        featuriser = info.get("featuriser")
+        featuriser = info.get("featuriser") # get the featuriser for the specific model
+        apply_sigmoid = info.get("apply_sigmoid", False) # flag for whether to apply sigmoind transform for 0/1 models
 
         for smi in df["smiles"]:
             try:
@@ -113,6 +123,8 @@ def adme_prediction(config, data=None):
                     for batch in loader:
                         batch = batch.to(device)
                         output = model(batch)
+                        if apply_sigmoid:
+                            output = torch.sigmoid(output)
                         if output is None:
                             logger.error(f"[{model_name}] Model returned None for SMILES: {smi}")
                             preds.append(None)

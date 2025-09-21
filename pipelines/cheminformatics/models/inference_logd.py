@@ -7,7 +7,7 @@ from models.model_defs import GATv2Regressor
 from models.featurisation_logd import mol_to_graph, descriptor_functions
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def load_model(model_path, device):
     logger.debug(f"Loading model from: {model_path} to device: {device}")

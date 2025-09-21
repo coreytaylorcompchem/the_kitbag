@@ -18,8 +18,11 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 
-# from torch_geometric
 from torch_geometric.data import Data
+
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -178,24 +181,24 @@ class MoleculeData(Data):
         return out
 
 def mol_to_graph(smiles: str, label: float = None, radius=2, nBits=1024):
-    print(f"[mol_to_graph] Processing SMILES: {smiles}")
+    logger.debug(f"[mol_to_graph] Processing SMILES: {smiles}")
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        print(f"[mol_to_graph] RDKit failed to parse: {smiles}")
+        logger.debug(f"[mol_to_graph] RDKit failed to parse: {smiles}")
         return None
 
     try:
         rdPartialCharges.ComputeGasteigerCharges(mol)
-        print("[mol_to_graph] Gasteiger charges computed.")
+        logger.debug("[mol_to_graph] Gasteiger charges computed.")
     except Exception as e:
-        print(f"[mol_to_graph] Warning: Gasteiger charges failed for {smiles}: {e}")
+        logger.debug(f"[mol_to_graph] Warning: Gasteiger charges failed for {smiles}: {e}")
 
     try:
         atom_features = [get_atom_features(atom, mol) for atom in mol.GetAtoms()]
         x = torch.tensor(atom_features, dtype=torch.float)
-        print(f"[mol_to_graph] Atom features shape: {x.shape}")
+        logger.debug(f"[mol_to_graph] Atom features shape: {x.shape}")
     except Exception as e:
-        print(f"[mol_to_graph] Failed to get atom features: {e}")
+        logger.debug(f"[mol_to_graph] Failed to get atom features: {e}")
         return None
 
     try:
@@ -210,9 +213,9 @@ def mol_to_graph(smiles: str, label: float = None, radius=2, nBits=1024):
 
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
-        print(f"[mol_to_graph] Edge index shape: {edge_index.shape}, edge_attr shape: {edge_attr.shape}")
+        logger.debug(f"[mol_to_graph] Edge index shape: {edge_index.shape}, edge_attr shape: {edge_attr.shape}")
     except Exception as e:
-        print(f"[mol_to_graph] Failed to get edge features: {e}")
+        logger.debug(f"[mol_to_graph] Failed to get edge features: {e}")
         return None
 
     try:
@@ -234,18 +237,18 @@ def mol_to_graph(smiles: str, label: float = None, radius=2, nBits=1024):
         global_features += desc3d.tolist()
 
         global_features = torch.tensor(global_features, dtype=torch.float32)
-        print(f"[mol_to_graph] Global features shape: {global_features.shape}")
+        logger.debug(f"[mol_to_graph] Global features shape: {global_features.shape}")
 
         if not isinstance(global_features, torch.Tensor):
-            print(f"[mol_to_graph] WARNING: global_features is not a tensor, type={type(global_features)}")
+            logger.debug(f"[mol_to_graph] WARNING: global_features is not a tensor, type={type(global_features)}")
         data = MoleculeData(x=x, edge_index=edge_index, edge_attr=edge_attr, global_features=global_features)
 
         if label is not None:
             data.y = torch.tensor([label], dtype=torch.float)
 
-        print(f"[mol_to_graph] Successfully created graph for: {smiles}")
+        logger.debug(f"[mol_to_graph] Successfully created graph for: {smiles}")
         return data
 
     except Exception as e:
-        print(f"[mol_to_graph] Failed to create MoleculeData object for {smiles}: {e}")
+        logger.debug(f"[mol_to_graph] Failed to create MoleculeData object for {smiles}: {e}")
         return None

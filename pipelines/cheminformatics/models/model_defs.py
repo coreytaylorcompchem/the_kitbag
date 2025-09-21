@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GINConv, GATv2Conv, global_mean_pool
+from torch.nn import Linear
+from torch_geometric.nn import GINConv, GATv2Conv, global_mean_pool, NNConv
 
 class GINRegressor(nn.Module):
     def __init__(self, input_dim, hidden_dim=64, global_feat_dim=0):
@@ -78,5 +79,34 @@ class GATv2Regressor(torch.nn.Module):
             global_features = data.global_features.to(x.device)
             g_feat = self.global_mlp(global_features)
             x = torch.cat([x, g_feat], dim=1)
+
+        return self.lin(x).squeeze(1)
+
+class GCN(torch.nn.Module):
+    def __init__(self, input_dim, edge_dim, hidden_dim=128):
+        super().__init__()
+        self.edge_mlp = torch.nn.Sequential(
+            torch.nn.Linear(edge_dim, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_dim, input_dim * hidden_dim)
+        )
+
+        self.conv1 = NNConv(input_dim, hidden_dim, self.edge_mlp, aggr='mean')
+
+        self.edge_mlp2 = torch.nn.Sequential(
+            torch.nn.Linear(edge_dim, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_dim, hidden_dim * hidden_dim)
+        )
+
+        self.conv2 = NNConv(hidden_dim, hidden_dim, self.edge_mlp2, aggr='mean')
+        self.lin = torch.nn.Linear(hidden_dim, 1)
+
+    def forward(self, data):
+        x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
+
+        x = F.relu(self.conv1(x, edge_index, edge_attr))
+        x = F.relu(self.conv2(x, edge_index, edge_attr))
+        x = global_mean_pool(x, batch)
 
         return self.lin(x).squeeze(1)
