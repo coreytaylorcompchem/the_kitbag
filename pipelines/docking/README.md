@@ -1,5 +1,7 @@
 # Docking pipeline
 
+![Docking logo](_images/docking_logo.png)
+
 In this repo are workflows to dock compounds with various use cases (unbiased, constrained core, etc.). 
 
 ## Setup and dependencies
@@ -55,6 +57,6 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 ## TODO
 
-* Add ML-based docking backends like [Diffdock](https://github.com/gcorso/DiffDock) and [Equibind](https://github.com/HannesStark/EquiBind)).
+* Add ML-based docking backends like [Diffdock](https://github.com/gcorso/DiffDock) and [Equibind](https://github.com/HannesStark/EquiBind).
 * Add other docking modes (constrained core, ensemble, etc.)
 * Run docking on multiple targets. 
