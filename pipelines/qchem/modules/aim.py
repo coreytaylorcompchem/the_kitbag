@@ -2,13 +2,13 @@ import psi4
 from pipeline.task_registry import register_task
 
 @register_task(
-    'sapt0',
-    description="Do a sapt0 calculation (psi4 only)",
+    'qtaim',
+    description="Do AIM (Atoms In Molecules) analysis.",
     modifies_geometry=False,
     category='EDA'
 )
 def run(backend, xyz_file, config):
-    print("Running SAPT0 calculation...")
+    print("Running QTAIM calculation...")
     
     if backend.__class__.__name__ != 'Psi4Backend':
         raise RuntimeError("SAPT0 is only available in Psi4.")

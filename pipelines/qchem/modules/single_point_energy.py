@@ -8,10 +8,10 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 @register_task(
-    'optimise',
-    description="Performs geometry optimization using the selected backend.",
-    modifies_geometry=True,
-    category='Optimization'
+    'single_point',
+    description="Performs a single-point energy calculation using the selected backend.",
+    modifies_geometry=False,
+    category='Energy'
 )
 def run(backend, xyz_file, step_config, global_config=None):
     # 1. Load global output settings
@@ -24,9 +24,9 @@ def run(backend, xyz_file, step_config, global_config=None):
     base_name = os.path.splitext(os.path.basename(xyz_file))[0]
     output_cfg = step_config.get("output", {})
 
-    log_filename = output_cfg.get("log", f"{base_name}_opt.log")
-    energy_filename = output_cfg.get("energy", f"{base_name}_opt_energy.txt")
-    geometry_filename = output_cfg.get("geometry", f"{base_name}_opt.xyz")
+    log_filename = output_cfg.get("log", f"{base_name}_spe.log")
+    energy_filename = output_cfg.get("energy", f"{base_name}_energy.txt")
+    geometry_filename = output_cfg.get("geometry", f"{base_name}_spe.xyz")
 
     log_path = os.path.join(output_dir, log_filename)
     energy_path = os.path.join(output_dir, energy_filename)
@@ -34,24 +34,23 @@ def run(backend, xyz_file, step_config, global_config=None):
 
     # 3. Checkpoint: skip if log exists and overwrite is false
     if os.path.exists(log_path) and not overwrite:
-        logger.info(f"Skipping - {log_path} already exists.")
+        logger.info(f"Skipping – {log_path} already exists.")
         return log_path
 
-    # 4. Capture stdout from Psi4 or backend output
+    # 4. Capture Psi4 output printed to stdout
     stdout_capture = io.StringIO()
     sys_stdout_backup = sys.stdout
     sys.stdout = stdout_capture
 
     try:
-        # Pass the full log_path to backend optimise call if supported
-        # Adjust this call if your backend.optimise() accepts log_path parameter
-        result = backend.optimise(xyz_file, step_config, log_path=log_path)
+        # Pass the full log_path to the backend
+        result = backend.single_point(xyz_file, step_config, log_path=log_path)
     finally:
         sys.stdout = sys_stdout_backup
 
     log_output = stdout_capture.getvalue()
 
-    # 5. Save the stdout capture (complementary to backend log file)
+    # 5. Save full Psi4 stdout log (complementary to Psi4's own log file)
     with open(log_path, "a") as f:
         f.write("\n[Stdout Capture]\n")
         f.write(log_output)

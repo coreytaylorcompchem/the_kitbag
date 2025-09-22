@@ -9,7 +9,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:31 2025
+*** at Mon Sep 22 11:07:25 2025
 
    => Loading Basis Set <=
 
@@ -183,10 +183,10 @@ gradient() will perform analytic gradient computation.
                         Total Energy        Delta E     RMS |[F,P]|
 
    @RKS iter SAD:   -76.10829157396918   -7.61083e+01   0.00000e+00 
-   @RKS iter   1:   -76.15206479622508   -4.37732e-02   4.68894e-02 ADIIS/DIIS
-   @RKS iter   2:   -75.99453473482338    1.57530e-01   6.61864e-02 ADIIS/DIIS
-   @RKS iter   3:   -76.30275947871331   -3.08225e-01   6.24654e-03 ADIIS/DIIS
-   @RKS iter   4:   -76.30525305612295   -2.49358e-03   2.35698e-04 ADIIS/DIIS
+   @RKS iter   1:   -76.15206479622508   -4.37732e-02   4.68894e-02 DIIS/ADIIS
+   @RKS iter   2:   -75.99453473482338    1.57530e-01   6.61864e-02 DIIS/ADIIS
+   @RKS iter   3:   -76.30275947871331   -3.08225e-01   6.24654e-03 DIIS/ADIIS
+   @RKS iter   4:   -76.30525305612295   -2.49358e-03   2.35698e-04 DIIS/ADIIS
    @RKS iter   5:   -76.30525692128492   -3.86516e-06   4.48798e-05 DIIS
    @RKS iter   6:   -76.30525705704630   -1.35761e-07   1.76577e-06 DIIS
    @RKS iter   7:   -76.30525705722583   -1.79526e-10   1.67429e-07 DIIS
@@ -258,18 +258,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:32 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:26 2025
 Module time:
-	user time   =       0.46 seconds =       0.01 minutes
-	system time =       0.05 seconds =       0.00 minutes
+	user time   =       0.45 seconds =       0.01 minutes
+	system time =       0.04 seconds =       0.00 minutes
 	total time  =          1 seconds =       0.02 minutes
 Total time:
-	user time   =       0.46 seconds =       0.01 minutes
-	system time =       0.05 seconds =       0.00 minutes
+	user time   =       0.45 seconds =       0.01 minutes
+	system time =       0.04 seconds =       0.00 minutes
 	total time  =          1 seconds =       0.02 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:32 2025
+*** at Mon Sep 22 11:07:26 2025
 
 
          ------------------------------------------------------------
@@ -376,14 +376,14 @@ Total time:
        3       -0.000000000000     0.132944360348    -0.034297885939
 
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:32 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:26 2025
 Module time:
 	user time   =       0.06 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       0.52 seconds =       0.01 minutes
-	system time =       0.05 seconds =       0.00 minutes
+	user time   =       0.51 seconds =       0.01 minutes
+	system time =       0.04 seconds =       0.00 minutes
 	total time  =          1 seconds =       0.02 minutes
 
     			-----------------------------------------
@@ -464,7 +464,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:32 2025
+*** at Mon Sep 22 11:07:26 2025
 
    => Loading Basis Set <=
 
@@ -592,7 +592,7 @@ gradient() will perform analytic gradient computation.
     atoms 1   entry O          line   130 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
     atoms 2-3 entry H          line    15 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
 
-  Reading orbitals from file /tmp/stdout.default.18062.180.npy, no projection.
+  Reading orbitals from file /tmp/water_opt.default.15350.180.npy, no projection.
 
   ==> Integral Setup <==
 
@@ -648,9 +648,9 @@ gradient() will perform analytic gradient computation.
                         Total Energy        Delta E     RMS |[F,P]|
 
    @RKS iter   0:   -76.32917150105835   -7.63292e+01   1.90934e-02 
-   @RKS iter   1:   -76.35551302301086   -2.63415e-02   3.46201e-03 ADIIS/DIIS
-   @RKS iter   2:   -76.35612028615748   -6.07263e-04   1.52771e-03 ADIIS/DIIS
-   @RKS iter   3:   -76.35623186283401   -1.11577e-04   7.72829e-04 ADIIS/DIIS
+   @RKS iter   1:   -76.35551302301086   -2.63415e-02   3.46201e-03 DIIS/ADIIS
+   @RKS iter   2:   -76.35612028615748   -6.07263e-04   1.52771e-03 DIIS/ADIIS
+   @RKS iter   3:   -76.35623186283401   -1.11577e-04   7.72829e-04 DIIS/ADIIS
    @RKS iter   4:   -76.35627207676448   -4.02139e-05   8.94319e-05 DIIS
    @RKS iter   5:   -76.35627262395172   -5.47187e-07   1.21185e-06 DIIS
    @RKS iter   6:   -76.35627262423965   -2.87926e-10   7.60639e-08 DIIS
@@ -721,18 +721,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:32 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:26 2025
 Module time:
 	user time   =       0.31 seconds =       0.01 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       0.85 seconds =       0.01 minutes
-	system time =       0.05 seconds =       0.00 minutes
+	user time   =       0.84 seconds =       0.01 minutes
+	system time =       0.04 seconds =       0.00 minutes
 	total time  =          1 seconds =       0.02 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:32 2025
+*** at Mon Sep 22 11:07:26 2025
 
 
          ------------------------------------------------------------
@@ -839,14 +839,14 @@ Total time:
        3       -0.000000000000     0.008210759024     0.012015225686
 
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:32 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:26 2025
 Module time:
-	user time   =       0.07 seconds =       0.00 minutes
+	user time   =       0.06 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       0.92 seconds =       0.02 minutes
-	system time =       0.05 seconds =       0.00 minutes
+	user time   =       0.90 seconds =       0.01 minutes
+	system time =       0.04 seconds =       0.00 minutes
 	total time  =          1 seconds =       0.02 minutes
 
     			-----------------------------------------
@@ -927,7 +927,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:32 2025
+*** at Mon Sep 22 11:07:26 2025
 
    => Loading Basis Set <=
 
@@ -1055,7 +1055,7 @@ gradient() will perform analytic gradient computation.
     atoms 1   entry O          line   130 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
     atoms 2-3 entry H          line    15 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
 
-  Reading orbitals from file /tmp/stdout.default.18062.180.npy, no projection.
+  Reading orbitals from file /tmp/water_opt.default.15350.180.npy, no projection.
 
   ==> Integral Setup <==
 
@@ -1111,7 +1111,7 @@ gradient() will perform analytic gradient computation.
                         Total Energy        Delta E     RMS |[F,P]|
 
    @RKS iter   0:   -76.36538704567900   -7.63654e+01   3.23908e-03 
-   @RKS iter   1:   -76.35810912464993    7.27792e-03   3.33409e-04 ADIIS/DIIS
+   @RKS iter   1:   -76.35810912464993    7.27792e-03   3.33409e-04 DIIS/ADIIS
    @RKS iter   2:   -76.35811757335497   -8.44871e-06   5.43206e-05 DIIS
    @RKS iter   3:   -76.35811755219933    2.11556e-08   6.12469e-05 DIIS
    @RKS iter   4:   -76.35811780348207   -2.51283e-07   4.28177e-06 DIIS
@@ -1184,18 +1184,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:32 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:27 2025
 Module time:
 	user time   =       0.30 seconds =       0.01 minutes
 	system time =       0.01 seconds =       0.00 minutes
-	total time  =          0 seconds =       0.00 minutes
-Total time:
-	user time   =       1.23 seconds =       0.02 minutes
-	system time =       0.06 seconds =       0.00 minutes
 	total time  =          1 seconds =       0.02 minutes
+Total time:
+	user time   =       1.22 seconds =       0.02 minutes
+	system time =       0.05 seconds =       0.00 minutes
+	total time  =          2 seconds =       0.03 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:32 2025
+*** at Mon Sep 22 11:07:27 2025
 
 
          ------------------------------------------------------------
@@ -1302,15 +1302,15 @@ Total time:
        3       -0.000000000000     0.002298088377     0.003753740322
 
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:32 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:27 2025
 Module time:
 	user time   =       0.06 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.29 seconds =       0.02 minutes
-	system time =       0.06 seconds =       0.00 minutes
-	total time  =          1 seconds =       0.02 minutes
+	user time   =       1.28 seconds =       0.02 minutes
+	system time =       0.05 seconds =       0.00 minutes
+	total time  =          2 seconds =       0.03 minutes
 
     			-----------------------------------------
 
@@ -1390,7 +1390,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:33 2025
+*** at Mon Sep 22 11:07:27 2025
 
    => Loading Basis Set <=
 
@@ -1518,7 +1518,7 @@ gradient() will perform analytic gradient computation.
     atoms 1   entry O          line   130 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
     atoms 2-3 entry H          line    15 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
 
-  Reading orbitals from file /tmp/stdout.default.18062.180.npy, no projection.
+  Reading orbitals from file /tmp/water_opt.default.15350.180.npy, no projection.
 
   ==> Integral Setup <==
 
@@ -1574,7 +1574,7 @@ gradient() will perform analytic gradient computation.
                         Total Energy        Delta E     RMS |[F,P]|
 
    @RKS iter   0:   -76.36130083806648   -7.63613e+01   1.39675e-03 
-   @RKS iter   1:   -76.35831288746419    2.98795e-03   1.53157e-04 ADIIS/DIIS
+   @RKS iter   1:   -76.35831288746419    2.98795e-03   1.53157e-04 DIIS/ADIIS
    @RKS iter   2:   -76.35831423005051   -1.34259e-06   7.42885e-05 DIIS
    @RKS iter   3:   -76.35831440663935   -1.76589e-07   5.49712e-05 DIIS
    @RKS iter   4:   -76.35831461008442   -2.03445e-07   2.11032e-06 DIIS
@@ -1646,18 +1646,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:33 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:27 2025
 Module time:
 	user time   =       0.28 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.59 seconds =       0.03 minutes
-	system time =       0.06 seconds =       0.00 minutes
+	user time   =       1.58 seconds =       0.03 minutes
+	system time =       0.05 seconds =       0.00 minutes
 	total time  =          2 seconds =       0.03 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:33 2025
+*** at Mon Sep 22 11:07:27 2025
 
 
          ------------------------------------------------------------
@@ -1764,14 +1764,14 @@ Total time:
        3       -0.000000000000     0.000351880305     0.000149136751
 
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:33 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:27 2025
 Module time:
 	user time   =       0.06 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.65 seconds =       0.03 minutes
-	system time =       0.06 seconds =       0.00 minutes
+	user time   =       1.64 seconds =       0.03 minutes
+	system time =       0.05 seconds =       0.00 minutes
 	total time  =          2 seconds =       0.03 minutes
 
     			-----------------------------------------
@@ -1852,7 +1852,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:33 2025
+*** at Mon Sep 22 11:07:27 2025
 
    => Loading Basis Set <=
 
@@ -1980,7 +1980,7 @@ gradient() will perform analytic gradient computation.
     atoms 1   entry O          line   130 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
     atoms 2-3 entry H          line    15 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
 
-  Reading orbitals from file /tmp/stdout.default.18062.180.npy, no projection.
+  Reading orbitals from file /tmp/water_opt.default.15350.180.npy, no projection.
 
   ==> Integral Setup <==
 
@@ -2108,18 +2108,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:33 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:27 2025
 Module time:
-	user time   =       0.27 seconds =       0.00 minutes
+	user time   =       0.28 seconds =       0.00 minutes
 	system time =       0.01 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.93 seconds =       0.03 minutes
-	system time =       0.07 seconds =       0.00 minutes
+	user time   =       1.94 seconds =       0.03 minutes
+	system time =       0.06 seconds =       0.00 minutes
 	total time  =          2 seconds =       0.03 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Sat Sep  6 18:16:33 2025
+*** at Mon Sep 22 11:07:27 2025
 
 
          ------------------------------------------------------------
@@ -2226,14 +2226,14 @@ Total time:
        3       -0.000000000000     0.000073750606    -0.000019233513
 
 
-*** tstop() called on thetinkerfactory at Sat Sep  6 18:16:33 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:07:27 2025
 Module time:
 	user time   =       0.06 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.99 seconds =       0.03 minutes
-	system time =       0.07 seconds =       0.00 minutes
+	user time   =       2.00 seconds =       0.03 minutes
+	system time =       0.06 seconds =       0.00 minutes
 	total time  =          2 seconds =       0.03 minutes
 
     			-----------------------------------------
@@ -2303,10 +2303,17 @@ Next Geometry in Ang
     H           -0.000000000000     0.756890044469     0.533971994408
     H            0.000000000000    -0.756890044469     0.533971994408
 
-[Pipeline] Running workflow 'default'...
 
->>> Running workflow step: optimise
-[Psi4] Optimizing with b3lyp/def2-svp
+[Python stdout]
 Optimizer: Optimization complete!
-[optimise] Saved optimised geometry to: results/water_optimised_poo.xyz
-Default workflow complete
+
+[Python stderr]
+Some dependencies such as QCElemental have not yet finished migration to pydantic v2. If issues are encountered please downgrade pydantic or upgrade QCElemental as appropriate
+	Change in internal coordinate of 5.77e-01 exceeds limit of 5.00e-01.
+	Skipping Hessian update for step 1.
+	Change in internal coordinate of 6.22e-01 exceeds limit of 5.00e-01.
+	Skipping Hessian update for step 1.
+	Change in internal coordinate of 6.26e-01 exceeds limit of 5.00e-01.
+	Skipping Hessian update for step 1.
+
+[Stdout Capture]

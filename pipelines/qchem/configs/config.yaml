@@ -1,8 +1,0 @@
-backend: psi4
-task: workflow
-workflow_name: default
-
-method: b3lyp
-basis: def2-svp
-memory: 4 GB
-threads: 2

@@ -1,8 +1,0 @@
-task: workflow
-workflow_name: advanced
-
-method: b3lyp
-basis: def2-svp
-scf_type: pk
-reference: rhf
-maxiter: 50

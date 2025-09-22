@@ -27,27 +27,23 @@ The framework to build workflows is there, so it should be a matter of implement
 The code is implemented with automatic checkers to see what's actually available. Run `python check_available_tasks_workflows_backends.py` for a list.
 
 ```
-python check_available_tasks_workflows_backends.py 
-Available Backends:
- - psi4
- - xtb
-
 Available Tasks:
- - mesp_map: Calculates a Molecular Electrostatic Potential Map
-   ↳ Backends: None
- - optimise: Performs geometry optimization using the selected backend.
-   ↳ Backends: psi4, xtb
- - pipeline: Allows us to stack calculations in a workflow
-   ↳ Backends: None
- - sapt0: Do a sapt0 calculation (psi4 only)
-   ↳ Backends: None
- - torsion_scan: Do a torsion scan of a bond.
-   ↳ Backends: None
+  [EDA]:
+    - qtaim: Do AIM (Atoms In Molecules) analysis.
+    - sapt0: Do a sapt0 calculation (psi4 only)
+  [Energy]:
+    - single_point: Performs a single-point energy calculation using the selected backend.
+  [Infra]:
+    - pipeline: Allows us to stack calculations in a workflow
+  [Molecular properties]:
+    - mesp_map: Calculates a Molecular Electrostatic Potential Map
+  [Optimization]:
+    - optimise: Performs geometry optimization using the selected backend.
+  [PES exploration]:
+    - torsion_scan: Do a torsion scan of a bond.
 
 Available Workflows:
- - advanced: optimize → mesp_map → torsion_scan → sapt0
- - advanced_multistage_workflow: Runs opt → torsion → opt → MESP with different backends.
- - default: Performs structure optimisation only.
+ - staged_workflow: Performs single or multi-stage calculations.
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.

@@ -1,4 +1,4 @@
-from task_registry import register_task, get_task
+from pipeline.task_registry import register_task, get_task
 import tempfile
 import os
 import json
@@ -8,6 +8,7 @@ import datetime
     'pipeline',
     description="Allows us to stack calculations in a workflow",
     modifies_geometry=False,
+    category='Infra'
 )
 def run_pipeline(backend, xyz_file, config):
     steps = config.get('pipeline', [])
