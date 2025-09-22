@@ -25,7 +25,7 @@ adme_models:
   - herg # Predicts 0/1 probability of being active vs hERG
   - cyp3a4 # Predicts pIC50
   - logd # Predicts LogD
-
+  - caco2 # predicts Apical -> Basolateral permeability in Caco2 cells (proxy for permeability).
 output:
   directory: outputs/physchem_tox_adme
   filename: class_a_gpcr_physchem_tox_adme_filtered.csv

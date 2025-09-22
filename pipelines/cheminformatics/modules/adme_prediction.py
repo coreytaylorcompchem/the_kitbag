@@ -21,6 +21,11 @@ def get_available_adme_models():
             "class": GINRegressor,
             "featuriser": mol_to_graph_cyp
         },
+        "caco2": {
+            "path": model_dir / "caco2_abpapp_gin.pt",
+            "class": GINRegressor,
+            "featuriser": mol_to_graph_cyp
+        },
         "logd": {
             "path": model_dir / "logd_gat.pt",
             "class": GATv2Regressor,

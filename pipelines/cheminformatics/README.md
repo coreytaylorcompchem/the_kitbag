@@ -36,7 +36,7 @@ Available Tasks:
     - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups (WIP).
     - focused_fragment_library_generator: Generate a focused library by fragment frequency (WIP).
   [Prediction]:
-    - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4) from SMILES using PyTorch models
+    - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, Caco-2 A->B P(app)) from SMILES using PyTorch models.
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
