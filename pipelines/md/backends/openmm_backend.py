@@ -52,11 +52,6 @@ class OpenMMBackend:
 
         logger.info(f"Done fixing missing atoms and adding Hydrogens")
 
-        # print("After fixing:")
-        # for atom in fixer.topology.atoms():
-        #     if atom.name in {"CG", "CD", "OE1", "OE2", "ND2", "OD1"}:
-        #         print(f"Found atom {atom.name} in residue {atom.residue.index} ({atom.residue.name})")
-
         fixed_pdb_path = pdb_file.replace(".pdb", "_fixed.pdb")
         with open(fixed_pdb_path, 'w') as f:
             PDBFile.writeFile(fixer.topology, fixer.positions, f)
