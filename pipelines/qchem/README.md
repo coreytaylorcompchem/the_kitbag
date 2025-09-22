@@ -25,18 +25,18 @@ The code is implemented with automatic checkers to see what's actually available
 ```
 Available Tasks:
   [EDA]:
-    - qtaim: Do AIM (Atoms In Molecules) analysis.
-    - sapt0: Do a sapt0 calculation (psi4 only)
+    - qtaim: Do AIM (Atoms In Molecules) analysis (WIP).
+    - sapt0: Do a sapt0 calculation (WIP)
   [Energy]:
     - single_point: Performs a single-point energy calculation using the selected backend.
   [Optimization]:
     - optimise: Performs geometry optimization using the selected backend.
   [PES exploration]:
-    - torsion_scan: Do a torsion scan of a bond.
+    - torsion_scan: Do a torsion scan of a bond (WIP).
   [Property]:
-    - calc_pka: Calculate site pKa values from HA/A- free energies.
-    - mesp: Calculates Molecular Electrostatic Potential (MESP) and outputs cube files for visualization.
-    - site_pka: Enumerate acidic sites, generate protonated and deprotonated geometries for pKa calculations.
+    - calc_pka: Calculate site pKa values from HA/A- free energies (WIP).
+    - mesp: Calculates Molecular Electrostatic Potential (MESP) and outputs cube files for visualization (WIP).
+    - site_pka: Enumerate acidic sites, generate protonated and deprotonated geometries for pKa calculations (WIP).
 
 Available Workflows:
  - staged_workflow: Performs single or multi-stage calculations.
