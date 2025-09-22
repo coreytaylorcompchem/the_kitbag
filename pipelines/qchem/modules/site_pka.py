@@ -1,9 +1,9 @@
 import os
+import pickle
 from rdkit import Chem
 from rdkit.Chem import AllChem
-from rdkit.Chem import rdmolops
-from rdkit.Chem.rdchem import HybridizationType
-from rdkit.Chem.rdmolops import GetFormalCharge
+import pandas as pd
+
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
@@ -15,103 +15,102 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
     modifies_geometry=False,
     category='Property'
 )
-def run(backend, xyz_file, step_config, global_config=None):
-    """
-    Given an input molecule in xyz_file, enumerate acidic sites,
-    generate protonated (HA) and deprotonated (A-) forms as RDKit mols,
-    convert to xyz strings, and return a dict of site info.
+def run(backend, csv_file, step_config, global_config=None):
+    df = pd.read_csv(csv_file)
 
-    Returns dict:
-        {
-          site_idx: {
-            'atom_idx': int,
-            'acidic_atom_symbol': str,
-            'ha_mol': RDKit mol (protonated),
-            'a_mol': RDKit mol (deprotonated),
-            'ha_xyz': str,
-            'a_xyz': str
-          },
-          ...
-        }
-    """
-    mol = load_molecule_from_xyz(xyz_file)
-    acidic_sites = find_acidic_sites(mol)
+    if 'SMILES' not in df.columns or 'name' not in df.columns:
+        raise ValueError("CSV must contain 'SMILES' and 'name' columns.")
 
-    if not acidic_sites:
-        logger.warning("No acidic sites found.")
-        return {}
+    all_results = {}
 
-    site_data = {}
-    for i, atom_idx in enumerate(acidic_sites):
-        ha_mol = protonate_site(mol, atom_idx)
-        a_mol = deprotonate_site(mol, atom_idx)
+    output_dir = step_config.get('output_directory', 'outputs/site_pka')
+    os.makedirs(output_dir, exist_ok=True)
 
-        ha_xyz = mol_to_xyz_string(ha_mol)
-        a_xyz = mol_to_xyz_string(a_mol)
+    for _, row in df.iterrows():
+        smiles = row['SMILES']
+        name = str(row['name'])
 
-        site_data[i] = {
-            'atom_idx': atom_idx,
-            'acidic_atom_symbol': mol.GetAtomWithIdx(atom_idx).GetSymbol(),
-            'ha_mol': ha_mol,
-            'a_mol': a_mol,
-            'ha_xyz': ha_xyz,
-            'a_xyz': a_xyz
-        }
+        logger.info(f"Processing molecule: {name} ({smiles})")
 
-    logger.info(f"Found {len(site_data)} acidic sites for pKa calculation.")
+        try:
+            mol = load_molecule_from_smiles(smiles)
+        except Exception as e:
+            logger.warning(f"Skipping {name}: failed to parse or embed molecule. Error: {e}")
+            continue
 
-    return site_data
+        acidic_sites = find_acidic_sites(mol)
+        if not acidic_sites:
+            logger.warning(f"No acidic sites found for molecule: {name}")
+            continue
 
-def load_molecule_from_xyz(xyz_path):
-    """
-    Load an RDKit molecule from an XYZ file using the RDKit XYZ parser.
-    """
-    with open(xyz_path) as f:
-        xyz_content = f.read()
+        site_data = {}
+        for i, atom_idx in enumerate(acidic_sites):
+            try:
+                ha_mol = protonate_site(mol, atom_idx)
+                a_mol = deprotonate_site(mol, atom_idx)
 
-    # RDKit doesn't natively parse XYZ directly to Mol with connectivity
-    # Use workaround: embed mol from xyz coordinates
-    mol = Chem.MolFromXYZBlock(xyz_content, sanitize=False, removeHs=False)
+                ha_xyz = mol_to_xyz_string(ha_mol)
+                a_xyz = mol_to_xyz_string(a_mol)
+
+                site_data[i] = {
+                    'atom_idx': atom_idx,
+                    'acidic_atom_symbol': mol.GetAtomWithIdx(atom_idx).GetSymbol(),
+                    'ha_xyz': ha_xyz,
+                    'a_xyz': a_xyz,
+                    'ha_mol': ha_mol,
+                    'a_mol': a_mol,
+                }
+            except Exception as e:
+                logger.warning(f"Failed to process site {atom_idx} in {name}: {e}")
+                continue
+
+        all_results[name] = site_data
+        logger.info(f"Found {len(site_data)} acidic sites for {name}.")
+
+        # Save geometries to disk
+        save_site_geometries(site_data, name, output_dir)
+
+    # Save all_results as pickle file
+    output_path = os.path.join(output_dir, "site_pka_data.pkl")
+    with open(output_path, 'wb') as f:
+        pickle.dump(all_results, f)
+
+    logger.info(f"Saved all site pKa data to {output_path}")
+
+    return all_results
+
+
+def load_molecule_from_smiles(smiles):
+    mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        raise ValueError("Failed to parse molecule from XYZ file.")
-
-    # Add hydrogens and compute connectivity
+        raise ValueError(f"Invalid SMILES: {smiles}")
     mol = Chem.AddHs(mol)
-    AllChem.EmbedMolecule(mol)
+    AllChem.EmbedMolecule(mol, randomSeed=42)
     AllChem.UFFOptimizeMolecule(mol)
-    mol = Chem.RemoveHs(mol)
-
     return mol
 
+
 def find_acidic_sites(mol):
-    """
-    Identify acidic protons' heavy atoms indices (sites for deprotonation).
-    Uses SMARTS patterns for common acidic groups.
-    Returns list of atom indices (heavy atoms bonded to acidic H).
-    """
     acidic_smarts = {
         "carboxylic_acid": "[CX3](=O)[OX2H1]",
-        "phenol": "c[OX2H]",
+        "phenol": "[OX2H]c",
         "alcohol": "[CX4][OX2H]",  
-        "thiol": "[#16X2H]",  # sulfur with one H
-        "primary_amine": "[NX3;H2]",  # -NH2
-        "secondary_amine": "[NX3;H1]", # -NH
-        # Add more patterns if needed
+        "thiol": "[#16X2H]",
     }
 
     acidic_sites = set()
+    mol = Chem.AddHs(mol)  # Ensure explicit Hs
 
     for name, smarts in acidic_smarts.items():
         patt = Chem.MolFromSmarts(smarts)
         matches = mol.GetSubstructMatches(patt)
+        print(f"Pattern '{name}' found matches: {matches}")  # debug print
         for match in matches:
-            # Find the acidic heavy atom index in the match
-            # Usually the heavy atom bonded to acidic H
             heavy_atom_idx = None
             for idx in match:
                 atom = mol.GetAtomWithIdx(idx)
                 if atom.GetAtomicNum() > 1 and any(
-                    nbr.GetAtomicNum() == 1 and nbr.GetTotalNumHs() > 0
+                    nbr.GetAtomicNum() == 1
                     for nbr in atom.GetNeighbors()
                 ):
                     heavy_atom_idx = idx
@@ -121,20 +120,29 @@ def find_acidic_sites(mol):
 
     return sorted(list(acidic_sites))
 
+
 def protonate_site(mol, atom_idx):
     """
     Add a proton (H) to the acidic site atom, return new mol.
+    If atom already has a bonded H, return copy of original mol.
     """
     mol_copy = Chem.Mol(mol)
     mol_copy = Chem.AddHs(mol_copy)
     atom = mol_copy.GetAtomWithIdx(atom_idx)
 
+    # Check if atom already has H neighbor
+    has_H = any(nbr.GetAtomicNum() == 1 for nbr in atom.GetNeighbors())
+    if has_H:
+        # Already protonated, just return mol_copy as is
+        return mol_copy
+
     # Add new H bonded to this atom
-    mol_copy.GetAtomWithIdx(atom_idx).SetFormalCharge(0)
     new_h = Chem.Atom(1)
-    mol_copy.AddAtom(new_h)
-    new_h_idx = mol_copy.GetNumAtoms() - 1
-    mol_copy.AddBond(atom_idx, new_h_idx, order=Chem.rdchem.BondType.SINGLE)
+    rw_mol = Chem.RWMol(mol_copy)
+    new_h_idx = rw_mol.AddAtom(new_h)
+    rw_mol.AddBond(atom_idx, new_h_idx, order=Chem.rdchem.BondType.SINGLE)
+
+    mol_copy = rw_mol.GetMol()
 
     # Sanitize and optimize
     Chem.SanitizeMol(mol_copy)
@@ -143,44 +151,46 @@ def protonate_site(mol, atom_idx):
 
     return mol_copy
 
+
 def deprotonate_site(mol, atom_idx):
     """
     Remove acidic proton bonded to atom_idx, return new mol.
     """
-    mol_copy = Chem.Mol(mol)
-    mol_copy = Chem.AddHs(mol_copy)
-    atom = mol_copy.GetAtomWithIdx(atom_idx)
+    mol_copy = Chem.RWMol(mol)
+    Chem.SanitizeMol(mol_copy)
 
-    # Find an H neighbor to remove
+    # Find one H neighbor to remove
     h_idx = None
+    atom = mol_copy.GetAtomWithIdx(atom_idx)
     for nbr in atom.GetNeighbors():
         if nbr.GetAtomicNum() == 1:
             h_idx = nbr.GetIdx()
             break
-    if h_idx is not None:
-        mol_copy = Chem.RWMol(mol_copy)
-        mol_copy.RemoveAtom(h_idx)
-        mol_copy = mol_copy.GetMol()
-    else:
-        # No H found, return original molecule
-        pass
 
-    # Adjust formal charge for deprotonation if needed (assume -1)
+    if h_idx is not None:
+        mol_copy.RemoveAtom(h_idx)
+    else:
+        logger.warning(f"No proton found on acidic site atom idx {atom_idx} for deprotonation.")
+
+    # Adjust formal charge to -1 (assumed)
     atom = mol_copy.GetAtomWithIdx(atom_idx)
     atom.SetFormalCharge(atom.GetFormalCharge() - 1)
 
+    mol_copy = mol_copy.GetMol()
     Chem.SanitizeMol(mol_copy)
-    AllChem.EmbedMolecule(mol_copy)
+    mol_copy = Chem.AddHs(mol_copy)
+    AllChem.EmbedMolecule(mol_copy, randomSeed=42)
     AllChem.UFFOptimizeMolecule(mol_copy)
 
     return mol_copy
+
 
 def mol_to_xyz_string(mol):
     """
     Convert RDKit mol to xyz format string.
     """
     mol = Chem.AddHs(mol)
-    AllChem.EmbedMolecule(mol)
+    AllChem.EmbedMolecule(mol, randomSeed=42)
     AllChem.UFFOptimizeMolecule(mol)
 
     conf = mol.GetConformer()
@@ -189,3 +199,27 @@ def mol_to_xyz_string(mol):
         pos = conf.GetAtomPosition(atom.GetIdx())
         lines.append(f"{atom.GetSymbol()} {pos.x:.6f} {pos.y:.6f} {pos.z:.6f}")
     return "\n".join(lines)
+
+
+def save_site_geometries(site_data, name, output_dir):
+    """
+    Save the HA and A- XYZ geometries from site_pka data to disk.
+
+    Args:
+        site_data (dict): Result of the site_pka task.
+        name (str): Molecule name (used in filenames).
+        output_dir (str): Where to write files.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    for site_idx, data in site_data.items():
+        ha_path = os.path.join(output_dir, f"{name}_site_{site_idx}_HA.xyz")
+        a_path = os.path.join(output_dir, f"{name}_site_{site_idx}_A.xyz")
+
+        with open(ha_path, "w") as f:
+            f.write(data['ha_xyz'])
+
+        with open(a_path, "w") as f:
+            f.write(data['a_xyz'])
+
+        logger.info(f"Wrote geometry files for site {site_idx} of molecule {name} to {output_dir}")
