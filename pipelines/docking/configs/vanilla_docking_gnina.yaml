@@ -19,11 +19,11 @@ protein:
   pdb_path: "/home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
   pH: 7.4
 
-# There are two options for docking ligands with this pipeline;
+### Ligand prep
 
 # Option 1: Use a file with a simple list of SMILES (ligs.txt). 
 
-# Use with generate_ligands_from_list true to generate the csv for docking
+# Use with generate_ligands_from_list true to generate the csv of ligands to be parameterised.
 # This will generate identifiers for you (lig1, lig2, etc.)
 
 # Option 2: Use a csv with your own identifiers (ligands.csv)
@@ -35,12 +35,23 @@ generate_ligands_from_list: true
 ligands_txt: "ligs.txt"    
 # ligands_csv: "ligands.csv" 
 
+### Docking parameters
+
+# The docking_mode parameter controls whether you dock multiple generated conformers ('ensemble') 
+# or just the lowest energy from generated coformers ('lowest_energy').
+# rmsd_threshold and min_energy_gap control how many conformers you dock.
+# In practice, the parameters below are tight, so only one conformer is generated here anyway. 
+# TODO: add actual ensemble docking (multiple proteins) and rename this to something else.
+
 docking:
   output_dir: "output_gnina"
   docking_mode: ensemble # or 'lowest_energy'
   final_n_conformers: 2
   rmsd_threshold: 0.75
   min_energy_gap: 0.5  # in eV
+
+  ### Binding pocket detection
+  
   # Option 1: Explicit center
   # center: [10.5, 22.1, 15.7]
   # size: [15.0, 15.0, 15.0]
@@ -49,6 +60,7 @@ docking:
   # ref_ligand_path: "/path/to/reference_ligand.sdf"
   # size: [15.0, 15.0, 15.0]
 
-  # Option 3: Use crystallized ligand
+  # Option 3: Use crystallized ligand in a 15 x 15 x 15 Angstrom box.
+  # TODO: use the output of a pocket finder (e.g. fpocket) to dock into multiple pockets end-to-end.
   use_crystal_ligand: true
   size: [15.0, 15.0, 15.0]
