@@ -16,7 +16,7 @@ def run_staged_workflow(xyz_file, config):
     current_xyz = xyz_file
 
     for step in steps:
-        logger.info(f"\n>>> Running workflow step: {step}")
+        logger.info(f">>> Running workflow step: {step} <<<")
         task_func = get_task(step)
 
         if task_func:

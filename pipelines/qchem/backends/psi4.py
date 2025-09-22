@@ -19,11 +19,19 @@ class Psi4Backend(BaseBackend):
         method = config.get('method', 'b3lyp')
         basis = config.get('basis', 'def2-svp')
 
-        psi4.set_options({
+        ram = config.get('ram')
+        ncpu = config.get('ncpu')
+
+        psi4_opts = {
             'basis': basis,
             'scf_type': config.get('scf_type', 'pk'),
             'reference': config.get('reference', 'rhf'),
-        })
+        }
+
+        if ram:
+            psi4_opts['memory'] = f"{ram} MB"
+        if ncpu:
+            psi4_opts['num_threads'] = ncpu
 
         # Ensure output directory exists
         if log_path:
@@ -47,12 +55,19 @@ class Psi4Backend(BaseBackend):
         basis = config.get('basis', 'def2-svp')
         maxiter = config.get('maxiter', 50)
 
-        psi4.set_options({
+        ram = config.get('ram')
+        ncpu = config.get('ncpu')
+
+        psi4_opts = {
             'basis': basis,
             'scf_type': config.get('scf_type', 'pk'),
             'reference': config.get('reference', 'rhf'),
-            'maxiter': maxiter,
-        })
+        }
+
+        if ram:
+            psi4_opts['memory'] = f"{ram} MB"
+        if ncpu:
+            psi4_opts['num_threads'] = ncpu
 
         # Prepare output redirection
         if log_path:
