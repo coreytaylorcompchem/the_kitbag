@@ -19,9 +19,21 @@ protein:
   pdb_path: "/home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
   pH: 7.4
 
+# There are two options for docking ligands with this pipeline;
+
+# Option 1: Use a file with a simple list of SMILES (ligs.txt). 
+
+# Use with generate_ligands_from_list true to generate the csv for docking
+# This will generate identifiers for you (lig1, lig2, etc.)
+
+# Option 2: Use a csv with your own identifiers (ligands.csv)
+
+# This will simply use what you give it and propagate the identifiers through the docking.
+# TODO: Add capability to add other data (e.g. IC50) to the csv that can be used later.
+
 generate_ligands_from_list: true
-ligands_txt: "ligs.txt"    # Only used if generate_ligands_from_list is true
-# ligands_csv: "ligands.csv"         # Will be created if needed, or used directly if list is false
+ligands_txt: "ligs.txt"    
+# ligands_csv: "ligands.csv" 
 
 docking:
   output_dir: "output_gnina"
