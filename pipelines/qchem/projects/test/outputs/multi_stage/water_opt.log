@@ -9,7 +9,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:39 2025
+*** at Mon Sep 22 11:22:23 2025
 
    => Loading Basis Set <=
 
@@ -261,18 +261,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:40 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:23 2025
 Module time:
 	user time   =       0.40 seconds =       0.01 minutes
-	system time =       0.03 seconds =       0.00 minutes
-	total time  =          1 seconds =       0.02 minutes
+	system time =       0.04 seconds =       0.00 minutes
+	total time  =          0 seconds =       0.00 minutes
 Total time:
 	user time   =       0.40 seconds =       0.01 minutes
-	system time =       0.03 seconds =       0.00 minutes
-	total time  =          1 seconds =       0.02 minutes
+	system time =       0.04 seconds =       0.00 minutes
+	total time  =          0 seconds =       0.00 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:40 2025
+*** at Mon Sep 22 11:22:23 2025
 
 
          ------------------------------------------------------------
@@ -389,15 +389,15 @@ Total time:
        3       -0.000000000000     0.136326501226    -0.042409209036
 
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:40 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:23 2025
 Module time:
-	user time   =       0.05 seconds =       0.00 minutes
+	user time   =       0.06 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       0.45 seconds =       0.01 minutes
-	system time =       0.03 seconds =       0.00 minutes
-	total time  =          1 seconds =       0.02 minutes
+	user time   =       0.46 seconds =       0.01 minutes
+	system time =       0.04 seconds =       0.00 minutes
+	total time  =          0 seconds =       0.00 minutes
 
     			-----------------------------------------
 
@@ -477,7 +477,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:40 2025
+*** at Mon Sep 22 11:22:23 2025
 
    => Loading Basis Set <=
 
@@ -610,7 +610,7 @@ gradient() will perform analytic gradient computation.
     atoms 1   entry O          line   130 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
     atoms 2-3 entry H          line    15 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
 
-  Reading orbitals from file /tmp/water_opt.default.16413.180.npy, no projection.
+  Reading orbitals from file /tmp/water_opt.default.16624.180.npy, no projection.
 
   ==> Integral Setup <==
 
@@ -738,18 +738,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:40 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:23 2025
 Module time:
 	user time   =       0.27 seconds =       0.00 minutes
 	system time =       0.01 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       0.74 seconds =       0.01 minutes
-	system time =       0.04 seconds =       0.00 minutes
-	total time  =          1 seconds =       0.02 minutes
+	user time   =       0.75 seconds =       0.01 minutes
+	system time =       0.05 seconds =       0.00 minutes
+	total time  =          0 seconds =       0.00 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:40 2025
+*** at Mon Sep 22 11:22:23 2025
 
 
          ------------------------------------------------------------
@@ -866,15 +866,15 @@ Total time:
        3       -0.000000000000     0.009851732898     0.008877605456
 
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:40 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:23 2025
 Module time:
 	user time   =       0.05 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       0.79 seconds =       0.01 minutes
-	system time =       0.04 seconds =       0.00 minutes
-	total time  =          1 seconds =       0.02 minutes
+	user time   =       0.80 seconds =       0.01 minutes
+	system time =       0.05 seconds =       0.00 minutes
+	total time  =          0 seconds =       0.00 minutes
 
     			-----------------------------------------
 
@@ -954,7 +954,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:40 2025
+*** at Mon Sep 22 11:22:23 2025
 
    => Loading Basis Set <=
 
@@ -1087,7 +1087,7 @@ gradient() will perform analytic gradient computation.
     atoms 1   entry O          line   130 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
     atoms 2-3 entry H          line    15 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
 
-  Reading orbitals from file /tmp/water_opt.default.16413.180.npy, no projection.
+  Reading orbitals from file /tmp/water_opt.default.16624.180.npy, no projection.
 
   ==> Integral Setup <==
 
@@ -1215,18 +1215,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:40 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:24 2025
 Module time:
-	user time   =       0.28 seconds =       0.00 minutes
-	system time =       0.01 seconds =       0.00 minutes
-	total time  =          0 seconds =       0.00 minutes
+	user time   =       0.29 seconds =       0.00 minutes
+	system time =       0.00 seconds =       0.00 minutes
+	total time  =          1 seconds =       0.02 minutes
 Total time:
-	user time   =       1.09 seconds =       0.02 minutes
+	user time   =       1.11 seconds =       0.02 minutes
 	system time =       0.05 seconds =       0.00 minutes
 	total time  =          1 seconds =       0.02 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:40 2025
+*** at Mon Sep 22 11:22:24 2025
 
 
          ------------------------------------------------------------
@@ -1343,13 +1343,13 @@ Total time:
        3       -0.000000000000     0.002736040718     0.003087877559
 
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:40 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:24 2025
 Module time:
 	user time   =       0.05 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.14 seconds =       0.02 minutes
+	user time   =       1.16 seconds =       0.02 minutes
 	system time =       0.05 seconds =       0.00 minutes
 	total time  =          1 seconds =       0.02 minutes
 
@@ -1431,7 +1431,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:40 2025
+*** at Mon Sep 22 11:22:24 2025
 
    => Loading Basis Set <=
 
@@ -1564,7 +1564,7 @@ gradient() will perform analytic gradient computation.
     atoms 1   entry O          line   130 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
     atoms 2-3 entry H          line    15 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
 
-  Reading orbitals from file /tmp/water_opt.default.16413.180.npy, no projection.
+  Reading orbitals from file /tmp/water_opt.default.16624.180.npy, no projection.
 
   ==> Integral Setup <==
 
@@ -1692,18 +1692,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:41 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:24 2025
 Module time:
-	user time   =       0.28 seconds =       0.00 minutes
-	system time =       0.00 seconds =       0.00 minutes
-	total time  =          1 seconds =       0.02 minutes
+	user time   =       0.29 seconds =       0.00 minutes
+	system time =       0.01 seconds =       0.00 minutes
+	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.44 seconds =       0.02 minutes
-	system time =       0.05 seconds =       0.00 minutes
-	total time  =          2 seconds =       0.03 minutes
+	user time   =       1.47 seconds =       0.02 minutes
+	system time =       0.06 seconds =       0.00 minutes
+	total time  =          1 seconds =       0.02 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:41 2025
+*** at Mon Sep 22 11:22:24 2025
 
 
          ------------------------------------------------------------
@@ -1820,15 +1820,15 @@ Total time:
        3       -0.000000000000     0.000210682789     0.000213505501
 
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:41 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:24 2025
 Module time:
-	user time   =       0.06 seconds =       0.00 minutes
+	user time   =       0.05 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.50 seconds =       0.03 minutes
-	system time =       0.05 seconds =       0.00 minutes
-	total time  =          2 seconds =       0.03 minutes
+	user time   =       1.53 seconds =       0.03 minutes
+	system time =       0.06 seconds =       0.00 minutes
+	total time  =          1 seconds =       0.02 minutes
 
     			-----------------------------------------
 
@@ -1908,7 +1908,7 @@ gradient() will perform analytic gradient computation.
     Solid Harmonics ordering:            Gaussian
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:41 2025
+*** at Mon Sep 22 11:22:24 2025
 
    => Loading Basis Set <=
 
@@ -2041,7 +2041,7 @@ gradient() will perform analytic gradient computation.
     atoms 1   entry O          line   130 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
     atoms 2-3 entry H          line    15 file /home/corey/miniconda3/envs/qchem/share/psi4/basis/def2-svp.gbs 
 
-  Reading orbitals from file /tmp/water_opt.default.16413.180.npy, no projection.
+  Reading orbitals from file /tmp/water_opt.default.16624.180.npy, no projection.
 
   ==> Integral Setup <==
 
@@ -2167,18 +2167,18 @@ Properties computed using the SCF density matrix
 
  ------------------------------------------------------------------------------------
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:41 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:24 2025
 Module time:
-	user time   =       0.24 seconds =       0.00 minutes
-	system time =       0.01 seconds =       0.00 minutes
+	user time   =       0.22 seconds =       0.00 minutes
+	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.75 seconds =       0.03 minutes
+	user time   =       1.77 seconds =       0.03 minutes
 	system time =       0.06 seconds =       0.00 minutes
-	total time  =          2 seconds =       0.03 minutes
+	total time  =          1 seconds =       0.02 minutes
 
 *** tstart() called on thetinkerfactory
-*** at Mon Sep 22 11:19:41 2025
+*** at Mon Sep 22 11:22:24 2025
 
 
          ------------------------------------------------------------
@@ -2295,15 +2295,15 @@ Total time:
        3       -0.000000000000     0.000022542500     0.000008673537
 
 
-*** tstop() called on thetinkerfactory at Mon Sep 22 11:19:41 2025
+*** tstop() called on thetinkerfactory at Mon Sep 22 11:22:24 2025
 Module time:
-	user time   =       0.05 seconds =       0.00 minutes
+	user time   =       0.06 seconds =       0.00 minutes
 	system time =       0.00 seconds =       0.00 minutes
 	total time  =          0 seconds =       0.00 minutes
 Total time:
-	user time   =       1.80 seconds =       0.03 minutes
+	user time   =       1.83 seconds =       0.03 minutes
 	system time =       0.06 seconds =       0.00 minutes
-	total time  =          2 seconds =       0.03 minutes
+	total time  =          1 seconds =       0.02 minutes
 
     			-----------------------------------------
 
