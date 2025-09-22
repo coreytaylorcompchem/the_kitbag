@@ -34,7 +34,7 @@ def run(backend, xyz_file, step_config, global_config=None):
 
     # 3. Checkpoint: skip if log exists and overwrite is false
     if os.path.exists(log_path) and not overwrite:
-        logger.info(f"Skipping - {log_path} already exists.")
+        logger.warning(f"Skipping - {log_path} already exists.")
         return log_path
 
     # 4. Capture stdout from Psi4 or backend output
@@ -66,7 +66,7 @@ def run(backend, xyz_file, step_config, global_config=None):
 
     if energy is not None:
         with open(energy_path, "w") as f:
-            f.write(f"Energy: {energy:.10f} Hartree\n")
+            f.write(f"Energy: {energy['energy']:.10f} Hartree\n")
         logger.info(f"Saved energy to: {energy_path}")
 
     if final_geom and isinstance(final_geom, str):

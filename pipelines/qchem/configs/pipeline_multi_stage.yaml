@@ -5,6 +5,7 @@ input_file: inputs/water.xyz
 workflow:
   - optimise
   - single_point
+  # - mesp
 
 single_point:
   backend: psi4
@@ -30,6 +31,17 @@ optimise:
     log: water_opt.log
     energy: water_opt_energy.txt
     geometry: water_opt.xyz
+
+# mesp:
+#   backend: psi4
+# #   method: pbe0
+# #   basis: def2-tzvpp
+# #   ram: 8000
+# #   ncpu: 8
+#   output:
+#     log: water_mesp.log
+#     mesp_cube: water_mesp.cube
+#     density_cube: water_density.cube
 
 output:
   directory: outputs/multi_stage
