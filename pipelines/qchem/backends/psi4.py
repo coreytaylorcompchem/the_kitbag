@@ -5,7 +5,10 @@ import shutil
 import psi4
 from backends.base import BaseBackend
 
+from backends.utils.wfn_export import write_wfn_file
+
 from pipeline.logger import setup_logger
+
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class Psi4Backend(BaseBackend):
@@ -62,6 +65,7 @@ class Psi4Backend(BaseBackend):
 
 
     def optimise(self, xyz_file, config, log_path=None):
+
         with open(xyz_file) as f:
             mol_xyz = f.read()
         mol = psi4.geometry(mol_xyz)
@@ -84,8 +88,6 @@ class Psi4Backend(BaseBackend):
 
         logger.debug(f"Molecule multiplicity: {multiplicity} => {'open-shell' if is_open_shell else 'closed-shell'}")
 
-
-        # Determine if this is a DFT method
         is_dft = 'b3lyp' in method.lower() or any(x in method.lower() for x in ['pbe', 'm06', 'wb97', 'b97'])
 
         default_reference = 'uks' if (is_dft and is_open_shell) else \
@@ -129,22 +131,39 @@ class Psi4Backend(BaseBackend):
             log_file.write("\n[Python stderr]\n")
             log_file.write(stderr_capture.getvalue())
 
-        # Save geometry 
         output_cfg = config.get('output', {})
+        output_dir = os.path.dirname(log_path) if log_path else "."
+
+        # Save geometry
+        geometry_path = None
         geometry_filename = output_cfg.get('geometry')
         if geometry_filename:
-            output_dir = os.path.dirname(log_path) if log_path else "."
             geometry_path = os.path.join(output_dir, geometry_filename)
             with open(geometry_path, "w") as xyz_out:
                 xyz_out.write(wfn.molecule().save_string_xyz())
             logger.info(f"Saved final geometry to: {geometry_path}")
 
-        return {
+        # Save wavefunction file (Molden or Psi4 wfn)
+        wfn_path = None
+        wfn_filename = output_cfg.get('wfn')
+        if wfn_filename:
+            wfn_path = os.path.join(output_dir, wfn_filename)
+            write_wfn_file(wfn, wfn_path, wfn_filename)  # Your helper function to save wfn
+            logger.info(f"Saved wavefunction file to: {wfn_path}")
+
+        # Prepare final geometry string for return
+        final_geometry_str = wfn.molecule().save_string_xyz()
+
+        result = {
             "energy": energy,
-            "wfn": wfn,
             "method": method,
-            "basis": basis
+            "basis": basis,
+            "wfn_file": wfn_path,
+            "wfn": wfn,
+            "geometry": final_geometry_str,
         }
+
+        return result
 
 
     def mesp(self, xyz_or_wfn, config, mesp_cube_path, density_cube_path, log_path=None):
@@ -234,4 +253,3 @@ class Psi4Backend(BaseBackend):
             psi4.core.set_output_file("stdout")
 
         return None
-

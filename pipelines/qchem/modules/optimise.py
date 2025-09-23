@@ -2,14 +2,13 @@ import os
 import io
 import sys
 from pipeline.task_registry import register_task
-
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 @register_task(
     'optimise',
-    description="Performs geometry optimization using the selected backend.",
+    description="Performs geometry optimization.",
     modifies_geometry=True,
     category='Optimization'
 )
@@ -27,15 +26,23 @@ def run(backend, xyz_file, step_config, global_config=None):
     log_filename = output_cfg.get("log", f"{base_name}_opt.log")
     energy_filename = output_cfg.get("energy", f"{base_name}_opt_energy.txt")
     geometry_filename = output_cfg.get("geometry", f"{base_name}_opt.xyz")
+    wfn_filename = output_cfg.get("wfn", f"{base_name}.wfn")
 
     log_path = os.path.join(output_dir, log_filename)
     energy_path = os.path.join(output_dir, energy_filename)
     geometry_path = os.path.join(output_dir, geometry_filename)
+    wfn_path = os.path.join(output_dir, wfn_filename)
 
     # 3. Checkpoint: skip if log exists and overwrite is false
     if os.path.exists(log_path) and not overwrite:
         logger.warning(f"Skipping - {log_path} already exists.")
-        return log_path
+        # Try to return a dict with available info
+        result_dict = {"wfn_file": wfn_path if os.path.exists(wfn_path) else None,
+                       "geometry": None,
+                       "energy": None,
+                       "wfn": None}
+        # We could try to read geometry and energy if desired here
+        return result_dict
 
     # 4. Capture stdout from Psi4 or backend output
     stdout_capture = io.StringIO()
@@ -57,16 +64,30 @@ def run(backend, xyz_file, step_config, global_config=None):
         f.write(log_output)
     logger.info(f"Saved log output to: {log_path}")
 
-    # 6. Save energy and geometry if returned
-    if isinstance(result, tuple):
-        energy, final_geom = result
+    energy = None
+    final_geom = None
+    wfn = None
+
+    if isinstance(result, dict):
+        energy = result.get("energy")
+        wfn = result.get("wfn")
+        if wfn:
+            try:
+                wfn.to_file(wfn_path)
+                logger.info(f"Saved wavefunction file to: {wfn_path}")
+            except Exception as e:
+                logger.warning(f"Failed to write .wfn file: {e}")
+
+        if wfn:
+            final_geom = wfn.molecule().save_string_xyz()
     else:
+        # If backend.optimise returns energy float or something else
         energy = result
-        final_geom = None
 
     if energy is not None:
+        energy_value = energy["energy"] if isinstance(energy, dict) and "energy" in energy else energy
         with open(energy_path, "w") as f:
-            f.write(f"Energy: {energy['energy']:.10f} Hartree\n")
+            f.write(f"Energy: {energy_value:.10f} Hartree\n")
         logger.info(f"Saved energy to: {energy_path}")
 
     if final_geom and isinstance(final_geom, str):
@@ -74,4 +95,12 @@ def run(backend, xyz_file, step_config, global_config=None):
             f.write(final_geom)
         logger.info(f"Saved geometry to: {geometry_path}")
 
-    return log_path
+    # Return dict with relevant info for downstream tasks
+    return {
+        "energy": energy,
+        "method": step_config.get("method"),
+        "basis": step_config.get("basis"),
+        "wfn_file": wfn_path if wfn else None,
+        "wfn": wfn,
+        "geometry": final_geom
+    }

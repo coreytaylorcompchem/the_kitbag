@@ -12,7 +12,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 def run_staged_workflow(xyz_file, config):
     steps = config.get('workflow', [])
     current_xyz = xyz_file
-    last_result = None
+    last_result = {}
 
     for step in steps:
         logger.info(f">>> Running workflow step: {step} <<<")
@@ -30,34 +30,54 @@ def run_staged_workflow(xyz_file, config):
             BackendClass = get_backend_class(backend_name)
             backend = BackendClass(config)  # pass global config
 
-            # Pass wavefunction object if available and step supports it
-            if last_result is not None and step == "mesp":
-                input_for_task = last_result.get("wfn", current_xyz)
+            # For steps that require wavefunction input (like qtaim, mesp),
+            # pass wfn_file path if available, else wfn object, else fallback to current_xyz
+            if last_result and step in ("qtaim", "mesp"):
+                if last_result.get("wfn_file"):
+                    input_for_task = last_result["wfn_file"]
+                elif last_result.get("wfn"):
+                    input_for_task = last_result["wfn"]
+                else:
+                    logger.warning(f"No wavefunction found in last_result for step '{step}', passing current_xyz")
+                    input_for_task = current_xyz
 
-                # If method/basis not set in mesp config, pull from previous step
-                if "method" not in step_config and "method" in last_result:
-                    step_config["method"] = last_result["method"]
-                if "basis" not in step_config and "basis" in last_result:
-                    step_config["basis"] = last_result["basis"]
+                # Copy method/basis from last_result if missing in step_config
+                for key in ("method", "basis"):
+                    if key not in step_config and key in last_result:
+                        step_config[key] = last_result[key]
             else:
                 input_for_task = current_xyz
 
-            result = task_func(backend, input_for_task, step_config, config)
+            logger.debug(f"Passing to task '{step}': {type(input_for_task)} - {input_for_task}")
 
+            result = task_func(backend, input_for_task, step_config, config)
+            logger.debug(f"Result from step '{step}': {result}")
+
+            # Update last_result and current_xyz depending on step and result
             if step in ('single_point', 'optimise'):
-                # Expecting dict: {'energy': ..., 'wfn': ..., 'method': ..., 'basis': ...}
                 if isinstance(result, dict):
                     last_result = result
-                    if "wfn" in result and result["wfn"]:
-                        current_xyz = result["wfn"].molecule().save_string_xyz()
-                else:
-                    last_result = None
 
+                    # Prefer to update current_xyz with wfn_file if available
+                    if "wfn_file" in result and result["wfn_file"]:
+                        current_xyz = result["wfn_file"]
+                        logger.debug(f"Updated current_xyz to wfn_file: {current_xyz}")
+                    elif "wfn" in result and result["wfn"]:
+                        current_xyz = result["wfn"].molecule().save_string_xyz()
+                        logger.debug("Updated current_xyz to xyz string from wavefunction object.")
+                    elif "geometry" in result:
+                        current_xyz = result["geometry"]
+                        logger.debug("Updated current_xyz to geometry string.")
+                    else:
+                        logger.debug("No update to current_xyz performed; using previous value.")
             elif getattr(task_func, 'modifies_geometry', False) and isinstance(result, str):
                 current_xyz = result
                 last_result = {"geometry": result}
+                logger.debug(f"Task '{step}' modified geometry; updated current_xyz.")
             else:
-                last_result = {}
+                # For other steps, update last_result if result is dict, else clear it
+                last_result = result if isinstance(result, dict) else {}
+                logger.debug(f"Updated last_result for step '{step}'.")
 
         else:
             workflow_func = get_workflow(step)

@@ -4,17 +4,7 @@ input_file: inputs/water.xyz
 
 workflow:
   - optimise
-
-single_point:
-  backend: psi4
-  method: bp86
-  basis: def2-svp
-  ram: 4000        # RAM in MB
-  ncpu: 4          # number of CPU cores
-  output: 
-    log: water_spe.log
-    energy: water_energy.txt
-    geometry: water_spe.xyz
+  - qtaim
 
 optimise:
   backend: psi4
@@ -30,8 +20,12 @@ optimise:
     log: water_opt.log
     energy: water_opt_energy.txt
     geometry: water_opt.xyz
-    wfn: water_opt.wfn
+    wfn: water_opt.molden
+
+qtaim:
+  backend: multiwfn # TopChem or Critic2 or AIMALL
+  ncpu: 16 # the more the better with heavy calculations
 
 output:
-  directory: outputs/optimise
+  directory: outputs/qtaim
   overwrite: true

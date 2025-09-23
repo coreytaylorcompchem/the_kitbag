@@ -1,11 +1,13 @@
 from backends.psi4 import Psi4Backend
 from backends.orca import OrcaBackend
 from backends.xtb import XTBBackend
+from backends.multiwfn import MultiwfnBackend
 
 backend_registry = {
     "psi4": Psi4Backend,
     "xtb": XTBBackend,
-    "orca": OrcaBackend
+    "orca": OrcaBackend,
+    "multiwfn": MultiwfnBackend
 }
 
 def get_backend(name):

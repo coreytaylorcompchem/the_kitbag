@@ -8,10 +8,11 @@ Here's where we can run some quantum chemistry calculations.
 
 * Python > 3.11 (OPI needs it)
 * [psi4](https://psicode.org/installs/v110zero/)
-* [Orca](https://orcaforum.kofo.mpg.de/app.php/portal) - 6.1 or above (big download from their forum)
+* [Orca](https://orcaforum.kofo.mpg.de/app.php/portal) - 6.1 or above (big download ~500Mb from their forum)
 * [Orca Python Interface (OPI)](https://github.com/faccts/opi)
-* [Xtb](https://xtb-docs.readthedocs.io/en/latest/setup.html) - don't use python-xtb (binary is better supported)
-* [Multiwfn](http://sobereva.com/multiwfn/)
+* [Xtb](https://xtb-docs.readthedocs.io/en/latest/setup.html) - binary is well supported, python-xtb not
+* [Multiwfn](http://sobereva.com/multiwfn/) - this software is great and the dude who maintains it is worth supporting.
+* [libxm4](https://packages.debian.org/search?keywords=libxm4) - for Multiwfn
 
 Will create an env.yaml in time. Further explanations on what the other bits do - soon.
 
@@ -30,20 +31,28 @@ If the calculation runs correctly, you should see output (`log.log`) and a `resu
 The code is implemented with automatic checkers to see what's actually available. Run `python list_available_tasks_and workflows.py` for a list.
 
 ```
+Available Backends:
+ - multiwfn
+ - orca
+ - psi4
+ - xtb
+
 Available Tasks:
   [EDA]:
-    - qtaim: Do AIM (Atoms In Molecules) analysis (WIP).
-    - sapt0: Do a sapt0 calculation (WIP)
+    - sapt0: Do a sapt0 calculation (WIP).
   [Energy]:
     - single_point: Performs a single-point energy calculation using the selected backend.
-  [Optimization]:
-    - optimise: Performs geometry optimization using the selected backend.
-  [PES exploration]:
     - torsion_scan: Do a torsion scan of a bond (WIP).
+  [Optimization]:
+    - optimise: Performs geometry optimization.
   [Property]:
     - calc_pka: Calculate site pKa values from HA/A- free energies.
     - mesp: Calculates Molecular Electrostatic Potential (MESP) and outputs cube files for visualization (WIP).
     - site_pka: Enumerate acidic sites, generate protonated and deprotonated geometries for pKa calculations.
+  [Wave function analysis]:
+    - basin: Performs real-space analysis (basins, DIs) (WIP).
+    - nci: Performs NCI calculation, outputs cube files (WIP).
+    - qtaim: Performs QTAIM analysis on .molden formatted file.
 
 Available Workflows:
  - staged_workflow: Performs single or multi-stage calculations.
