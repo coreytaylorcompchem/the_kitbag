@@ -65,12 +65,12 @@ def run(backend, csv_file, step_config, global_config=None):
                 continue
 
         all_results[name] = site_data
-        logger.info(f"Found {len(site_data)} acidic sites for {name}.")
+        logger.info(f"Found {len(site_data)} acidic site(s) for {name}.")
 
         # Save geometries to disk
         save_site_geometries(site_data, name, output_dir)
 
-    # Save all_results as pickle file
+    # Save all_results as pickle
     output_path = os.path.join(output_dir, "site_pka_data.pkl")
     with open(output_path, 'wb') as f:
         pickle.dump(all_results, f)
@@ -104,7 +104,7 @@ def find_acidic_sites(mol):
     for name, smarts in acidic_smarts.items():
         patt = Chem.MolFromSmarts(smarts)
         matches = mol.GetSubstructMatches(patt)
-        print(f"Pattern '{name}' found matches: {matches}")  # debug print
+        logger.debug(f"Pattern '{name}' found matches: {matches}")
         for match in matches:
             heavy_atom_idx = None
             for idx in match:

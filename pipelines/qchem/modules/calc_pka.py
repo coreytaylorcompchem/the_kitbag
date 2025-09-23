@@ -4,7 +4,7 @@ import pickle
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 PROTON_GAS_PHASE_G = -6.28  # kcal/mol
 
@@ -58,14 +58,14 @@ def run(backend, input_for_task, step_config, global_config=None):
                 a_log_path = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_A.log")
 
                 logger.info(f"Optimising HA structure for {mol_name} site {site_idx} from file: {ha_filepath}")
-                ha_result = backend.optimise(ha_filepath, {'method': method, 'basis': basis, 'ram': ram, 'ncpu': ncpu}, log_path=ha_log_path)
+                ha_result = backend.optimise(ha_filepath, step_config, log_path=ha_log_path)
 
                 energy_ha = ha_result.get('energy')
                 if energy_ha is None:
                     raise ValueError(f"No energy returned for HA species in {mol_name} site {site_idx}")
 
                 logger.info(f"Optimising A- structure for {mol_name} site {site_idx} from file: {a_filepath}")
-                a_result = backend.optimise(a_filepath, {'method': method, 'basis': basis, 'ram': ram, 'ncpu': ncpu}, log_path=a_log_path)
+                a_result = backend.optimise(a_filepath, step_config, log_path=a_log_path)
 
                 energy_a = a_result.get('energy')
                 if energy_a is None:

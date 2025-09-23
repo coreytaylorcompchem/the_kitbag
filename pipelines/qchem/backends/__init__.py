@@ -1,10 +1,11 @@
 from backends.psi4 import Psi4Backend
+from backends.orca import OrcaBackend
 from backends.xtb import XTBBackend
 
 backend_registry = {
     "psi4": Psi4Backend,
     "xtb": XTBBackend,
-    # "orca": ORCABackend
+    "orca": OrcaBackend
 }
 
 def get_backend(name):

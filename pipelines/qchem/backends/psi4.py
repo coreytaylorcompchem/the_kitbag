@@ -6,7 +6,7 @@ import psi4
 from backends.base import BaseBackend
 
 from pipeline.logger import setup_logger
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class Psi4Backend(BaseBackend):
     def single_point(self, xyz_file, config, log_path=None):
@@ -76,6 +76,8 @@ class Psi4Backend(BaseBackend):
             psi4.set_memory(f"{ram} MB")
         if ncpu:
             psi4.set_num_threads(ncpu)
+
+        logger.debug(f"Psi4 using {psi4.get_num_threads()} threads and {psi4.get_memory()} memory")
 
         multiplicity = mol.multiplicity()
         is_open_shell = multiplicity > 1

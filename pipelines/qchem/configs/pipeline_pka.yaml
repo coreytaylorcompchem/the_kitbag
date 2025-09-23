@@ -19,32 +19,8 @@ calc_pka:
   temperature: 298.15
   ram: 8000         # RAM in MB
   ncpu: 16           # number of CPU cores
+  # solvent: water ### only in vacuo calculation until I implement Orca
   output_dir: outputs/calc_pka
-
-# single_point:
-#   backend: psi4
-#   method: pbe0
-#   basis: def2-tzvpp
-#   ram: 4000        # RAM in MB
-#   ncpu: 4          # number of CPU cores
-#   output: 
-#     log: water_spe.log
-#     energy: water_energy.txt
-#     geometry: water_spe.xyz
-
-# optimise:
-#   backend: psi4
-#   method: bp86
-#   basis: def2-svp
-#   ram: 8000        # RAM in MB
-#   ncpu: 8          # number of CPU cores
-#   scf_type: pk
-#   reference: rhf
-#   maxiter: 50
-#   output: 
-#     log: water_opt.log
-#     energy: water_opt_energy.txt
-#     geometry: water_opt.xyz
 
 output:
   directory: outputs/site_pka

@@ -3,7 +3,7 @@ workflow_name: staged_workflow
 input_file: inputs/water.xyz
 
 workflow:
-  - single_point
+  - optimise
 
 single_point:
   backend: psi4
@@ -16,20 +16,21 @@ single_point:
     energy: water_energy.txt
     geometry: water_spe.xyz
 
-# optimise:
-#   backend: psi4
-#   method: b3lyp
-#   basis: def2-svp
-#   ram: 8000        # RAM in MB
-#   ncpu: 8          # number of CPU cores
-#   scf_type: pk
-#   reference: rhf
-#   maxiter: 50
-#   output: 
-#     log: water_opt.log
-#     energy: water_opt_energy.txt
-#     geometry: water_opt.xyz
+optimise:
+  backend: psi4
+  method: b3lyp
+  basis: def2-svp
+  solvent: water
+  ram: 8000        # RAM in MB
+  ncpu: 8          # number of CPU cores
+  scf_type: pk
+  reference: rhf
+  maxiter: 50
+  output: 
+    log: water_opt.log
+    energy: water_opt_energy.txt
+    geometry: water_opt.xyz
 
 output:
-  directory: outputs/single_point
+  directory: outputs/optimise
   overwrite: true

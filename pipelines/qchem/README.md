@@ -34,9 +34,9 @@ Available Tasks:
   [PES exploration]:
     - torsion_scan: Do a torsion scan of a bond (WIP).
   [Property]:
-    - calc_pka: Calculate site pKa values from HA/A- free energies (WIP).
+    - calc_pka: Calculate site pKa values from HA/A- free energies.
     - mesp: Calculates Molecular Electrostatic Potential (MESP) and outputs cube files for visualization (WIP).
-    - site_pka: Enumerate acidic sites, generate protonated and deprotonated geometries for pKa calculations (WIP).
+    - site_pka: Enumerate acidic sites, generate protonated and deprotonated geometries for pKa calculations.
 
 Available Workflows:
  - staged_workflow: Performs single or multi-stage calculations.
@@ -47,4 +47,10 @@ If you want to register new workflows, you'll also need to do so with metadata t
 ## TODO
 
 * Implement XTB and Orca API to give further options.
+* For pKa, to make it useful;
+  * Add solvent to calculation (Orca only, Psi4 doesn't handle solvent well).
+  * Add empirical correction to solvent pKas.
+    * Will use solvent pKa calculation to generate dataset from literature values.
+  * Generate multiple energetic conformers to feed into pKa calculation to get the average pKa.
+    * Common tactic; pKa is geometry dependent. 
 * Add all the common calculations (torsion scans, mesp maps, etc.)

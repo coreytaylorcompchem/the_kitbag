@@ -1,0 +1,5 @@
+
+units angstrom
+medium {
+    solver_type IEFPCM
+    solvent water
