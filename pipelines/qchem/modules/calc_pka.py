@@ -6,7 +6,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
-PROTON_GAS_PHASE_G = -6.28  # kcal/mol, literature gas phase proton free energy (approximate)
+PROTON_GAS_PHASE_G = -6.28  # kcal/mol
 
 @register_task(
     'calc_pka',
@@ -15,21 +15,6 @@ PROTON_GAS_PHASE_G = -6.28  # kcal/mol, literature gas phase proton free energy 
     category='Property'
 )
 def run(backend, input_for_task, step_config, global_config=None):
-    """
-    site_pka_data: dict from site_pka task containing HA and A- xyz and mol objects.
-    step_config: dict with Psi4 method, basis, temperature, etc.
-
-    Returns dict:
-      {
-        (molecule_name, site_idx): {
-          'pka': float,
-          'deltaG_kcal': float,
-          'energy_ha': float,
-          'energy_a': float
-        },
-        ...
-      }
-    """
     site_pka_data_path = step_config.get('site_pka_data_path')
     if site_pka_data_path is None:
         raise ValueError("Missing site_pka_data_path in step_config")
@@ -39,7 +24,10 @@ def run(backend, input_for_task, step_config, global_config=None):
 
     method = step_config.get('method', 'b3lyp')
     basis = step_config.get('basis', 'def2-svp')
-    temperature = step_config.get('temperature', 298.15)  # Kelvin
+    temperature = step_config.get('temperature', 298.15)
+
+    output_dir = step_config.get("output_dir", "outputs/calc_pka")
+    os.makedirs(output_dir, exist_ok=True)
 
     results = {}
 
@@ -52,24 +40,29 @@ def run(backend, input_for_task, step_config, global_config=None):
             a_filepath = None
 
             try:
-                # Write HA xyz to temp file
+                # Temp files for geometries
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.xyz', delete=False) as ha_file:
                     ha_file.write(ha_xyz)
                     ha_filepath = ha_file.name
 
-                # Write A- xyz to temp file
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.xyz', delete=False) as a_file:
                     a_file.write(a_xyz)
                     a_filepath = a_file.name
 
+                # Create log paths
+                ha_log_path = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_HA.log")
+                a_log_path = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_A.log")
+
                 logger.debug(f"Optimising HA structure for {mol_name} site {site_idx} from file: {ha_filepath}")
-                ha_result = backend.optimise(ha_filepath, {'method': method, 'basis': basis})
+                ha_result = backend.optimise(ha_filepath, {'method': method, 'basis': basis}, log_path=ha_log_path)
+
                 energy_ha = ha_result.get('energy')
                 if energy_ha is None:
                     raise ValueError(f"No energy returned for HA species in {mol_name} site {site_idx}")
 
                 logger.debug(f"Optimising A- structure for {mol_name} site {site_idx} from file: {a_filepath}")
-                a_result = backend.optimise(a_filepath, {'method': method, 'basis': basis})
+                a_result = backend.optimise(a_filepath, {'method': method, 'basis': basis}, log_path=a_log_path)
+
                 energy_a = a_result.get('energy')
                 if energy_a is None:
                     raise ValueError(f"No energy returned for A- species in {mol_name} site {site_idx}")
@@ -79,18 +72,16 @@ def run(backend, input_for_task, step_config, global_config=None):
                 continue
 
             finally:
-                # Cleanup temp files
                 if ha_filepath and os.path.exists(ha_filepath):
                     os.remove(ha_filepath)
                 if a_filepath and os.path.exists(a_filepath):
                     os.remove(a_filepath)
 
-            # Convert Hartree to kcal/mol
+            # Free energy difference (ΔG)
             hartree_to_kcal = 627.509
             deltaG = (energy_a - energy_ha) * hartree_to_kcal + PROTON_GAS_PHASE_G
 
-            # Calculate pKa: pKa = ΔG / (RT ln10)
-            R = 1.9872036e-3  # kcal/(mol K)
+            R = 1.9872036e-3
             ln10 = 2.302585
             pka = deltaG / (R * temperature * ln10)
 
@@ -104,5 +95,3 @@ def run(backend, input_for_task, step_config, global_config=None):
             logger.info(f"{mol_name} site {site_idx} pKa: {pka:.2f} (ΔG = {deltaG:.2f} kcal/mol)")
 
     return results
-
-

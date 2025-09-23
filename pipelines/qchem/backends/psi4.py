@@ -6,7 +6,7 @@ import psi4
 from backends.base import BaseBackend
 
 from pipeline.logger import setup_logger
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 class Psi4Backend(BaseBackend):
     def single_point(self, xyz_file, config, log_path=None):
@@ -75,10 +75,26 @@ class Psi4Backend(BaseBackend):
         if ncpu:
             psi4.set_num_threads(ncpu)
 
+        multiplicity = mol.multiplicity()
+        is_open_shell = multiplicity > 1
+
+        logger.debug(f"Molecule multiplicity: {multiplicity} => {'open-shell' if is_open_shell else 'closed-shell'}")
+
+
+        # Determine if this is a DFT method
+        is_dft = 'b3lyp' in method.lower() or any(x in method.lower() for x in ['pbe', 'm06', 'wb97', 'b97'])
+
+        default_reference = 'uks' if (is_dft and is_open_shell) else \
+                            'uhf' if is_open_shell else \
+                            'rks' if is_dft else \
+                            'rhf'
+
+        reference = config.get('reference', default_reference)
+
         psi4_opts = {
             'basis': basis,
             'scf_type': config.get('scf_type', 'pk'),
-            'reference': config.get('reference', 'rhf'),
+            'reference': reference,
             'maxiter': maxiter,
         }
 

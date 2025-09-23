@@ -1,1 +1,1 @@
-Energy: -76.3583257732 Hartree
+Energy: -76.3583157681 Hartree
