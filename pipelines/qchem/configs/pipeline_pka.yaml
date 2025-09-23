@@ -17,6 +17,8 @@ calc_pka:
   method: b3lyp
   basis: def2-svp
   temperature: 298.15
+  ram: 8000         # RAM in MB
+  ncpu: 16           # number of CPU cores
   output_dir: outputs/calc_pka
 
 # single_point:

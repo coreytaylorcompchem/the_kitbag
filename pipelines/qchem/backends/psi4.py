@@ -23,6 +23,8 @@ class Psi4Backend(BaseBackend):
             psi4.set_memory(f"{ram} MB")
         if ncpu:
             psi4.set_num_threads(ncpu)
+        
+        logger.debug(f"Psi4 using {psi4.get_num_threads()} threads and {psi4.get_memory()} memory")
 
         psi4_opts = {
             'basis': basis,

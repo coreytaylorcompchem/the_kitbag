@@ -22,9 +22,13 @@ def run(backend, input_for_task, step_config, global_config=None):
     with open(site_pka_data_path, 'rb') as f:
         site_pka_data = pickle.load(f)
 
+    # Retrieve configs for use in optimisations
+
     method = step_config.get('method', 'b3lyp')
     basis = step_config.get('basis', 'def2-svp')
     temperature = step_config.get('temperature', 298.15)
+    ram = step_config.get('ram', 2000)
+    ncpu = step_config.get('ncpu', 2)
 
     output_dir = step_config.get("output_dir", "outputs/calc_pka")
     os.makedirs(output_dir, exist_ok=True)
@@ -53,15 +57,15 @@ def run(backend, input_for_task, step_config, global_config=None):
                 ha_log_path = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_HA.log")
                 a_log_path = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_A.log")
 
-                logger.debug(f"Optimising HA structure for {mol_name} site {site_idx} from file: {ha_filepath}")
-                ha_result = backend.optimise(ha_filepath, {'method': method, 'basis': basis}, log_path=ha_log_path)
+                logger.info(f"Optimising HA structure for {mol_name} site {site_idx} from file: {ha_filepath}")
+                ha_result = backend.optimise(ha_filepath, {'method': method, 'basis': basis, 'ram': ram, 'ncpu': ncpu}, log_path=ha_log_path)
 
                 energy_ha = ha_result.get('energy')
                 if energy_ha is None:
                     raise ValueError(f"No energy returned for HA species in {mol_name} site {site_idx}")
 
-                logger.debug(f"Optimising A- structure for {mol_name} site {site_idx} from file: {a_filepath}")
-                a_result = backend.optimise(a_filepath, {'method': method, 'basis': basis}, log_path=a_log_path)
+                logger.info(f"Optimising A- structure for {mol_name} site {site_idx} from file: {a_filepath}")
+                a_result = backend.optimise(a_filepath, {'method': method, 'basis': basis, 'ram': ram, 'ncpu': ncpu}, log_path=a_log_path)
 
                 energy_a = a_result.get('energy')
                 if energy_a is None:
