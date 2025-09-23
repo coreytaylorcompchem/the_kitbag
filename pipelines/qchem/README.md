@@ -6,7 +6,14 @@ Here's where we can run some quantum chemistry calculations.
 
 ## Setup and dependencies
 
-You'll need `psi4` and several others. Will create an env.yaml in time. Further explanations on what the other bits do - soon.
+* Python > 3.11 (OPI needs it)
+* [psi4](https://psicode.org/installs/v110zero/)
+* [Orca](https://orcaforum.kofo.mpg.de/app.php/portal) - 6.1 or above (big download from their forum)
+* [Orca Python Interface (OPI)](https://github.com/faccts/opi)
+* [Xtb](https://xtb-docs.readthedocs.io/en/latest/setup.html) - don't use python-xtb (binary is better supported)
+* [Multiwfn](http://sobereva.com/multiwfn/)
+
+Will create an env.yaml in time. Further explanations on what the other bits do - soon.
 
 ## Running calculations
 

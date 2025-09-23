@@ -1,5 +1,0 @@
-
-Units = angstrom
-Medium = {
-    SolverType = IEFPCM
-    Solvent = Water
