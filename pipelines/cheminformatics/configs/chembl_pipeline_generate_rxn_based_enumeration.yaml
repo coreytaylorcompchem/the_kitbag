@@ -1,0 +1,27 @@
+# Generating a combinatorial library from database fragments.
+
+# Purpose: to generate a combinatorial library based on scaffolds of known actives.
+# Workflow: 
+# - take a library of compounds with known bioactivities and filter actives, 
+# - decompose into scaffolds and R-groups by BRICS/MACCS/etc., 
+# - create combinatorial libraries from scaffolds / R-groups.  
+# Outputs: CSV and .smi of generated molecules.
+
+workflow_name: dynamic_task_runner
+
+workflow:
+  - reaction_based_enumeration
+
+reaction_based_enumeration:
+  input_file_rxns: data/hartenfeller_rxns.csv
+  input_file_scaffolds: data/scaffolds.csv
+  input_file_reactants: data/enamine_fragments.csv
+  max_products_per_scaffold: 500
+  chunk_size: 500
+
+output:
+  directory: outputs/reaction_based_enumeration
+  filename: class_a_gpcr_rxn_library.csv
+  overwrite: true
+
+cleanup: true

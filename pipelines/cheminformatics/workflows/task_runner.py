@@ -2,6 +2,7 @@ import gc
 import pandas as pd
 import csv
 import shutil
+import inspect
 from pathlib import Path
 from rdkit import Chem
 from pipeline.task_registry import get_task
@@ -87,16 +88,47 @@ def run_task_chain_on_chunk(chunk_file: str, task_list, config):
 
 @register_workflow("dynamic_task_runner", description="Run a task list in parallel on input chunks and output CSV/SDF/SMI")
 def dynamic_task_runner(config):
-    input_file = config.get("input_file")
-    if not input_file:
-        raise ValueError("Missing 'input_file' in config")
-    input_path = Path(input_file)
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input file not found: {input_file}")
+    import inspect
 
     task_list = config.get("workflow", [])
     if not task_list:
         raise ValueError("No 'workflow' list of tasks specified in config")
+
+    def task_requires_input_file(task_name):
+        task_func = get_task(task_name)
+        if not task_func:
+            raise ValueError(f"Task '{task_name}' not found")
+        try:
+            sig = inspect.signature(task_func)
+            param = sig.parameters.get("data")
+            return param is not None and param.default == inspect.Parameter.empty
+        except Exception as e:
+            logger.warning(f"Could not inspect task '{task_name}': {e}")
+            return True  # Default to True if inspection fails
+
+    input_file = config.get("input_file")
+
+    if not input_file:
+        if any(task_requires_input_file(task_name) for task_name in task_list):
+            raise ValueError("Missing 'input_file' in config, but required by one or more tasks.")
+        else:
+            logger.info("No 'input_file' needed for this workflow.")
+            # Run tasks sequentially without chunking
+            current_data = {}
+            for task_name in task_list:
+                task_func = get_task(task_name)
+                logger.info(f"Running task '{task_name}' (no input_file needed)...")
+                result = task_func(config, data=current_data)
+                if isinstance(result, dict):
+                    current_data = result
+                else:
+                    current_data = {"df": result}
+            return current_data  # Done here for no-input workflows
+
+    # === If we got here, we need an input file and continue as before ===
+    input_path = Path(input_file)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input file not found: {input_file}")
 
     df = pd.read_csv(input_file, sep=",", quotechar='"', escapechar='\\', engine="python")
     if "smiles" not in df.columns:
@@ -112,8 +144,7 @@ def dynamic_task_runner(config):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     chunk_dir = output_dir / "chunks"
-    if not chunk_dir.exists():
-        chunk_dir.mkdir(parents=True, exist_ok=True)
+    chunk_dir.mkdir(parents=True, exist_ok=True)
 
     chunk_files = []
     for i in range(0, len(df), chunk_size):
@@ -129,7 +160,6 @@ def dynamic_task_runner(config):
         )
         chunk_files.append(str(chunk_file))
 
-        # Optional check
         try:
             test_df = pd.read_csv(chunk_file, sep=",", quotechar='"', escapechar='\\', engine="python")
             if "smiles" not in test_df.columns:
@@ -186,7 +216,7 @@ def dynamic_task_runner(config):
             index=False,
             quoting=csv.QUOTE_ALL,
             quotechar='"',
-            doublequote=True,  # ensure quotes inside fields are doubled
+            doublequote=True,
             escapechar=None,
             lineterminator='\n'
         )
@@ -224,3 +254,4 @@ def dynamic_task_runner(config):
             logger.warning(f"Failed to cleanup chunk directory {chunk_dir}: {e}")
 
     return {"df": combined_df}
+
