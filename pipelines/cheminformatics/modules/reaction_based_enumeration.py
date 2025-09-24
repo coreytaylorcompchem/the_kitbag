@@ -14,7 +14,7 @@ from pipeline.logger import setup_logger
 from pipeline.parallel_runner import ParallelWorkflowRunner
 
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 
 def apply_reactions_to_scaffold(scaffold_row, reaction_info_list, reactant_mols, max_products=500):

@@ -1,11 +1,17 @@
-# Generating a combinatorial library from database fragments.
+# Generating a reaction-based library.
 
-# Purpose: to generate a combinatorial library based on scaffolds of known actives.
+# Purpose: to generate a library from scaffolds and building blocks using reaction SMIRKS
 # Workflow: 
-# - take a library of compounds with known bioactivities and filter actives, 
-# - decompose into scaffolds and R-groups by BRICS/MACCS/etc., 
-# - create combinatorial libraries from scaffolds / R-groups.  
-# Outputs: CSV and .smi of generated molecules.
+# - feed in
+#   - a list of reaction SMIRKS or SMARTS (e.g. safe med chem reactions of Hartfeller et al (2011)
+#     - necessary columns = smirks or smarts AND rxn_name
+#   - a list of scaffolds with reactive handles (e.g. Br)
+#     - necessary columns = smiles
+#   - a list of reactants, in this case fragments from Enamine.
+#     - necessary columns = smiles
+# - All three of these files are used to exhaustively generate new products and dump them to a summary csv file.
+# CAVEAT: as this method is exhaustive, there is no way (yet) to 'protect' a scaffold with multiple reactive handles.
+# Outputs: CSV and generated molecules with columns including the product, scaffold,m building block and reaction name.
 
 workflow_name: dynamic_task_runner
 
@@ -16,8 +22,8 @@ reaction_based_enumeration:
   input_file_rxns: data/hartenfeller_rxns.csv
   input_file_scaffolds: data/scaffolds.csv
   input_file_reactants: data/enamine_fragments.csv
-  max_products_per_scaffold: 500
-  chunk_size: 500
+  max_products_per_scaffold: 500 # this is more like 'per chunk', as the dataset is split up for speed.
+  chunk_size: 500 # If you have a large reactant dataset, this will speed things up a lot.
 
 output:
   directory: outputs/reaction_based_enumeration

@@ -35,7 +35,7 @@ Available Tasks:
   [Library generation]:
     - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups.
     - focused_fragment_library_generator: Generate a focused library by fragment frequency.
-    - reaction_based_enumeration: Generate library from fragment with reaction SMARTS (WIP).
+    - reaction_based_enumeration: Generate library from fragments with reaction SMIRKS/SMARTS.
   [Prediction]:
     - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, A->B (Papp)) from SMILES using PyTorch models
 Available Workflows:
