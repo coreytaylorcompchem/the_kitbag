@@ -11,7 +11,7 @@ workflow_name: chembl_multi_target
 # the code needs to first retrieve a list of all targets. 
 # This is > 17000 records and will take a minute or two.
 
-# protein_class: IPR000276 # Class A GPCR
+# interpro_protein_class: IPR000276 # Class A GPCR
 
 # Option 2: flexible search - keyword search with optional refinement. 
 # In this case, all targets with the word 'receptor' are matched including GPCRs, nuclear receptors, etc.
