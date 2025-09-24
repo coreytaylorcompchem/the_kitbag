@@ -1,4 +1,4 @@
-import re
+import gc
 import pandas as pd
 import csv
 import shutil
@@ -44,12 +44,12 @@ def run_task_chain_on_chunk(chunk_file: str, task_list, config):
         task_config = dict(config)
         task_config["input_file"] = current_file
 
-        logger.debug(f"[parallel_chunk_runner] Running {task_name} on chunk {chunk_file}")
+        logger.debug(f"Running {task_name} on chunk {chunk_file}")
         result = task(task_config, data=current_data)
 
         # Normalize result to a dict
         if isinstance(result, tuple):
-            logger.debug(f"[parallel_chunk_runner] Task '{task_name}' returned tuple of length {len(result)}")
+            logger.debug(f"Task '{task_name}' returned tuple of length {len(result)}")
 
             if len(result) == 3:
                 _, df_result, mols_result = result
@@ -58,15 +58,15 @@ def run_task_chain_on_chunk(chunk_file: str, task_list, config):
                 _, df_result = result
                 result = {"df": df_result, "mols": []}
             else:
-                logger.debug(f"[parallel_chunk_runner] Task '{task_name}' returned unexpected tuple length {len(result)}")
+                logger.debug(f"Task '{task_name}' returned unexpected tuple length {len(result)}")
                 return (Path(chunk_file).stem, pd.DataFrame(), [])
 
         elif isinstance(result, dict):
             if "df" not in result or result["df"] is None or result["df"].empty:
-                logger.debug(f"[parallel_chunk_runner] Task '{task_name}' returned empty or invalid dataframe")
+                logger.debug(f"Task '{task_name}' returned empty or invalid dataframe")
                 return (Path(chunk_file).stem, pd.DataFrame(), [])
         else:
-            logger.error(f"[parallel_chunk_runner] Task '{task_name}' returned unsupported result type: {type(result)}")
+            logger.error(f"Task '{task_name}' returned unsupported result type: {type(result)}")
             return (Path(chunk_file).stem, pd.DataFrame(), [])
 
         # At this point, result is guaranteed to be a valid dict with a DataFrame
@@ -80,6 +80,8 @@ def run_task_chain_on_chunk(chunk_file: str, task_list, config):
         df.to_csv(temp_output, index=False, quoting=csv.QUOTE_ALL)
         current_file = str(temp_output)
         current_data = result
+
+        gc.collect()
 
     return (Path(chunk_file).stem, df, mols_out)
 
@@ -131,9 +133,9 @@ def dynamic_task_runner(config):
         try:
             test_df = pd.read_csv(chunk_file, sep=",", quotechar='"', escapechar='\\', engine="python")
             if "smiles" not in test_df.columns:
-                logger.error(f"[Chunk Write Check] {chunk_file} malformed: columns={test_df.columns.tolist()}")
+                logger.error(f"{chunk_file} malformed: columns={test_df.columns.tolist()}")
         except Exception as e:
-            logger.error(f"[Chunk Write Check] Failed to read {chunk_file}: {e}")
+            logger.error(f"Failed to read {chunk_file}: {e}")
 
     logger.info(f"[dynamic_parallel_task_runner] Generated {len(chunk_files)} chunk files")
 
@@ -173,8 +175,8 @@ def dynamic_task_runner(config):
     else:
         combined_df = pd.DataFrame()
 
-    logger.info(f"[dynamic_parallel_task_runner] Combined dataframe shape: {combined_df.shape}")
-    logger.info(f"[dynamic_parallel_task_runner] Combined dataframe columns: {combined_df.columns.tolist()}")
+    logger.info(f"Combined dataframe shape: {combined_df.shape}")
+    logger.info(f"Combined dataframe columns: {combined_df.columns.tolist()}")
 
     final_csv = output_dir / config.get("output", {}).get("filename", "final_output.csv")
 
@@ -188,7 +190,7 @@ def dynamic_task_runner(config):
             escapechar=None,
             lineterminator='\n'
         )
-        logger.info(f"[dynamic_parallel_task_runner] Final CSV written: {final_csv}")
+        logger.info(f"Final CSV written: {final_csv}")
     except Exception as e:
         logger.error(f"Failed to write final CSV: {e}")
 
@@ -198,7 +200,7 @@ def dynamic_task_runner(config):
             with open(smi_file, "w") as f:
                 for smi in combined_df["smiles"].dropna():
                     f.write(smi + "\n")
-            logger.info(f"[dynamic_parallel_task_runner] SMILES file written: {smi_file}")
+            logger.info(f"SMILES file written: {smi_file}")
         except Exception as e:
             logger.error(f"Failed to write SMILES file: {e}")
 
@@ -213,7 +215,7 @@ def dynamic_task_runner(config):
         except Exception as e:
             logger.error(f"Failed to write SDF file: {e}")
     else:
-        logger.debug("[dynamic_parallel_task_runner] No RDKit mols to write SDF.")
+        logger.debug("No RDKit mols to write SDF.")
 
     if config.get("cleanup", True):
         try:

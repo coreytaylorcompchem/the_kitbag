@@ -33,7 +33,7 @@ Available Tasks:
     - physchem_filtering: Physchem filtering with mandatory and optional cutoffs + conformer generation
     - toxic_reactive_filtering: Toxic and reactive SMARTS matching for molecules
   [Library generation]:
-    - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups (WIP).
+    - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups.
     - focused_fragment_library_generator: Generate a focused library by fragment frequency.
     - reaction_based_enumeration: Generate library from fragment with reaction SMARTS (WIP).
   [Prediction]:

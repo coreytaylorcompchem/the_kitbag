@@ -74,7 +74,7 @@ def focused_fragment_library_generator(config, data=None):
             })
 
     result_df = pd.DataFrame(results)
-    logger.info(f"[focused_fragment_library_generator] Extracted {len(result_df)} frequent fragments")
+    logger.info(f"Extracted {len(result_df)} frequent fragments")
 
     # Optionally write to SDF file
     if output_fragments:

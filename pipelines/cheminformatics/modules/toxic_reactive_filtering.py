@@ -48,7 +48,7 @@ def toxic_reactive_filtering(config, data=None):
         row['toxic_category']: row['smarts'] for _, row in toxic_reactive_df.iterrows()
     }
 
-    logger.debug(f"[toxic_reactive_filtering] Loaded {len(smarts_list)} toxic/reactive SMARTS patterns")
+    logger.debug(f"Loaded {len(smarts_list)} toxic/reactive SMARTS patterns")
 
     # Prepare columns for toxic/reactive flags and matching SMARTS
     toxic_flags = []

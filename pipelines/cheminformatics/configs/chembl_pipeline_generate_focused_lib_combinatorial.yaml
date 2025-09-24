@@ -1,27 +1,38 @@
+# Generating a combinatorial library from database fragments.
+
+# Purpose: to generate a combinatorial library based on scaffolds of known actives.
+# Workflow: take a library of compounds with known bioactivities, filter actives, 
+# fragmentby BRICS/MACCS/etc. to find scaffolds, create combinatorial libraries with scaffolds and R-groups.  
+# Outputs: CSV and .smi of generated molecules.
+
 workflow_name: dynamic_task_runner
 
 input_file: data/class_a_gpcr_bioactivity_small.csv
-chunk_size: 1000
+chunk_size: 1000 # bigger chunks (> 100) are more efficient but will eat your RAM
 
 workflow:
   - activity_filtering
   - combinatorial_enumerator
-  # - focused_fragment_library_generator
 
 activity:
   value_cutoff_nM: 1000
 
 combinatorial_enumerator:
-  max_molecules: 2000
-  min_fragments: 3
-  top_fragments: 30
+  max_molecules: 100 # large number here (> 1000) = combinatorial explosion
+  min_fragments: 3 # quick check if fragmented library results in no fragments
+  top_fragments: 30 # limit to only the most common fragments before classifying them as scaffolds or R-groups (noise reduction).
+  max_attachment_points: 3 # controls the complexity of molecules generated form scaffold / R-group.
+  top_scaffolds: 25 # After decomposition; selects the N most frequent scaffolds for enumeration
+  top_rgroups: 25  # After decomposition; selects the N most frequent R-groups for enumeration      
 
-# focused_fragment_library:
-#   fragment_type: BRICS  # or MACCS
-#   frequency_threshold: 0.3
-#   max_fragments: 100  # Optional limit on number of fragments to keep
-#   group_by_target: true  # Optional: group by target or analyze across all
-#   output_fragments: true
+# Recommended values:
+
+# max_molecules:          Start with 100–500. Scale up cautiously.
+# min_fragments:          Set to 2–5. Lower for small datasets.
+# top_fragments:          50–100 for broad exploration. 20–40 for focused SAR studies.
+# max_attachment_points:  2–3 for focused, drug-like libraries, 4–5 for more exhaustive or exploratory enumeration.
+# top_scaffolds:          10–50 for focused libraries, 100+ for broad scaffold hopping or fragment recombination.
+# top_rgroups:            20–50 for SAR-like exploration around scaffolds, 100–200+ for broader side-chain exploration.
 
 output:
   directory: outputs/combinatorial_library

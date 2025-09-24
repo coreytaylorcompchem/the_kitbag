@@ -178,7 +178,6 @@ def physchem_filtering(config, data=None):
     output_df = pd.DataFrame(accepted_props)
     logger.debug(f"physchem_filtering: {len(output_df)} molecules passed filters and conformer generation.")
 
-    # Write output files if specified
     output_dir = Path(config.get("output", {}).get("directory", "."))
     output_dir.mkdir(parents=True, exist_ok=True)
 

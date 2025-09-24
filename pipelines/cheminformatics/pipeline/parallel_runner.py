@@ -110,7 +110,6 @@ class ParallelWorkflowRunner:
             logger.error(f"[{filename_key}] Failed to write CSV: {e}")
             return pd.DataFrame()
 
-        # Return only the DataFrame for later combining
         logger.debug(f"[{identifier}] Returning DataFrame shape: {result_df.shape}")
         logger.debug(f"[{identifier}] DataFrame columns: {result_df.columns.tolist()}")
         return result_df
@@ -144,7 +143,7 @@ class ParallelWorkflowRunner:
         combined_path = self.output_dir / self.combined_filename
         try:
             combined_df.to_csv(combined_path, index=False)
-            logger.info(f"\nCombined output saved to {combined_path}")
+            logger.info(f"Combined output saved to {combined_path}")
         except Exception as e:
             logger.error(f"Failed to write combined output CSV: {e}")
             return pd.DataFrame()
