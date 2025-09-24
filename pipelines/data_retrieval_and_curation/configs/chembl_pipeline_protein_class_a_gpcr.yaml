@@ -1,21 +1,28 @@
 task: workflow
 workflow_name: chembl_multi_target
 
-# Collecting uniprots to retrieve all bioactivity for a protein class
+# Collecting uniprots to retrieve all bioactivity for a protein class (Class A GPCRs)
 
-# Strict search: you want only a single protein target class
+# You have a choice of two search options, and you must pick one.
+
+# Option 1: Strict search - you want only a single protein target class
 # Use the InterPro Accession number for the family.
+# CAVEAT: As Chembl doesn't allow queries nested with Interpro IDs, 
+# the code needs to first retrieve a list of all targets. 
+# This is > 17000 records and will take a minute or two.
 
-# protein_class IPR000276 # Class A GPCR
+# protein_class: IPR000276 # Class A GPCR
 
-# Flexible search: keyword search with optional refinement. 
+# Option 2: flexible search - keyword search with optional refinement. 
 # In this case, all targets with the word 'receptor' are matched including GPCRs, nuclear receptors, etc.
-# Refinement using 'IPR000276' (Rhodopsin-like) gives us all Class A GPCRs, 
-# IPR000337 = Class B, IPR000719 gives receptor kinases, etc.
+# Optional refinement using 'IPR000276' (Rhodopsin-like) gives us all Class A GPCRs, # IPR000337 = Class B, 
+# IPR000719 gives receptor kinases, etc.
 # Using a specific protein's InterPro ID (e.g. B2AR = IPR000332) reduces the search back down to a single uniprot ID.
+# This is redundant given we have a single_target retrieval workflow but is useful as a sanity check.
+# In practice, this ends up being a little faster than the strict search.
 
 protein_class_keyword: receptor
-interpro_accession: IPR000276
+interpro_accession_refinement: IPR000276
 
 species: "Homo sapiens"
 readout: 

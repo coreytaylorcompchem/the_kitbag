@@ -9,7 +9,9 @@ logger = setup_logger(
     simple_format=True
 )
 
-@register_task("clean_adme_data", description="Check and standardise ADME data.")
+@register_task("clean_adme_data", 
+                category='ADME',
+                description="Check and standardise ADME data.")
 def clean_adme_data(config, df=None):
     """
     Clean ADME data, agnostic of data source.
@@ -66,7 +68,7 @@ def clean_adme_data(config, df=None):
         else task_cfg.get("readout", "UNKNOWN")
     )
 
-    # Select per-readout allowed units if specified
+    # Select per-readout allowed units
     allowed_units = unit_overrides.get(readout_name, default_units)
 
     # Filter by allowed units
