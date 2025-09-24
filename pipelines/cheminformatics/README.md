@@ -34,9 +34,12 @@ Available Tasks:
     - toxic_reactive_filtering: Toxic and reactive SMARTS matching for molecules
   [Library generation]:
     - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups (WIP).
-    - focused_fragment_library_generator: Generate a focused library by fragment frequency (WIP).
+    - focused_fragment_library_generator: Generate a focused library by fragment frequency.
+    - reaction_based_enumeration: Generate library from fragment with reaction SMARTS (WIP).
   [Prediction]:
-    - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, Caco-2 A->B P(app)) from SMILES using PyTorch models.
+    - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, A->B (Papp)) from SMILES using PyTorch models
+Available Workflows:
+ - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.

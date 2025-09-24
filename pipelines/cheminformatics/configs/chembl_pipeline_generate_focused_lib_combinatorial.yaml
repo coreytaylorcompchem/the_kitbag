@@ -4,7 +4,7 @@ input_file: data/class_a_gpcr_bioactivity_small.csv
 chunk_size: 1000
 
 workflow:
-  # - activity_filtering
+  - activity_filtering
   - combinatorial_enumerator
   # - focused_fragment_library_generator
 
@@ -16,12 +16,12 @@ combinatorial_enumerator:
   min_fragments: 3
   top_fragments: 30
 
-focused_fragment_library:
-  fragment_type: BRICS  # or MACCS
-  frequency_threshold: 0.3
-  max_fragments: 100  # Optional limit on number of fragments to keep
-  group_by_target: true  # Optional: group by target or analyze across all
-  output_fragments: true
+# focused_fragment_library:
+#   fragment_type: BRICS  # or MACCS
+#   frequency_threshold: 0.3
+#   max_fragments: 100  # Optional limit on number of fragments to keep
+#   group_by_target: true  # Optional: group by target or analyze across all
+#   output_fragments: true
 
 output:
   directory: outputs/combinatorial_library

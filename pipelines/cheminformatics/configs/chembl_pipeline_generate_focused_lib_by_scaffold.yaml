@@ -1,3 +1,10 @@
+# Generating a focussed library from database fragments.
+
+# Purpose: to generate separate libraries of compounds from a dataset based on scaffold.
+# Workflow: take a library of compounds with known bioactivities, filter actives, 
+# fragmentby BRICS/MACCS/etc. to find scaffolds, create separate libraries containing these scaffolds.  
+# Outputs: SDFs by scaffold membership for docking or other post-processing.
+
 workflow_name: dynamic_task_runner
 
 input_file: data/class_a_gpcr_bioactivity_small.csv
