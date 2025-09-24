@@ -1,8 +1,10 @@
 # Generating a combinatorial library from database fragments.
 
 # Purpose: to generate a combinatorial library based on scaffolds of known actives.
-# Workflow: take a library of compounds with known bioactivities, filter actives, 
-# fragmentby BRICS/MACCS/etc. to find scaffolds, create combinatorial libraries with scaffolds and R-groups.  
+# Workflow: 
+# - take a library of compounds with known bioactivities and filter actives, 
+# - decompose into scaffolds and R-groups by BRICS/MACCS/etc., 
+# - create combinatorial libraries from scaffolds / R-groups.  
 # Outputs: CSV and .smi of generated molecules.
 
 workflow_name: dynamic_task_runner
@@ -21,7 +23,7 @@ combinatorial_enumerator:
   max_molecules: 100 # large number here (> 1000) = combinatorial explosion
   min_fragments: 3 # quick check if fragmented library results in no fragments
   top_fragments: 30 # limit to only the most common fragments before classifying them as scaffolds or R-groups (noise reduction).
-  max_attachment_points: 3 # controls the complexity of molecules generated form scaffold / R-group.
+  max_attachment_points: 3 # controls the complexity of molecules generated from scaffolds / R-group.
   top_scaffolds: 25 # After decomposition; selects the N most frequent scaffolds for enumeration
   top_rgroups: 25  # After decomposition; selects the N most frequent R-groups for enumeration      
 
