@@ -1,0 +1,39 @@
+task: workflow
+workflow_name: multi_pocket_docking  
+workflow:
+  - prepare_receptor_pdbqt
+  - standardise_ligand
+  - generate_conformers
+  - cluster_conformers
+  - save_final_conformers
+  - convert_to_pdbqt
+  - dock
+
+backend:
+  name: gnina
+  executable_path: "/home/corey/local_software/gnina.1.3.2.cuda12.8"
+  use_gpu: true
+
+protein:
+  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/docking/projects/test/multi_target_docking/5yhl.pdb"
+  pH: 7.4
+
+generate_ligands_from_list: true
+ligands_txt: "ligs.txt"    
+# ligands_csv: "ligands.csv" 
+
+docking:
+  output_dir: "output_multi_pocket_gnina"
+  docking_mode: ensemble # or 'lowest_energy'
+  final_n_conformers: 2
+  rmsd_threshold: 0.75
+  min_energy_gap: 0.5   # in kcal/mol higher = more permissive
+  n_output_binding_modes: 2
+  exhaustiveness: 8
+  size: [20.0, 20.0, 20.0]
+  n_pockets_to_use: 3
+  plot_summarised_docking_results: true # flag to suppress if you're docking tons of ligands.
+
+fpocket_filters:
+    min_volume: 150.0
+    min_score: 15.0

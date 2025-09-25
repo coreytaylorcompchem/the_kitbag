@@ -1,6 +1,11 @@
 import csv
 from pathlib import Path
 from rdkit import Chem
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 from pipeline.logger import setup_logger
 
 logger = setup_logger(
@@ -105,3 +110,30 @@ def validate_config(config, required_fields):
     
     if missing_fields:
         logger.warning(f"Required config fields are missing: {missing_fields}")
+
+def summarise_docking_results(output_dir: Path, summary_csv_path: Path):
+    """
+    Aggregates docking scores from per-pocket result files into one summary CSV.
+
+    Args:
+        output_dir (Path): Root output directory.
+        summary_csv_path (Path): Where to save the combined CSV.
+    """
+    all_rows = []
+    for pocket_dir in output_dir.glob("pocket_*"):
+        if not pocket_dir.is_dir():
+            continue
+
+        pocket_id = pocket_dir.name.replace("pocket_", "")
+        docking_results_file = pocket_dir / "docking_scores.csv"
+
+        if docking_results_file.exists():
+            df = pd.read_csv(docking_results_file)
+            df['pocket'] = pocket_id
+            all_rows.append(df)
+
+    if all_rows:
+        combined = pd.concat(all_rows, ignore_index=True)
+        combined.to_csv(summary_csv_path, index=False)
+    else:
+        logger.info("No docking result files found.")

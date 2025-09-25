@@ -1,0 +1,6 @@
+name,smiles
+ligand1,C[C@H](NC(=O)C1=C(NC2=CC=CC(=C2)C(F)(F)F)C2=C(C=CC=C2)N1C)C1=CC=C(C=C1)C(O)=O
+ligand2,C[C@H](NC(=O)C1=C(NC2=CC=CC(Cl)=C2)C2=C(C=CC=C2)N1C)C1=CC=C(C=C1)C(O)=O
+ligand3,C[C@H](NC(=O)C1=C(NC2=CC=C(C=C2)C(F)(F)F)C2=C(C=CC=C2)N1C)C1=CC=C(C=C1)C(O)=O
+ligand4,C[C@H](NC(=O)C1=C(NC2=CC=CC(=C2)C(F)(F)F)C2=C(C=CC=C2)N1C)C1=CC=C(C=C1)C(N)=O
+ligand5,C[C@@H](NC(=O)C1=C(NC2=CC=CC(=C2)C(F)(F)F)C2=C(C=CC=C2)N1C)C1=CC=C(C=C1)C(O)=O

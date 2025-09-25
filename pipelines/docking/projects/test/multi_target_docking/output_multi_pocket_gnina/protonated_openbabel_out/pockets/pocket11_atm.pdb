@@ -1,0 +1,45 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    11:
+HEADER 0  - Pocket Score                      : -0.0118
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    27
+HEADER 3  - Mean alpha-sphere radius          : 4.0931
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5770
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 9.1111
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 513.6404
+HEADER 10  -Pocket volume (convex hull)       : 68.2812
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 7.1111
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.3333
+ATOM   1767    O ASN B  32     -63.248 -50.193  -4.716  0.34  1.07           O 0
+ATOM   1775    O GLN B  33     -67.031 -49.530  -4.414  0.11  6.43           O 0
+ATOM   1792    O TYR B  35     -63.757 -51.339  -7.359  0.51  5.36           O 0
+ATOM   1237    O THR A 158     -64.488 -54.318  -0.684  0.38  3.21           O 0
+ATOM   1256  NE2 GLN A 160     -65.815 -56.860  -1.248  0.00  0.00           N 0
+ATOM   1816   CD PRO B  37     -60.718 -53.569  -6.586  0.00  0.00           C 0
+ATOM   1240  CG2 THR A 158     -60.849 -52.887  -2.116  0.00  0.00           C 0
+ATOM   1255  OE1 GLN A 160     -67.964 -56.518  -1.803  0.00  0.00           O 0
+ATOM   1784    O LEU B  34     -67.827 -50.404  -7.741  0.00  0.00           O 0
+ATOM   1238   CB THR A 158     -61.756 -53.405  -1.006  0.00  0.00           C 0
+ATOM   1235   CA THR A 158     -62.975 -52.486  -0.817  0.00  0.00           C 0
+ATOM   1780  NE2 GLN B  33     -66.640 -50.117  -1.280  0.00  0.00           N 0
+ATOM   1805   CB GLN B  36     -62.663 -54.705  -9.683  0.00  0.00           C 0
+ATOM   1804    O GLN B  36     -60.991 -52.063  -9.875  0.00  0.00           O 0
+ATOM   1793   CB TYR B  35     -65.117 -50.318 -10.472  0.00  0.00           C 0
+ATOM   1801    N GLN B  36     -63.708 -52.541  -9.265  0.76  1.09           N 0
+ATOM   1806   CG GLN B  36     -63.887 -55.577  -9.454  0.00  0.00           C 0
+ATOM   1795  CD2 TYR B  35     -67.605 -50.148 -10.889  0.00  0.00           C 0
+ATOM   1809  NE2 GLN B  36     -64.573 -57.890  -9.617  0.00  0.00           N 0
+ATOM   1802   CA GLN B  36     -62.653 -53.445  -8.827  0.00  0.00           C 0
+ATOM   1791    C TYR B  35     -64.208 -51.588  -8.482  0.00  0.00           C 0
+ATOM   1790   CA TYR B  35     -65.403 -50.823  -9.055  0.00  0.00           C 0
+ATOM   1244    O THR A 159     -67.239 -53.160   0.290  0.46  2.14           O 0
+TER
+END

@@ -1,10 +1,13 @@
 import subprocess
 import tempfile
 import shutil
+import pandas as pd
 from pathlib import Path
+from tqdm import tqdm
+
 from rdkit import Chem
 from rdkit.Chem import AllChem
-from tqdm import tqdm
+
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
@@ -208,7 +211,7 @@ class LigandPreparer:
 @register_task("prepare_receptor_pdbqt", 
                category='Receptor preparation',
                description="Prepare the receptor for docking. Format: pdbqt")
-def prepare_receptor_pdbqt(backend, ligand, config):
+def prepare_receptor_pdbqt(backend, ligand, config, **kwargs):
     preparer = get_protein_preparer(backend, config)
     output_dir = Path(config.get("output_dir", "output"))
     pdbqt_path = preparer.prepare(output_dir)
@@ -218,7 +221,7 @@ def prepare_receptor_pdbqt(backend, ligand, config):
 @register_task("standardise_ligand", 
                category='Ligand preparation',
                description="Prepare and generate 3D coords for each ligand.")
-def standardise_ligand(backend, ligand, config):
+def standardise_ligand(backend, ligand, config, **kwargs):
     preparer = get_ligand_preparer(backend, ligand)
     preparer.standardise()
     logger.info(f"Standardised ligand {ligand['name']}.")
@@ -226,7 +229,7 @@ def standardise_ligand(backend, ligand, config):
 @register_task("generate_conformers", 
                category='Ligand preparation',
                description="Generate multiple feasible conformers from ligands.")
-def generate_conformers(backend, ligand, config):
+def generate_conformers(backend, ligand, config, **kwargs):
     preparer = get_ligand_preparer(backend, ligand)
     n_confs = config.get("docking", {}).get("initial_n_conformers", 250)
     preparer.generate_conformers(n_confs=n_confs)
@@ -235,7 +238,7 @@ def generate_conformers(backend, ligand, config):
 @register_task("cluster_conformers", 
                category='Ligand preparation',
                description="Cluster conformers by specified energy and RMSD criteria.")
-def cluster_conformers(backend, ligand, config):
+def cluster_conformers(backend, ligand, config, **kwargs):
     preparer = get_ligand_preparer(backend, ligand)
     final_n = config.get("docking", {}).get("final_n_conformers", 5)
     rmsd = config.get("docking", {}).get("rmsd_threshold", 0.75)
@@ -245,7 +248,7 @@ def cluster_conformers(backend, ligand, config):
 @register_task("save_final_conformers", 
                category='Ligand preparation',
                description="Save conformers that meet energy and RMSD criteria.")
-def save_final_conformers(backend, ligand, config):
+def save_final_conformers(backend, ligand, config, **kwargs):
     preparer = get_ligand_preparer(backend, ligand)
     out_dir = Path(config.get("output_dir", "output"))
     for idx, conf_id in enumerate(preparer.conformers):
@@ -258,7 +261,7 @@ def save_final_conformers(backend, ligand, config):
 @register_task("convert_to_pdbqt", 
                category='Ligand preparation',
                description="Convert ligands to pdbqt for docking.")
-def convert_to_pdbqt(backend, ligand, config):
+def convert_to_pdbqt(backend, ligand, config, **kwargs):
     preparer = get_ligand_preparer(backend, ligand)
     output_dir = Path(config.get("output_dir", "output"))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -267,59 +270,140 @@ def convert_to_pdbqt(backend, ligand, config):
     ligand['pdbqt_paths'] = [str(p) for p in pdbqt_paths]
     logger.info(f"Converted conformers to PDBQT for ligand: {ligand['name']}.")
 
-@register_task("dock", 
-               category='Docking',description="Dock with backend specified.")
-def dock(backend, ligand, config):
+import pandas as pd
+from rdkit import Chem
+
+@register_task("dock", category='Docking', description="Dock with backend specified.")
+def dock(backend, ligand, config, **kwargs):
     pdbqt_paths = ligand.get("pdbqt_paths", [])
     if not pdbqt_paths:
         logger.warning(f"No PDBQT paths found for ligand {ligand['name']}, skipping docking.")
         return
 
     docking_mode = config.get("docking", {}).get("docking_mode", "ensemble").lower()
+    pocket_id = kwargs.get("pocket_id", None)
+    output_dir = Path(config['output_dir'])
+
+    docking_results = []
 
     if docking_mode == "lowest_energy":
-        # Use only the first (lowest energy) conformer
         pdbqt_path = pdbqt_paths[0]
         ligand["pdbqt_path"] = pdbqt_path
 
         try:
-            output_path = backend.dock(ligand, config)
+            output_filename = f"{ligand['name']}_pocket{pocket_id}_docked.sdf" if pocket_id else f"{ligand['name']}_docked.sdf"
+            output_path = output_dir / output_filename
 
-            ligand["docking_results"] = [{
-                "conformer_idx": 0,
-                "pdbqt_path": pdbqt_path,
-                "docked_sdf": str(output_path)
-            }]
-            logger.info(f"Docked lowest-energy conformer for ligand {ligand['name']}.")
+            output_path = backend.dock(ligand, config, output_path=output_path)
+            score = extract_gnina_score(output_path)
+
+            docking_results.append({
+                "ligand": ligand["name"],
+                "conformer": 0,
+                "pdbqt": str(pdbqt_path),
+                "docked_sdf": str(output_path),
+                "score": score
+            })
+
+            ligand["docking_results"] = docking_results
+            logger.info(f"Docked lowest-energy conformer for ligand {ligand['name']} into pocket {pocket_id}.")
 
         except Exception as e:
             logger.error(f"❌ Docking failed for ligand {ligand['name']}: {e}")
             ligand["docking_results"] = []
 
     elif docking_mode == "ensemble":
-        # Dock all conformers individually
-        docking_results = []
-
         logger.info(f"Docking ligand {ligand['name']} with {len(pdbqt_paths)} conformers...")
 
         for idx, pdbqt_path in enumerate(pdbqt_paths):
             ligand["pdbqt_path"] = pdbqt_path
 
             try:
-                output_path = backend.dock(ligand, config)
+                output_filename = f"{ligand['name']}_conf{idx}_pocket{pocket_id}_docked.sdf" if pocket_id is not None else f"{ligand['name']}_conf{idx}_docked.sdf"
+                output_path = output_dir / output_filename
+
+                output_path = backend.dock(ligand, config, output_path=output_path)
+                score = extract_gnina_score(output_path)
 
                 docking_results.append({
-                    "conformer_idx": idx,
-                    "pdbqt_path": pdbqt_path,
-                    "docked_sdf": str(output_path)
+                    "ligand": ligand["name"],
+                    "conformer": idx,
+                    "pdbqt": str(pdbqt_path),
+                    "docked_sdf": str(output_path),
+                    "score": score
                 })
 
             except Exception as e:
                 logger.error(f"❌ Docking failed for ligand {ligand['name']} conformer {idx}: {e}")
 
         ligand["docking_results"] = docking_results
-        logger.info(f"Docked ligand {ligand['name']} successfully.")
 
     else:
         raise ValueError(f"❌❌ Unknown docking_mode: {docking_mode}")
+
+    if docking_results:
+        pocket_id = kwargs.get("pocket_id", 0)
+        pocket_dir = Path(config["output_dir"]) / f"pocket_{pocket_id}"
+        pocket_dir.mkdir(exist_ok=True, parents=True)
+
+        score_csv_path = pocket_dir / "docking_scores.csv"
+        score_rows = []
+
+        for result in docking_results:
+            sdf_path = result["docked_sdf"]
+            suppl = Chem.SDMolSupplier(str(sdf_path))
+            for pose_idx, mol in enumerate(suppl):
+                if mol is None:
+                    continue
+                try:
+                    cnn_score = float(mol.GetProp("CNNscore"))
+                    affinity = float(mol.GetProp("minimizedAffinity"))
+                except KeyError:
+                    logger.warning(f"Missing scores in pose {pose_idx} for ligand {ligand['name']}")
+                    continue
+
+                score_rows.append({
+                    "ligand": ligand["name"],
+                    "conformer": result["conformer"],
+                    "pose_idx": pose_idx,
+                    "score": affinity,
+                    "pose_rank": cnn_score,
+                    "pdbqt": result["pdbqt"],
+                    "docked_sdf": sdf_path,
+                    "pocket": pocket_id
+                })
+
+        # Append if file exists
+        if score_csv_path.exists():
+            existing_df = pd.read_csv(score_csv_path)
+            df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
+        else:
+            df = pd.DataFrame(score_rows)
+
+        df.to_csv(score_csv_path, index=False)
+
+def extract_gnina_score(sdf_path):
+    """
+    Extracts the GNINA docking score from the first molecule in an SDF file.
+    """
+    try:
+        suppl = Chem.SDMolSupplier(str(sdf_path), removeHs=False)
+        mol = next((m for m in suppl if m is not None), None)
+
+        if mol is None:
+            logger.warning(f"Could not parse SDF: {sdf_path}")
+            return None
+
+        for field in ["CNNscore", "minimizedAffinity", "score"]:
+            if mol.HasProp(field):
+                return float(mol.GetProp(field))
+
+        logger.warning(f"No recognized score field found in {sdf_path}")
+        return None
+
+    except Exception as e:
+        logger.warning(f"Failed to extract score from {sdf_path}: {e}")
+        return None
+
+
 

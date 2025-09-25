@@ -10,6 +10,7 @@ In this repo are workflows to dock compounds with various use cases (unbiased, c
 * [Unidock](https://github.com/dptech-corp/Uni-Dock)
 * [propka](https://propka.readthedocs.io/en/latest/)
 * [xtb](https://xtb-docs.readthedocs.io/en/latest/setup.html)
+* [fpocket](https://github.com/Discngine/fpocket)
 * Most Python libs.
 
 ## Running calculations
@@ -46,8 +47,9 @@ Available Tasks:
     - prepare_receptor_pdbqt: Prepare the receptor for docking. Format: pdbqt
        ↳ Backends: gnina, unidock
 Available Workflows:
- - constrained_docking: Prepare, dock and score with core constraints.
- - ensemble_docking: Prepare, dock and score emsemble of proteins.
+ - constrained_docking: Prepare, dock and score with core constraints(WIP - may not need it).
+ - ensemble_docking: Prepare, dock and score emsemble of proteins (WIP).
+ - multi_pocket_docking: Dock ligands into top N pockets detected by fpocket.
  - vanilla_docking: Prepare, dock and score with no constraints.
 ```
 

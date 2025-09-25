@@ -43,11 +43,8 @@ class GninaBackend(BaseBackend):
         - ligand_pdbqt: in ligand["pdbqt_path"]
         - docking center and size in config['docking']['center'] and ['size']
         - output_dir from config['output_dir']
+        - Optional 'output_path' can be passed via kwargs
         """
-
-        # Quick check: fail fast if someone passed unexpected args
-        if kwargs:
-            raise TypeError(f"[FATAL] GninaBackend.dock() got unexpected keyword arguments: {', '.join(kwargs.keys())}")
 
         # Required paths
         receptor_path = self.cache.get("receptor_pdbqt")
@@ -58,7 +55,12 @@ class GninaBackend(BaseBackend):
         if ligand_path is None:
             raise ValueError(f"Missing 'pdbqt_path' for ligand '{ligand['name']}'.")
 
-        output_path = Path(config["output_dir"]) / f"{ligand['name']}_docked.sdf"
+        # Use provided output_path or default
+        output_path = kwargs.get("output_path")
+        if output_path is None:
+            output_path = Path(config["output_dir"]) / f"{ligand['name']}_docked.sdf"
+        else:
+            output_path = Path(output_path)
 
         # Docking box
         docking_cfg = config["docking"]
@@ -102,3 +104,4 @@ class GninaBackend(BaseBackend):
 
         logger.debug(f"Docking completed for {ligand['name']}. Output: {output_path}")
         return output_path
+

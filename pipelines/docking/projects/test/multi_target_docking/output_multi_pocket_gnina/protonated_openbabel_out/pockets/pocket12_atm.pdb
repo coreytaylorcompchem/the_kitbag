@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    12:
+HEADER 0  - Pocket Score                      : -0.0347
+HEADER 1  - Drug Score                        : 0.0010
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.7641
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5542
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 29.2857
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.4286
+HEADER 9  - Pocket volume (Monte Carlo)       : 172.1481
+HEADER 10  -Pocket volume (convex hull)       : 1.6622
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.3750
+ATOM   3812   CG ASN D  85     -44.678 -95.722  21.208  0.00  0.00           C 0
+ATOM   3757    O SER D  77     -41.407 -97.948  18.443  0.69  3.21           O 0
+ATOM   3765   CB LEU D  78     -42.439 -94.440  17.578  0.00  0.00           C 0
+ATOM   3813   CD ASN D  85     -44.495 -94.641  22.258  0.00  0.00           C 0
+ATOM   3811   CB ASN D  85     -44.225 -97.067  21.739  0.00  0.00           C 0
+ATOM   3829  OD1 TYR D  87     -38.473 -98.099  22.638  0.69  2.14           O 0
+ATOM   3830  OD2 TYR D  87     -38.548 -97.977  24.824  0.43  7.50           O 1
+ATOM   3750   CB SER D  76     -36.487 -96.142  20.264  0.00  0.00           C 0
+ATOM   3417    O ARG D  31     -39.225 -94.849  15.312  0.48  4.29           O 0
+ATOM   3749    O SER D  76     -37.060 -96.584  17.394  0.00  0.00           O 0
+ATOM   3434  OG1 LEU D  33     -35.196 -93.498  18.880  0.39  7.50           O 0
+ATOM   3756    C SER D  77     -40.823 -97.470  17.464  0.00  0.00           C 0
+ATOM   3754    N SER D  77     -38.590 -98.030  18.211  0.00  0.00           N 0
+ATOM   3748    C SER D  76     -37.454 -97.341  18.287  0.00  0.00           C 0
+ATOM   3419  OG1 ARG D  31     -40.954 -92.578  15.343  0.68  6.43           O 0
+ATOM   3435  CG2 LEU D  33     -35.036 -91.878  17.094  0.00  0.00           C 0
+TER
+END

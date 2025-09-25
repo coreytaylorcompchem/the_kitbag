@@ -7,7 +7,7 @@ from modules.protein_preparation import ProteinPreparer
 from pipeline.task_registry import get_task
 from workflows import register_workflow
 
-from workflows.utils import generate_ligands_csv_from_txt, validate_ligands_csv, get_docking_box, validate_config
+from workflows.utils.docking import generate_ligands_csv_from_txt, validate_ligands_csv, get_docking_box, validate_config
 
 from pipeline.logger import setup_logger
 

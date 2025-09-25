@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    34:
+HEADER 0  - Pocket Score                      : -0.1144
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.9861
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5666
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 17.8750
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 5.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 195.4501
+HEADER 10  -Pocket volume (convex hull)       : 1.0335
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.5000
+ATOM   5140  CG1 VAL D 159     -33.049-111.961  -2.652  0.00  0.00           C 0
+ATOM   5031    O VAL D 146     -27.025-109.333  -5.272  0.00  0.00           O 0
+ATOM   5050  CD1 TRP D 148     -29.306-111.520  -0.826  0.00  0.00           C 0
+ATOM   5105    O ARG D 155     -30.929-114.967  -4.149  0.55  2.14           O 0
+ATOM   5118   CG GLN D 156     -31.724-114.462  -7.973  0.00  0.00           C 0
+ATOM   5100  OE2 GLU D 154     -27.882-114.250  -8.351  0.22  5.36           O 1
+ATOM   5114   CA GLN D 156     -33.097-114.382  -5.814  0.00  0.00           C 0
+ATOM   5117   CB GLN D 156     -33.082-114.203  -7.341  0.00  0.00           C 0
+ATOM   5044    N TRP D 148     -26.992-113.210  -2.931  0.59  1.09           N 0
+ATOM   5036   CA LYS D 147     -25.797-111.678  -4.379  0.00  0.00           C 0
+ATOM   5139  CG2 VAL D 159     -32.519-109.551  -2.310  0.00  0.00           C 0
+ATOM   5116    O GLN D 156     -34.829-112.873  -5.194  0.00  0.00           O 0
+ATOM   5156  ND2 ASN D 161     -31.475-105.960  -3.774  0.00  0.00           N 0
+ATOM   5138   CB VAL D 159     -33.620-110.555  -2.610  0.00  0.00           C 0
+TER
+END
