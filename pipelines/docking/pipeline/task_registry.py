@@ -32,7 +32,7 @@ def populate_supported_backends_from_backends(backend_classes: dict):
             if task_name in supported:
                 _task_metadata[task_name]["supported_backends"].append(backend_name)
 
-def finalize_task_registration():
+def finalise_task_registration():
     """
     Should be called after all task modules and backend modules have been loaded.
     """

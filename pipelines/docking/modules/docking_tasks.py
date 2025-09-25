@@ -5,7 +5,7 @@ from pathlib import Path
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from tqdm import tqdm
-from pipeline.docking_task_registry import register_task
+from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
 logger = setup_logger(
@@ -205,9 +205,9 @@ class LigandPreparer:
 
         return pdbqt_paths
 
-# Task registration:
-
-@register_task("prepare_receptor_pdbqt", description="Prepare the receptor for docking. Format: pdbqt")
+@register_task("prepare_receptor_pdbqt", 
+               category='Receptor preparation',
+               description="Prepare the receptor for docking. Format: pdbqt")
 def prepare_receptor_pdbqt(backend, ligand, config):
     preparer = get_protein_preparer(backend, config)
     output_dir = Path(config.get("output_dir", "output"))
@@ -215,20 +215,26 @@ def prepare_receptor_pdbqt(backend, ligand, config):
 
     backend.cache["receptor_pdbqt"] = pdbqt_path
 
-@register_task("standardise_ligand", description="Prepare and generate 3D coords for each ligand.")
+@register_task("standardise_ligand", 
+               category='Ligand preparation',
+               description="Prepare and generate 3D coords for each ligand.")
 def standardise_ligand(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     preparer.standardise()
     logger.info(f"Standardised ligand {ligand['name']}.")
 
-@register_task("generate_conformers", description="Generate multiple feasible conformers from ligands.")
+@register_task("generate_conformers", 
+               category='Ligand preparation',
+               description="Generate multiple feasible conformers from ligands.")
 def generate_conformers(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     n_confs = config.get("docking", {}).get("initial_n_conformers", 250)
     preparer.generate_conformers(n_confs=n_confs)
     logger.info(f"Generated {n_confs} conformers for ligand {ligand['name']}.")
 
-@register_task("cluster_conformers", description="Cluster conformers by specified energy and RMSD criteria.")
+@register_task("cluster_conformers", 
+               category='Ligand preparation',
+               description="Cluster conformers by specified energy and RMSD criteria.")
 def cluster_conformers(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     final_n = config.get("docking", {}).get("final_n_conformers", 5)
@@ -236,7 +242,9 @@ def cluster_conformers(backend, ligand, config):
     energy_gap = config.get("docking", {}).get("min_energy_gap", 0.5)
     preparer.cluster_and_select(final_n=final_n, rmsd_threshold=rmsd, min_energy_gap=energy_gap)
 
-@register_task("save_final_conformers", description="Save conformers that meet energy and RMSD criteria.")
+@register_task("save_final_conformers", 
+               category='Ligand preparation',
+               description="Save conformers that meet energy and RMSD criteria.")
 def save_final_conformers(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     out_dir = Path(config.get("output_dir", "output"))
@@ -247,7 +255,9 @@ def save_final_conformers(backend, ligand, config):
         writer.close()
     logger.info(f"Saved final conformers for ligand {ligand['name']}.")
 
-@register_task("convert_to_pdbqt", description="Convert ligands to pdbqt for docking.")
+@register_task("convert_to_pdbqt", 
+               category='Ligand preparation',
+               description="Convert ligands to pdbqt for docking.")
 def convert_to_pdbqt(backend, ligand, config):
     preparer = get_ligand_preparer(backend, ligand)
     output_dir = Path(config.get("output_dir", "output"))
@@ -257,7 +267,8 @@ def convert_to_pdbqt(backend, ligand, config):
     ligand['pdbqt_paths'] = [str(p) for p in pdbqt_paths]
     logger.info(f"Converted conformers to PDBQT for ligand: {ligand['name']}.")
 
-@register_task("dock", description="Dock with backend specified in yaml.")
+@register_task("dock", 
+               category='Docking',description="Dock with backend specified.")
 def dock(backend, ligand, config):
     pdbqt_paths = ligand.get("pdbqt_paths", [])
     if not pdbqt_paths:

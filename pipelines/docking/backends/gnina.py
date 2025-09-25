@@ -12,7 +12,8 @@ logger = setup_logger(
 )
 
 class GninaBackend(BaseBackend):
-    supported_tasks = [
+    # manual list of supported tasks. Annoying but necessary for automatic discovery code.
+    supported_tasks = [ 
         "standardise_ligand",
         "generate_conformers",
         "cluster_conformers",

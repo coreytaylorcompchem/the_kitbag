@@ -4,7 +4,7 @@ from pathlib import Path
 
 from backends import get_backend, discover_backends
 from modules.protein_preparation import ProteinPreparer
-from pipeline.docking_task_registry import get_task
+from pipeline.task_registry import get_task
 from workflows import register_workflow
 
 from workflows.utils import generate_ligands_csv_from_txt, validate_ligands_csv, get_docking_box, validate_config

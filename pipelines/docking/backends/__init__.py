@@ -9,7 +9,7 @@ def discover_backends():
     backend_registry = {}
 
     backends_path = Path(__file__).parent
-    package_name = __name__  # 'backends'
+    package_name = __name__  
 
     for finder, name, ispkg in pkgutil.iter_modules([backends_path]):
         if name.startswith("_"):

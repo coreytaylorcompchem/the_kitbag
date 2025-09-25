@@ -11,6 +11,7 @@ logger = setup_logger(
 )
 
 class UniDockBackend(BaseBackend):
+    # manual list of supported tasks. Annoying but necessary for automatic discovery code.
     supported_tasks = [
         "standardise_ligand",
         "generate_conformers",

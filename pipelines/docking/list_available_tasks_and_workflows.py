@@ -3,8 +3,8 @@ from collections import defaultdict
 from modules import load_all_tasks
 from workflows import load_all_workflows, list_workflows, get_workflow_metadata
 from backends import discover_backends, list_backends
-from pipeline.docking_task_registry import (
-    list_tasks, get_task_metadata, finalize_task_registration
+from pipeline.task_registry import (
+    list_tasks, get_task_metadata, finalise_task_registration
 )
 
 from pipeline.logger import setup_logger
@@ -19,7 +19,7 @@ def main():
     load_all_tasks()
     load_all_workflows()
     discover_backends()
-    finalize_task_registration() 
+    finalise_task_registration() 
 
     logger.info("\nAvailable Tasks:")
 
@@ -39,7 +39,7 @@ def main():
             logger.info(f"    - {task_name}: {desc}")
             logger.info(f"       ↳ Backends: {supported or 'None'}")
 
-    logger.info("\nAvailable Workflows:")
+    logger.info("Available Workflows:")
     for wf in list_workflows():
         meta = get_workflow_metadata(wf) or {}
         desc = meta.get('description', '')

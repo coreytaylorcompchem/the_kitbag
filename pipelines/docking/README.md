@@ -27,27 +27,24 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 `python list_available_tasks_and_workflows.py`
 
 ```
-Available Backends:
- - base
- - gnina
- - unidock
-
 Available Tasks:
- - prepare_receptor_pdbqt: Prepare the receptor for docking. Format: pdbqt
-   ↳ Backends: gnina, unidock
- - standardise_ligand: Prepare and generate 3D coords for each ligand.
-   ↳ Backends: gnina, unidock
- - generate_conformers: Generate multiple feasible conformers from ligands.
-   ↳ Backends: gnina, unidock
- - cluster_conformers: Cluster conformers by specified energy and RMSD criteria.
-   ↳ Backends: gnina, unidock
- - save_final_conformers: Save conformers that meet energy and RMSD criteria.
-   ↳ Backends: gnina, unidock
- - convert_to_pdbqt: Convert ligands to pdbqt for docking.
-   ↳ Backends: gnina, unidock
- - dock: Dock with backend specified in yaml.
-   ↳ Backends: gnina, unidock
-
+  [Docking]:
+    - dock: Dock with backend specified.
+       ↳ Backends: gnina, unidock
+  [Ligand preparation]:
+    - cluster_conformers: Cluster conformers by specified energy and RMSD criteria.
+       ↳ Backends: gnina, unidock
+    - convert_to_pdbqt: Convert ligands to pdbqt for docking.
+       ↳ Backends: gnina, unidock
+    - generate_conformers: Generate multiple feasible conformers from ligands.
+       ↳ Backends: gnina, unidock
+    - save_final_conformers: Save conformers that meet energy and RMSD criteria.
+       ↳ Backends: gnina, unidock
+    - standardise_ligand: Prepare and generate 3D coords for each ligand.
+       ↳ Backends: gnina, unidock
+  [Receptor preparation]:
+    - prepare_receptor_pdbqt: Prepare the receptor for docking. Format: pdbqt
+       ↳ Backends: gnina, unidock
 Available Workflows:
  - constrained_docking: Prepare, dock and score with core constraints.
  - ensemble_docking: Prepare, dock and score emsemble of proteins.
