@@ -12,11 +12,8 @@ from workflows.utils.docking import (
     summarise_docking_results,
     validate_config,
 )
-from workflows.utils.fpocket import (
-    run_fpocket,
-    extract_pocket_centers,
-    plot_multi_pocket_scores
-)
+
+from workflows.utils.docking import extract_crystal_ligand_center
 
 from pipeline.logger import setup_logger
 
@@ -26,9 +23,9 @@ logger = setup_logger(
     simple_format=True
 )
 
-
-@register_workflow("multi_pocket_docking", description="Dock ligands into top N pockets detected by fpocket.")
+@register_workflow("multi_structure_docking", description="Dock ligands into multiple PDB structures using known ligand positions.")
 def run(config_path: str):
+    import shutil
     # ----------------------
     # Load YAML Config
     # ----------------------
@@ -38,7 +35,7 @@ def run(config_path: str):
         "docking.final_n_conformers",
         "docking.rmsd_threshold",
         "docking.min_energy_gap",
-        "docking.n_pockets_to_use"
+        "proteins_list"
     ]
 
     with open(config_path, 'r') as f:
@@ -51,15 +48,8 @@ def run(config_path: str):
     output_dir.mkdir(parents=True, exist_ok=True)
     config["output_dir"] = output_dir
 
-    logger.info("---------------------------------------------")
-    logger.info("Loaded YAML configuration:")
-    logger.info(f"Output directory: {output_dir}")
-    logger.info(f"Docking: using top {docking_cfg['n_pockets_to_use']} pockets from fpocket.")
-    logger.info(f"Workflow steps: {config.get('workflow', [])}")
-    logger.info("---------------------------------------------")
-
     # ----------------------
-    # Ligand Input
+    # Ligands
     # ----------------------
     ligands_txt_path = Path(config.get('ligands_txt', 'ligands.txt'))
     ligands_csv_path = Path(config.get('ligands_csv', output_dir / 'ligands.csv'))
@@ -72,6 +62,12 @@ def run(config_path: str):
     else:
         raise FileNotFoundError("No ligand input found.")
 
+    ligands = []
+    with open(ligands_csv_path, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            ligands.append({'name': row['name'], 'smiles': row['smiles']})
+
     # ----------------------
     # Backend
     # ----------------------
@@ -80,55 +76,58 @@ def run(config_path: str):
     backend = get_backend(backend_name, **backend_kwargs)
 
     # ----------------------
-    # Protein Prep
+    # Multi-structure Docking
     # ----------------------
-    protein_preparer = ProteinPreparer(
-        pdb_path=Path(config['protein']['pdb_path']),
-        work_dir=output_dir,
-        pH=config['protein'].get('pH', 7.4)
-    )
-    receptor_pdbqt = protein_preparer.prepare()
-    backend.cache["receptor_pdbqt"] = receptor_pdbqt
+    protein_dir = Path(config.get('protein', {}).get('protein_directory', None))
+    if not protein_dir.exists():
+        raise FileNotFoundError(f"Protein directory not found: {protein_dir}")
 
-    # ----------------------
-    # Run fpocket and extract pockets
-    # ----------------------
-    fpocket_output_dir = run_fpocket(protein_preparer.protonated_pdb, output_dir)
-    pocket_centers = extract_pocket_centers(fpocket_output_dir, top_n=docking_cfg["n_pockets_to_use"])
+    pdb_files = sorted(protein_dir.glob("*.pdb"))
+    if not pdb_files:
+        raise FileNotFoundError(f"No PDB files found in: {protein_dir}")
 
-    # ----------------------
-    # Read Ligands
-    # ----------------------
-    ligands = []
-    with open(ligands_csv_path, newline='') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            ligands.append({'name': row['name'], 'smiles': row['smiles']})
+    logger.info(f"Found {len(pdb_files)} PDB files for docking.")
 
-    # ----------------------
-    # Multi-pocket Docking
-    # ----------------------
-    for i, center in enumerate(pocket_centers):
-        logger.info(f">>> Docking into pocket {i+1}/{len(pocket_centers)} <<<")
+    for i, pdb_path in enumerate(pdb_files):
+        pdb_path = Path(pdb_path)
+        logger.info(f"\n>>> Docking against structure {i+1}/{len(pdb_files)}: {pdb_path.name} <<<")
+
+        # Setup subdirectory per protein
+        protein_output_dir = output_dir / pdb_path.stem
+        protein_output_dir.mkdir(parents=True, exist_ok=True)
+        config["output_dir"] = protein_output_dir  # update config for this round
+
+        # Protein Preparation
+        protein_preparer = ProteinPreparer(
+            pdb_path=pdb_path,
+            work_dir=protein_output_dir,
+            pH=config.get('protein', {}).get('pH', 7.4)
+        )
+        receptor_pdbqt = protein_preparer.prepare()
+        backend.cache["receptor_pdbqt"] = receptor_pdbqt
+
+        # Determine binding site center from crystal ligand
+        center = extract_crystal_ligand_center(pdb_path)  # <-- you need this utility
         config['docking']['center'] = center
-        config['docking']['size'] = [20, 20, 20]  # Could be dynamic later
 
+        # Per-ligand workflow
         for ligand in ligands:
-            logger.info(f"Processing ligand: {ligand['name']} for pocket {i+1}")
+            logger.info(f"Processing ligand: {ligand['name']} against {pdb_path.name}")
             for step in config.get("workflow", []):
                 task_func = get_task(step)
                 if not task_func:
                     raise ValueError(f"Workflow step '{step}' is not a registered task.")
-                task_func(backend, ligand, config, pocket_id=i+1)  # Pass pocket_id if needed
+                task_func(backend, ligand, config, protein_id=pdb_path.stem)  # can pass ID for tracking
 
     # ----------------------
-    # Summarise & Plot
+    # Summarise
     # ----------------------
-    results_csv = output_dir / "multi_pocket_docking_summary.csv"
-    summarise_docking_results(output_dir, results_csv)
-    if config.get("plot_docking_results", True):
-        plot_multi_pocket_scores(results_csv, output_dir)
+    final_summary_csv = output_dir / "multi_structure_docking_summary.csv"
+    summarise_docking_results(output_dir, final_summary_csv)
+
+    if config.get("plot_summarised_docking_results", True):
+        plot_multi_pocket_scores(final_summary_csv, output_dir)
     else:
         logger.info("Skipping result plotting.")
 
-    logger.info("Multi-pocket docking workflow completed.")
+    logger.info("Multi-structure docking workflow completed.")

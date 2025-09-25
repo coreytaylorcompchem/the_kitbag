@@ -2,6 +2,8 @@ import csv
 from pathlib import Path
 from rdkit import Chem
 
+from rdkit.Chem.rdmolfiles import MolFromPDBFile
+import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -137,3 +139,31 @@ def summarise_docking_results(output_dir: Path, summary_csv_path: Path):
         combined.to_csv(summary_csv_path, index=False)
     else:
         logger.info("No docking result files found.")
+
+def extract_crystal_ligand_center(pdb_path, ligand_resname=None):
+    """
+    Extracts the 3D center of the co-crystallized ligand.
+    Assumes it's the only non-protein residue or that ligand_resname is provided.
+    """
+    mol = MolFromPDBFile(str(pdb_path), removeHs=False)
+    if mol is None:
+        raise ValueError(f"Could not read molecule from {pdb_path}")
+
+    conformer = mol.GetConformer()
+    atom_positions = []
+    for atom in mol.GetAtoms():
+        resinfo = atom.GetPDBResidueInfo()
+        if resinfo is None:
+            continue
+        if ligand_resname and resinfo.GetResidueName().strip() != ligand_resname:
+            continue
+        if resinfo.GetResidueName().strip() in ["HOH", "WAT"]:
+            continue
+        atom_positions.append(conformer.GetAtomPosition(atom.GetIdx()))
+
+    if not atom_positions:
+        raise ValueError("No ligand atoms found to determine center.")
+
+    coords = np.array([[pos.x, pos.y, pos.z] for pos in atom_positions])
+    center = coords.mean(axis=0)
+    return center.tolist()
