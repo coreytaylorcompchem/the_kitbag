@@ -30,16 +30,18 @@ class UniDockBackend(BaseBackend):
 
         receptor_path = self.cache.get("receptor_pdbqt")
         if receptor_path is None:
-            raise ValueError("[Uni-Dock] receptor_pdbqt not found in backend.cache")
+            raise ValueError("receptor_pdbqt not found in backend.cache")
 
         docking_cfg = config["docking"]
         center: Tuple[float, float, float] = docking_cfg["center"]
         size: Tuple[float, float, float] = docking_cfg["size"]
         mode: str = docking_cfg.get("docking_mode", "ensemble")
+        num_modes = docking_cfg["n_output_binding_modes"]
+        exhaustiveness = docking_cfg["exhaustiveness"]
 
         conformer_paths = ligand.get("pdbqt_paths", [])
         if not conformer_paths:
-            raise ValueError(f"[Uni-Dock] No PDBQT paths found for ligand {ligand['name']}")
+            raise ValueError(f"No PDBQT paths found for ligand {ligand['name']}")
 
         # Handle docking mode
         if mode == "lowest_energy":
@@ -63,26 +65,27 @@ class UniDockBackend(BaseBackend):
                 "--size_y", str(size[1]),
                 "--size_z", str(size[2]),
                 "--exhaustiveness", "8",
-                "--num_modes", "20"
+                "--num_modes", "5",
+                "--min_rmsd", "0.1"
             ]
 
             if not self.use_gpu:
-                logger.warning("[Uni-Dock] 'use_gpu' is set to False, but Uni-Dock does not support CPU-only mode directly. Ignoring.")
+                logger.warning("'use_gpu' is set to False, but Uni-Dock does not support CPU-only mode directly. Ignoring.")
 
-            logger.info("[Uni-Dock] Docking %s conf %d:", ligand['name'], i)
-            logger.info("Running command: %s", " ".join(cmd))
+            logger.info("Docking %s conf %d:", ligand['name'], i)
+            logger.debug("Running command: %s", " ".join(cmd))
 
             result = subprocess.run(cmd, capture_output=True, text=True)
 
             if result.returncode != 0:
-                logger.error("[Uni-Dock] Failed docking %s conf %d:\n%s", ligand['name'], i, result.stderr)
+                logger.debug("Failed docking %s conf %d:\n%s", ligand['name'], i, result.stderr)
                 continue  # Optionally skip instead of raise
 
             successful_outputs.append(str(output_path))
 
         if not successful_outputs:
-            raise RuntimeError(f"[Uni-Dock] Docking failed for all conformers of ligand {ligand['name']}")
+            raise RuntimeError(f"Docking failed for all conformers of ligand {ligand['name']}")
 
         ligand["docked_outputs"] = successful_outputs
-        logger.info("[Uni-Dock] Completed docking for %s (%d successful conformers)", ligand['name'], len(successful_outputs))
+        logger.info("Completed docking for %s (%d successful conformers)", ligand['name'], len(successful_outputs))
         return successful_outputs

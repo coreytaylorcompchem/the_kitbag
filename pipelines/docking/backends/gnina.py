@@ -63,6 +63,8 @@ class GninaBackend(BaseBackend):
         docking_cfg = config["docking"]
         center: Tuple[float, float, float] = docking_cfg["center"]
         size: Tuple[float, float, float] = docking_cfg["size"]
+        num_modes = docking_cfg["n_output_binding_modes"]
+        exhaustiveness = docking_cfg["exhaustiveness"]
 
         # Build GNINA command
         cmd = [
@@ -76,8 +78,8 @@ class GninaBackend(BaseBackend):
             "--size_y", str(size[1]),
             "--size_z", str(size[2]),
             "-o", str(output_path),
-            "--num_modes", "1   0",
-            "--exhaustiveness", "8"
+            "--num_modes", str(num_modes),
+            "--exhaustiveness", str(exhaustiveness)
         ]
 
         if not self.use_gpu:
@@ -89,13 +91,13 @@ class GninaBackend(BaseBackend):
 
         # Run docking
         logger.info(f"Running GNINA for ligand: {ligand['name']}")
-        print(f"Command: {' '.join(cmd)}")
+        logger.debug(f"Command: {' '.join(cmd)}")
 
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode != 0:
-            logger.info(f"[ERROR] GNINA failed:\n{result.stderr}")
+            logger.error(f"GNINA failed:\n{result.stderr}")
             raise RuntimeError(f"GNINA docking failed for {ligand['name']}")
 
-        logger.info(f"Docking completed for {ligand['name']}. Output: {output_path}")
+        logger.debug(f"Docking completed for {ligand['name']}. Output: {output_path}")
         return output_path

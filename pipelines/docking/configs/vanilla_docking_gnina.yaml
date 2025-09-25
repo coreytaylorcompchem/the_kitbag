@@ -35,7 +35,7 @@ generate_ligands_from_list: true
 ligands_txt: "ligs.txt"    
 # ligands_csv: "ligands.csv" 
 
-### Docking parameters
+### Docking parameters - standard
 
 # The docking_mode parameter controls whether you dock multiple generated conformers ('ensemble') 
 # or just the lowest energy from generated coformers ('lowest_energy').
@@ -48,7 +48,9 @@ docking:
   docking_mode: ensemble # or 'lowest_energy'
   final_n_conformers: 2
   rmsd_threshold: 0.75
-  min_energy_gap: 0.5  # in eV
+  min_energy_gap: 0.5   # in kcal/mol higher = more permissive
+  n_output_binding_modes: 2
+  exhaustiveness: 8
 
   ### Binding pocket detection
   
@@ -64,3 +66,13 @@ docking:
   # TODO: use the output of a pocket finder (e.g. fpocket) to dock into multiple pockets end-to-end.
   use_crystal_ligand: true
   size: [15.0, 15.0, 15.0]
+
+### Docking parameters - extra args
+
+# I just exposed fairly standard args for docking above.
+# You can add any of the other Gnina args via the 'extra_args' parmeters (commented out for now).
+# e.g.
+
+# extra_args:
+#   cnn_model: arg
+#   cnn_rotation: arg

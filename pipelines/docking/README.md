@@ -7,6 +7,7 @@ In this repo are workflows to dock compounds with various use cases (unbiased, c
 ## Setup and dependencies
 
 * [gnina](https://github.com/gnina/)
+* [Unidock](https://github.com/dptech-corp/Uni-Dock)
 * [propka](https://propka.readthedocs.io/en/latest/)
 * [xtb](https://xtb-docs.readthedocs.io/en/latest/setup.html)
 * Most Python libs.

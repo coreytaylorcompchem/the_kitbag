@@ -1,12 +1,13 @@
 _task_registry = {}
 _task_metadata = {}
 
-def register_task(name: str, description: str = ""):
+def register_task(name: str, category=None, description: str = ""):
     def decorator(func):
         _task_registry[name] = func
         _task_metadata[name] = {
             "description": description,
-            "supported_backends": []  # Will be filled in later
+            "supported_backends": [],
+            'category': category or '',
         }
         return func
     return decorator

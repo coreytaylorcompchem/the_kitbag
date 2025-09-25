@@ -33,10 +33,10 @@ class ProteinPreparer:
         self.pdbqt_path = output_dir / f"{self.name}.pdbqt"
 
         if self.pdbqt_path.exists():
-            logger.info(f"[Protein] Using existing receptor PDBQT at: {self.pdbqt_path}")
+            logger.info(f"Using existing receptor PDBQT at: {self.pdbqt_path}")
             return self.pdbqt_path
 
-        logger.info(f"[Protein] Preparing receptor using Open Babel")
+        logger.info(f"Preparing receptor using Open Babel")
 
         cmd = [
             "obabel",
@@ -48,7 +48,7 @@ class ProteinPreparer:
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"[Protein] Open Babel failed:\n{result.stderr}")
+            logger.error(f"Open Babel failed:\n{result.stderr}")
             raise RuntimeError("Protein preparation failed.")
 
         logger.info(f"[Protein] Receptor PDBQT saved at: {self.pdbqt_path}")
@@ -279,10 +279,10 @@ def dock(backend, ligand, config):
                 "pdbqt_path": pdbqt_path,
                 "docked_sdf": str(output_path)
             }]
-            logger.info(f"[INFO] Docked lowest-energy conformer for ligand {ligand['name']}.")
+            logger.info(f"Docked lowest-energy conformer for ligand {ligand['name']}.")
 
         except Exception as e:
-            logger.info(f"[ERROR] Docking failed for ligand {ligand['name']}: {e}")
+            logger.error(f"❌ Docking failed for ligand {ligand['name']}: {e}")
             ligand["docking_results"] = []
 
     elif docking_mode == "ensemble":
@@ -304,11 +304,11 @@ def dock(backend, ligand, config):
                 })
 
             except Exception as e:
-                print(f"[ERROR] Docking failed for ligand {ligand['name']} conformer {idx}: {e}")
+                logger.error(f"❌ Docking failed for ligand {ligand['name']} conformer {idx}: {e}")
 
         ligand["docking_results"] = docking_results
-        logger.info(f"Docked ligand {ligand['name']} with {len(docking_results)} successful results.")
+        logger.info(f"Docked ligand {ligand['name']} successfully.")
 
     else:
-        raise ValueError(f"[ERROR] Unknown docking_mode: {docking_mode}")
+        raise ValueError(f"❌❌ Unknown docking_mode: {docking_mode}")
 

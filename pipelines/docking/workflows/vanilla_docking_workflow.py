@@ -43,12 +43,16 @@ def run(config_path: str):
 
     docking_cfg = config.get("docking", {})
 
+    logger.info("---------------------------------------------")
     logger.info("Loaded YAML configuration:")
-    logger.info(f"  - Output directory: {docking_cfg.get('output_dir')}")
-    logger.info(f"  - Final conformers: {docking_cfg.get('final_n_conformers', 5)}")
-    logger.info(f"  - RMSD threshold:   {docking_cfg.get('rmsd_threshold', 0.75)}")
-    logger.info(f"  - Energy gap:       {docking_cfg.get('min_energy_gap', 0.5)}")
-    logger.info(f"  - Workflow steps:   {config.get('workflow', [])}")
+    logger.info(f"Output directory: {docking_cfg.get('output_dir')}")
+    logger.info(f"Conformer generation: max final conformers: {docking_cfg.get('final_n_conformers', 5)}")
+    logger.info(f"Conformer generation: RMSD threshold:   {docking_cfg.get('rmsd_threshold', 0.75)}")
+    logger.info(f"Conformer generation: Energy gap:       {docking_cfg.get('min_energy_gap', 0.5)}")
+    logger.info(f"Docking: output poses: {docking_cfg.get('n_output_binding_modes', 5)}")
+    logger.info(f"Docking: exhaustiveness:   {docking_cfg.get('exhaustiveness', 5)}")
+    logger.info(f"Workflow steps:   {config.get('workflow', [])}")
+    logger.info("---------------------------------------------")
 
     # ----------------------
     # Output Directory
