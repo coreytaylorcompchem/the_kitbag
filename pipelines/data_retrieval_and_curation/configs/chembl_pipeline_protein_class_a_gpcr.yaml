@@ -1,7 +1,7 @@
+# Purpose: collecting uniprots to retrieve all bioactivity for a protein class (Class A GPCRs)
+
 task: workflow
 workflow_name: chembl_multi_target
-
-# Collecting uniprots to retrieve all bioactivity for a protein class (Class A GPCRs)
 
 # You have a choice of two search options, and you must pick one.
 

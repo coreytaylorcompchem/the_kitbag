@@ -1,3 +1,5 @@
+# Purpose: retrieve and clean data for specific assays and readouts.
+
 task: workflow
 workflow_name: chembl_adme_data
 
@@ -71,5 +73,4 @@ output_columns:
   - smiles
   - standard_value
   - standard_units
-  # - normalized_value
   - normalized_units

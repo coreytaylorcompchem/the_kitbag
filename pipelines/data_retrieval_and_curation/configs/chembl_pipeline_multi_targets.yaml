@@ -1,3 +1,5 @@
+# Purpose: retrieve and clean data for multiple targets.
+
 task: workflow
 workflow_name: chembl_multi_target
 

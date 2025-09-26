@@ -1,3 +1,5 @@
+# Purpose: retrieve and clean data for tox targets (a la Eurofins Safety44 panel).
+
 task: workflow
 workflow_name: chembl_tox_targets
 
