@@ -209,30 +209,63 @@ def plot_multi_structure_scores(summary_csv_path: Path, output_dir: Path):
 
     logger.info("Generated ligand-structure docking plots.")
 
-def extract_scores_from_docking_output(output_path: Path):
+def extract_scores_from_docking_output(output_path):
     """
     Dispatch score extraction based on file extension.
+    Accepts a single Path or a list of Paths.
+    Returns a list of score dictionaries.
     """
-    if output_path.suffix.lower() == ".sdf":
+    # Unwrap list if needed
+    if isinstance(output_path, list):
+        if not output_path:
+            logger.warning("Empty docking output path list.")
+            return []
+        output_path = output_path[0]
+
+    # Ensure Path object
+    if isinstance(output_path, str):
+        output_path = Path(output_path)
+
+    if not isinstance(output_path, Path):
+        logger.warning(f"Invalid docking output type: {type(output_path)}")
+        return []
+
+    ext = output_path.suffix.lower()
+    if ext == ".sdf":
         return extract_scores_from_gnina_sdf(output_path)
-    elif output_path.suffix.lower() == ".pdbqt":
+    elif ext == ".pdbqt":
         return extract_scores_from_unidock_pdbqt(output_path)
     else:
         logger.warning(f"Unknown docking output format: {output_path}")
         return []
 
 def extract_scores_from_gnina_sdf(sdf_path: Path):
-
+    """
+    Extract docking scores from a GNINA SDF output file.
+    """
     results = []
-    suppl = Chem.SDMolSupplier(str(sdf_path))
+    try:
+        suppl = Chem.SDMolSupplier(str(sdf_path))
+    except Exception as e:
+        logger.error(f"Failed to read SDF file {sdf_path}: {e}")
+        return results
+
+    if not suppl:
+        logger.warning(f"RDKit could not load molecules from SDF: {sdf_path}")
+        return results
+
     for pose_idx, mol in enumerate(suppl):
         if mol is None:
+            logger.warning(f"Skipping invalid molecule at pose {pose_idx} in {sdf_path}")
             continue
         try:
             score = float(mol.GetProp("minimizedAffinity"))
             cnn_score = float(mol.GetProp("CNNscore"))
         except KeyError:
             logger.warning(f"Missing scores in pose {pose_idx} of {sdf_path}")
+            continue
+        except Exception as e:
+            logger.warning(f"Error parsing scores in pose {pose_idx} of {sdf_path}: {e}")
             continue
 
         results.append({
@@ -247,22 +280,38 @@ def extract_scores_from_unidock_pdbqt(pdbqt_path: Path):
     Extract scores from Uni-Dock PDBQT output by parsing REMARK lines.
     Assumes docking poses are separated by `MODEL` / `ENDMDL`.
     """
+    logger.debug(f"Parsing Uni-Dock output: {pdbqt_path}")
     results = []
     pose_idx = -1
+
     with open(pdbqt_path, "r") as f:
         for line in f:
             line = line.strip()
             if line.startswith("MODEL"):
                 pose_idx += 1
-            if line.startswith("REMARK") and "VinaResult" in line:
+
+            elif line.startswith("REMARK") and "VINA" in line.upper() and "RESULT" in line.upper():
                 try:
-                    parts = line.split()
-                    score = float(parts[2])
-                    results.append({
-                        "score": score,
-                        "pose_rank": None,  # Uni-Dock may not output CNNscore
-                        "pose_idx": pose_idx
-                    })
+                    # Extract all float-like numbers from the line
+                    parts = line.replace(":", " ").split()
+                    float_vals = [float(p) for p in parts if _is_float(p)]
+
+                    if float_vals:
+                        score = float_vals[0]  # The binding affinity is usually the first
+                        results.append({
+                            "score": score,
+                            "pose_rank": None,  # Uni-Dock may not output CNNscore
+                            "pose_idx": pose_idx
+                        })
                 except Exception as e:
-                    logger.warning(f"Failed to parse score in {pdbqt_path}: {e}")
+                    logger.warning(f"Failed to parse score in {pdbqt_path} at pose {pose_idx}: {e}")
+    logger.info(results)
     return results
+
+def _is_float(s):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+

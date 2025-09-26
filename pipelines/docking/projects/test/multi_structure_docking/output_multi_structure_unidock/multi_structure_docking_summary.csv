@@ -1,0 +1,9 @@
+ligand,conformer,pose_idx,score,pose_rank,pdbqt,docked_sdf,structure,pocket
+ligand1,0,0,-7.332,,output_multi_structure_unidock/5yhl/ligand1_conf0.pdbqt,output_multi_structure_unidock/5yhl/ligand1_conf0_docked.pdbqt,5yhl,0
+ligand1,0,1,-6.998,,output_multi_structure_unidock/5yhl/ligand1_conf0.pdbqt,output_multi_structure_unidock/5yhl/ligand1_conf0_docked.pdbqt,5yhl,0
+ligand2,0,0,-8.188,,output_multi_structure_unidock/5yhl/ligand2_conf0.pdbqt,output_multi_structure_unidock/5yhl/ligand2_conf0_docked.pdbqt,5yhl,0
+ligand2,0,1,-8.105,,output_multi_structure_unidock/5yhl/ligand2_conf0.pdbqt,output_multi_structure_unidock/5yhl/ligand2_conf0_docked.pdbqt,5yhl,0
+ligand1,0,0,-7.25,,output_multi_structure_unidock/5YWY/ligand1_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand1_conf0_docked.pdbqt,5YWY,0
+ligand1,0,1,-6.605,,output_multi_structure_unidock/5YWY/ligand1_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand1_conf0_docked.pdbqt,5YWY,0
+ligand2,0,0,-7.786,,output_multi_structure_unidock/5YWY/ligand2_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand2_conf0_docked.pdbqt,5YWY,0
+ligand2,0,1,-7.324,,output_multi_structure_unidock/5YWY/ligand2_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand2_conf0_docked.pdbqt,5YWY,0

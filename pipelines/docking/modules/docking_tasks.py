@@ -294,7 +294,7 @@ def dock(backend, ligand, config, **kwargs):
             docking_outputs.append({
                 "conformer": 0,
                 "pdbqt": str(pdbqt_path),
-                "docked_output": str(output_path),
+                "docked_output": output_path,
             })
         except Exception as e:
             logger.error(f"❌ Docking failed for {ligand['name']}: {e}")
@@ -312,7 +312,7 @@ def dock(backend, ligand, config, **kwargs):
                 docking_outputs.append({
                     "conformer": idx,
                     "pdbqt": str(pdbqt_path),
-                    "docked_output": str(output_path),
+                    "docked_output": output_path,
                 })
             except Exception as e:
                 logger.error(f"❌ Docking failed for ligand {ligand['name']} conformer {idx}: {e}")

@@ -22,29 +22,29 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def extract_scores_from_sdf(sdf_path):
-    """
-    Extract docking scores from an SDF (assumes GNINA output).
-    Returns a list of dicts with pose info.
-    """
-    rows = []
-    suppl = Chem.SDMolSupplier(str(sdf_path))
-    for pose_idx, mol in enumerate(suppl):
-        if mol is None:
-            continue
-        try:
-            score = float(mol.GetProp("minimizedAffinity"))
-            cnn_score = float(mol.GetProp("CNNscore"))
-        except KeyError:
-            logger.warning(f"Missing scores in pose {pose_idx} of {sdf_path}")
-            continue
+# def extract_scores_from_sdf(sdf_path):
+#     """
+#     Extract docking scores from an SDF (assumes GNINA output).
+#     Returns a list of dicts with pose info.
+#     """
+#     rows = []
+#     suppl = Chem.SDMolSupplier(str(sdf_path))
+#     for pose_idx, mol in enumerate(suppl):
+#         if mol is None:
+#             continue
+#         try:
+#             score = float(mol.GetProp("minimizedAffinity"))
+#             cnn_score = float(mol.GetProp("CNNscore"))
+#         except KeyError:
+#             logger.warning(f"Missing scores in pose {pose_idx} of {sdf_path}")
+#             continue
 
-        rows.append({
-            "score": score,
-            "pose_rank": cnn_score,
-            "pose_idx": pose_idx
-        })
-    return rows
+#         rows.append({
+#             "score": score,
+#             "pose_rank": cnn_score,
+#             "pose_idx": pose_idx
+#         })
+#     return rows
 
 @register_workflow("multi_structure_docking", description="Dock ligands into multiple PDB structures using known ligand positions.")
 def run(config_path: str):
@@ -138,7 +138,7 @@ def run(config_path: str):
 
         for ligand in ligands:
             logger.info(f"Processing ligand: {ligand['name']} against {pdb_path.name}")
-            docking_outputs = None
+            docking_outputs = []
 
             for step in config.get("workflow", []):
                 task_func = get_task(step)
@@ -153,40 +153,62 @@ def run(config_path: str):
                     pdb_path=pdb_path
                 )
 
-                if step == "dock":
-                    docking_outputs = result 
+                if isinstance(result, list):
+                    docking_outputs.extend(result)
+                elif result:
+                    docking_outputs.append(result)
+
+            logger.debug(f"docking_outputs = {docking_outputs}")
 
             if docking_outputs:
                 pocket_dir = protein_output_dir / "pocket_0"
                 pocket_dir.mkdir(parents=True, exist_ok=True)
 
                 score_rows = []
+
                 for entry in docking_outputs:
-                    sdf_path = entry["docked_output"]
                     pdbqt = entry["pdbqt"]
                     conformer = entry["conformer"]
 
-                    score_data = extract_scores_from_docking_output(Path(sdf_path))
-                    for score_entry in score_data:
-                        score_rows.append({
-                            "ligand": ligand["name"],
-                            "conformer": conformer,
-                            "pose_idx": score_entry["pose_idx"],
-                            "score": score_entry["score"],
-                            "pose_rank": score_entry["pose_rank"],
-                            "pdbqt": pdbqt,
-                            "docked_sdf": sdf_path,
-                            "structure": pdb_path.stem
-                        })
+                    docked_outputs = entry["docked_output"]
+                    if not isinstance(docked_outputs, (list, tuple)):
+                        docked_outputs = [docked_outputs]
 
+                    for sdf_path in docked_outputs:
+                        if isinstance(sdf_path, list):
+                            if len(sdf_path) == 0:
+                                logger.warning(f"No docking outputs found for ligand {ligand['name']}")
+                                continue
+                            sdf_path = sdf_path[0]
+
+                        score_data = extract_scores_from_docking_output(sdf_path)
+
+                        for score_entry in score_data:
+                            score_rows.append({
+                                "ligand": ligand["name"],
+                                "conformer": conformer,
+                                "pose_idx": score_entry["pose_idx"],
+                                "score": score_entry["score"],
+                                "pose_rank": score_entry["pose_rank"],
+                                "pdbqt": pdbqt,
+                                "docked_sdf": str(sdf_path),
+                                "structure": pdb_path.stem
+                            })
+                logger.info(score_rows)
                 score_csv_path = pocket_dir / "docking_scores.csv"
                 if score_csv_path.exists():
-                    existing_df = pd.read_csv(score_csv_path)
-                    df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
+                    if score_csv_path.stat().st_size > 0:
+                        existing_df = pd.read_csv(score_csv_path)
+                        df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
+                    else:
+                        logger.warning(f"Docking scores file exists but is empty: {score_csv_path}")
+                        df = pd.DataFrame(score_rows)
                 else:
                     df = pd.DataFrame(score_rows)
 
                 df.to_csv(score_csv_path, index=False)
+
+
 
     # ----------------------
     # Summarise

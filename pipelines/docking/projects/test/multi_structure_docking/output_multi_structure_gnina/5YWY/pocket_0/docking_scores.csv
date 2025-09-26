@@ -1,0 +1,5 @@
+ligand,conformer,pose_idx,score,pose_rank,pdbqt,docked_sdf,structure
+ligand1,0,0,-6.82835054,0.308684289,output_multi_structure_gnina/5YWY/ligand1_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand1_conf0_docked.sdf,5YWY
+ligand1,0,1,-7.50387621,0.285165012,output_multi_structure_gnina/5YWY/ligand1_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand1_conf0_docked.sdf,5YWY
+ligand2,0,0,-6.37934732,0.574130297,output_multi_structure_gnina/5YWY/ligand2_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand2_conf0_docked.sdf,5YWY
+ligand2,0,1,-7.17448473,0.311013579,output_multi_structure_gnina/5YWY/ligand2_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand2_conf0_docked.sdf,5YWY
