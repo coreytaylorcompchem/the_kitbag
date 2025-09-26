@@ -45,6 +45,7 @@ Available Workflows:
  - chembl_multi_target: Retrieve, standardise and collate bioactivities for multiple targets - CHEMBL.
  - chembl_bioactivity_single_target: Retrieve, standardise and collate bioactivities for a single target - CHEMBL.
  - chembl_tox_targets: Retrieve, standardise and collate bioactivities for tox-relevant targets - CHEMBL.
+ - pdb_multi_target: Process PDB structures for multiple UniProt targets.
  - pdb_single_target: Process PDBs for a single UniProt target.
 ```
 
