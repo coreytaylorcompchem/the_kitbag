@@ -3,3 +3,7 @@ ligand1,0,0,-7.53537941,0.264132112,output_multi_structure_gnina/5yhl/ligand1_co
 ligand1,0,1,-8.42209816,0.259685576,output_multi_structure_gnina/5yhl/ligand1_conf0.pdbqt,output_multi_structure_gnina/5yhl/ligand1_conf0_docked.sdf,5yhl
 ligand2,0,0,-7.56331873,0.414529592,output_multi_structure_gnina/5yhl/ligand2_conf0.pdbqt,output_multi_structure_gnina/5yhl/ligand2_conf0_docked.sdf,5yhl
 ligand2,0,1,-8.26793861,0.220237091,output_multi_structure_gnina/5yhl/ligand2_conf0.pdbqt,output_multi_structure_gnina/5yhl/ligand2_conf0_docked.sdf,5yhl
+ligand1,0,0,-8.39654732,0.250558704,output_multi_structure_gnina/5yhl/ligand1_conf0.pdbqt,output_multi_structure_gnina/5yhl/ligand1_conf0_docked.sdf,5yhl
+ligand1,0,1,-6.03525829,0.0892760977,output_multi_structure_gnina/5yhl/ligand1_conf0.pdbqt,output_multi_structure_gnina/5yhl/ligand1_conf0_docked.sdf,5yhl
+ligand2,0,0,-7.5557332,0.403626949,output_multi_structure_gnina/5yhl/ligand2_conf0.pdbqt,output_multi_structure_gnina/5yhl/ligand2_conf0_docked.sdf,5yhl
+ligand2,0,1,-8.24265862,0.212252975,output_multi_structure_gnina/5yhl/ligand2_conf0.pdbqt,output_multi_structure_gnina/5yhl/ligand2_conf0_docked.sdf,5yhl

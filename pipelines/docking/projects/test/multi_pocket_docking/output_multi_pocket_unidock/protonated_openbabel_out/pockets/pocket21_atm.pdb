@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    21:
+HEADER 0  - Pocket Score                      : -0.0689
+HEADER 1  - Drug Score                        : 0.0009
+HEADER 2  - Number of alpha spheres           :    24
+HEADER 3  - Mean alpha-sphere radius          : 3.6674
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4390
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 10.7500
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.3750
+HEADER 9  - Pocket volume (Monte Carlo)       : 176.6711
+HEADER 10  -Pocket volume (convex hull)       : 6.6018
+HEADER 11 - Charge Score                      :    -3
+HEADER 12 - Local hydrophobic density Score   : 9.0000
+HEADER 13 - Number of apolar alpha sphere     :    10
+HEADER 14 - Proportion of apolar alpha sphere : 0.4167
+ATOM   2265    N LEU C  11     -53.623 -91.495   6.599  0.79  4.37           N 0
+ATOM   3787   CB GLU D  81     -50.560 -95.164  11.103  0.00  0.00           C 0
+ATOM   3389   CG GLN D  27     -50.415 -96.097   7.115  0.00  0.00           C 0
+ATOM   3394    O ASP D  28     -47.465 -93.681   7.196  0.83  6.43           O 0
+ATOM   2269   CB LEU C  11     -53.660 -93.966   6.441  0.00  0.00           C 0
+ATOM   3784   CA GLU D  81     -50.783 -94.931  12.597  0.00  0.00           C 0
+ATOM   3778    C TYR D  80     -49.499 -94.194  14.530  0.00  0.00           C 0
+ATOM   2252    O PRO C   9     -51.462 -88.773   9.633  0.00  0.00           O 0
+ATOM   3779    O TYR D  80     -50.485 -94.306  15.270  0.69  6.43           O 0
+ATOM   3406   CD ILE D  29     -45.921 -91.952   8.673  0.00  0.00           C 0
+ATOM   2254   CG PRO C   9     -48.048 -89.105  10.195  0.00  0.00           C 0
+ATOM   2253   CB PRO C   9     -48.350 -89.066   8.736  0.00  0.00           C 0
+ATOM   2251    C PRO C   9     -50.830 -88.599   8.588  0.00  0.00           C 0
+ATOM   2256    N GLU C  10     -51.315 -88.909   7.388  0.00  0.00           N 0
+ATOM   3780   CB TYR D  80     -47.920 -92.223  14.624  0.00  0.00           C 0
+ATOM   2255   CD PRO C   9     -48.213 -87.690  10.681  0.00  0.00           C 0
+ATOM   3783    N GLU D  81     -49.533 -94.523  13.233  0.72  1.09           N 0
+ATOM   2258    C GLU C  10     -52.736 -90.556   6.272  0.00  0.00           C 0
+TER
+END

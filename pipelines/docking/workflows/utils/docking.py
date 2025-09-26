@@ -305,7 +305,6 @@ def extract_scores_from_unidock_pdbqt(pdbqt_path: Path):
                         })
                 except Exception as e:
                     logger.warning(f"Failed to parse score in {pdbqt_path} at pose {pose_idx}: {e}")
-    logger.info(results)
     return results
 
 def _is_float(s):

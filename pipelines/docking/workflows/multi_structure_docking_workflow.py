@@ -22,30 +22,6 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# def extract_scores_from_sdf(sdf_path):
-#     """
-#     Extract docking scores from an SDF (assumes GNINA output).
-#     Returns a list of dicts with pose info.
-#     """
-#     rows = []
-#     suppl = Chem.SDMolSupplier(str(sdf_path))
-#     for pose_idx, mol in enumerate(suppl):
-#         if mol is None:
-#             continue
-#         try:
-#             score = float(mol.GetProp("minimizedAffinity"))
-#             cnn_score = float(mol.GetProp("CNNscore"))
-#         except KeyError:
-#             logger.warning(f"Missing scores in pose {pose_idx} of {sdf_path}")
-#             continue
-
-#         rows.append({
-#             "score": score,
-#             "pose_rank": cnn_score,
-#             "pose_idx": pose_idx
-#         })
-#     return rows
-
 @register_workflow("multi_structure_docking", description="Dock ligands into multiple PDB structures using known ligand positions.")
 def run(config_path: str):
     import shutil
@@ -194,14 +170,20 @@ def run(config_path: str):
                                 "docked_sdf": str(sdf_path),
                                 "structure": pdb_path.stem
                             })
-                logger.info(score_rows)
+                
+                # Check there is valid docking output
+                logger.debug(score_rows)
+                
                 score_csv_path = pocket_dir / "docking_scores.csv"
+                
+                # Check if csv is already present 
+
                 if score_csv_path.exists():
                     if score_csv_path.stat().st_size > 0:
                         existing_df = pd.read_csv(score_csv_path)
                         df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
                     else:
-                        logger.warning(f"Docking scores file exists but is empty: {score_csv_path}")
+                        logger.warning(f"Existing docking_scores.csv is empty — will overwrite it.")
                         df = pd.DataFrame(score_rows)
                 else:
                     df = pd.DataFrame(score_rows)

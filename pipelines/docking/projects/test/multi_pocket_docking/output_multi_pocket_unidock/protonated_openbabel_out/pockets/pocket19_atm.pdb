@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    19:
+HEADER 0  - Pocket Score                      : -0.0607
+HEADER 1  - Drug Score                        : 0.0005
+HEADER 2  - Number of alpha spheres           :    25
+HEADER 3  - Mean alpha-sphere radius          : 4.0914
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5405
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 7.1000
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.8000
+HEADER 9  - Pocket volume (Monte Carlo)       : 255.4344
+HEADER 10  -Pocket volume (convex hull)       : 6.5648
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.2400
+ATOM   4191  OE1 GLN D  37     -29.062 -75.561   0.230  0.56  7.50           O 0
+ATOM   4192  NE2 GLN D  37     -31.034 -75.403   1.285  0.81  6.56           N 0
+ATOM   4209   CE LYS D  39     -28.777 -78.308   3.259  0.00  0.00           C 0
+ATOM   4252   NZ LYS D  45     -31.232 -71.452   5.014  0.00  9.84           N 1
+ATOM   4390  CE2 PHE D  62     -25.602 -71.314  -1.145  0.00  0.00           C 0
+ATOM   4364   CD PRO D  59     -26.271 -68.873   2.440  0.00  0.00           C 0
+ATOM   4537  OD2 ASP D  82     -24.396 -74.782   0.169  0.65  2.14           O 1
+ATOM   4381  NH1 ARG D  61     -23.008 -72.902   1.587  0.00  0.00           N 0
+ATOM   4363   CG PRO D  59     -24.902 -69.450   2.663  0.00  0.00           C 0
+ATOM   4530  OE1 GLU D  81     -22.785 -74.002   5.159  0.67  5.36           O 0
+ATOM   4529  OE2 GLU D  81     -22.760 -75.827   6.379  0.45  5.36           O 1
+ATOM   4526   CB GLU D  81     -23.462 -77.492   4.303  0.00  0.00           C 0
+ATOM   4528   CD GLU D  81     -22.819 -75.246   5.276  0.00  0.00           C 0
+ATOM   4525    O GLU D  81     -25.460 -77.501   2.322  0.57  2.14           O 0
+ATOM   4527   CG GLU D  81     -22.936 -76.090   4.022  0.00  0.00           C 0
+ATOM   4267  CD2 LEU D  47     -30.910 -71.003  -0.873  0.00  0.00           C 0
+ATOM   4357  CG2 VAL D  58     -30.642 -66.979   1.735  0.00  0.00           C 0
+ATOM   4356  CG1 VAL D  58     -28.677 -67.370   0.241  0.00  0.00           C 0
+TER
+END

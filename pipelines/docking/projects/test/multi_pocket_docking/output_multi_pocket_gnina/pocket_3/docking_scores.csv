@@ -1,11 +1,5 @@
 ligand,conformer,pose_idx,score,pose_rank,pdbqt,docked_sdf,pocket
-ligand1,0,0,-5.8742938,0.587156773,output_multi_pocket_gnina/ligand1_conf0.pdbqt,output_multi_pocket_gnina/ligand1_conf0_pocket3_docked.sdf,3
-ligand1,0,1,-6.42473078,0.548949361,output_multi_pocket_gnina/ligand1_conf0.pdbqt,output_multi_pocket_gnina/ligand1_conf0_pocket3_docked.sdf,3
-ligand2,0,0,-5.09340525,0.603925884,output_multi_pocket_gnina/ligand2_conf0.pdbqt,output_multi_pocket_gnina/ligand2_conf0_pocket3_docked.sdf,3
-ligand2,0,1,-5.49213123,0.571632147,output_multi_pocket_gnina/ligand2_conf0.pdbqt,output_multi_pocket_gnina/ligand2_conf0_pocket3_docked.sdf,3
-ligand3,0,0,-6.28272438,0.681611121,output_multi_pocket_gnina/ligand3_conf0.pdbqt,output_multi_pocket_gnina/ligand3_conf0_pocket3_docked.sdf,3
-ligand3,0,1,-6.47427273,0.458892763,output_multi_pocket_gnina/ligand3_conf0.pdbqt,output_multi_pocket_gnina/ligand3_conf0_pocket3_docked.sdf,3
-ligand4,0,0,-6.60615492,0.571581721,output_multi_pocket_gnina/ligand4_conf0.pdbqt,output_multi_pocket_gnina/ligand4_conf0_pocket3_docked.sdf,3
-ligand4,0,1,-5.27361917,0.512858272,output_multi_pocket_gnina/ligand4_conf0.pdbqt,output_multi_pocket_gnina/ligand4_conf0_pocket3_docked.sdf,3
-ligand5,0,0,-6.42322302,0.686930418,output_multi_pocket_gnina/ligand5_conf0.pdbqt,output_multi_pocket_gnina/ligand5_conf0_pocket3_docked.sdf,3
-ligand5,0,1,-6.45061731,0.664099991,output_multi_pocket_gnina/ligand5_conf0.pdbqt,output_multi_pocket_gnina/ligand5_conf0_pocket3_docked.sdf,3
+ligand1,0,0,-5.28069162,0.562007904,output_multi_pocket_gnina/ligand1_conf0.pdbqt,output_multi_pocket_gnina/ligand1_conf0_pocket3_docked.sdf,3
+ligand1,0,1,-5.18242407,0.542104244,output_multi_pocket_gnina/ligand1_conf0.pdbqt,output_multi_pocket_gnina/ligand1_conf0_pocket3_docked.sdf,3
+ligand2,0,0,-5.32757807,0.591158986,output_multi_pocket_gnina/ligand2_conf0.pdbqt,output_multi_pocket_gnina/ligand2_conf0_pocket3_docked.sdf,3
+ligand2,0,1,-5.36888742,0.539025664,output_multi_pocket_gnina/ligand2_conf0.pdbqt,output_multi_pocket_gnina/ligand2_conf0_pocket3_docked.sdf,3

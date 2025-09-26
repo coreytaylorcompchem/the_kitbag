@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    43:
+HEADER 0  - Pocket Score                      : -0.2061
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    26
+HEADER 3  - Mean alpha-sphere radius          : 4.3381
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4297
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 50.8571
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.2857
+HEADER 9  - Pocket volume (Monte Carlo)       : 380.5699
+HEADER 10  -Pocket volume (convex hull)       : 20.9185
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.3077
+ATOM   3599  CE1 LEU D  55     -43.900 -98.400   2.238  0.00  0.00           C 0
+ATOM   2504  CE1 HIS C  41     -40.057 -91.757  -1.721  0.00  0.00           C 0
+ATOM   3602   OH LEU D  55     -45.727 -97.093   1.450  0.00  0.00           O 0
+ATOM   3396   CG ASP D  28     -43.706 -95.687   5.145  0.00  0.00           C 0
+ATOM   3395   CB ASP D  28     -44.861 -94.761   5.461  0.00  0.00           C 0
+ATOM   3115  CD2 LEU C 116     -45.777 -90.522   4.760  0.00  0.00           C 0
+ATOM   3114  CD1 LEU C 116     -46.272 -89.315   2.628  0.00  0.00           C 0
+ATOM   2502  ND1 HIS C  41     -41.059 -90.997  -2.124  0.00  0.00           N 0
+ATOM   3543    O ILE D  48     -39.332 -98.111   1.612  0.00  0.00           O 0
+ATOM   2505  NE2 HIS C  41     -39.691 -92.531  -2.726  0.00  0.00           N 0
+ATOM   3128  OG1 THR C 118     -48.866 -92.922   2.811  0.67  3.21           O 0
+ATOM   2503  CD2 HIS C  41     -40.485 -92.256  -3.813  0.00  0.00           C 0
+ATOM   2501   CG HIS C  41     -41.352 -91.286  -3.439  0.00  0.00           C 0
+ATOM   3537   CB LEU D  47     -35.907 -95.524   2.118  0.00  0.00           C 0
+ATOM   3540    N ILE D  48     -38.073 -97.307   3.943  0.67  4.37           N 0
+ATOM   3398  OE1 ASP D  28     -41.990 -94.380   6.149  0.30  9.64           O 0
+ATOM   3544   CB ILE D  48     -40.249 -98.118   4.721  0.00  0.00           C 0
+ATOM   3534   CA LEU D  47     -35.996 -96.145   3.517  0.00  0.00           C 0
+TER
+END

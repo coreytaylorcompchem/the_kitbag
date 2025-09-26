@@ -1,0 +1,4 @@
+ligand,conformer,pose_idx,score,pose_rank,pdbqt,docked_sdf,pocket
+ligand1,0,0,-9.692,,output_multi_pocket_unidock/ligand1_conf0.pdbqt,output_multi_pocket_unidock/ligand1_conf0_docked.pdbqt,2
+ligand2,0,0,-9.372,,output_multi_pocket_unidock/ligand2_conf0.pdbqt,output_multi_pocket_unidock/ligand2_conf0_docked.pdbqt,2
+ligand2,0,1,-9.204,,output_multi_pocket_unidock/ligand2_conf0.pdbqt,output_multi_pocket_unidock/ligand2_conf0_docked.pdbqt,2

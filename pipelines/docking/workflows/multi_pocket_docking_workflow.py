@@ -1,6 +1,7 @@
 import yaml
 import csv
 from pathlib import Path
+import pandas as pd
 
 from backends import get_backend
 from modules.protein_preparation import ProteinPreparer
@@ -11,6 +12,7 @@ from workflows.utils.docking import (
     generate_ligands_csv_from_txt,
     summarise_docking_results,
     validate_config,
+    extract_scores_from_docking_output
 )
 from workflows.utils.fpocket import (
     run_fpocket,
@@ -109,23 +111,94 @@ def run(config_path: str):
     # Multi-pocket Docking
     # ----------------------
     for i, center in enumerate(pocket_centers):
-        logger.info(f">>> Docking into pocket {i+1}/{len(pocket_centers)} <<<")
+        logger.info(f">>>>>>>>>> Docking into pocket {i+1}/{len(pocket_centers)} <<<<<<<<<<")
         config['docking']['center'] = center
         config['docking']['size'] = [20, 20, 20]  # Could be dynamic later
 
         for ligand in ligands:
             logger.info(f"Processing ligand: {ligand['name']} for pocket {i+1}")
+            docking_outputs = []
+
             for step in config.get("workflow", []):
                 task_func = get_task(step)
                 if not task_func:
                     raise ValueError(f"Workflow step '{step}' is not a registered task.")
-                task_func(backend, ligand, config, pocket_id=i+1)  # Pass pocket_id if needed
+                result = task_func(backend, ligand, config, pocket_id=i+1)
+                
+                if isinstance(result, list):
+                    docking_outputs.extend(result)
+                elif result:
+                    docking_outputs.append(result)
+
+            logger.debug(f"docking_outputs = {docking_outputs}")
+
+            if docking_outputs:
+                pocket_dir = output_dir / f"pocket_{i+1}"
+                pocket_dir.mkdir(parents=True, exist_ok=True)
+
+                score_rows = []
+
+                for entry in docking_outputs:
+                    pdbqt = entry["pdbqt"]
+                    conformer = entry["conformer"]
+                    docked_outputs = entry["docked_output"]
+
+                    if not isinstance(docked_outputs, (list, tuple)):
+                        docked_outputs = [docked_outputs]
+
+                    for sdf_path in docked_outputs:
+                        if isinstance(sdf_path, list):
+                            if len(sdf_path) == 0:
+                                logger.warning(f"No docking outputs found for ligand {ligand['name']}")
+                                continue
+                            sdf_path = sdf_path[0]
+
+                        score_data = extract_scores_from_docking_output(sdf_path)
+
+                        for score_entry in score_data:
+                            score_rows.append({
+                                "ligand": ligand["name"],
+                                "conformer": conformer,
+                                "pose_idx": score_entry["pose_idx"],
+                                "score": score_entry["score"],
+                                "pose_rank": score_entry["pose_rank"],
+                                "pdbqt": pdbqt,
+                                "docked_sdf": str(sdf_path),
+                                "pocket": i + 1  # use 1-based indexing
+                            })
+
+                # Save scores for this pocket
+                score_csv_path = pocket_dir / "docking_scores.csv"
+                if score_csv_path.exists() and score_csv_path.stat().st_size > 0:
+                    existing_df = pd.read_csv(score_csv_path)
+                    df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
+                else:
+                    df = pd.DataFrame(score_rows)
+
+                df.to_csv(score_csv_path, index=False)
 
     # ----------------------
     # Summarise & Plot
     # ----------------------
+    # build summary csv
     results_csv = output_dir / "multi_pocket_docking_summary.csv"
-    summarise_docking_results(output_dir, results_csv)
+
+    all_scores = []
+    for pocket_dir in output_dir.glob("pocket_*"):
+        score_csv = pocket_dir / "docking_scores.csv"
+        if score_csv.exists() and score_csv.stat().st_size > 0:
+            df = pd.read_csv(score_csv)
+            all_scores.append(df)
+
+    if all_scores:
+        summary_df = pd.concat(all_scores, ignore_index=True)
+        summary_df.to_csv(results_csv, index=False)
+        logger.info(f"Saved docking summary to: {results_csv}")
+    else:
+        logger.warning("No docking scores found — summary CSV not created.")
+    
+    # plot the results
+    
     if config.get("plot_docking_results", True):
         plot_multi_pocket_scores(results_csv, output_dir)
     else:

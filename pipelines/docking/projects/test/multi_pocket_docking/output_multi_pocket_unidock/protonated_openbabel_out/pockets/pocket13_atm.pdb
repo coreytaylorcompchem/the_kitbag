@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    13:
+HEADER 0  - Pocket Score                      : -0.0374
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.7598
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4527
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 6.0000
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 5.1429
+HEADER 9  - Pocket volume (Monte Carlo)       : 222.0811
+HEADER 10  -Pocket volume (convex hull)       : 4.9328
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1176
+ATOM   4521   OH TYR D  80     -14.530 -83.056   1.479  0.00  0.00           O 0
+ATOM   5225   CA ASP D 170     -18.747 -88.668   4.682  0.00  0.00           C 0
+ATOM   5227    O ASP D 170     -18.278 -89.297   2.433  0.76  1.07           O 0
+ATOM   4755  NH2 ARG D 108     -15.884 -90.735   1.929  0.63  6.56           N 0
+ATOM   4750   CB ARG D 108     -15.868 -88.268  -2.005  0.00  0.00           C 0
+ATOM   5236   CB SER D 171     -19.862 -87.344   0.610  0.00  0.00           C 0
+ATOM   4754   CZ ARG D 108     -15.258 -91.165   0.841  0.00  0.00           C 0
+ATOM   5237   OG SER D 171     -20.046 -86.025   1.098  0.85  2.14           O 0
+ATOM   4518  CE1 TYR D  80     -16.635 -82.120   0.867  0.00  0.00           C 0
+ATOM   4735  CG2 ILE D 106     -18.878 -83.897  -2.308  0.00  0.00           C 0
+ATOM   4740    O LYS D 107     -16.228 -85.432  -3.884  0.68  2.14           O 0
+ATOM   4520   CZ TYR D  80     -15.684 -82.393   1.828  0.00  0.00           C 0
+ATOM   4519  CE2 TYR D  80     -15.885 -82.004   3.136  0.00  0.00           C 0
+ATOM   5218    O LYS D 169     -18.991 -86.119   5.744  0.00  0.00           O 0
+ATOM   5226    C ASP D 170     -19.099 -88.796   3.209  0.00  0.00           C 0
+TER
+END
