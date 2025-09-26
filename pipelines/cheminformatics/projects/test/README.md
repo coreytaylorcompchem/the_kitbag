@@ -2,7 +2,7 @@
 
 Here are test cases for the following use cases (see yamls for details on parameters used):
 
-## Process - filtering
+## Filtering
 
 ### Lipinski, physchem and toxic / reactive SMARTS
 
@@ -18,7 +18,7 @@ NOTE: at present, even though the filtering in the yaml will be done, only the A
 
 `python ../../run_cheminformatics_pipeline.py --params ../../configs/chembl_pipeline_physchem_scaffold_novelty.yaml`
 
-## Process - library generation
+## Library generation
 
 ### Focused separate libraries based on detected scaffolds
 
