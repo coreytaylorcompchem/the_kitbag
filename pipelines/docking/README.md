@@ -57,6 +57,8 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 ## TODO
 
+See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a more complete list.
+
 * Add ML-based docking backends like [Diffdock](https://github.com/gcorso/DiffDock) and [Equibind](https://github.com/HannesStark/EquiBind).
 * Add other docking modes (constrained core, ensemble, etc.)
 * Run docking on multiple targets. 

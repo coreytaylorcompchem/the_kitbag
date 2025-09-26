@@ -40,6 +40,8 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 ## TODO
 
+See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a more complete list.
+
 * More options for MD simulations.
     * Different constraints (harmonic, restraints, etc.)
     * Control outputs.

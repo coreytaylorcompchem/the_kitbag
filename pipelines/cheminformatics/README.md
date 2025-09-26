@@ -46,14 +46,20 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 ## TODO
 
+See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a more complete list.
+
 * More advanced filtering:
-    * Shape-based and pharmacophore filtering
-    * Tox filters (e.g. PAINS)
-    * Clustering/PCA
-    * Fragment/scaffold filtering
+  * Shape-based and pharmacophore filtering
+  * Tox filters (e.g. PAINS)
+  * Clustering/PCA
+  * Fragment/scaffold filtering
 * More advanced analyses
-    * MMPs
-    * SAR analyses
-    * Scaffold analyses
-    * Use of ML models for ADME prediction
-    * Free-Wilson analysis
+  * MMPs
+  * SAR analyses
+  * Scaffold analyses and scaffold hops
+  * Use of ML models for ADME prediction
+  * Free-Wilson analysis
+* Structural
+  * Protein and ligand conformational analyses
+  * Loop modelling
+  * Pocket characterisation

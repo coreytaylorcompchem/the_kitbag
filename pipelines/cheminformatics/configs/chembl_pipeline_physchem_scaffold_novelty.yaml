@@ -1,3 +1,10 @@
+# Generating a focused library of compounds by scaffold dissimilarity.
+
+# Purpose: to filter by scaffold novelty and reduce the docking load for datasets of very similar compounds.
+# Workflow: take a library of compounds with known bioactivities, extract Murcko scaffolds,
+# construct a Tanimoto matrix and 'de-duplicate' by similarity   
+# Outputs: SMILES and SDF files.
+
 workflow_name: dynamic_task_runner
 
 input_file: data/class_a_gpcr_bioactivity_small.csv

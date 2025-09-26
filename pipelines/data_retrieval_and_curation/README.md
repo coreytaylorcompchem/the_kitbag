@@ -44,6 +44,8 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 ## TODO
 
+See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a more complete list.
+
 * Implement more advanced curation (at the moment, ADME retrieves all readouts / units).
 * Add more parsers for alternative data sources.
 * Workflows to combine data from different sources.

@@ -39,7 +39,7 @@ Available Backends:
 
 Available Tasks:
   [EDA]:
-    - sapt0: Do a sapt0 calculation (WIP).
+    - saptX: Do a sapt0, sapt1, etc. calculation (WIP).
   [Energy]:
     - single_point: Performs a single-point energy calculation using the selected backend.
     - torsion_scan: Do a torsion scan of a bond (WIP).
@@ -61,6 +61,8 @@ Available Workflows:
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
 
 ## TODO
+
+See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a more complete list.
 
 * Implement XTB and Orca API to give further options.
 * For pKa, to make it useful;

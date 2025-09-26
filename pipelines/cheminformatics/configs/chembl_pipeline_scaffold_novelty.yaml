@@ -1,7 +1,14 @@
+# Generating a focused library of compounds by scaffold dissimilarity.
+
+# Purpose: to filter by scaffold novelty and reduce the docking load for datasets of very similar compounds.
+# Workflow: take a library of compounds with known bioactivities, extract Murcko scaffolds,
+# construct a Tanimoto matrix and 'de-duplicate' by similarity   
+# Outputs: SMILES and SDF files.
+
 workflow_name: dynamic_task_runner
 
 input_file: data/class_a_gpcr_bioactivity_small.csv
-chunk_size: 10
+chunk_size: 1000
 
 workflow:
   # - basic_lipinski_filtering
@@ -14,7 +21,7 @@ fragment_novelty_filtering:
   scaffold_max_similarity: 0.4
 # scaffold_max_similarity = 0.9 → allow more similar scaffolds → larger dataset
 # scaffold_max_similarity = 0.4 → allow fewer similar scaffolds → smaller dataset
-  reference_set: data/core_set.csv
+  # reference_set: data/core_set.csv # TODO
   drop_duplicates: true
 
 output:
