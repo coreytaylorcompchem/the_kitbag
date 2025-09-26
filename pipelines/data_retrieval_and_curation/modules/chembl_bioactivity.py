@@ -27,7 +27,9 @@ def retry_activity_query(filters, max_retries=3):
     logger.error("❌ Final retry failed.")
     return []
 
-@register_task("retrieve_chembl_bioactivities", description="Retrieve bioactivity data from CHEMBL.")
+@register_task("retrieve_chembl_bioactivities", 
+               category='Bioactivity',
+               description="Retrieve bioactivity data from CHEMBL.")
 def retrieve_chembl_bioactivities(config, data=None):
     uniprot_id = config.get("uniprot_id")
     assay_type = config.get("assay_type")
@@ -77,7 +79,9 @@ def retrieve_chembl_bioactivities(config, data=None):
     return df
 
 
-@register_task("clean_bioactivities", description="Check and standardise bioactivities.")
+@register_task("clean_bioactivities", 
+               category='Bioactivity',
+               description="Check and standardise bioactivities.")
 def clean_bioactivities(config, data):
     uniprot_id = config.get("uniprot_id", "UNKNOWN")
     readout_priority = config.get("readout", ["IC50", "Ki", "EC50"])
@@ -145,7 +149,9 @@ def clean_bioactivities(config, data):
         return {"df": pd.DataFrame(), "readout": None}
 
 
-@register_task("retrieve_compound_smiles", description="Retrieve SMILES from downloaded compound data.")
+@register_task("retrieve_compound_smiles", 
+               category='Bioactivity',
+               description="Retrieve SMILES from downloaded compound data.")
 def retrieve_compound_smiles(config, data):
     if not isinstance(data, dict) or "df" not in data:
         raise ValueError("Expected a dict with 'df' key containing a DataFrame.")
@@ -154,7 +160,7 @@ def retrieve_compound_smiles(config, data):
     if input_df.empty:
         raise ValueError("Input DataFrame is empty.")
 
-    logger.info(f"[retrieve_compound_smiles] Fetching SMILES for {len(input_df)} entries...")
+    logger.info(f"Fetching SMILES for {len(input_df)} entries...")
 
     molecule_ids = input_df["molecule_chembl_id"].dropna().unique().tolist()
     compounds_api = new_client.molecule
@@ -185,11 +191,13 @@ def retrieve_compound_smiles(config, data):
     if merged_df["smiles"].isnull().all():
         raise ValueError("No SMILES could be attached to the input compounds.")
 
-    logger.info(f"[retrieve_compound_smiles] Attached SMILES to {merged_df['smiles'].notnull().sum()} entries.")
+    logger.info(f"Attached SMILES to {merged_df['smiles'].notnull().sum()} entries.")
 
     return {"df": merged_df, "readout": data.get("readout")}
 
-@register_task("annotate_bioactivity_pactivity", description="Compute p(readout)) and add to retrieval results.")
+@register_task("annotate_bioactivity_pactivity", 
+               category='Bioactivity',
+               description="Compute p(readout)) and add to retrieval results.")
 def annotate_bioactivity_pactivity(config, data):
     if not isinstance(data, dict) or "df" not in data:
         raise ValueError("Expected a dict with 'df' key containing a DataFrame.")
@@ -214,7 +222,7 @@ def annotate_bioactivity_pactivity(config, data):
         logger.info(f"[annotate_bioactivity_pactivity] Skipping pActivity. Not a bioactivity readout: {readout_guess}")
         return {"df": df, "readout": readout_guess}
 
-    logger.info(f"[annotate_bioactivity_pactivity] Calculating pActivity for readout: {readout_guess}")
+    logger.info(f"Calculating pActivity for readout: {readout_guess}")
 
     def compute_pX(val):
         if pd.notnull(val) and val > 0:
@@ -228,6 +236,6 @@ def annotate_bioactivity_pactivity(config, data):
     df["pActivity"] = df["standard_value"].apply(compute_pX)
 
     num_valid = df["pActivity"].notnull().sum()
-    logger.info(f"[annotate_bioactivity_pactivity] Computed pActivity for {num_valid} entries.")
+    logger.info(f"Computed pActivity for {num_valid} entries.")
 
     return {"df": df, "readout": readout_guess}

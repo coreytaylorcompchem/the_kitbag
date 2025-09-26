@@ -1,0 +1,2 @@
+uniprot_id,num_structures,num_aligned,aligned_files,output_dir
+P34995,1,1,9m1h_std.pdb,outputs/multi_target_pdb/P34995

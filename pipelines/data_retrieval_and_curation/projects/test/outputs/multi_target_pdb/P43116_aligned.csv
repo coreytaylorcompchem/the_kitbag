@@ -1,0 +1,2 @@
+uniprot_id,num_structures,num_aligned,aligned_files,output_dir
+P43116,3,3,7cx4_std.pdb;7cx2_std_aligned.pdb;7cx3_std_aligned.pdb,outputs/multi_target_pdb/P43116

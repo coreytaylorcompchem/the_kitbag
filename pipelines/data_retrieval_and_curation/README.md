@@ -24,20 +24,28 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 ```
 Available Tasks:
- - retrieve_chembl_adme_data: Retrieve CHEMBL ADME data.
- - retrieve_chembl_bioactivities: Retrieve bioactivity data from CHEMBL.
- - clean_bioactivities: Check and standardise bioactivities.
- - retrieve_compound_smiles: Retrieve SMILES from downloaded compound data.
- - annotate_bioactivity_pactivity: Compute p(readout)) and add to retrieval results.
- - clean_adme_data: Check and standardise ADME data.
- - merge_bioactivity: Merge data from different sources (WIP).
+  [ADME]:
+    - clean_adme_data: Check and standardise ADME data.
+    - retrieve_chembl_adme_data: Retrieve CHEMBL ADME data.
+  [Bioactivity]:
+    - annotate_bioactivity_pactivity: Compute p(readout)) and add to retrieval results.
+    - clean_bioactivities: Check and standardise bioactivities.
+    - retrieve_chembl_bioactivities: Retrieve bioactivity data from CHEMBL.
+    - retrieve_compound_smiles: Retrieve SMILES from downloaded compound data.
+    - retrieve_protein_class_target_list: Retrieve UniProt IDs for protein target class.
+  [PDB]:
+    - align_structures: Align all PDBs to the first retrieved structure.
+    - retrieve_pdbs: Retrieve all PDBs for a UniProt ID.
+    - standardise_pdbs: Standardise PDBs (Chain A + ligand, remove solvent).
+  [Post-processing]:
+    - merge_bioactivity: Merge data from different sources (WIP).
 
 Available Workflows:
  - chembl_adme_data: Retrieve, standardise and collate ADME data - ChEMBL.
  - chembl_multi_target: Retrieve, standardise and collate bioactivities for multiple targets - CHEMBL.
  - chembl_bioactivity_single_target: Retrieve, standardise and collate bioactivities for a single target - CHEMBL.
  - chembl_tox_targets: Retrieve, standardise and collate bioactivities for tox-relevant targets - CHEMBL.
-
+ - pdb_single_target: Process PDBs for a single UniProt target.
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.

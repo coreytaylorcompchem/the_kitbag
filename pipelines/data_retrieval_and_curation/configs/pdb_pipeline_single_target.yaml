@@ -1,0 +1,16 @@
+# Purpose: retrieve and standardise PDB data for a single target
+
+task: workflow
+workflow_name: pdb_single_target
+
+uniprot_id: P35408
+remove_waters: true
+
+workflow:
+  - retrieve_pdbs
+  - standardise_pdbs
+  - align_structures
+
+output:
+  directory: outputs/single_target_pdb
+  overwrite: true
