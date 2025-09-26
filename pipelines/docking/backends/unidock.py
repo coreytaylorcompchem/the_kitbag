@@ -39,6 +39,8 @@ class UniDockBackend(BaseBackend):
         mode: str = docking_cfg.get("docking_mode", "ensemble")
         num_modes = docking_cfg["n_output_binding_modes"]
         exhaustiveness = docking_cfg["exhaustiveness"]
+        min_rmsd = docking_cfg["min_rmsd"]
+        energy_range = docking_cfg["energy_range"]
 
         conformer_paths = ligand.get("pdbqt_paths", [])
         if not conformer_paths:
@@ -65,9 +67,10 @@ class UniDockBackend(BaseBackend):
                 "--size_x", str(size[0]),
                 "--size_y", str(size[1]),
                 "--size_z", str(size[2]),
-                "--exhaustiveness", "8",
-                "--num_modes", "5",
-                "--min_rmsd", "0.1"
+                "--exhaustiveness", str(exhaustiveness),
+                "--num_modes", str(num_modes),
+                "--min_rmsd", str(min_rmsd),
+                "--energy_range", str(energy_range)
             ]
 
             if not self.use_gpu:

@@ -31,9 +31,4 @@ docking:
   n_output_binding_modes: 2
   exhaustiveness: 8
   size: [20.0, 20.0, 20.0]
-  # n_pockets_to_use: 3
   plot_summarised_docking_results: true # flag to suppress if you're docking tons of ligands.
-
-# fpocket_filters:
-#     min_volume: 150.0
-#     min_score: 15.0

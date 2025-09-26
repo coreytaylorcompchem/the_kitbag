@@ -1,6 +1,8 @@
 import yaml
 import csv
+import pandas as pd
 from pathlib import Path
+from rdkit import Chem
 
 from backends import get_backend
 from modules.protein_preparation import ProteinPreparer
@@ -11,22 +13,43 @@ from workflows.utils.docking import (
     generate_ligands_csv_from_txt,
     summarise_docking_results,
     validate_config,
-    plot_multi_structure_scores
+    plot_multi_structure_scores,
+    extract_crystal_ligand_center,
+    extract_scores_from_docking_output
 )
-
-from workflows.utils.docking import extract_crystal_ligand_center
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(
-    __name__,
-    debug_mode=False,
-    simple_format=True
-)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+def extract_scores_from_sdf(sdf_path):
+    """
+    Extract docking scores from an SDF (assumes GNINA output).
+    Returns a list of dicts with pose info.
+    """
+    rows = []
+    suppl = Chem.SDMolSupplier(str(sdf_path))
+    for pose_idx, mol in enumerate(suppl):
+        if mol is None:
+            continue
+        try:
+            score = float(mol.GetProp("minimizedAffinity"))
+            cnn_score = float(mol.GetProp("CNNscore"))
+        except KeyError:
+            logger.warning(f"Missing scores in pose {pose_idx} of {sdf_path}")
+            continue
+
+        rows.append({
+            "score": score,
+            "pose_rank": cnn_score,
+            "pose_idx": pose_idx
+        })
+    return rows
 
 @register_workflow("multi_structure_docking", description="Dock ligands into multiple PDB structures using known ligand positions.")
 def run(config_path: str):
     import shutil
+
     # ----------------------
     # Load YAML Config
     # ----------------------
@@ -90,13 +113,14 @@ def run(config_path: str):
 
     for i, pdb_path in enumerate(pdb_files):
         pdb_path = Path(pdb_path)
-        logger.info(f"\n>>> Docking against structure {i+1}/{len(pdb_files)}: {pdb_path.name} <<<")
+        logger.info(f"\n>>>>>>>>>> Docking to structure {i+1}/{len(pdb_files)}: {pdb_path.name} <<<<<<<<<<")
 
         # Setup per-protein subdir
         protein_output_dir = output_dir / pdb_path.stem
         protein_output_dir.mkdir(parents=True, exist_ok=True)
         config["output_dir"] = protein_output_dir  # update config for this round
 
+        # Prepare protein
         protein_preparer = ProteinPreparer(
             pdb_path=pdb_path,
             work_dir=protein_output_dir,
@@ -109,17 +133,61 @@ def run(config_path: str):
         center = extract_crystal_ligand_center(pdb_path)
         config['docking']['center'] = center
 
-        # Ensure config['protein']['pdb_path'] is set otherwise protein_preparer will complain
+        # Ensure config['protein']['pdb_path'] is set
         config.setdefault("protein", {})["pdb_path"] = str(pdb_path)
 
-        # Per-ligand loop
         for ligand in ligands:
             logger.info(f"Processing ligand: {ligand['name']} against {pdb_path.name}")
+            docking_outputs = None
+
             for step in config.get("workflow", []):
                 task_func = get_task(step)
                 if not task_func:
                     raise ValueError(f"Workflow step '{step}' is not a registered task.")
-                task_func(backend, ligand, config, protein_id=pdb_path.stem, pdb_path=pdb_path) 
+
+                result = task_func(
+                    backend,
+                    ligand,
+                    config,
+                    protein_id=pdb_path.stem,
+                    pdb_path=pdb_path
+                )
+
+                if step == "dock":
+                    docking_outputs = result 
+
+            if docking_outputs:
+                pocket_dir = protein_output_dir / "pocket_0"
+                pocket_dir.mkdir(parents=True, exist_ok=True)
+
+                score_rows = []
+                for entry in docking_outputs:
+                    sdf_path = entry["docked_output"]
+                    pdbqt = entry["pdbqt"]
+                    conformer = entry["conformer"]
+
+                    score_data = extract_scores_from_docking_output(Path(sdf_path))
+                    for score_entry in score_data:
+                        score_rows.append({
+                            "ligand": ligand["name"],
+                            "conformer": conformer,
+                            "pose_idx": score_entry["pose_idx"],
+                            "score": score_entry["score"],
+                            "pose_rank": score_entry["pose_rank"],
+                            "pdbqt": pdbqt,
+                            "docked_sdf": sdf_path,
+                            "structure": pdb_path.stem
+                        })
+
+                score_csv_path = pocket_dir / "docking_scores.csv"
+                if score_csv_path.exists():
+                    existing_df = pd.read_csv(score_csv_path)
+                    df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
+                else:
+                    df = pd.DataFrame(score_rows)
+
+                df.to_csv(score_csv_path, index=False)
+
     # ----------------------
     # Summarise
     # ----------------------

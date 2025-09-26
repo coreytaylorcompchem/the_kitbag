@@ -52,7 +52,7 @@ docking:
   n_output_binding_modes: 2 # MAX number of output poses and is dependent on min_rmsd and energy_range
   exhaustiveness: 8
   min_rmsd: 0.5 # Specific Uni-dock parameter; higher = more permissive on which poses to keep
-  energy_range: 10 # Specific Uni-dock parameter; higher = more permissive (units: kcal/mol). Set 9999 to disable.
+  energy_range: 3 # Specific Uni-dock parameter; higher = more permissive (units: kcal/mol). Set 9999 to disable.
  
   ### Binding pocket detection
   

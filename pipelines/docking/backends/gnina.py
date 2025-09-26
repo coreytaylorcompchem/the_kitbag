@@ -103,5 +103,5 @@ class GninaBackend(BaseBackend):
             raise RuntimeError(f"GNINA docking failed for {ligand['name']}")
 
         logger.debug(f"Docking completed for {ligand['name']}. Output: {output_path}")
-        return output_path
+        return [output_path]
 

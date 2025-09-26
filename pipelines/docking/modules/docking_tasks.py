@@ -270,140 +270,54 @@ def convert_to_pdbqt(backend, ligand, config, **kwargs):
     ligand['pdbqt_paths'] = [str(p) for p in pdbqt_paths]
     logger.info(f"Converted conformers to PDBQT for ligand: {ligand['name']}.")
 
-import pandas as pd
-from rdkit import Chem
-
 @register_task("dock", category='Docking', description="Dock with backend specified.")
 def dock(backend, ligand, config, **kwargs):
     pdbqt_paths = ligand.get("pdbqt_paths", [])
     if not pdbqt_paths:
         logger.warning(f"No PDBQT paths found for ligand {ligand['name']}, skipping docking.")
-        return
+        return []
 
     docking_mode = config.get("docking", {}).get("docking_mode", "ensemble").lower()
-    pocket_id = kwargs.get("pocket_id", None)
     output_dir = Path(config['output_dir'])
+    pocket_id = kwargs.get("pocket_id", None)
 
-    docking_results = []
+    docking_outputs = []
 
     if docking_mode == "lowest_energy":
         pdbqt_path = pdbqt_paths[0]
         ligand["pdbqt_path"] = pdbqt_path
+        output_filename = f"{ligand['name']}_pocket{pocket_id}_docked.sdf" if pocket_id else f"{ligand['name']}_docked.sdf"
+        output_path = output_dir / output_filename
 
         try:
-            output_filename = f"{ligand['name']}_pocket{pocket_id}_docked.sdf" if pocket_id else f"{ligand['name']}_docked.sdf"
-            output_path = output_dir / output_filename
-
             output_path = backend.dock(ligand, config, output_path=output_path)
-            score = extract_gnina_score(output_path)
-
-            docking_results.append({
-                "ligand": ligand["name"],
+            docking_outputs.append({
                 "conformer": 0,
                 "pdbqt": str(pdbqt_path),
-                "docked_sdf": str(output_path),
-                "score": score
+                "docked_output": str(output_path),
             })
-
-            ligand["docking_results"] = docking_results
-            logger.info(f"Docked lowest-energy conformer for ligand {ligand['name']} into pocket {pocket_id}.")
-
         except Exception as e:
-            logger.error(f"❌ Docking failed for ligand {ligand['name']}: {e}")
-            ligand["docking_results"] = []
+            logger.error(f"❌ Docking failed for {ligand['name']}: {e}")
 
     elif docking_mode == "ensemble":
         logger.info(f"Docking ligand {ligand['name']} with {len(pdbqt_paths)} conformers...")
 
         for idx, pdbqt_path in enumerate(pdbqt_paths):
             ligand["pdbqt_path"] = pdbqt_path
+            output_filename = f"{ligand['name']}_conf{idx}_pocket{pocket_id}_docked.sdf" if pocket_id is not None else f"{ligand['name']}_conf{idx}_docked.sdf"
+            output_path = output_dir / output_filename
 
             try:
-                output_filename = f"{ligand['name']}_conf{idx}_pocket{pocket_id}_docked.sdf" if pocket_id is not None else f"{ligand['name']}_conf{idx}_docked.sdf"
-                output_path = output_dir / output_filename
-
                 output_path = backend.dock(ligand, config, output_path=output_path)
-                score = extract_gnina_score(output_path)
-
-                docking_results.append({
-                    "ligand": ligand["name"],
+                docking_outputs.append({
                     "conformer": idx,
                     "pdbqt": str(pdbqt_path),
-                    "docked_sdf": str(output_path),
-                    "score": score
+                    "docked_output": str(output_path),
                 })
-
             except Exception as e:
                 logger.error(f"❌ Docking failed for ligand {ligand['name']} conformer {idx}: {e}")
 
-        ligand["docking_results"] = docking_results
-
     else:
-        raise ValueError(f"❌❌ Unknown docking_mode: {docking_mode}")
+        raise ValueError(f"Unknown docking_mode: {docking_mode}")
 
-    if docking_results:
-        pocket_id = kwargs.get("pocket_id", 0)
-        pocket_dir = Path(config["output_dir"]) / f"pocket_{pocket_id}"
-        pocket_dir.mkdir(exist_ok=True, parents=True)
-
-        score_csv_path = pocket_dir / "docking_scores.csv"
-        score_rows = []
-
-        for result in docking_results:
-            sdf_path = result["docked_sdf"]
-            suppl = Chem.SDMolSupplier(str(sdf_path))
-            for pose_idx, mol in enumerate(suppl):
-                if mol is None:
-                    continue
-                try:
-                    cnn_score = float(mol.GetProp("CNNscore"))
-                    affinity = float(mol.GetProp("minimizedAffinity"))
-                except KeyError:
-                    logger.warning(f"Missing scores in pose {pose_idx} for ligand {ligand['name']}")
-                    continue
-
-                score_rows.append({
-                    "ligand": ligand["name"],
-                    "conformer": result["conformer"],
-                    "pose_idx": pose_idx,
-                    "score": affinity,
-                    "pose_rank": cnn_score,
-                    "pdbqt": result["pdbqt"],
-                    "docked_sdf": sdf_path,
-                    "pocket": pocket_id
-                })
-
-        # Append if file exists
-        if score_csv_path.exists():
-            existing_df = pd.read_csv(score_csv_path)
-            df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
-        else:
-            df = pd.DataFrame(score_rows)
-
-        df.to_csv(score_csv_path, index=False)
-
-def extract_gnina_score(sdf_path):
-    """
-    Extracts the GNINA docking score from the first molecule in an SDF file.
-    """
-    try:
-        suppl = Chem.SDMolSupplier(str(sdf_path), removeHs=False)
-        mol = next((m for m in suppl if m is not None), None)
-
-        if mol is None:
-            logger.warning(f"Could not parse SDF: {sdf_path}")
-            return None
-
-        for field in ["CNNscore", "minimizedAffinity", "score"]:
-            if mol.HasProp(field):
-                return float(mol.GetProp(field))
-
-        logger.warning(f"No recognized score field found in {sdf_path}")
-        return None
-
-    except Exception as e:
-        logger.warning(f"Failed to extract score from {sdf_path}: {e}")
-        return None
-
-
-
+    return docking_outputs

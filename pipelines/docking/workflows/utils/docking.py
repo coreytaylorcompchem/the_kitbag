@@ -208,3 +208,61 @@ def plot_multi_structure_scores(summary_csv_path: Path, output_dir: Path):
     plt.close()
 
     logger.info("Generated ligand-structure docking plots.")
+
+def extract_scores_from_docking_output(output_path: Path):
+    """
+    Dispatch score extraction based on file extension.
+    """
+    if output_path.suffix.lower() == ".sdf":
+        return extract_scores_from_gnina_sdf(output_path)
+    elif output_path.suffix.lower() == ".pdbqt":
+        return extract_scores_from_unidock_pdbqt(output_path)
+    else:
+        logger.warning(f"Unknown docking output format: {output_path}")
+        return []
+
+def extract_scores_from_gnina_sdf(sdf_path: Path):
+
+    results = []
+    suppl = Chem.SDMolSupplier(str(sdf_path))
+    for pose_idx, mol in enumerate(suppl):
+        if mol is None:
+            continue
+        try:
+            score = float(mol.GetProp("minimizedAffinity"))
+            cnn_score = float(mol.GetProp("CNNscore"))
+        except KeyError:
+            logger.warning(f"Missing scores in pose {pose_idx} of {sdf_path}")
+            continue
+
+        results.append({
+            "score": score,
+            "pose_rank": cnn_score,
+            "pose_idx": pose_idx
+        })
+    return results
+
+def extract_scores_from_unidock_pdbqt(pdbqt_path: Path):
+    """
+    Extract scores from Uni-Dock PDBQT output by parsing REMARK lines.
+    Assumes docking poses are separated by `MODEL` / `ENDMDL`.
+    """
+    results = []
+    pose_idx = -1
+    with open(pdbqt_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("MODEL"):
+                pose_idx += 1
+            if line.startswith("REMARK") and "VinaResult" in line:
+                try:
+                    parts = line.split()
+                    score = float(parts[2])
+                    results.append({
+                        "score": score,
+                        "pose_rank": None,  # Uni-Dock may not output CNNscore
+                        "pose_idx": pose_idx
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to parse score in {pdbqt_path}: {e}")
+    return results
