@@ -16,9 +16,6 @@ logger = setup_logger(
     simple_format=True
 )
 
-# --------------------------
-# Utility: CSV Generation
-# --------------------------
 def generate_ligands_csv_from_txt(txt_path: Path, csv_path: Path):
     with open(txt_path, 'r') as f:
         smiles_list = [line.strip() for line in f if line.strip()]
@@ -34,9 +31,6 @@ def generate_ligands_csv_from_txt(txt_path: Path, csv_path: Path):
 
     logger.info(f"Generated ligands.csv at {csv_path} with {len(smiles_list)} ligands.")
 
-# --------------------------
-# Utility: CSV Validation
-# --------------------------
 def validate_ligands_csv(csv_path: Path):
     if not csv_path.exists():
         raise FileNotFoundError(f"Expected ligands.csv at {csv_path} not found.")
@@ -45,16 +39,12 @@ def validate_ligands_csv(csv_path: Path):
         if 'name' not in reader.fieldnames or 'smiles' not in reader.fieldnames:
             raise ValueError(f"ligands.csv must have 'name' and 'smiles' columns.")
 
-# --------------------------
-# Utility: Docking Center
-# --------------------------
 def get_docking_box(config, protein_preparer):
     """
     Determine the docking box center and size from config.
     """
     docking_cfg = config.get('docking', {})
 
-    # -------- Get docking center --------
     if 'center' in docking_cfg:
         center = tuple(docking_cfg['center'])
 
@@ -84,17 +74,12 @@ def get_docking_box(config, protein_preparer):
             "  - use_crystal_ligand: true"
         )
 
-    # -------- Get docking box size --------
     if "size" not in docking_cfg:
         raise ValueError("[ERROR] Docking 'size' must be specified in config['docking'].")
 
     size = tuple(docking_cfg["size"])
 
     return center, size
-
-# --------------------------
-# Utility: Validate yaml 
-# --------------------------
 
 def validate_config(config, required_fields):
     missing_fields = []
@@ -117,26 +102,43 @@ def summarise_docking_results(output_dir: Path, summary_csv_path: Path):
     """
     Aggregates docking scores from per-pocket result files into one summary CSV.
 
+    Works for both flat and nested pocket structures.
+
     Args:
         output_dir (Path): Root output directory.
         summary_csv_path (Path): Where to save the combined CSV.
     """
     all_rows = []
-    for pocket_dir in output_dir.glob("pocket_*"):
+
+    # Recursively search for all docking_scores.csv files
+    for pocket_dir in output_dir.rglob("pocket_*"):
         if not pocket_dir.is_dir():
             continue
 
-        pocket_id = pocket_dir.name.replace("pocket_", "")
         docking_results_file = pocket_dir / "docking_scores.csv"
-
         if docking_results_file.exists():
-            df = pd.read_csv(docking_results_file)
-            df['pocket'] = pocket_id
-            all_rows.append(df)
+            try:
+                df = pd.read_csv(docking_results_file)
+
+                pocket_id = pocket_dir.name.replace("pocket_", "")
+                df['pocket'] = pocket_id
+
+                # If nested, grab parent folder name as structure ID
+                parent = pocket_dir.parent
+                if parent != output_dir:
+                    df['structure'] = parent.name
+                else:
+                    df['structure'] = None
+
+                all_rows.append(df)
+
+            except Exception as e:
+                logger.warning(f"Failed to read {docking_results_file}: {e}")
 
     if all_rows:
         combined = pd.concat(all_rows, ignore_index=True)
         combined.to_csv(summary_csv_path, index=False)
+        logger.info(f"Docking results summarised into: {summary_csv_path}")
     else:
         logger.info("No docking result files found.")
 
@@ -167,3 +169,42 @@ def extract_crystal_ligand_center(pdb_path, ligand_resname=None):
     coords = np.array([[pos.x, pos.y, pos.z] for pos in atom_positions])
     center = coords.mean(axis=0)
     return center.tolist()
+
+def plot_multi_structure_scores(summary_csv_path: Path, output_dir: Path):
+    """
+    Plots ligand performance across multiple structures/pockets.
+
+    - Heatmap of best scores
+    - Boxplot of score distributions
+    """
+    df = pd.read_csv(summary_csv_path)
+
+    if 'structure' not in df.columns:
+        logger.warning("Missing 'structure' column. Skipping plots.")
+        return
+
+    output_dir.mkdir(exist_ok=True, parents=True)
+
+    # drop missing scores
+    df = df.dropna(subset=["score"])
+
+    heatmap_df = df.groupby(['ligand', 'structure'])['score'].min().unstack()
+
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(heatmap_df, annot=True, cmap="coolwarm_r", fmt=".2f")
+    plt.title("Best Docking Score per Ligand vs Structure")
+    plt.ylabel("Ligand")
+    plt.xlabel("Structure")
+    plt.tight_layout()
+    plt.savefig(output_dir / "ligand_structure_heatmap.png", dpi=300)
+    plt.close()
+
+    plt.figure(figsize=(14, 6))
+    sns.boxplot(data=df, x='ligand', y='score', hue='structure')
+    plt.title("Docking Score Distribution per Ligand")
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.savefig(output_dir / "ligand_score_boxplot.png", dpi=300)
+    plt.close()
+
+    logger.info("Generated ligand-structure docking plots.")

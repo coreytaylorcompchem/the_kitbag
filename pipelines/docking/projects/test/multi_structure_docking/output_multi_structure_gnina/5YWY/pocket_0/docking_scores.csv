@@ -1,0 +1,11 @@
+ligand,conformer,pose_idx,score,pose_rank,pdbqt,docked_sdf,pocket
+ligand1,0,0,-7.22840929,0.319339931,output_multi_structure_gnina/5YWY/ligand1_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand1_conf0_docked.sdf,0
+ligand1,0,1,-6.79612494,0.269530326,output_multi_structure_gnina/5YWY/ligand1_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand1_conf0_docked.sdf,0
+ligand2,0,0,-6.02556038,0.341765672,output_multi_structure_gnina/5YWY/ligand2_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand2_conf0_docked.sdf,0
+ligand2,0,1,-5.92222404,0.278981239,output_multi_structure_gnina/5YWY/ligand2_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand2_conf0_docked.sdf,0
+ligand3,0,0,-8.16240311,0.0873752087,output_multi_structure_gnina/5YWY/ligand3_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand3_conf0_docked.sdf,0
+ligand3,0,1,-3.44267511,0.0871343017,output_multi_structure_gnina/5YWY/ligand3_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand3_conf0_docked.sdf,0
+ligand4,0,0,-8.25839138,0.245662466,output_multi_structure_gnina/5YWY/ligand4_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand4_conf0_docked.sdf,0
+ligand4,0,1,-7.65639925,0.158651978,output_multi_structure_gnina/5YWY/ligand4_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand4_conf0_docked.sdf,0
+ligand5,0,0,-6.72592402,0.193966791,output_multi_structure_gnina/5YWY/ligand5_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand5_conf0_docked.sdf,0
+ligand5,0,1,-7.44038534,0.130545974,output_multi_structure_gnina/5YWY/ligand5_conf0.pdbqt,output_multi_structure_gnina/5YWY/ligand5_conf0_docked.sdf,0

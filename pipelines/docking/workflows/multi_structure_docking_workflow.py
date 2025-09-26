@@ -11,6 +11,7 @@ from workflows.utils.docking import (
     generate_ligands_csv_from_txt,
     summarise_docking_results,
     validate_config,
+    plot_multi_structure_scores
 )
 
 from workflows.utils.docking import extract_crystal_ligand_center
@@ -35,7 +36,6 @@ def run(config_path: str):
         "docking.final_n_conformers",
         "docking.rmsd_threshold",
         "docking.min_energy_gap",
-        "proteins_list"
     ]
 
     with open(config_path, 'r') as f:
@@ -92,12 +92,11 @@ def run(config_path: str):
         pdb_path = Path(pdb_path)
         logger.info(f"\n>>> Docking against structure {i+1}/{len(pdb_files)}: {pdb_path.name} <<<")
 
-        # Setup subdirectory per protein
+        # Setup per-protein subdir
         protein_output_dir = output_dir / pdb_path.stem
         protein_output_dir.mkdir(parents=True, exist_ok=True)
         config["output_dir"] = protein_output_dir  # update config for this round
 
-        # Protein Preparation
         protein_preparer = ProteinPreparer(
             pdb_path=pdb_path,
             work_dir=protein_output_dir,
@@ -107,18 +106,20 @@ def run(config_path: str):
         backend.cache["receptor_pdbqt"] = receptor_pdbqt
 
         # Determine binding site center from crystal ligand
-        center = extract_crystal_ligand_center(pdb_path)  # <-- you need this utility
+        center = extract_crystal_ligand_center(pdb_path)
         config['docking']['center'] = center
 
-        # Per-ligand workflow
+        # Ensure config['protein']['pdb_path'] is set otherwise protein_preparer will complain
+        config.setdefault("protein", {})["pdb_path"] = str(pdb_path)
+
+        # Per-ligand loop
         for ligand in ligands:
             logger.info(f"Processing ligand: {ligand['name']} against {pdb_path.name}")
             for step in config.get("workflow", []):
                 task_func = get_task(step)
                 if not task_func:
                     raise ValueError(f"Workflow step '{step}' is not a registered task.")
-                task_func(backend, ligand, config, protein_id=pdb_path.stem)  # can pass ID for tracking
-
+                task_func(backend, ligand, config, protein_id=pdb_path.stem, pdb_path=pdb_path) 
     # ----------------------
     # Summarise
     # ----------------------
@@ -126,7 +127,7 @@ def run(config_path: str):
     summarise_docking_results(output_dir, final_summary_csv)
 
     if config.get("plot_summarised_docking_results", True):
-        plot_multi_pocket_scores(final_summary_csv, output_dir)
+        plot_multi_structure_scores(final_summary_csv, output_dir)
     else:
         logger.info("Skipping result plotting.")
 
