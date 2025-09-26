@@ -65,7 +65,7 @@ If you want to register new workflows, you'll also need to do so with metadata t
 See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a more complete list.
 
 * Implement XTB and Orca API to give further options.
-* For pKa, to make it useful;
+* For pKa, to make it actually useful;
   * Add solvent to calculation (Orca only, Psi4 doesn't handle solvent well).
   * Add empirical correction to solvent pKas.
     * Will use solvent pKa calculation to generate dataset from literature values.
