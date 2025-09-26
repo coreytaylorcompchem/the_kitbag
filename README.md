@@ -9,7 +9,15 @@ Here's where all my end-to-end comp chem software pipelines live. Generally knit
 
 ## How does it work?
 
-At the moment, the pipelines are separately stored and run in `pipelines`. You'll find example workflow and yamls there. I haven't gotten around to putting together a `env.yml` for them, so you'll be chasing Python deps for now.
+At the moment, the pipelines are separately stored and run in `pipelines`:
+
+* [Data curation and retrieval](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/data_retrieval_and_curation)
+* [Cheminformatics](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/cheminformatics)
+* [Docking](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/docking)
+* [Molecular dynamics](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/md)
+* [Quantum chemistry](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/qchem)
+
+I haven't gotten around to putting together a `env.yml` for them, so you'll be chasing Python deps for now.
 
 ## What does / will it do?
 
@@ -26,15 +34,15 @@ The code is organised into sections that reflect various computational chem soft
         * Multi-target
 * Docking
     * Modelling
-    * Running the docking (Gnina, generally)
+    * Running the docking
     * Post-processing
     * Benchmarking
 * MD
     * System prep, setup, run.
     * Post-processing
-    * Automated analysis
+    * Automated trajectory analysis
 * Quantum chemistry
-    * Setup, structure opt, SP
+    * Setup, structure opt, SPE, etc.
     * Post-processing
     * Benchmarking
 
