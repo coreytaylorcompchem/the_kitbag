@@ -47,7 +47,7 @@ Available Tasks:
     - prepare_receptor_pdbqt: Prepare the receptor for docking. Format: pdbqt
        ↳ Backends: gnina, unidock
 Available Workflows:
- - constrained_docking: Prepare, dock and score with core constraints.
+ - constrained_docking: Prepare, dock and score with core constraints (WIP - may remove).
  - multi_pocket_docking: Dock ligands into top N pockets detected by fpocket.
  - multi_structure_docking: Dock ligands into multiple PDB structures using known ligand positions.
  - vanilla_docking: Prepare, dock and score with no constraints.
