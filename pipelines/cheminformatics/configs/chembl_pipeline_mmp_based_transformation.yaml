@@ -1,0 +1,22 @@
+workflow_name: dynamic_task_runner
+
+input_file: data/class_a_gpcr_bioactivity_small.csv
+
+workflow:
+  - mmp_rule_learning
+  - mmp_apply_transformations
+
+mmp_rule_learning:
+  pic50_cutoff: 6.0
+  min_rule_count: 2
+  filter_rules: true
+
+mmp_apply_transformations:
+  input_file: data/leads.csv
+
+output:
+  directory: outputs/mmp_based_transformation
+  filename: class_a_gpcr_mmp_based_transformation.csv
+  overwrite: true
+
+cleanup: true
