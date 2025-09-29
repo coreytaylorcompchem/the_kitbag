@@ -22,7 +22,7 @@ def print_pipeline_capabilities():
     load_all_tasks()
     load_all_workflows()
 
-    logger.info("\nAvailable Tasks:")
+    logger.info("Available Tasks:")
 
     # organise tasks by category
     tasks_by_category = defaultdict(list)

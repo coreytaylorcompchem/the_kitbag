@@ -6,11 +6,11 @@ Modelling of proteins and peptide.
 
 ## Setup and dependencies
 
-* Rdkit
-* PyRosetta
-* ColabFold
-* PDBFixer
-* 
+* [Rdkit](https://www.rdkit.org/docs/Install.html)
+* [PyRosetta](https://www.pyrosetta.org/downloads) 
+  * NOTE: 1.7 Gb download
+* [Biopython](https://biopython.org/wiki/Download)
+* [ColabFold](https://github.com/sokrypton/ColabFold)
 
 ## Running calculations
 
