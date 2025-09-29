@@ -6,6 +6,7 @@ In this repo are workflows to dock compounds with various use cases (unbiased, c
 
 ## Setup and dependencies
 
+* [Rdkit](https://www.rdkit.org/docs/Install.html)
 * [gnina](https://github.com/gnina/)
 * [Unidock](https://github.com/dptech-corp/Uni-Dock)
 * [propka](https://propka.readthedocs.io/en/latest/)

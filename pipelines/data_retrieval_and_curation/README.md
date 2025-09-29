@@ -6,7 +6,9 @@ Here's where we can curate and combine affinity, ADME, etc, data from multiple s
 
 ## Setup and dependencies
 
-Mainly Python libs and the [Chembl webresource_client](https://github.com/chembl/chembl_webresource_client).
+* Mainly Python libs
+* [Rdkit](https://www.rdkit.org/docs/Install.html)
+* [Chembl webresource_client](https://github.com/chembl/chembl_webresource_client).
 
 ## Running calculations
 

@@ -11,6 +11,7 @@ Modelling of proteins and peptide.
   * NOTE: 1.7 Gb download
 * [Biopython](https://biopython.org/wiki/Download)
 * [ColabFold](https://github.com/sokrypton/ColabFold)
+* [OpenMM](https://docs.openmm.org/latest/userguide/application/01_getting_started.html)
 
 ## Running calculations
 
@@ -28,10 +29,17 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 ```
 Available Tasks:
-  [aaa]:
-    - aaa
+  [Peptide modeling]:
+    - build_peptide_batch: Predict structures for multiple peptides using ColabFold
+    - minimize_peptide_batch: Minimize peptide structures using OpenMM with optional implicit solvation
+  [Protein modelling]:
+    - cap_terminals: Add ACE/NME caps to terminal residues
+    - fix_loops: Model missing loops.
+    - fix_residues: Fix incomplete residues
+    - refine_loops: Refine loops.
+
 Available Workflows:
- - aaa
+ - protein_modelling: Fix, model, and refine protein structure.
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.

@@ -8,8 +8,8 @@ Perform different types of MD in automated, end-to-end fashion.
 
 * Mainly Python libs
 * [Cuda](https://developer.nvidia.com/cuda-toolkit)
-* [Rdkit](https://www.rdkit.org/)
-* [OpenMM](https://openmm.org/)
+* [Rdkit](https://www.rdkit.org/docs/Install.html)
+* [OpenMM](https://docs.openmm.org/latest/userguide/application/01_getting_started.html)
 * [PDBFixer](https://github.com/openmm/pdbfixer)
 * [Biopython](https://biopython.org/) (may remove this)
 

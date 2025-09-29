@@ -7,6 +7,7 @@ Here's where we can run some quantum chemistry calculations.
 ## Setup and dependencies
 
 * Python > 3.11 (OPI needs it)
+* [Rdkit](https://www.rdkit.org/docs/Install.html)
 * [psi4](https://psicode.org/installs/v110zero/)
 * [Orca](https://orcaforum.kofo.mpg.de/app.php/portal) - 6.1 or above (big download ~500Mb from their forum)
 * [Orca Python Interface (OPI)](https://github.com/faccts/opi)

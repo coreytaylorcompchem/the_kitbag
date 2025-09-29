@@ -7,7 +7,7 @@ Perform all sorts of cheminf calculations from basic physchem filtering to more 
 ## Setup and dependencies
 
 * Mainly Python libs
-* Rdkit
+* [Rdkit](https://www.rdkit.org/docs/Install.html)
 
 ## Running calculations
 
