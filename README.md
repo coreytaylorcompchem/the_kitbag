@@ -12,6 +12,7 @@ Here's where all my end-to-end comp chem software pipelines live. Generally knit
 At the moment, the pipelines are separately stored and run in `pipelines`:
 
 * [Data curation and retrieval](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/data_retrieval_and_curation)
+* [Structure modelling](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/structure_modelling)
 * [Cheminformatics](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/cheminformatics)
 * [Docking](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/docking)
 * [Molecular dynamics](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/md)
@@ -27,6 +28,11 @@ The code is organised into sections that reflect various computational chem soft
     * Retrieve data from public sources (Chembl, Pubchem, etc.)
     * Curate them for further calculations.
     * Smoosh them together for various purposes
+* Structure modelling
+    * Homology and loop modelling
+    * Fixing structures
+    * Modelling of proteins and short peptides
+    * Minimisation
 * Cheminformatics 
     * Various data-driven use cases for:
         * Hit discovery
