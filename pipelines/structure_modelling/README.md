@@ -2,7 +2,7 @@
 
 Modelling of proteins and peptide.
 
-![Structure modelling logo](_images/structure_modelling_logo.png)
+![Structure modelling logo](_images/structure_modelling_logo.jpg)
 
 ## Setup and dependencies
 
