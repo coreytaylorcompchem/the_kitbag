@@ -1,32 +1,29 @@
+
 task: workflow
 workflow_name: protein_modelling
 
 workflow:
   - fix_residues
   - fix_loops
-  - cap_terminals
+  # - cap_terminals
   - refine_loops
 
 protein:
-  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/structure_modelling/projects/test/5yhl.pdb"
+  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/structure_modelling/projects/test/data/5yhl.pdb"
   uniprot_id: P35408
   allow_missing_atoms_fix: true
 
-  capping:
-    enabled: true
-    n_term: ACE
-    c_term: NME
+  # capping:
+  #   enabled: true
+  #   n_term: ACE
+  #   c_term: NME
 
 backend:
-  name: pyrosetta
-  rosetta_args: "-mute all"
-  n_loop_models: 20
-  loop_closure: "KIC"  # KIC | CCD | hybrid | auto
+  name: modeller
   loop_refinement:
+    n_loop_models: 5
     enabled: true
-    relax_after_loop: true
-    local_minimize_radius: 5.0
-    global_relax_cycles: 2
-    score_function: "ref2015"
+    optimization_level: 2  # 0 = fast, 1 = thorough, 2 = very thorough
+    vary_ca_restraints: true
 
 output_dir: "outputs/loop_modelling"
