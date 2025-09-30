@@ -1,5 +1,6 @@
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
+from backends.modeller import ModellerBackend
 
 from pathlib import Path
 import requests
@@ -34,9 +35,7 @@ def group_missing_residues(missing_indices):
     return groups
 
 
-from backends.modeller import ModellerBackend  # Adjust path as needed
-
-@register_task("fix_residues", category="Protein modelling", description="Fix incomplete residues and extract Chain A")
+@register_task("fix_residues", category="Protein modelling", description="Fix incomplete residues.")
 def fix_residues(backend, config, **kwargs):
     protein_cfg = config.get("protein", {})
     pdb_path = protein_cfg["pdb_path"]
@@ -49,7 +48,7 @@ def fix_residues(backend, config, **kwargs):
 
     backend = ModellerBackend(pdb_path, n_loop_models=n_loop_models, loop_refinement=loop_refinement, output_dir=output_dir)
 
-    chain_id = "A"
+    chain_id = "A" # hardcoded - add this to yaml
     chain_selection = modeller.Selection(backend.model)
     for res in backend.model.residues:
         if res.chain == chain_id:
@@ -62,7 +61,6 @@ def fix_residues(backend, config, **kwargs):
     chain_selection.write(file=str(chain_a_pdb))
     logger.info(f"Chain A only PDB saved to: {chain_a_pdb}")
 
-    # Reload chain A model into backend with updated output_dir
     backend = ModellerBackend(str(chain_a_pdb), n_loop_models=n_loop_models, loop_refinement=loop_refinement, output_dir=output_dir)
 
     backend.complete_missing_atoms(uniprot_id=uniprot_id)
@@ -90,7 +88,7 @@ def fix_loops(backend, config, **kwargs):
     n_loop_models = config["backend"].get("n_loop_models", 2)
 
     backend = ModellerBackend(str(fixed_pdb), n_loop_models=n_loop_models, output_dir=output_dir)
-    # For simplicity, loop ranges should be passed in config or calculated
+
     missing_residues = config["protein"].get("missing_residues", [])
     loop_ranges = group_missing_residues(missing_residues)
 
@@ -111,7 +109,6 @@ def refine_loops(backend, config, **kwargs):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     loop_model_pdb = output_dir / "loop_model.pdb"
-    # n_refine_models = config["backend"].get("loop_refinement", {}).get("n_models", 1)
 
     loop_refinement_cfg = config["backend"].get("loop_refinement", {})
     n_refine_models = loop_refinement_cfg.get("n_loop_models", 1)

@@ -22,7 +22,6 @@ def run(config: dict):
 
     backend = PeptideBuilderBackend(sequence_file=sequence_file, output_dir=output_dir, minimization_cfg=minimization_cfg)
 
-    # Run tasks sequentially
     for step in config.get("workflow", []):
         logger.info(f"Running task: {step}")
         task_func = get_task(step)

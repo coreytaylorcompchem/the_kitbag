@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def working_directory(path):
-    """Context manager for changing the current working directory."""
+    """Context manager hack for changing the current working directory."""
     prev_cwd = Path.cwd()
     os.chdir(path)
     try:
@@ -48,7 +48,7 @@ class ModellerBackend:
         if not response.ok:
             raise ValueError(f"Could not fetch UniProt FASTA for {uniprot_id}")
         lines = response.text.strip().split('\n')
-        return ''.join(lines[1:])  # Skip header
+        return ''.join(lines[1:])  # skips header
 
     def _get_first_residue_and_chain(self):
         with open(self.pdb_path) as f:
@@ -87,7 +87,7 @@ class ModellerBackend:
 
         # Trim leading/trailing gaps in the PDB sequence
         start = next(i for i, c in enumerate(aln_pdb) if c != '-')
-        end = len(aln_pdb) - next(i for i, c in enumerate(reversed(aln_pdb)) if c != '-')  # inclusive
+        end = len(aln_pdb) - next(i for i, c in enumerate(reversed(aln_pdb)) if c != '-')  # inclusive of
 
         trimmed_pdb = aln_pdb[start:end]
         trimmed_fasta = aln_fasta[start:end]
@@ -136,7 +136,6 @@ class ModellerBackend:
 
             automodel.make()
 
-            # Find the correct model output
         generated_model = next(self.output_dir.glob(f"{pdb_stem}_seq.B9999*.pdb"))
         logger.info(f"Loading rebuilt model from: {generated_model}")
         self.model = modeller.Model(self.env, file=generated_model.name)
