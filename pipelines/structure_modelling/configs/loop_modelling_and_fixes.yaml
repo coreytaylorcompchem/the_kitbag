@@ -23,7 +23,13 @@ backend:
   loop_refinement:
     n_loop_models: 5
     enabled: true
-    optimization_level: 2  # 0 = fast, 1 = thorough, 2 = very thorough
-    vary_ca_restraints: true
+    optimization_level: 2
+    
+    # TODO
+
+    # vary_ca_restraints: true
+    # max_var_iterations: 300
+    # skip_hetero: true
+    # assess_methods: [DOPE, GA341]
 
 output_dir: "outputs/loop_modelling"

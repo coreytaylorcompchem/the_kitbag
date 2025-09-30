@@ -111,7 +111,10 @@ def refine_loops(backend, config, **kwargs):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     loop_model_pdb = output_dir / "loop_model.pdb"
-    n_refine_models = config["backend"].get("loop_refinement", {}).get("n_models", 1)
+    # n_refine_models = config["backend"].get("loop_refinement", {}).get("n_models", 1)
+
+    loop_refinement_cfg = config["backend"].get("loop_refinement", {})
+    n_refine_models = loop_refinement_cfg.get("n_loop_models", 1)
 
     backend = ModellerBackend(str(loop_model_pdb), loop_refinement={"n_loop_models": n_refine_models}, output_dir=output_dir)
     backend.refine_loops()

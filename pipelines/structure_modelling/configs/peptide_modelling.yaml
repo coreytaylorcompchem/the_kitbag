@@ -3,12 +3,10 @@ workflow_name: peptide_modelling
 
 workflow:
   - build_peptide
-  - minimize_peptide
+  - minimise_peptide
 
 backend:
-  name: pyrosetta         # or colabfold
-  rosetta_args: "-mute all"
-  score_function: "ref2015"
+  name: build_peptide         # or colabfold
 
 peptide:
   sequence_file: "data/peptides.txt"
@@ -17,8 +15,8 @@ minimization:
   engine: openmm
   method: steepest_descent
   steps: 5000
-  platform: CUDA
+  platform: cpu
   forcefield: amber14-all.xml
   implicit_solvent: true
 
-output_dir: "outputs/peptide_modeling"
+output_dir: "outputs/peptide_modelling"
