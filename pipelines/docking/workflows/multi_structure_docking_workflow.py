@@ -22,7 +22,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_workflow("multi_structure_docking", description="Dock ligands into multiple PDB structures using known ligand positions.")
+@register_workflow("multi_structure_docking", description="Dock ligands into multiple PDB structures.")
 def run(config_path: str):
     import shutil
 

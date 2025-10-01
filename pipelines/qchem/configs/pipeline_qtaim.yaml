@@ -5,6 +5,8 @@ input_file: inputs/water.xyz
 workflow:
   - optimise
   - qtaim
+  - basin
+  - nci
 
 optimise:
   backend: psi4
@@ -22,9 +24,18 @@ optimise:
     geometry: water_opt.xyz
     wfn: water_opt.molden
 
+# Yes, parameters below repeat. But eventually we'll be able to stack stages with different backends.
+# These will need different parameters, including CPUs and others.  
+
 qtaim:
   backend: multiwfn # TopChem or Critic2 or AIMALL
   ncpu: 16 # the more the better with heavy calculations
+basin:
+  backend: multiwfn 
+  ncpu: 16 
+nci:
+  backend: multiwfn 
+  ncpu: 16 
 
 output:
   directory: outputs/qtaim

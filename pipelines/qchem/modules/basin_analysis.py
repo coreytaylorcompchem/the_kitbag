@@ -11,6 +11,57 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
     modifies_geometry=False,
     category='Wave function analysis'
 )
-def run(backend, xyz_file, config):
-    logger.info("Running basin analysis...")
-    # ADD THE REST
+def run(backend, xyz_file_or_wfn, step_config, global_config=None):
+    global_output_cfg = global_config.get("output", {}) if global_config else {}
+    output_dir = global_output_cfg.get("directory", "outputs/basin")
+    overwrite = global_output_cfg.get("overwrite", False)
+    os.makedirs(output_dir, exist_ok=True)
+
+    if isinstance(xyz_file_or_wfn, str):
+        base_name = os.path.splitext(os.path.basename(xyz_file_or_wfn))[0]
+    else:
+        base_name = step_config.get("name", "wavefunction")
+
+    wfn_path = os.path.join(output_dir, f"{base_name}.molden")
+    log_path = os.path.join(output_dir, f"{base_name}_basin.log")
+
+    if os.path.exists(log_path) and not overwrite:
+        logger.info(f"Skipping basin analysis - {log_path} already exists.")
+        return log_path
+
+    # Handle input wavefunction
+    if hasattr(xyz_file_or_wfn, 'molecule'):
+        logger.debug("Received wavefunction object directly, writing to file.")
+        write_wfn_file(xyz_file_or_wfn, wfn_path, os.path.basename(wfn_path))
+    elif isinstance(xyz_file_or_wfn, str) and xyz_file_or_wfn.endswith(('.wfn', '.molden')):
+        logger.debug(f"Using provided wavefunction file: {xyz_file_or_wfn}")
+        wfn_path = xyz_file_or_wfn
+    else:
+        raise ValueError("Basin analysis task requires a .wfn or .molden file or wavefunction object.")
+
+    # Prepare Multiwfn script as a string
+    script = "\n".join([
+        "17",   # Basin analysis
+        "1",     # Generate basin
+        "1",      # Electron density
+        "3",      # High quality grid.
+        "7",      # Integrate real space functions in AIM basins with mixed type of grids
+        "2",      # Integrate and meantime refine basin boundary
+        "1",      # Electron density
+        "4",      # Calculate localization index (LI) and delocalization index (DI) for basins
+        "2",      # Mixed grid (uniform + atomic center grid)
+        "y",      # output to file
+        "-10",    # Return to main menu
+        "q",     # Quit
+    ]) + "\n"
+
+    logger.info(f"Running Multiwfn on: {wfn_path}")
+    backend.run_multiwfn(
+        input_file=wfn_path,
+        output_dir=output_dir,
+        ncpu=step_config.get("ncpu", 1),
+        log_path=log_path,
+        script_input=script
+    )
+
+    return log_path

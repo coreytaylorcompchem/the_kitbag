@@ -39,20 +39,20 @@ Available Backends:
  - xtb
 
 Available Tasks:
-  [EDA]:
-    - saptX: Do a sapt0, sapt1, etc. calculation (WIP).
+    [EDA]:
+    - sapt0: Do a sapt0 calculation (psi4 only)
   [Energy]:
     - single_point: Performs a single-point energy calculation using the selected backend.
-    - torsion_scan: Do a torsion scan of a bond (WIP).
+    - torsion_scan: Do a torsion scan of a bond.
   [Optimization]:
     - optimise: Performs geometry optimization.
   [Property]:
     - calc_pka: Calculate site pKa values from HA/A- free energies.
-    - mesp: Calculates Molecular Electrostatic Potential (MESP) and outputs cube files for visualization (WIP).
+    - mesp: Calculates Molecular Electrostatic Potential (MESP) and outputs cube files for visualization.
     - site_pka: Enumerate acidic sites, generate protonated and deprotonated geometries for pKa calculations.
   [Wave function analysis]:
-    - basin: Performs real-space analysis (basins, DIs) (WIP).
-    - nci: Performs NCI calculation, outputs cube files (WIP).
+    - basin: Performs real-space analysis (basins, DIs).
+    - nci: Performs NCI calculation, outputs cube files.
     - qtaim: Performs QTAIM analysis on .molden formatted file.
 
 Available Workflows:

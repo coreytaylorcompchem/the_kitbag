@@ -15,7 +15,7 @@
  Electron localization function (ELF):  0.9960706009E+00
  Localized orbital locator (LOL):  0.9409191816E+00
  Local information entropy:  0.1229971077E+00
- Interaction region indicator (IRI):  0.6078728787E-15
+ Interaction region indicator (IRI):  0.9440179118E-15
  Reduced density gradient (RDG):  0.1000000000E+03
  Reduced density gradient with promolecular approximation:  0.1000000000E+03
  Sign(lambda2)*rho: -0.3744267951E+00
@@ -35,8 +35,8 @@
  Note: Below information is for electron density
  
  Components of gradient in x/y/z are:
-  0.0000000000E+00  0.1526556659E-15  0.1387778781E-15
- Norm of gradient is:  0.2063081476E-15
+  0.0000000000E+00 -0.3053113318E-15 -0.9714451465E-16
+ Norm of gradient is:  0.3203936111E-15
  
  Components of Laplacian in x/y/z are:
  -0.4013975032E+01 -0.3077477035E+01 -0.3478841091E+01
@@ -85,7 +85,7 @@
  Electron localization function (ELF):  0.9999978187E+00
  Localized orbital locator (LOL):  0.9985252490E+00
  Local information entropy: -0.9268403685E+02
- Interaction region indicator (IRI):  0.9160683151E-14
+ Interaction region indicator (IRI):  0.9191551658E-14
  Reduced density gradient (RDG):  0.1000000000E+03
  Reduced density gradient with promolecular approximation:  0.1000000000E+03
  Sign(lambda2)*rho: -0.2785733510E+03
@@ -105,8 +105,8 @@
  Note: Below information is for electron density
  
  Components of gradient in x/y/z are:
-  0.0000000000E+00 -0.6172585498E-16 -0.4480860127E-11
- Norm of gradient is:  0.4480860128E-11
+  0.0000000000E+00 -0.6172585498E-16 -0.4495959161E-11
+ Norm of gradient is:  0.4495959161E-11
  
  Components of Laplacian in x/y/z are:
  -0.3870762218E+06 -0.3871074658E+06 -0.3870947217E+06
@@ -155,7 +155,7 @@
  Electron localization function (ELF):  0.9960706009E+00
  Localized orbital locator (LOL):  0.9409191816E+00
  Local information entropy:  0.1229971077E+00
- Interaction region indicator (IRI):  0.7120607296E-15
+ Interaction region indicator (IRI):  0.8741273931E-15
  Reduced density gradient (RDG):  0.1000000000E+03
  Reduced density gradient with promolecular approximation:  0.1000000000E+03
  Sign(lambda2)*rho: -0.3744267951E+00
@@ -175,8 +175,8 @@
  Note: Below information is for electron density
  
  Components of gradient in x/y/z are:
-  0.0000000000E+00 -0.1526556659E-15  0.1873501354E-15
- Norm of gradient is:  0.2416688345E-15
+  0.0000000000E+00  0.2914335440E-15 -0.5551115123E-16
+ Norm of gradient is:  0.2966732183E-15
  
  Components of Laplacian in x/y/z are:
  -0.4013975032E+01 -0.3077477035E+01 -0.3478841091E+01
@@ -225,7 +225,7 @@
  Electron localization function (ELF):  0.9800599170E+00
  Localized orbital locator (LOL):  0.8751824865E+00
  Local information entropy:  0.1179472956E+00
- Interaction region indicator (IRI):  0.2441861128E-15
+ Interaction region indicator (IRI):  0.1046758395E-14
  Reduced density gradient (RDG):  0.1000000000E+03
  Reduced density gradient with promolecular approximation:  0.1000000000E+03
  Sign(lambda2)*rho: -0.3526101514E+00
@@ -245,8 +245,8 @@
  Note: Below information is for electron density
  
  Components of gradient in x/y/z are:
-  0.0000000000E+00 -0.1387778781E-16  0.7632783294E-16
- Norm of gradient is:  0.7757919229E-16
+  0.0000000000E+00 -0.3053113318E-15  0.1318389842E-15
+ Norm of gradient is:  0.3325605615E-15
  
  Components of Laplacian in x/y/z are:
  -0.1762884751E+01  0.2112338400E+00 -0.6011446792E+00
@@ -295,7 +295,7 @@
  Electron localization function (ELF):  0.9800599170E+00
  Localized orbital locator (LOL):  0.8751824865E+00
  Local information entropy:  0.1179472956E+00
- Interaction region indicator (IRI):  0.2441861128E-15
+ Interaction region indicator (IRI):  0.1105060200E-14
  Reduced density gradient (RDG):  0.1000000000E+03
  Reduced density gradient with promolecular approximation:  0.1000000000E+03
  Sign(lambda2)*rho: -0.3526101514E+00
@@ -315,8 +315,8 @@
  Note: Below information is for electron density
  
  Components of gradient in x/y/z are:
-  0.0000000000E+00 -0.1387778781E-16  0.7632783294E-16
- Norm of gradient is:  0.7757919229E-16
+  0.0000000000E+00  0.3330669074E-15  0.1110223025E-15
+ Norm of gradient is:  0.3510833469E-15
  
  Components of Laplacian in x/y/z are:
  -0.1762884751E+01  0.2112338400E+00 -0.6011446792E+00
