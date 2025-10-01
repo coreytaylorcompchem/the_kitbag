@@ -8,8 +8,8 @@ workflow:
 
 mmp_rule_learning:
   pic50_cutoff: 6.0
-  min_rule_count: 2
-  filter_rules: true
+  min_rule_count: 1
+  filter_rules: false
 
 mmp_apply_transformations:
   input_file: data/leads.csv
