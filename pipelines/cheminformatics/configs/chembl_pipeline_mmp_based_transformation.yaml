@@ -8,7 +8,7 @@ workflow:
 
 mmp_rule_learning:
   pic50_cutoff: 6.0
-  min_rule_count: 1
+  min_rule_count: 10
   filter_rules: false
 
 mmp_apply_transformations:

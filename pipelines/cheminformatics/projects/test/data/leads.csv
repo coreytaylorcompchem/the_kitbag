@@ -2,3 +2,4 @@ molecule_chembl_id,target_chembl_id,target_pref_name,standard_type,standard_rela
 ,,,,,,,,,,,,,,C[C@H]1CN(Cc2c(Cl)cccc2C(F)F)C[C@@]1(CC(=O)O)C(=O)NC1CCN(CC2CCCCC2)CC1
 ,,,,,,,,,,,,,,CN(CCOc1ccc(C[C@H](Nc2ccccc2C(=O)c2ccccc2)C(=O)O)cc1)c1ccccn1
 ,,,,,,,,,,,,,,Clc1ccccc1C(c1ccccc1)(c1ccccc1)n1ccnc1
+,,,,,,,,,,,,,,CCCCc1cc(=O)oc2[nH]c(=S)[nH]c(=O)c12

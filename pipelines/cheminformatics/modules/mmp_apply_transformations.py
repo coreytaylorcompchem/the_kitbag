@@ -1,13 +1,14 @@
 from pipeline.task_registry import register_task
+import json
+import pandas as pd
+from pathlib import Path
 from rdkit import Chem
-from rdkit.Chem import BRICS, Descriptors, rdMolDescriptors
+from rdkit.Chem import Descriptors, rdMolDescriptors
 from rdkit.Chem.QED import qed
 from pipeline.logger import setup_logger
-from pathlib import Path
-import pandas as pd
-import json
 
 logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+
 
 def compute_physchem(mol):
     return {
@@ -23,10 +24,11 @@ def compute_physchem(mol):
         "stereocenters": rdMolDescriptors.CalcNumAtomStereoCenters(mol),
     }
 
+
 def preprocess_molecule(mol):
-    from rdkit.Chem import SaltRemover
+    from rdkit.Chem import SaltRemover, rdmolops
+
     remover = SaltRemover.SaltRemover()
-    from rdkit.Chem import rdmolops
     if mol is None:
         return None
     frags = rdmolops.GetMolFrags(mol, asMols=True, sanitizeFrags=True)
@@ -44,84 +46,164 @@ def preprocess_molecule(mol):
             return None
     return mol
 
-def normalize_dummy_atoms(smi):
-    mol = Chem.MolFromSmiles(smi)
-    if mol is None:
-        return smi
-    rw = Chem.RWMol(mol)
-    dummy_atoms = sorted([a for a in rw.GetAtoms() if a.GetAtomicNum() == 0], key=lambda a: a.GetIdx())
-    for i, atom in enumerate(dummy_atoms, start=1):
-        atom.SetIsotope(i)
-    return Chem.MolToSmiles(rw, canonical=True)
+def is_valid_single_substituent_smarts(sub_smarts):
+    try:
+        mol = Chem.MolFromSmarts(sub_smarts)
+        if mol is None:
+            return False
+        frags = Chem.GetMolFrags(mol, asMols=False, sanitizeFrags=False)
+        return len(frags) == 1 and sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 0) == 1
+    except:
+        return False
 
-def reassemble_from_brics(core_smi, sub_smi):
-    core = Chem.MolFromSmiles(core_smi)
-    sub = Chem.MolFromSmiles(sub_smi)
-    if core is None or sub is None:
-        logger.debug(f"Cannot parse core or sub: {core_smi}, {sub_smi}")
+MAX_VALENCE = 4  # Conservative cap for typical atoms
+
+def get_dummy_neighbors(mol):
+    """
+    Find all dummy atoms and return a list of (dummy_idx, neighbor_idx) tuples.
+    """
+    dummy_pairs = []
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() == 0:
+            neighbors = atom.GetNeighbors()
+            if neighbors:
+                dummy_pairs.append((atom.GetIdx(), neighbors[0].GetIdx()))
+    return dummy_pairs
+
+
+def reassemble_full_lead(lead_mol, core_smarts, sub_smarts):
+    core_mol = Chem.MolFromSmarts(core_smarts)
+    sub_mol = Chem.MolFromSmarts(sub_smarts)
+
+    if core_mol is None or sub_mol is None:
+        logger.debug(f"Invalid core or substituent SMARTS: {core_smarts}, {sub_smarts}")
         return None
 
-    core_dummies = [a for a in core.GetAtoms() if a.GetAtomicNum() == 0]
-    sub_dummies = [a for a in sub.GetAtoms() if a.GetAtomicNum() == 0]
-    if not core_dummies or not sub_dummies:
-        logger.debug(f"No dummy atoms in core or sub: {core_smi}, {sub_smi}")
+    match = lead_mol.GetSubstructMatch(core_mol)
+    if not match:
+        logger.debug("No substructure match for core.")
         return None
 
-    combo = Chem.CombineMols(core, sub)
-    edcombo = Chem.EditableMol(combo)
+    # === Find dummy atoms and their neighbors ===
+    core_dummy_pairs = get_dummy_neighbors(core_mol)
+    sub_dummy_pairs = get_dummy_neighbors(sub_mol)
 
-    core_idx = core_dummies[0].GetIdx()
-    sub_idx = sub_dummies[0].GetIdx() + core.GetNumAtoms()
-    edcombo.AddBond(core_idx, sub_idx, Chem.BondType.SINGLE)
+    if len(core_dummy_pairs) != len(sub_dummy_pairs):
+        logger.debug(f"Mismatch in dummy count: core={len(core_dummy_pairs)}, sub={len(sub_dummy_pairs)}")
+        return None
 
-    newmol = edcombo.GetMol()
+    # Map core dummy indices to lead molecule indices
+    lead_dummy_to_neighbor = []
+    for dummy_idx_core, neighbor_idx_core in core_dummy_pairs:
+        dummy_in_lead = match[dummy_idx_core]
+        neighbor_in_lead = None
+        for n in lead_mol.GetAtomWithIdx(dummy_in_lead).GetNeighbors():
+            neighbor_in_lead = n.GetIdx()
+            break
+        if neighbor_in_lead is None:
+            logger.debug("Dummy in lead has no neighbor.")
+            return None
+        lead_dummy_to_neighbor.append((dummy_in_lead, neighbor_in_lead))
 
-    dummy_idxs = [a.GetIdx() for a in newmol.GetAtoms() if a.GetAtomicNum() == 0]
-    rw = Chem.RWMol(newmol)
-    for idx in sorted(dummy_idxs, reverse=True):
-        rw.RemoveAtom(idx)
-    newmol = rw.GetMol()
+    # === Remove dummy atoms from both lead and substituent ===
+    lead_rw = Chem.RWMol(lead_mol)
+    for dummy_idx, _ in sorted(lead_dummy_to_neighbor, reverse=True):
+        lead_rw.RemoveAtom(dummy_idx)
+    lead_clean = lead_rw.GetMol()
+
+    sub_rw = Chem.RWMol(sub_mol)
+    sub_dummy_to_neighbor = []
+    for dummy_idx, neighbor_idx in sorted(sub_dummy_pairs, reverse=True):
+        sub_dummy_to_neighbor.append((dummy_idx, neighbor_idx))
+        sub_rw.RemoveAtom(dummy_idx)
+    sub_clean = sub_rw.GetMol()
+
+    # === Find updated neighbor indices in sub_clean ===
+    updated_sub_neighbors = []
+    old_to_new_idx = {}
+    old_idx = 0
+    for atom in sub_mol.GetAtoms():
+        if atom.GetAtomicNum() != 0:
+            old_to_new_idx[atom.GetIdx()] = old_idx
+            old_idx += 1
+
+    for _, old_neighbor_idx in sub_dummy_to_neighbor:
+        new_idx = old_to_new_idx.get(old_neighbor_idx)
+        if new_idx is None:
+            logger.debug("Substituent neighbor mapping failed.")
+            return None
+        updated_sub_neighbors.append(new_idx)
+
+    # === Valence checks ===
+    for lead_neighbor_idx, sub_neighbor_idx in zip([n for _, n in lead_dummy_to_neighbor], updated_sub_neighbors):
+        try:
+            lead_atom = lead_clean.GetAtomWithIdx(lead_neighbor_idx)
+            sub_atom = sub_clean.GetAtomWithIdx(sub_neighbor_idx)
+            lead_valence = sum(b.GetBondTypeAsDouble() for b in lead_atom.GetBonds())
+            sub_valence = sum(b.GetBondTypeAsDouble() for b in sub_atom.GetBonds())
+            if lead_valence >= MAX_VALENCE or sub_valence >= MAX_VALENCE:
+                logger.debug(f"Valence too high: lead={lead_valence}, sub={sub_valence}")
+                return None
+        except Exception as e:
+            logger.debug(f"Valence check error: {e}")
+            return None
+
+    # === Combine and bond ===
+    combo = Chem.CombineMols(lead_clean, sub_clean)
+    em = Chem.EditableMol(combo)
+    sub_offset = lead_clean.GetNumAtoms()
+
+    for (lead_dummy_idx, lead_neighbor_idx), sub_neighbor_idx in zip(lead_dummy_to_neighbor, updated_sub_neighbors):
+        sub_atom_idx = sub_offset + sub_neighbor_idx
+        if lead_neighbor_idx >= combo.GetNumAtoms() or sub_atom_idx >= combo.GetNumAtoms():
+            logger.debug(f"AddBond index out of range: {lead_neighbor_idx}, {sub_atom_idx}")
+            return None
+        try:
+            em.AddBond(lead_neighbor_idx, sub_atom_idx, Chem.rdchem.BondType.SINGLE)
+        except Exception as e:
+            logger.debug(f"Failed to add bond: {e}")
+            return None
+
+    combined = em.GetMol()
+
+    # === Sanitization ===
+    try:
+        Chem.SanitizeMol(combined, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL ^ Chem.SanitizeFlags.SANITIZE_PROPERTIES)
+    except Exception as e:
+        logger.debug(f"Partial sanitization failed: {e}")
+        return None
 
     try:
-        Chem.SanitizeMol(newmol)
+        Chem.SanitizeMol(combined)
     except Exception as e:
-        logger.debug(f"Sanitize failed for {core_smi} + {sub_smi}: {e}")
+        logger.debug(f"Full sanitization failed: {e}")
         return None
 
-    return newmol
+    # === Optional Filters ===
+    if combined.GetNumAtoms() > 100:
+        logger.debug("Filtered: molecule too large.")
+        return None
+    if '.' in Chem.MolToSmiles(combined):
+        logger.debug("Filtered: disconnected molecule.")
+        return None
 
-def split_fragment_to_single_dummy(mol):
-    """
-    Given a fragment mol that may have multiple dummy atoms, 
-    split it into subfragments each containing exactly one dummy atom.
-    Returns list of SMILES strings.
-    """
-    dummy_idxs = [a.GetIdx() for a in mol.GetAtoms() if a.GetAtomicNum() == 0]
-    if len(dummy_idxs) <= 1:
-        return [Chem.MolToSmiles(mol, canonical=True)]
-    
-    # Remove bonds between dummy atoms to split the fragment
-    rw = Chem.RWMol(mol)
-    bonds_to_break = []
-    for bond in mol.GetBonds():
-        begin = bond.GetBeginAtom().GetIdx()
-        end = bond.GetEndAtom().GetIdx()
-        if (begin in dummy_idxs) and (end in dummy_idxs):
-            bonds_to_break.append(bond.GetIdx())
-    # Remove bonds between dummy atoms
-    for bidx in sorted(bonds_to_break, reverse=True):
-        rw.RemoveBond(rw.GetBondWithIdx(bidx).GetBeginAtomIdx(), rw.GetBondWithIdx(bidx).GetEndAtomIdx())
-    split_mol = rw.GetMol()
+    return combined
 
-    # Get connected components
-    frags = Chem.GetMolFrags(split_mol, asMols=True, sanitizeFrags=True)
-    # Filter fragments with exactly one dummy atom
-    single_dummy_frags = []
-    for f in frags:
-        dummies = [a for a in f.GetAtoms() if a.GetAtomicNum() == 0]
-        if len(dummies) == 1:
-            single_dummy_frags.append(Chem.MolToSmiles(f, canonical=True))
-    return single_dummy_frags
+
+def score_core_mol(core_mol):
+    num_atoms = core_mol.GetNumAtoms()
+    num_bonds = core_mol.GetNumBonds()
+    num_rings = core_mol.GetRingInfo().NumRings()
+    num_wildcards = sum(1 for atom in core_mol.GetAtoms() if atom.GetAtomicNum() == 0)
+
+    return (
+        2.0 * num_atoms +
+        1.5 * num_bonds +
+        3.0 * num_rings -
+        5.0 * num_wildcards
+    )
+
+
 
 @register_task("mmp_apply_transformations", category="Generation", description="Apply BRICS‑derived transformations to leads")
 def mmp_apply_transformations(config, data=None):
@@ -136,40 +218,17 @@ def mmp_apply_transformations(config, data=None):
     with open(rules_file, "r") as f:
         scaffold_to_subs_raw = json.load(f)
 
-    # Helper to get canonical smiles or fallback to original
-    def normalize_smi(smi):
-        mol = Chem.MolFromSmiles(smi)
-        if mol:
-            return Chem.MolToSmiles(mol, canonical=True)
-        else:
-            logger.debug(f"Failed to parse smiles for normalization: {smi}")
-            return smi
-
-    def count_heavy_atoms(smi):
-        mol = Chem.MolFromSmiles(smi)
-        return mol.GetNumHeavyAtoms() if mol else 0
-
-    # Normalize rules keys and subs; filter out small cores (<6 heavy atoms)
-    scaffold_to_subs = {}
-    for core_smi_raw, subs_raw in scaffold_to_subs_raw.items():
-        core_smi = normalize_smi(core_smi_raw)
-        # if count_heavy_atoms(core_smi) < 6:
-        #     logger.debug(f"Skipping small core in rules: {core_smi}")
-        #     continue
-        normalized_subs = set()
-        for sub_smi_raw in subs_raw:
-            sub_smi = normalize_smi(sub_smi_raw)
-            normalized_subs.add(sub_smi)
-        scaffold_to_subs[core_smi] = normalized_subs
-
-    # Prebuild core mols map from normalized rules
     core_mol_map = {}
-    for core_smi in scaffold_to_subs.keys():
-        mol = Chem.MolFromSmiles(core_smi)
-        if mol:
-            core_mol_map[core_smi] = mol
+    for smarts, subs in scaffold_to_subs_raw.items():
+        mol = Chem.MolFromSmarts(smarts)
+        if mol is not None:
+            try:
+                Chem.GetSymmSSSR(mol)  # Initializes ring info
+                core_mol_map[smarts] = {"mol": mol, "subs": subs}
+            except Exception as e:
+                logger.debug(f"Sanitization failed for core: {smarts} — {e}")
         else:
-            logger.debug(f"Invalid core smiles in learned rules: {core_smi}")
+            logger.debug(f"Invalid SMARTS in rule file: {smarts}")
 
     df = pd.read_csv(transform_input_file)
     if "smiles" not in df.columns:
@@ -178,89 +237,56 @@ def mmp_apply_transformations(config, data=None):
     suggestions = []
 
     for smi in df["smiles"]:
-        mol = Chem.MolFromSmiles(smi)
-        mol = preprocess_molecule(mol)
-        if mol is None:
-            logger.debug(f"Skipping invalid lead: {smi}")
+        lead_mol = Chem.MolFromSmiles(smi)
+        lead_mol = preprocess_molecule(lead_mol)
+        if lead_mol is None:
+            logger.debug(f"Skipping lead (preprocess failed): {smi}")
             continue
 
-        try:
-            brics_frags_raw = list(BRICS.BRICSDecompose(mol))
-            # Normalize and filter lead fragments for cores (>=6 heavy atoms)
-            brics_frags = [normalize_dummy_atoms(frag) for frag in brics_frags_raw]
-            logger.debug(f"BRICS fragments for lead {smi} (normalized): {brics_frags}")
-            # brics_frags = [f for f in brics_frags if count_heavy_atoms(f) >= 6]
+        # === Select the best-matching core ===
+        best_core_smarts = None
+        best_core_info = None
+        best_score = -1
 
-            # logger.debug(f"BRICS fragments for lead {smi} (filtered): {brics_frags}")
-
-            if not brics_frags:
-                logger.debug(f"No BRICS fragments for lead: {smi}")
+        for core_smarts, info in core_mol_map.items():
+            core_mol = info["mol"]
+            match = lead_mol.GetSubstructMatch(core_mol)
+            if not match:
                 continue
 
-            # Map lead fragments to learned cores using strict isomorphism check (both directions)
-            frag_to_core_map = {}
-            possible_cores = set()
+            # Prefer more complex cores: more bonds = more context
+            score = score_core_mol(core_mol)
 
-            for frag_smi in brics_frags:
-                frag_mol = Chem.MolFromSmiles(frag_smi)
-                if frag_mol is None:
-                    logger.debug(f"Skipping invalid fragment in lead: {frag_smi}")
-                    continue
+            if score > best_score:
+                best_score = score
+                best_core_smarts = core_smarts
+                best_core_info = info
 
-                matched_core = None
-                for core_smi, core_mol in core_mol_map.items():
-                    # Match both ways to ensure exact core-fragment equivalence
-                    if frag_mol.HasSubstructMatch(core_mol) and core_mol.HasSubstructMatch(frag_mol):
-                        matched_core = core_smi
-                        break
-
-                if matched_core:
-                    frag_to_core_map[frag_smi] = matched_core
-                    possible_cores.add(matched_core)
-                else:
-                    logger.debug(f"Fragment {frag_smi} did not match any learned core")
-
-            if not possible_cores:
-                logger.debug(f"No matching cores in learned rules for lead: {smi}")
-                continue
-
-            # For each core matched in the lead, attempt substituent replacements
-            for core_smi in possible_cores:
-                learned_subs = scaffold_to_subs.get(core_smi, set())
-                if not learned_subs:
-                    continue
-
-                # Consider all fragments in lead that match this core to find substituents
-                for orig_sub in brics_frags:
-                    if orig_sub == core_smi:
-                        continue
-                    # Only process substituents whose matched core matches current core_smi
-                    if frag_to_core_map.get(orig_sub) != core_smi:
-                        continue
-                    if orig_sub not in learned_subs:
-                        logger.debug(f"Original substituent {orig_sub} not in learned substitutions for core {core_smi}")
-                        continue
-
-                    for new_sub in learned_subs:
-                        if new_sub == orig_sub:
-                            continue
-
-                        newmol = reassemble_from_brics(core_smi, normalize_dummy_atoms(new_sub))
-                        if newmol is None:
-                            continue
-
-                        smi_new = Chem.MolToSmiles(newmol, canonical=True)
-                        props = compute_physchem(newmol)
-                        suggestions.append(props)
-
-                        logger.debug(f"{smi}  => {smi_new} (core {core_smi}, replaced {orig_sub} → {new_sub})")
-
-        except Exception as e:
-            logger.debug(f"Error processing lead {smi}: {e}")
+        if best_core_smarts is None:
+            logger.debug(f"No matching core found for lead: {smi}")
             continue
+
+        logger.debug(f"Best match found for core {best_core_smarts} in lead {smi}")
+
+        for new_sub in best_core_info["subs"]:
+            if not is_valid_single_substituent_smarts(new_sub):
+                logger.debug(f"Skipping invalid substituent (not single molecule): {new_sub}")
+                continue
+
+            new_mol = reassemble_full_lead(lead_mol, best_core_smarts, new_sub)
+            if new_mol is None:
+                continue
+
+            try:
+                new_smi = Chem.MolToSmiles(new_mol, canonical=True)
+                props = compute_physchem(new_mol)
+                suggestions.append(props)
+                logger.debug(f"{smi} => {new_smi} (core {best_core_smarts} → new_sub {new_sub})")
+            except Exception as e:
+                logger.debug(f"Failed to compute properties for transformed molecule: {e}")
+                continue
 
     df_out = pd.DataFrame(suggestions)
-
     output_dir = Path(config.get("output", {}).get("directory", "outputs/mmp_based_transformation"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -269,9 +295,9 @@ def mmp_apply_transformations(config, data=None):
         return (Path(transform_input_file).stem, df_out)
 
     csv_path = output_dir / f"{Path(transform_input_file).stem}_mmp_based_transformation.csv"
-    df_out.to_csv(csv_path, index=False)
-
     smi_path = output_dir / f"{Path(transform_input_file).stem}_mmp_based_transformation.smi"
+
+    df_out.to_csv(csv_path, index=False)
     with open(smi_path, "w") as f:
         for smi_val in df_out["smiles"]:
             f.write(smi_val + "\n")
@@ -281,6 +307,4 @@ def mmp_apply_transformations(config, data=None):
     logger.info(f"SMILES file written: {smi_path}")
 
     return (Path(transform_input_file).stem, df_out)
-
-
 

@@ -7,19 +7,17 @@ from collections import defaultdict, Counter
 from concurrent.futures import ProcessPoolExecutor
 
 from rdkit import Chem
-from rdkit.Chem import BRICS, rdmolops
-from rdkit.Chem import SaltRemover
-
+from rdkit.Chem import BRICS, rdmolops, SaltRemover
+from rdkit.Chem import AllChem
 from pipeline.logger import setup_logger
+
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+salt_remover = SaltRemover.SaltRemover()
 
 def standard_value_to_pic50(val):
     if val <= 0 or pd.isna(val):
         return None
     return -math.log10(val * 1e-9)
-
-# Salt remover
-salt_remover = SaltRemover.SaltRemover()
 
 def preprocess_molecule(mol):
     if mol is None:
@@ -39,55 +37,105 @@ def preprocess_molecule(mol):
             return None
     return mol
 
-def normalize_dummy_atoms(smi):
-    mol = Chem.MolFromSmiles(smi)
-    if mol is None:
-        return smi  # fallback if parsing fails
-
-    rw = Chem.RWMol(mol)
-    dummy_atoms = sorted([a for a in rw.GetAtoms() if a.GetAtomicNum() == 0], key=lambda a: a.GetIdx())
-    # Set isotope number to 1, 2, 3... as dummy atom labels
-    for i, atom in enumerate(dummy_atoms, start=1):
-        atom.SetIsotope(i)
-    # Generate canonical smiles preserving isotopes (dummy labels)
-    smi_norm = Chem.MolToSmiles(rw, canonical=True)
-    return smi_norm
-
-def extract_brics_fragments(smi):
+def extract_mmp_like_fragments(smi):
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return [], "invalid", smi
+
     mol = preprocess_molecule(mol)
     if mol is None:
         return [], "preprocessing_failed", smi
 
     try:
-        frag_smis = list(BRICS.BRICSDecompose(mol))
-        if not frag_smis:
-            return [], "no_brics_fragments", smi
+        bonds_to_cut = []
+        for bond in mol.GetBonds():
+            begin = bond.GetBeginAtom()
+            end = bond.GetEndAtom()
 
-        # Convert to Mol objects and count atoms
-        frags = []
-        for f_smi in frag_smis:
-            f_mol = Chem.MolFromSmiles(f_smi)
-            if f_mol is None:
+            if bond.GetBondType() != Chem.BondType.SINGLE:
                 continue
-            frags.append((f_smi, f_mol.GetNumAtoms()))
+            if bond.IsInRing():
+                continue
+            if begin.GetAtomicNum() == 1 or end.GetAtomicNum() == 1:
+                continue
+            if begin.IsInRing() and end.IsInRing():
+                continue  # avoid breaking ring-ring bonds
 
-        if len(frags) < 2:
-            return [], "too_few_fragments", smi
+            # Keep only ring-to-chain bonds
+            if begin.IsInRing() != end.IsInRing():
+                bonds_to_cut.append(bond.GetIdx())
 
-        # Pick core = largest fragment, others are substituents
-        frags = sorted(frags, key=lambda x: x[1], reverse=True)
-        core_smi, _ = frags[0]
-        subs = [f[0] for f in frags[1:]]
+        if not bonds_to_cut:
+            return [], "no_valid_cuts", smi
 
-        pairs = [(core_smi, sub) for sub in subs if sub != core_smi]
-        return list(set(pairs)), "has_brics_pairs", smi
+        # Do fragmentation
+        fragmented = Chem.FragmentOnBonds(mol, bonds_to_cut, addDummies=True)
+        frags = Chem.GetMolFrags(fragmented, asMols=True, sanitizeFrags=True)
+        if not frags or len(frags) < 2:
+            return [], "too_few_frags", smi
+
+        frag_smis = [(Chem.MolToSmiles(f, isomericSmiles=True), f) for f in frags]
+        frag_smis = list(set(frag_smis))  # remove duplicates
+
+        # Identify core (largest frag with ring) and subs (others)
+        frag_smis = sorted(frag_smis, key=lambda x: x[1].GetNumAtoms(), reverse=True)
+        core = None
+        subs = []
+
+        for smi_core, mol_core in frag_smis:
+            if mol_core.GetRingInfo().NumRings() > 0:
+                core = smi_core
+                break
+
+        if core is None:
+            return [], "no_ring_core", smi
+
+        for smi_sub, mol_sub in frag_smis:
+            if smi_sub == core:
+                continue
+            subs.append(smi_sub)
+
+        if not subs:
+            return [], "no_substituents", smi
+
+        pairs = []
+        for sub in subs:
+            core_smarts = simplify_fragment_to_smarts(core)
+            sub_smarts = simplify_fragment_to_smarts(sub)
+
+            if not core_smarts or not sub_smarts:
+                continue
+
+            # Only keep fragments with exactly 1 dummy/attachment point
+            # if core_smarts.count('[*]') != 1 or sub_smarts.count('[*]') != 1:
+            #     continue
+
+            pairs.append((core_smarts, sub_smarts))
+
+        if not pairs:
+            return [], "filtered_all", smi
+
+        return pairs, "has_pairs", smi
 
     except Exception as e:
-        logger.debug(f"BRICS extraction error on {smi}: {e}")
+        logger.debug(f"Fragmentation error on {smi}: {e}")
         return [], "error", smi
+
+def simplify_fragment_to_smarts(smi: str) -> str:
+    mol = Chem.MolFromSmiles(smi)
+    if mol is None:
+        return None
+
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() == 0:
+            atom.SetIsotope(0)
+            atom.SetAtomMapNum(0)
+            atom.SetNoImplicit(True)
+            atom.SetNumExplicitHs(0)
+
+    smarts = Chem.MolToSmarts(mol, isomericSmiles=False)
+    smarts = smarts.replace('[#0]', '[*]')
+    return smarts
 
 @register_task(
     "mmp_rule_learning",
@@ -116,7 +164,7 @@ def mmp_rule_learning(config, data=None):
 
     with ProcessPoolExecutor() as executor:
         results = list(tqdm(
-            executor.map(extract_brics_fragments, actives["smiles"]),
+            executor.map(extract_mmp_like_fragments, actives["smiles"]),
             total=len(actives),
             desc="Learning BRICS rules"
         ))
@@ -125,17 +173,51 @@ def mmp_rule_learning(config, data=None):
     for pairs, status, smi in results:
         status_counts[status] += 1
         for core, sub in pairs:
-            # Normalize dummy atoms here before storing
-            core_norm = normalize_dummy_atoms(core)
-            sub_norm = normalize_dummy_atoms(sub)
-            core_to_subs[core_norm].add(sub_norm)
-            total_pairs += 1
+            core_smarts = simplify_fragment_to_smarts(core)
+            sub_smarts = simplify_fragment_to_smarts(sub)
+
+            if core_smarts and sub_smarts:
+                # Apply core filtering here
+                core_mol = Chem.MolFromSmarts(core_smarts)
+                if core_smarts.count('[*]') != sub_smarts.count('[*]'):
+                    logger.debug(f"Skipping rule due to dummy count mismatch: core={core_smarts}, sub={sub_smarts}")
+                    continue
+
+                core_to_subs[core_smarts].add(sub_smarts)
+                total_pairs += 1
+                if core_mol is None:
+                    continue
+
+                try:
+                    num_heavy_atoms = core_mol.GetNumHeavyAtoms()
+                    Chem.GetSSSR(core_mol)  # Ensure ring info is initialized
+                    num_rings = core_mol.GetRingInfo().NumRings()
+                except Exception as e:
+                    logger.debug(f"Skipping invalid core SMARTS due to RDKit error: {core_smarts} ({e})")
+                    continue
+
+                num_attachment_points = core_smarts.count('[*]')
+                trivial_cores = {
+                    "[*]-[#6]", "[*]-[#8]", "[*]-[#7]", "[*]-[#17]",
+                    "[*]-[#9]", "[*]-[#1]", "[*]-[#16]"
+                }
+
+                if (
+                    num_heavy_atoms < 5 or
+                    num_rings < 1 or
+                    num_attachment_points < 2 or
+                    core_smarts in trivial_cores
+                ):
+                    continue
+
+                # Passed filters — store the pair
+                core_to_subs[core_smarts].add(sub_smarts)
+                total_pairs += 1
 
     logger.info(f"BRICS extraction status counts: {dict(status_counts)}")
     logger.info(f"Total (core, sub) pairs extracted: {total_pairs}")
     logger.info(f"Unique cores found: {len(core_to_subs)}")
 
-    # Derive transformation rules (core → substituent pairs)
     for core, subs in core_to_subs.items():
         subs = list(subs)
         if len(subs) < 2:
@@ -152,7 +234,6 @@ def mmp_rule_learning(config, data=None):
     for (s_from, s_to), cnt in rule_counter.most_common(10):
         logger.info(f"{s_from} => {s_to} | {cnt}")
 
-    # Save rule mapping: core → list of substituents
     scaffold_to_subs = {core: list(subs) for core, subs in core_to_subs.items()}
 
     out_dir = Path(config.get("output", {}).get("directory", "outputs/mmp_based_transformation"))
@@ -161,4 +242,8 @@ def mmp_rule_learning(config, data=None):
     with open(out_file, "w") as f:
         json.dump(scaffold_to_subs, f, indent=2)
 
+    logger.info(f"Filtered scaffold-to-subs mapping written to: {out_file}")
+    logger.info(f"Final number of cores written: {len(scaffold_to_subs)}")
+
     return ("mmp_rules_brics", pd.DataFrame.from_dict(scaffold_to_subs, orient="index"))
+
