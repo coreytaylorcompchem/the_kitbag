@@ -148,6 +148,8 @@ def mmp_rule_learning(config, data=None):
     cutoff = mmp_config.get("pic50_cutoff", 7.0)
     filter_rules = mmp_config.get("filter_rules", False)
     min_rule_count = mmp_config.get("min_rule_count", 1)
+    min_core_rings = mmp_config.get("min_core_rings", 1)
+    min_core_heavy_atoms = mmp_config.get("min_core_heavy_atoms", 6)
 
     df = pd.read_csv(input_file)
     if "smiles" not in df.columns or "standard_value" not in df.columns:
@@ -173,44 +175,21 @@ def mmp_rule_learning(config, data=None):
     for pairs, status, smi in results:
         status_counts[status] += 1
         for core, sub in pairs:
+            try:
+                core_mol = Chem.MolFromSmiles(core, sanitize=True)
+                if core_mol is None:
+                    continue
+                if core_mol.GetRingInfo().NumRings() < min_core_rings:
+                    continue
+                if core_mol.GetNumHeavyAtoms() < min_core_heavy_atoms:
+                    continue
+            except Exception:
+                continue
+
             core_smarts = simplify_fragment_to_smarts(core)
             sub_smarts = simplify_fragment_to_smarts(sub)
 
             if core_smarts and sub_smarts:
-                # Apply core filtering here
-                core_mol = Chem.MolFromSmarts(core_smarts)
-                if core_smarts.count('[*]') != sub_smarts.count('[*]'):
-                    logger.debug(f"Skipping rule due to dummy count mismatch: core={core_smarts}, sub={sub_smarts}")
-                    continue
-
-                core_to_subs[core_smarts].add(sub_smarts)
-                total_pairs += 1
-                if core_mol is None:
-                    continue
-
-                try:
-                    num_heavy_atoms = core_mol.GetNumHeavyAtoms()
-                    Chem.GetSSSR(core_mol)  # Ensure ring info is initialized
-                    num_rings = core_mol.GetRingInfo().NumRings()
-                except Exception as e:
-                    logger.debug(f"Skipping invalid core SMARTS due to RDKit error: {core_smarts} ({e})")
-                    continue
-
-                num_attachment_points = core_smarts.count('[*]')
-                trivial_cores = {
-                    "[*]-[#6]", "[*]-[#8]", "[*]-[#7]", "[*]-[#17]",
-                    "[*]-[#9]", "[*]-[#1]", "[*]-[#16]"
-                }
-
-                if (
-                    num_heavy_atoms < 5 or
-                    num_rings < 1 or
-                    num_attachment_points < 2 or
-                    core_smarts in trivial_cores
-                ):
-                    continue
-
-                # Passed filters — store the pair
                 core_to_subs[core_smarts].add(sub_smarts)
                 total_pairs += 1
 
@@ -224,6 +203,8 @@ def mmp_rule_learning(config, data=None):
             continue
         for i in range(len(subs)):
             for j in range(i + 1, len(subs)):
+                if subs[i].count("[*]") != subs[j].count("[*]"):
+                    continue
                 rule_counter[(subs[i], subs[j])] += 1
                 rule_counter[(subs[j], subs[i])] += 1
 
@@ -242,8 +223,4 @@ def mmp_rule_learning(config, data=None):
     with open(out_file, "w") as f:
         json.dump(scaffold_to_subs, f, indent=2)
 
-    logger.info(f"Filtered scaffold-to-subs mapping written to: {out_file}")
-    logger.info(f"Final number of cores written: {len(scaffold_to_subs)}")
-
     return ("mmp_rules_brics", pd.DataFrame.from_dict(scaffold_to_subs, orient="index"))
-

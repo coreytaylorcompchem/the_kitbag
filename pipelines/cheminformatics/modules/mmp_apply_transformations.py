@@ -71,123 +71,64 @@ def get_dummy_neighbors(mol):
     return dummy_pairs
 
 
+from rdkit import Chem
+from rdkit.Chem import rdRGroupDecomposition
+
 def reassemble_full_lead(lead_mol, core_smarts, sub_smarts):
-    core_mol = Chem.MolFromSmarts(core_smarts)
-    sub_mol = Chem.MolFromSmarts(sub_smarts)
+    try:
+        core_mol = Chem.MolFromSmarts(core_smarts)
+        sub_mol = Chem.MolFromSmarts(sub_smarts)
+    except Exception as e:
+        logger.debug(f"Failed to parse SMARTS: {e}")
+        return None
 
     if core_mol is None or sub_mol is None:
-        logger.debug(f"Invalid core or substituent SMARTS: {core_smarts}, {sub_smarts}")
+        logger.debug("Invalid core or substituent SMARTS.")
         return None
 
+    # Match the core to the lead
     match = lead_mol.GetSubstructMatch(core_mol)
     if not match:
-        logger.debug("No substructure match for core.")
+        logger.debug("Core not found in lead molecule.")
         return None
 
-    # === Find dummy atoms and their neighbors ===
-    core_dummy_pairs = get_dummy_neighbors(core_mol)
-    sub_dummy_pairs = get_dummy_neighbors(sub_mol)
+    # Label atoms in the lead corresponding to the core dummy atoms
+    core_dummy_indices = [i for i, atom in enumerate(core_mol.GetAtoms()) if atom.GetAtomicNum() == 0]
+    lead_dummy_indices = [match[i] for i in core_dummy_indices]
 
-    if len(core_dummy_pairs) != len(sub_dummy_pairs):
-        logger.debug(f"Mismatch in dummy count: core={len(core_dummy_pairs)}, sub={len(sub_dummy_pairs)}")
+    # Remove the core from the lead
+    editable = Chem.EditableMol(lead_mol)
+    for idx in sorted(lead_dummy_indices, reverse=True):
+        editable.RemoveAtom(idx)
+    lead_stub = editable.GetMol()
+
+    # Prepare substituent molecule (attach points = dummy atoms)
+    sub_dummy_indices = [a.GetIdx() for a in sub_mol.GetAtoms() if a.GetAtomicNum() == 0]
+
+    # Validate dummy count match
+    if len(lead_dummy_indices) != len(sub_dummy_indices):
+        logger.debug(f"Mismatch in dummy count: core={len(lead_dummy_indices)}, sub={len(sub_dummy_indices)}")
         return None
 
-    # Map core dummy indices to lead molecule indices
-    lead_dummy_to_neighbor = []
-    for dummy_idx_core, neighbor_idx_core in core_dummy_pairs:
-        dummy_in_lead = match[dummy_idx_core]
-        neighbor_in_lead = None
-        for n in lead_mol.GetAtomWithIdx(dummy_in_lead).GetNeighbors():
-            neighbor_in_lead = n.GetIdx()
-            break
-        if neighbor_in_lead is None:
-            logger.debug("Dummy in lead has no neighbor.")
-            return None
-        lead_dummy_to_neighbor.append((dummy_in_lead, neighbor_in_lead))
+    # Map dummy atoms: lead position ↔ sub dummy atom
+    combined = Chem.CombineMols(lead_stub, sub_mol)
+    emol = Chem.EditableMol(combined)
+    offset = lead_stub.GetNumAtoms()
 
-    # === Remove dummy atoms from both lead and substituent ===
-    lead_rw = Chem.RWMol(lead_mol)
-    for dummy_idx, _ in sorted(lead_dummy_to_neighbor, reverse=True):
-        lead_rw.RemoveAtom(dummy_idx)
-    lead_clean = lead_rw.GetMol()
+    for i, lead_idx in enumerate(lead_dummy_indices):
+        sub_idx = sub_dummy_indices[i] + offset
+        emol.AddBond(lead_idx, sub_idx, order=Chem.rdchem.BondType.SINGLE)
 
-    sub_rw = Chem.RWMol(sub_mol)
-    sub_dummy_to_neighbor = []
-    for dummy_idx, neighbor_idx in sorted(sub_dummy_pairs, reverse=True):
-        sub_dummy_to_neighbor.append((dummy_idx, neighbor_idx))
-        sub_rw.RemoveAtom(dummy_idx)
-    sub_clean = sub_rw.GetMol()
-
-    # === Find updated neighbor indices in sub_clean ===
-    updated_sub_neighbors = []
-    old_to_new_idx = {}
-    old_idx = 0
-    for atom in sub_mol.GetAtoms():
-        if atom.GetAtomicNum() != 0:
-            old_to_new_idx[atom.GetIdx()] = old_idx
-            old_idx += 1
-
-    for _, old_neighbor_idx in sub_dummy_to_neighbor:
-        new_idx = old_to_new_idx.get(old_neighbor_idx)
-        if new_idx is None:
-            logger.debug("Substituent neighbor mapping failed.")
-            return None
-        updated_sub_neighbors.append(new_idx)
-
-    # === Valence checks ===
-    for lead_neighbor_idx, sub_neighbor_idx in zip([n for _, n in lead_dummy_to_neighbor], updated_sub_neighbors):
-        try:
-            lead_atom = lead_clean.GetAtomWithIdx(lead_neighbor_idx)
-            sub_atom = sub_clean.GetAtomWithIdx(sub_neighbor_idx)
-            lead_valence = sum(b.GetBondTypeAsDouble() for b in lead_atom.GetBonds())
-            sub_valence = sum(b.GetBondTypeAsDouble() for b in sub_atom.GetBonds())
-            if lead_valence >= MAX_VALENCE or sub_valence >= MAX_VALENCE:
-                logger.debug(f"Valence too high: lead={lead_valence}, sub={sub_valence}")
-                return None
-        except Exception as e:
-            logger.debug(f"Valence check error: {e}")
-            return None
-
-    # === Combine and bond ===
-    combo = Chem.CombineMols(lead_clean, sub_clean)
-    em = Chem.EditableMol(combo)
-    sub_offset = lead_clean.GetNumAtoms()
-
-    for (lead_dummy_idx, lead_neighbor_idx), sub_neighbor_idx in zip(lead_dummy_to_neighbor, updated_sub_neighbors):
-        sub_atom_idx = sub_offset + sub_neighbor_idx
-        if lead_neighbor_idx >= combo.GetNumAtoms() or sub_atom_idx >= combo.GetNumAtoms():
-            logger.debug(f"AddBond index out of range: {lead_neighbor_idx}, {sub_atom_idx}")
-            return None
-        try:
-            em.AddBond(lead_neighbor_idx, sub_atom_idx, Chem.rdchem.BondType.SINGLE)
-        except Exception as e:
-            logger.debug(f"Failed to add bond: {e}")
-            return None
-
-    combined = em.GetMol()
-
-    # === Sanitization ===
-    try:
-        Chem.SanitizeMol(combined, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL ^ Chem.SanitizeFlags.SANITIZE_PROPERTIES)
-    except Exception as e:
-        logger.debug(f"Partial sanitization failed: {e}")
-        return None
+    final = emol.GetMol()
 
     try:
-        Chem.SanitizeMol(combined)
+        Chem.SanitizeMol(final)
     except Exception as e:
-        logger.debug(f"Full sanitization failed: {e}")
+        logger.debug(f"Sanitization failed: {e}")
         return None
 
-    # === Optional Filters ===
-    if combined.GetNumAtoms() > 100:
-        logger.debug("Filtered: molecule too large.")
-        return None
-    if '.' in Chem.MolToSmiles(combined):
-        logger.debug("Filtered: disconnected molecule.")
-        return None
+    return final
 
-    return combined
 
 
 def score_core_mol(core_mol):
@@ -202,8 +143,6 @@ def score_core_mol(core_mol):
         3.0 * num_rings -
         5.0 * num_wildcards
     )
-
-
 
 @register_task("mmp_apply_transformations", category="Generation", description="Apply BRICS‑derived transformations to leads")
 def mmp_apply_transformations(config, data=None):
