@@ -129,8 +129,6 @@ def reassemble_full_lead(lead_mol, core_smarts, sub_smarts):
 
     return final
 
-
-
 def score_core_mol(core_mol):
     num_atoms = core_mol.GetNumAtoms()
     num_bonds = core_mol.GetNumBonds()
@@ -144,7 +142,7 @@ def score_core_mol(core_mol):
         5.0 * num_wildcards
     )
 
-@register_task("mmp_apply_transformations", category="Generation", description="Apply BRICS‑derived transformations to leads")
+@register_task("mmp_apply_transformations", category="Molecular generation", description="Apply learned rules to leads, generate synthesis suggestions.")
 def mmp_apply_transformations(config, data=None):
     transform_input_file = config.get("mmp_apply_transformations", {}).get("input_file")
     if not transform_input_file or not Path(transform_input_file).exists():
@@ -162,7 +160,7 @@ def mmp_apply_transformations(config, data=None):
         mol = Chem.MolFromSmarts(smarts)
         if mol is not None:
             try:
-                Chem.GetSymmSSSR(mol)  # Initializes ring info
+                Chem.GetSymmSSSR(mol)  
                 core_mol_map[smarts] = {"mol": mol, "subs": subs}
             except Exception as e:
                 logger.debug(f"Sanitization failed for core: {smarts} — {e}")
@@ -182,7 +180,7 @@ def mmp_apply_transformations(config, data=None):
             logger.debug(f"Skipping lead (preprocess failed): {smi}")
             continue
 
-        # === Select the best-matching core ===
+        # Select the best-matching core
         best_core_smarts = None
         best_core_info = None
         best_score = -1
@@ -193,7 +191,6 @@ def mmp_apply_transformations(config, data=None):
             if not match:
                 continue
 
-            # Prefer more complex cores: more bonds = more context
             score = score_core_mol(core_mol)
 
             if score > best_score:

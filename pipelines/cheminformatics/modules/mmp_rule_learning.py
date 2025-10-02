@@ -68,14 +68,13 @@ def extract_mmp_like_fragments(smi):
         if not bonds_to_cut:
             return [], "no_valid_cuts", smi
 
-        # Do fragmentation
         fragmented = Chem.FragmentOnBonds(mol, bonds_to_cut, addDummies=True)
         frags = Chem.GetMolFrags(fragmented, asMols=True, sanitizeFrags=True)
         if not frags or len(frags) < 2:
             return [], "too_few_frags", smi
 
         frag_smis = [(Chem.MolToSmiles(f, isomericSmiles=True), f) for f in frags]
-        frag_smis = list(set(frag_smis))  # remove duplicates
+        frag_smis = list(set(frag_smis))
 
         # Identify core (largest frag with ring) and subs (others)
         frag_smis = sorted(frag_smis, key=lambda x: x[1].GetNumAtoms(), reverse=True)
@@ -107,6 +106,9 @@ def extract_mmp_like_fragments(smi):
                 continue
 
             # Only keep fragments with exactly 1 dummy/attachment point
+            # Commenting out for now: keeping only 1:1 core/subs means far fewer matches
+            # Could be useful later, though.
+
             # if core_smarts.count('[*]') != 1 or sub_smarts.count('[*]') != 1:
             #     continue
 
@@ -139,7 +141,7 @@ def simplify_fragment_to_smarts(smi: str) -> str:
 
 @register_task(
     "mmp_rule_learning",
-    category="Preprocessing",
+    category="Molecular generation",
     description="Learn BRICS‑based transformation rules from actives"
 )
 def mmp_rule_learning(config, data=None):

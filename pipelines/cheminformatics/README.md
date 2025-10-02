@@ -36,11 +36,12 @@ Available Tasks:
   [Library generation]:
     - combinatorial_enumerator: Generate combinatorial library from fragments and R-groups.
     - focused_fragment_library_generator: Generate a focused library by fragment frequency.
-    - reaction_based_enumeration: Generate library from fragments with reaction SMIRKS/SMARTS.
+    - reaction_based_enumeration: Enumerate reaction-based product library from scaffold and fragment inputs.
+  [Molecular generation]:
+    - mmp_apply_transformations: Apply learned rules to leads, generate synthesis suggestions.
+    - mmp_rule_learning: Learn BRICS‑based transformation rules from actives
   [Prediction]:
     - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, A->B (Papp)) from SMILES using PyTorch models
-Available Workflows:
- - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
