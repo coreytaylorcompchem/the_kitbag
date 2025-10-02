@@ -9,6 +9,8 @@ Perform all sorts of cheminf calculations from basic physchem filtering to more 
 * Mainly Python libs
 * [Rdkit](https://www.rdkit.org/docs/Install.html)
 
+See `environment.yml` for the rest. The list is indicative only, as this repo is under development.
+
 ## Running calculations
 
 I use a yaml/workflow system. Examples for each are in `configs/*yaml` and `workflows/*py`.

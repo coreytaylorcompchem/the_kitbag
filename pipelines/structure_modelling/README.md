@@ -14,6 +14,8 @@ Modelling of proteins and peptide.
   * NOTE: 1.7 Gb download
 * [ColabFold](https://github.com/sokrypton/ColabFold)
 
+See `environment.yml` for the rest. The list is indicative only, as this repo is under development.
+
 ## Running calculations
 
 I use a yaml/workflow system. Examples for each are in `configs/*yaml` and `workflows/*py`.

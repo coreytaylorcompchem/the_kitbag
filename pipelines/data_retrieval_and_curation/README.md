@@ -10,6 +10,8 @@ Here's where we can curate and combine affinity, ADME, etc, data from multiple s
 * [Rdkit](https://www.rdkit.org/docs/Install.html)
 * [Chembl webresource_client](https://github.com/chembl/chembl_webresource_client).
 
+See `environment.yml` for the rest. The list is indicative only, as this repo is under development.
+
 ## Running calculations
 
 I use a yaml/workflow system. Examples for each are in `configs/*yaml` and `workflows/*py`.
