@@ -22,13 +22,14 @@ ligands_txt: "ligs.txt"
 
 active_learning:
   model: random_forest
-  n_initial: 20 # initial list of compounds to dock
-  batch_size: 20 # subsequent batches to dock.
+  n_initial: 5 # initial list of compounds to dock
+  batch_size: 5 # subsequent batches to dock.
   n_cycles: 5
   scoring: docking_score # TODO: add affinity predictor
-  acquisition: uncertainty_sampling  # future option
+  acquisition: uncertainty_sampling  # many options exist here; see modules/utils/acquisition_strategies for all available
   sample_size: 5000 # sample size to predict on and select batch from 
   seed: 42
+  run_random_baseline: true
 
 docking:
   output_dir: "outputs/al_docking_output"

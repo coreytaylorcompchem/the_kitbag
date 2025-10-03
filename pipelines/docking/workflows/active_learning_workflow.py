@@ -10,6 +10,7 @@ from workflows.utils.docking import (
     get_docking_box,
     extract_scores_from_docking_output,
 )
+from workflows.utils.ligands import sanitize_smiles_list
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
@@ -35,6 +36,19 @@ def run(config_path: str):
             ligands.append({'name': row['name'], 'smiles': row['smiles']})
 
     logger.info(f"Loaded {len(ligands)} ligands.")
+
+    # Sanitize ligands with RDKit
+    ligands, invalid_ligands = sanitize_smiles_list(ligands)
+    logger.info(f"Retained {len(ligands)} valid ligands after full RDKit sanitization.")
+
+    if invalid_ligands:
+        logger.warning(f"{len(invalid_ligands)} ligands removed due to sanitization errors.")
+        invalid_path = output_dir / "invalid_ligands.csv"
+        with open(invalid_path, "w") as f:
+            f.write("name,smiles,error\n")
+            for lig in invalid_ligands:
+                f.write(f"{lig['name']},{lig['smiles']},{lig.get('sanitization_error', 'Unknown')}\n")
+        logger.info(f"Invalid ligands written to: {invalid_path}")
 
     # Protein + backend
     protein_preparer = ProteinPreparer(config['protein']['pdb_path'], output_dir, pH=config['protein']['pH'])

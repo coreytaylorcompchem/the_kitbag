@@ -210,7 +210,7 @@ class LigandPreparer:
 
             # Convert using Open Babel with Gasteiger charges
             cmd = ["obabel", str(sdf_path), "-O", str(pdbqt_path), "--partialcharge", "gasteiger"]
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
 
             pdbqt_paths.append(pdbqt_path)
 
