@@ -30,14 +30,13 @@ def active_learn_docking(backend, ligands, config, **kwargs):
     use_confs = config.get('options', {}).get('use_conformer_generation', True)
 
     for cycle in range(n_cycles):
-        logger.info(f"🔁 Active Learning Cycle {cycle + 1}/{n_cycles}")
+        logger.info(f">>>>>>>>>> Active Learning Cycle {cycle + 1}/{n_cycles} <<<<<<<<<<")
 
         # Select batch ligands that have not been scored yet
         current_batch = [ligands[i] for i in labeled_indices if ligands[i]['name'] not in scores]
 
         for ligand in current_batch:
             try:
-                # Run ligand prep tasks
                 get_task("standardise_ligand")(backend, ligand, config)
 
                 if use_confs:
@@ -45,8 +44,6 @@ def active_learn_docking(backend, ligands, config, **kwargs):
                     get_task("cluster_conformers")(backend, ligand, config)
 
                 get_task("convert_to_pdbqt")(backend, ligand, config)
-
-                # Dock (score extraction handled in workflow)
                 get_task("dock")(backend, ligand, config)
 
                 scores[ligand['name']] = ligand.get('score')
@@ -112,4 +109,3 @@ def active_learn_docking(backend, ligands, config, **kwargs):
     # Save docking scores at the end
     df = pd.DataFrame({'name': list(scores.keys()), 'score': list(scores.values())})
     df.to_csv(config['output_dir'] / "docking_scores.csv", index=False)
-    logger.info("✅ Active learning docking completed.")

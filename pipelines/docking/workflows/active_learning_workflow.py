@@ -105,3 +105,5 @@ def run(config_path: str):
         logger.info(f"Active learning docking scores saved to: {scores_csv}")
     else:
         logger.warning(f"No docking scores file found at {scores_csv}")
+    
+    logger.info("Active learning docking completed.")
