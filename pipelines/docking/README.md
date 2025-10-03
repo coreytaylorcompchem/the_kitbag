@@ -12,6 +12,7 @@ In this repo are workflows to dock compounds with various use cases (unbiased, c
 * [propka](https://propka.readthedocs.io/en/latest/)
 * [xtb](https://xtb-docs.readthedocs.io/en/latest/setup.html)
 * [fpocket](https://github.com/Discngine/fpocket)
+* [LightGBM](https://lightgbm.readthedocs.io/en/latest/Installation-Guide.html)
 * Most Python libs.
 
 See `environment.yml` for the rest. The list is indicative only, as this repo is under development.

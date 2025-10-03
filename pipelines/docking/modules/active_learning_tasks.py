@@ -2,8 +2,8 @@ import pandas as pd
 import random
 from pathlib import Path
 from sklearn.ensemble import RandomForestRegressor
+from lightgbm import LGBMRegressor
 from rdkit import Chem
-from rdkit.Chem import Descriptors
 import numpy as np
 
 from pipeline.task_registry import register_task, get_task
@@ -19,6 +19,9 @@ def active_learn_docking(backend, ligands, config, **kwargs):
     batch_size = al_config['batch_size']
     n_cycles = al_config['n_cycles']
     seed = al_config.get('seed', 42)
+    model_name = al_config.get('model', 'random_forest').lower()
+    sample_size = al_config.get('sample_size', 5000)
+
     random.seed(seed)
     np.random.seed(seed)
 
@@ -32,7 +35,7 @@ def active_learn_docking(backend, ligands, config, **kwargs):
     for cycle in range(n_cycles):
         logger.info(f">>>>>>>>>> Active Learning Cycle {cycle + 1}/{n_cycles} <<<<<<<<<<")
 
-        # Select batch ligands that have not been scored yet
+        # Select batch ligands to dock (those not already scored)
         current_batch = [ligands[i] for i in labeled_indices if ligands[i]['name'] not in scores]
 
         for ligand in current_batch:
@@ -47,7 +50,6 @@ def active_learn_docking(backend, ligands, config, **kwargs):
                 get_task("dock")(backend, ligand, config)
 
                 scores[ligand['name']] = ligand.get('score')
-
                 logger.info(f"Docked ligand {ligand['name']} with score: {ligand.get('score')}")
 
             except Exception as e:
@@ -55,7 +57,7 @@ def active_learn_docking(backend, ligands, config, **kwargs):
                 ligand['score'] = None
                 scores[ligand['name']] = None
 
-        # Train model on labeled data with valid scores
+        # Train model on labeled data
         X, y = [], []
         for idx in labeled_indices:
             lig = ligands[idx]
@@ -70,13 +72,28 @@ def active_learn_docking(backend, ligands, config, **kwargs):
             logger.warning("No valid labeled data to train model. Ending active learning.")
             break
 
-        model = RandomForestRegressor(random_state=seed)
-        model.fit(X, y)
+        X = np.array(X)
+        y = np.array(y)
 
-        # Predict on unlabeled ligands
+        if model_name == "random_forest":
+            model = RandomForestRegressor(random_state=seed, n_estimators=100)
+            model.fit(X, y)
+
+        elif model_name == "lightgbm":
+            model = LGBMRegressor(random_state=seed, n_estimators=100)
+            model.fit(X, y)
+
+        else:
+            raise ValueError(f"Unknown model specified in config: {model_name}")
+
+        # --- Subsample unlabeled pool ---
+        sample_size = min(sample_size, len(unlabeled_indices))
+        sampled_unlabeled_indices = random.sample(unlabeled_indices, sample_size)
+
         X_unlabeled = []
         unlabeled_map = {}
-        for idx in unlabeled_indices:
+
+        for idx in sampled_unlabeled_indices:
             mol = Chem.MolFromSmiles(ligands[idx]['smiles'])
             if mol is None:
                 continue
@@ -88,24 +105,37 @@ def active_learn_docking(backend, ligands, config, **kwargs):
             logger.info("No valid unlabeled ligands remaining. Stopping.")
             break
 
-        preds = model.predict(X_unlabeled)
-        uncertainty = np.std([t.predict(X_unlabeled) for t in model.estimators_], axis=0)
+        X_unlabeled = np.array(X_unlabeled)
 
-        # Acquisition based on uncertainty
+        # Predict + estimate uncertainty
+        if model_name == "random_forest":
+            preds = model.predict(X_unlabeled)
+            uncertainty = np.std([t.predict(X_unlabeled) for t in model.estimators_], axis=0)
+
+        elif model_name == "lightgbm":
+            preds_list = []
+            for i in range(5):  # Ensemble of 5
+                lgb_model = LGBMRegressor(random_state=seed + i, n_estimators=100)
+                lgb_model.fit(X, y)
+                preds_list.append(lgb_model.predict(X_unlabeled))
+            preds_array = np.array(preds_list)
+            preds = np.mean(preds_array, axis=0)
+            uncertainty = np.std(preds_array, axis=0)
+
+        # Acquisition: pick top uncertain
         acquisition = uncertainty
         selected_idx = np.argsort(-acquisition)[:batch_size]
         new_indices = [unlabeled_map[i] for i in selected_idx]
 
-        # Add new ligands to labeled set, remove from unlabeled
         labeled_indices.extend(new_indices)
         unlabeled_indices = list(set(unlabeled_indices) - set(new_indices))
 
         logger.info(f"Selected {len(new_indices)} new ligands for docking.")
 
-        if len(unlabeled_indices) == 0:
+        if not unlabeled_indices:
             logger.info("No more unlabeled ligands remaining. Ending active learning.")
             break
 
-    # Save docking scores at the end
+    # Save scores
     df = pd.DataFrame({'name': list(scores.keys()), 'score': list(scores.values())})
     df.to_csv(config['output_dir'] / "docking_scores.csv", index=False)
