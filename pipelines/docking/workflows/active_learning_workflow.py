@@ -14,7 +14,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_workflow("active_learning_docking", description="Active learning loop for docking.")
+@register_workflow("active_learning_docking", description="prepare, dock and score with Active Learning loop.")
 def run(config_path: str):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
