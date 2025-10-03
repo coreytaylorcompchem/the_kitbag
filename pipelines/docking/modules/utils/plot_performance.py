@@ -4,7 +4,7 @@ from pathlib import Path
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 
-def plot_performance(per_cycle_df, output_dir, sample_size=None, batch_size=None, baseline_df=None):
+def plot_performance(per_cycle_df, output_dir, sample_size=None, batch_size=None, baseline_df=None, acquisition_method=None):
     plt.figure(figsize=(10, 6))
 
     # Active learning plot
@@ -19,7 +19,7 @@ def plot_performance(per_cycle_df, output_dir, sample_size=None, batch_size=None
     # Title with optional parameters
     title = "Docking Score Distribution Over Active Learning Cycles"
     if sample_size is not None or batch_size is not None:
-        title += f"\n(Sample size = {sample_size}, Batch size = {batch_size})"
+        title += f"\n(Sample size = {sample_size}, Batch size = {batch_size}, Acquisition method = {acquisition_method})"
     plt.title(title)
 
     plt.ylabel("Docking Score (Lower is Better)")

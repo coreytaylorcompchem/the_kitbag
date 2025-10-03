@@ -215,7 +215,8 @@ def active_learn_docking(backend, ligands, config, **kwargs):
         output_dir=config['output_dir'],
         sample_size=sample_size,
         batch_size=batch_size,
-        baseline_df=baseline_df
+        baseline_df=baseline_df,
+        acquisition_method=acquisition_method
     )
 
     # Save overall docking scores (final)
