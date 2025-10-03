@@ -32,6 +32,9 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 ```
 Available Tasks:
+   [Active Learning]:
+    - active_learn_docking: Active learning loop over docking.
+       ↳ Backends: None
   [Docking]:
     - dock: Dock with backend specified.
        ↳ Backends: gnina, unidock
@@ -50,10 +53,12 @@ Available Tasks:
     - prepare_receptor_pdbqt: Prepare the receptor for docking. Format: pdbqt
        ↳ Backends: gnina, unidock
 Available Workflows:
- - constrained_docking: Prepare, dock and score with core constraints (WIP - may remove).
+ - active_learning_docking: Active learning loop for docking.
+ - constrained_docking: Prepare, dock and score with core constraints.
  - multi_pocket_docking: Dock ligands into top N pockets detected by fpocket.
- - multi_structure_docking: Dock ligands into multiple PDB structures using known ligand positions.
+ - multi_structure_docking: Dock ligands into multiple PDB structures.
  - vanilla_docking: Prepare, dock and score with no constraints.
+
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
