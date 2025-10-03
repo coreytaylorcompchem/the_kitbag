@@ -1,0 +1,41 @@
+task: workflow
+workflow_name: active_learning_docking  # workflows/active_learning_docking.py
+
+workflow:
+  - prepare_receptor_pdbqt
+  - active_learn_docking
+
+options:
+  use_conformer_generation: false
+
+backend:
+  name: gnina
+  executable_path: "/home/corey/local_software/gnina.1.3.2.cuda12.8"
+  use_gpu: true
+
+protein:
+  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
+  pH: 7.4
+
+generate_ligands_from_list: true
+ligands_txt: "ligs.txt"
+
+active_learning:
+  model: random_forest
+  n_initial: 2 # initial list of compounds to dock
+  batch_size: 2 # subsequent batches.
+  n_cycles: 2
+  scoring: docking_score
+  acquisition: uncertainty_sampling  # future option
+  seed: 42
+
+docking:
+  output_dir: "outputs/al_docking_output"
+  docking_mode: lowest_energy
+  final_n_conformers: 1
+  rmsd_threshold: 0.75
+  min_energy_gap: 0.5
+  n_output_binding_modes: 2
+  exhaustiveness: 8
+  use_crystal_ligand: true
+  size: [15.0, 15.0, 15.0]
