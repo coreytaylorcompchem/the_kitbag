@@ -3,3 +3,7 @@ ligand1,0,0,-5.28069162,0.562007904,output_multi_pocket_gnina/ligand1_conf0.pdbq
 ligand1,0,1,-5.18242407,0.542104244,output_multi_pocket_gnina/ligand1_conf0.pdbqt,output_multi_pocket_gnina/ligand1_conf0_pocket3_docked.sdf,3
 ligand2,0,0,-5.32757807,0.591158986,output_multi_pocket_gnina/ligand2_conf0.pdbqt,output_multi_pocket_gnina/ligand2_conf0_pocket3_docked.sdf,3
 ligand2,0,1,-5.36888742,0.539025664,output_multi_pocket_gnina/ligand2_conf0.pdbqt,output_multi_pocket_gnina/ligand2_conf0_pocket3_docked.sdf,3
+ligand1,0,0,-5.16210747,0.543741465,output_multi_pocket_gnina/ligand1_conf0.pdbqt,output_multi_pocket_gnina/ligand1_conf0_pocket3_docked.sdf,3
+ligand1,0,1,-4.73814583,0.522803307,output_multi_pocket_gnina/ligand1_conf0.pdbqt,output_multi_pocket_gnina/ligand1_conf0_pocket3_docked.sdf,3
+ligand2,0,0,-5.68945885,0.608511448,output_multi_pocket_gnina/ligand2_conf0.pdbqt,output_multi_pocket_gnina/ligand2_conf0_pocket3_docked.sdf,3
+ligand2,0,1,-4.72696781,0.594537377,output_multi_pocket_gnina/ligand2_conf0.pdbqt,output_multi_pocket_gnina/ligand2_conf0_pocket3_docked.sdf,3

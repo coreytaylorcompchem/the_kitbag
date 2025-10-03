@@ -48,6 +48,20 @@ def run(config_path: str):
     config["output_dir"] = output_dir
 
     # ----------------------
+    # Handle conformer generation flag
+    # ----------------------
+    options = config.get("options", {})
+    use_conformer_generation = options.get("use_conformer_generation", True)
+
+    workflow_steps = config.get("workflow", [])
+    if not use_conformer_generation:
+        logger.warning("⚠️  Conformer generation steps disabled - skipping.")
+        workflow_steps = [
+            step for step in workflow_steps
+            if step not in ("generate_conformers", "cluster_conformers", "save_final_conformers")
+        ]
+
+    # ----------------------
     # Ligands
     # ----------------------
     ligands_txt_path = Path(config.get('ligands_txt', 'ligands.txt'))
@@ -116,7 +130,7 @@ def run(config_path: str):
             logger.info(f"Processing ligand: {ligand['name']} against {pdb_path.name}")
             docking_outputs = []
 
-            for step in config.get("workflow", []):
+            for step in workflow_steps:  # <-- use filtered workflow steps here
                 task_func = get_task(step)
                 if not task_func:
                     raise ValueError(f"Workflow step '{step}' is not a registered task.")
@@ -170,13 +184,9 @@ def run(config_path: str):
                                 "docked_sdf": str(sdf_path),
                                 "structure": pdb_path.stem
                             })
-                
-                # Check there is valid docking output
-                logger.debug(score_rows)
-                
+
+                # Check if docking_scores.csv already exists
                 score_csv_path = pocket_dir / "docking_scores.csv"
-                
-                # Check if csv is already present 
 
                 if score_csv_path.exists():
                     if score_csv_path.stat().st_size > 0:
@@ -189,8 +199,6 @@ def run(config_path: str):
                     df = pd.DataFrame(score_rows)
 
                 df.to_csv(score_csv_path, index=False)
-
-
 
     # ----------------------
     # Summarise

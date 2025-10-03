@@ -9,6 +9,9 @@ workflow:
   - convert_to_pdbqt
   - dock
 
+options:
+  use_conformer_generation: false
+
 backend:
   name: unidock
   executable_path: "/usr/local/bin/unidock"

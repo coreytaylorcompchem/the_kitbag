@@ -5,6 +5,13 @@ from pathlib import Path
 
 from workflows import get_workflow, list_workflows
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(
+    __name__,
+    debug_mode=False,
+    simple_format=True
+)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run docking pipeline via dynamically selected workflow.")
@@ -24,7 +31,7 @@ def main():
     config_path = Path(args.params)
 
     if not config_path.exists():
-        print(f"[ERROR] Config file not found: {config_path}")
+        logger.error(f"Config file not found: {config_path}")
         sys.exit(1)
 
     with open(config_path, 'r') as f:
@@ -32,25 +39,25 @@ def main():
 
     workflow_name = config.get("workflow_name")
     if not workflow_name:
-        print("[ERROR] Config must include a 'workflow_name' key.")
+        logger.error("Config must include a 'workflow_name' key.")
         sys.exit(1)
 
     workflow_func = get_workflow(workflow_name)
     if workflow_func is None:
-        print(f"[ERROR] Unknown workflow: '{workflow_name}'")
-        print("Available workflows:")
+        logger.error(f"Unknown workflow: '{workflow_name}'")
+        logger.info("Available workflows:")
         for name in list_workflows():
-            print(f"  - {name}")
+            logger.info(f"  - {name}")
         sys.exit(1)
 
     if args.debug:
-        print(f"[DEBUG] Selected workflow: {workflow_name}")
-        print(f"[DEBUG] Config path: {config_path.resolve()}")
+        logger.debug(f"Selected workflow: {workflow_name}")
+        logger.debug(f"Config path: {config_path.resolve()}")
 
     try:
         workflow_func(str(config_path))
     except Exception as e:
-        print(f"[FATAL] Workflow '{workflow_name}' failed: {e}")
+        logger.error(f"[FATAL] Workflow '{workflow_name}' failed: {e}")
         sys.exit(1)
 
 

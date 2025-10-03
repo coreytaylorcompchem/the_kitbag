@@ -19242,9 +19242,9 @@ REMARK                         _______ _______ _______ _____ _____    ______ ___
 ROOT
 ATOM      1  N   UNL     2     -43.572-105.183  12.721  0.00  0.00    +0.210 N 
 ATOM      2  H   UNL     2     -42.552-105.183  12.721  0.00  0.00    +0.198 HD
-ATOM      3  H   UNL     2     -43.912-105.888  12.067  0.00  0.00    +0.198 HD
-ATOM      4  H   UNL     2     -43.912-104.264  12.437  0.00  0.00    +0.198 HD
-ATOM      5  H   UNL     2     -43.912-105.397  13.659  0.00  0.00    +0.198 HD
+ATOM      3  H   UNL     2     -43.912-105.607  11.858  0.00  0.00    +0.198 HD
+ATOM      4  H   UNL     2     -43.912-104.223  12.785  0.00  0.00    +0.198 HD
+ATOM      5  H   UNL     2     -43.912-105.718  13.520  0.00  0.00    +0.198 HD
 ENDROOT
 TORSDOF 0
 REMARK  Name = output_multi_structure_unidock/5YWY/protonated_openbabel.pdb
@@ -29543,7 +29543,7 @@ REMARK                         _______ _______ _______ _____ _____    ______ ___
 ROOT
 ATOM      1  O   HOH     5     -40.704-105.553  12.723  0.00  0.00    -0.410 OA
 ATOM      2  H   HOH     5     -39.734-105.553  12.723  0.00  0.00    +0.205 HD
-ATOM      3  H   HOH     5     -41.027-106.094  11.986  0.00  0.00    +0.205 HD
+ATOM      3  H   HOH     5     -41.027-106.200  12.076  0.00  0.00    +0.205 HD
 ENDROOT
 TORSDOF 0
 REMARK  Name = output_multi_structure_unidock/5YWY/protonated_openbabel.pdb

@@ -61,6 +61,20 @@ def run(config_path: str):
     logger.info("---------------------------------------------")
 
     # ----------------------
+    # Handle conformer generation flag
+    # ----------------------
+    options = config.get("options", {})
+    use_conformer_generation = options.get("use_conformer_generation", True)
+
+    workflow_steps = config.get("workflow", [])
+    if not use_conformer_generation:
+        logger.warning("⚠️  Conformer generation steps disabled - skipping.")
+        workflow_steps = [
+            step for step in workflow_steps
+            if step not in ("generate_conformers", "cluster_conformers", "save_final_conformers")
+        ]
+
+    # ----------------------
     # Ligand Input
     # ----------------------
     ligands_txt_path = Path(config.get('ligands_txt', 'ligands.txt'))
@@ -113,18 +127,18 @@ def run(config_path: str):
     for i, center in enumerate(pocket_centers):
         logger.info(f">>>>>>>>>> Docking into pocket {i+1}/{len(pocket_centers)} <<<<<<<<<<")
         config['docking']['center'] = center
-        config['docking']['size'] = [20, 20, 20]  # Could be dynamic later
+        config['docking']['size'] = [20, 20, 20]  # TODO: make dynamic later
 
         for ligand in ligands:
             logger.info(f"Processing ligand: {ligand['name']} for pocket {i+1}")
             docking_outputs = []
 
-            for step in config.get("workflow", []):
+            for step in workflow_steps:
                 task_func = get_task(step)
                 if not task_func:
                     raise ValueError(f"Workflow step '{step}' is not a registered task.")
                 result = task_func(backend, ligand, config, pocket_id=i+1)
-                
+
                 if isinstance(result, list):
                     docking_outputs.extend(result)
                 elif result:
@@ -180,7 +194,6 @@ def run(config_path: str):
     # ----------------------
     # Summarise & Plot
     # ----------------------
-    # build summary csv
     results_csv = output_dir / "multi_pocket_docking_summary.csv"
 
     all_scores = []
@@ -196,9 +209,7 @@ def run(config_path: str):
         logger.info(f"Saved docking summary to: {results_csv}")
     else:
         logger.warning("No docking scores found — summary CSV not created.")
-    
-    # plot the results
-    
+
     if config.get("plot_docking_results", True):
         plot_multi_pocket_scores(results_csv, output_dir)
     else:

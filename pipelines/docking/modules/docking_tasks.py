@@ -36,7 +36,7 @@ class ProteinPreparer:
         self.pdbqt_path = output_dir / f"{self.name}.pdbqt"
 
         if self.pdbqt_path.exists():
-            logger.info(f"Using existing receptor PDBQT at: {self.pdbqt_path}")
+            logger.debug(f"Using existing receptor PDBQT at: {self.pdbqt_path}")
             return self.pdbqt_path
 
         logger.info(f"Preparing receptor using Open Babel")
@@ -180,8 +180,16 @@ class LigandPreparer:
         self.conformers = [conf_id for conf_id, _ in self.conformer_energies]
 
     def convert_to_pdbqt(self, output_dir: Path, mode: str = "ensemble"):
+        if self.mol is None:
+            raise RuntimeError(f"[{self.name}] Molecule not initialised. Run standardise() before convert_to_pdbqt.")
+
+        # Fallback: if no conformers, generate one
         if not self.conformers:
-            raise RuntimeError("No conformers available to convert. Run generation and selection first.")
+            logger.debug(f"No conformers available — generating a single default conformer for {self.name}.")
+            conf_id = AllChem.EmbedMolecule(self.mol)
+            if conf_id < 0:
+                raise RuntimeError(f"Failed to embed 3D conformer for {self.name}.")
+            self.conformers = [conf_id]
 
         pdbqt_paths = []
 
@@ -224,7 +232,7 @@ def prepare_receptor_pdbqt(backend, ligand, config, **kwargs):
 def standardise_ligand(backend, ligand, config, **kwargs):
     preparer = get_ligand_preparer(backend, ligand)
     preparer.standardise()
-    logger.info(f"Standardised ligand {ligand['name']}.")
+    logger.debug(f"Standardised ligand {ligand['name']}.")
 
 @register_task("generate_conformers", 
                category='Ligand preparation',
@@ -268,7 +276,7 @@ def convert_to_pdbqt(backend, ligand, config, **kwargs):
     mode = config.get("docking", {}).get("mode", "ensemble")
     pdbqt_paths = preparer.convert_to_pdbqt(output_dir, mode=mode)
     ligand['pdbqt_paths'] = [str(p) for p in pdbqt_paths]
-    logger.info(f"Converted conformers to PDBQT for ligand: {ligand['name']}.")
+    logger.debug(f"Converted conformers to PDBQT for ligand: {ligand['name']}.")
 
 @register_task("dock", category='Docking', description="Dock with backend specified.")
 def dock(backend, ligand, config, **kwargs):
@@ -300,7 +308,7 @@ def dock(backend, ligand, config, **kwargs):
             logger.error(f"❌ Docking failed for {ligand['name']}: {e}")
 
     elif docking_mode == "ensemble":
-        logger.info(f"Docking ligand {ligand['name']} with {len(pdbqt_paths)} conformers...")
+        logger.debug(f"Docking ligand {ligand['name']} with {len(pdbqt_paths)} conformers...")
 
         for idx, pdbqt_path in enumerate(pdbqt_paths):
             ligand["pdbqt_path"] = pdbqt_path

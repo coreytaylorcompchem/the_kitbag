@@ -3,3 +3,7 @@ ligand1,0,0,-7.25,,output_multi_structure_unidock/5YWY/ligand1_conf0.pdbqt,outpu
 ligand1,0,1,-6.605,,output_multi_structure_unidock/5YWY/ligand1_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand1_conf0_docked.pdbqt,5YWY
 ligand2,0,0,-7.786,,output_multi_structure_unidock/5YWY/ligand2_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand2_conf0_docked.pdbqt,5YWY
 ligand2,0,1,-7.324,,output_multi_structure_unidock/5YWY/ligand2_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand2_conf0_docked.pdbqt,5YWY
+ligand1,0,0,-8.291,,output_multi_structure_unidock/5YWY/ligand1_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand1_conf0_docked.pdbqt,5YWY
+ligand1,0,1,-7.775,,output_multi_structure_unidock/5YWY/ligand1_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand1_conf0_docked.pdbqt,5YWY
+ligand2,0,0,-7.518,,output_multi_structure_unidock/5YWY/ligand2_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand2_conf0_docked.pdbqt,5YWY
+ligand2,0,1,-7.28,,output_multi_structure_unidock/5YWY/ligand2_conf0.pdbqt,output_multi_structure_unidock/5YWY/ligand2_conf0_docked.pdbqt,5YWY

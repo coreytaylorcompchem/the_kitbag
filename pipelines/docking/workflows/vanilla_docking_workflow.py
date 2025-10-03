@@ -136,14 +136,25 @@ def run(config_path: str):
         "dock"
     ])
 
+    # Handle optional conformer generation
+    options = config.get("options", {})
+    use_conformer_generation = options.get("use_conformer_generation", True)
+
+    if not use_conformer_generation:
+        logger.warning("⚠️  Conformer generation steps disabled - skipping.")
+        workflow_steps = [
+            step for step in workflow_steps
+            if step not in ("generate_conformers", "cluster_conformers", "save_final_conformers")
+        ]
+
     # Execute workflow per ligand
     for ligand in ligands:
-        logger.info(f"\nProcessing ligand: {ligand['name']}")
+        logger.debug(f"Processing ligand: {ligand['name']}")
         for step in workflow_steps:
             task_func = get_task(step)
             if not task_func:
                 raise ValueError(f"Workflow step '{step}' is not a registered task.")
-            logger.info(f"Running step: {step}")
+            logger.debug(f"Running step: {step}")
             task_func(backend, ligand, config)
 
-    logger.info("\nVanilla docking workflow completed.")
+    logger.info("Vanilla docking workflow completed.")
