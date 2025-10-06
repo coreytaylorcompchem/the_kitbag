@@ -1,6 +1,6 @@
 from modules import load_all_tasks
 from workflows import list_workflows, get_workflow_metadata, load_all_workflows
-#from backends import list_backends # later
+from backends import list_backends, discover_backends # later
 from pipeline.task_registry import list_tasks, get_task_metadata
 
 import sys
@@ -21,6 +21,11 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 def print_pipeline_capabilities():
     load_all_tasks()
     load_all_workflows()
+    discover_backends()
+
+    logger.info("\nAvailable Backends:")
+    for backend in list_backends():
+        logger.info(f" - {backend}")
 
     logger.info("Available Tasks:")
 

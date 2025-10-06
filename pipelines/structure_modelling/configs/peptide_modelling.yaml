@@ -3,20 +3,16 @@ workflow_name: peptide_modelling
 
 workflow:
   - build_peptide
-  - minimise_peptide
+  - generate_peptide_conformers
+  # - optimise_peptide_conformers
+  - analyse_peptide_flexibility
+  - plot_peptide_flexibility
 
 backend:
-  name: build_peptide         # or colabfold
+  name: peptidebuilder
 
-peptide:
+build_peptide:
   sequence_file: "data/peptides.txt"
-
-minimization:
-  engine: openmm
-  method: steepest_descent
-  steps: 5000
-  platform: cpu
-  forcefield: amber14-all.xml
-  implicit_solvent: true
+  cap_termini: true
 
 output_dir: "outputs/peptide_modelling"

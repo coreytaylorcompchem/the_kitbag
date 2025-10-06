@@ -13,20 +13,36 @@ def run(config: dict):
     config["output_dir"] = output_dir
 
     backend_name = config["backend"]["name"]
-    if backend_name != "build_peptide":
+    
+    peptide_cfg = config.get("build_peptide", {})
+    sequence_file = peptide_cfg.get("sequence_file")
+    cap_termini = peptide_cfg.get("cap_termini", True)
+
+    if backend_name == "peptidebuilder":
+        backend = PeptideBuilderBackend(
+            sequence_file=sequence_file,
+            output_dir=output_dir,
+            cap_termini=cap_termini,
+        )
+    else:
         raise ValueError(f"Unsupported backend: {backend_name}")
 
-    minimization_cfg = config.get("minimization", {})
-    peptide_cfg = config.get("peptide", {})
-    sequence_file = peptide_cfg.get("sequence_file")
-
-    backend = PeptideBuilderBackend(sequence_file=sequence_file, output_dir=output_dir, minimization_cfg=minimization_cfg)
+    # New: context stores intermediate outputs
+    context = {}
 
     for step in config.get("workflow", []):
         logger.info(f"Running task: {step}")
         task_func = get_task(step)
         if not task_func:
             raise ValueError(f"Unknown task: {step}")
-        task_func(backend, config)
+
+        # Pass previous task results via context
+        result = task_func(backend, config, **context)
+
+        # Store outputs from relevant tasks for later use
+        if step in {"generate_peptide_conformers", "optimise_peptide_conformers"}:
+            context["energy_map"] = result
+        elif step == "analyse_peptide_flexibility":
+            context["flexibility"] = result
 
     logger.info("Peptide modelling workflow complete.")
