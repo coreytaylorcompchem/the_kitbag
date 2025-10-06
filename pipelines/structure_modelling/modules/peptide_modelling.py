@@ -6,6 +6,7 @@ import math
 import collections
 import csv
 import logging
+import shutil
 
 from pathlib import Path
 import numpy as np
@@ -32,6 +33,8 @@ def generate_conformers(backend, config, **kwargs):
     conf_dir = Path(config["output_dir"]) / "conformers"
     conf_dir.mkdir(parents=True, exist_ok=True)
 
+    num_confs = config.get("generate_peptide_conformers", {}).get("number_of_conformers", 100)
+
     results = {}
     energy_map = {}
 
@@ -50,7 +53,7 @@ def generate_conformers(backend, config, **kwargs):
         params.pruneRmsThresh = -1.0
         params.numThreads = 10
 
-        ids = AllChem.EmbedMultipleConfs(mol, numConfs=100, params=params)
+        ids = AllChem.EmbedMultipleConfs(mol, numConfs=num_confs, params=params)
         logger.info(f"[{name}] Generated {len(ids)} conformers.")
 
         conformer_paths = []
@@ -251,6 +254,16 @@ def analyse_flexibility(backend, config, **kwargs):
             ])
 
     logger.info(f"Saved flexibility summary: {csv_path}")
+    
+    # cleanup conformers directory
+    conf_dir = Path(config["output_dir"]) / "conformers"
+    if config.get("cleanup", False) and conf_dir.exists():
+        try:
+            shutil.rmtree(conf_dir)
+            logger.info(f"Cleaned up conformers directory: {conf_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up conformers directory: {e}")
+        
     return summary
 
 

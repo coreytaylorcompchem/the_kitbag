@@ -15,4 +15,8 @@ build_peptide:
   sequence_file: "data/peptides.txt"
   cap_termini: true
 
+generate_peptide_conformers:
+  number_of_conformers: 100 # 50 - 100 should sample enough conformers
+
 output_dir: "outputs/peptide_modelling"
+cleanup: true
