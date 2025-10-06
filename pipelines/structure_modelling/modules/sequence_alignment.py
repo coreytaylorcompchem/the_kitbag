@@ -1,5 +1,5 @@
 from Bio import pairwise2
-from Bio.pairwise2 import format_alignment
+# from Bio.pairwise2 import format_alignment
 from Bio.Seq import Seq
 from Bio.Align import substitution_matrices
 
