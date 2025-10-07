@@ -1,3 +1,5 @@
+import csv
+
 import pandas as pd
 import subprocess
 from pathlib import Path
@@ -15,7 +17,6 @@ def write_mmpdb_inputs(df, output_prefix, smiles_col="smiles", id_col="id", prop
 
     smi_path = output_prefix.with_suffix(".smi")
     with open(smi_path, "w") as f:
-        # f.write("smiles\tid\n")  # header required for mmpdb
         for _, row in df.iterrows():
             smi = row.get(smiles_col)
             mol_id = row.get(id_col)
@@ -39,51 +40,74 @@ def write_mmpdb_inputs(df, output_prefix, smiles_col="smiles", id_col="id", prop
 
     return smi_path, prop_path
 
-def run_transform(smiles, mmpdb_file):
+def run_transform(mmpdb_file, smiles, property_name):
     cmd = [
         "mmpdb", "transform",
         str(mmpdb_file),
         "--smiles", smiles,
-        "--property", "property"
+        "--property", property_name
     ]
+
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        lines = result.stdout.strip().splitlines()
-        # Remove header line if present
-        if lines and lines[0].startswith("smiles"):
-            lines = lines[1:]
-        return "\n".join(lines)
+        output_lines = result.stdout.strip().splitlines()
+        # Add property name to each line to identify property in merged output
+        # But mmpdb output usually includes headers already, so careful to only add to data lines
+        # Let's just return raw output and handle header outside
+        return property_name, smiles, output_lines
     except subprocess.CalledProcessError as e:
-        logger.warning(f"[!] Transform command failed for SMILES {smiles}")
+        logger.warning(f"[!] Transform failed for SMILES {smiles} with property {property_name}")
         logger.debug(e.stderr)
-        return None
+        return property_name, smiles, None
 
 @register_task("mmp_analysis", category="Analysis", description="Matched Molecular Pair (MMP) analysis via mmpdb")
 def mmp_analysis(config, data=None):
+    import csv
+    import subprocess
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    import pandas as pd
+    from pathlib import Path
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     input_file = config.get("input_file")
     activity_col = config.get("activity_col", "pActivity")
     output_dir = Path(config.get("output", {}).get("directory", "outputs/mmp"))
     output_dir.mkdir(parents=True, exist_ok=True)
-    out_filename = config.get("output", {}).get("filename", Path(input_file).stem + "_mmp.csv")
+    out_filename = config.get("output", {}).get("filename", Path(input_file).stem + "_mmp.tsv")
 
     df = pd.read_csv(input_file)
     df = df.dropna(subset=["smiles", activity_col])
 
-    # Rename activity column to "property" as required by mmpdb
+    # Recode toxic and reactive flags to numeric 0/1 if present
+    if 'toxic_flag' in df.columns:
+        df['toxic_flag'] = df['toxic_flag'].map({'N': 0, 'Y': 1})
+    if 'reactive_flag' in df.columns:
+        df['reactive_flag'] = df['reactive_flag'].map({'N': 0, 'Y': 1})
+
+    # Rename activity column to "property" for mmpdb as required
     df = df.rename(columns={activity_col: "property"})
+
+    props_cols = ["property", "mw", "logp", "hbd", "hba", "rotatable_bonds", "tpsa", "qed", "stereocenters"]
+    if 'toxic_flag' in df.columns:
+        props_cols.append("toxic_flag")
+    if 'reactive_flag' in df.columns:
+        props_cols.append("reactive_flag")
 
     smi_path, prop_csv_path = write_mmpdb_inputs(
         df,
         output_prefix=output_dir / "temp_input",
         smiles_col="smiles",
         id_col="id",
-        props_cols=["property"]
+        props_cols=props_cols
     )
 
     fragdb = output_dir / "temp.fragdb"
     mmpdb_file = output_dir / "temp.mmpdb"
     transform_out = output_dir / out_filename
 
+    # Run fragment and index steps
     cmd1 = ["mmpdb", "fragment", str(smi_path), "-o", str(fragdb)]
     cmd2 = ["mmpdb", "index", str(fragdb), "--properties", str(prop_csv_path), "-o", str(mmpdb_file)]
 
@@ -95,22 +119,50 @@ def mmp_analysis(config, data=None):
 
     smiles_list = df["smiles"].tolist()
 
-    results = []
+    all_results = []
+    header_line = None
+
     with ProcessPoolExecutor() as executor:
-        futures = {executor.submit(run_transform, smi, mmpdb_file): smi for smi in smiles_list}
+        futures = []
+        for prop in props_cols:
+            for smi in smiles_list:
+                futures.append(executor.submit(run_transform, mmpdb_file, smi, prop))
+
         for future in as_completed(futures):
-            res = future.result()
-            if res:
-                results.append(res)
+            prop, smi, output_lines = future.result()
+            if output_lines:
+                if header_line is None:
+                    header_line = output_lines[0]
+
+                for line in output_lines[1:]:
+                    if line.strip():
+                        all_results.append({
+                            "property": prop,
+                            "smiles": smi,
+                            "data": line
+                        })
             else:
-                logger.warning(f"[!] Transform failed for SMILES: {futures[future]}")
+                logger.warning(f"[!] No output for SMILES {smi} with property {prop}")
 
-    # Write combined output with one header and all data rows
-    with open(transform_out, "w") as fout:
-        fout.write("\n".join(results))
-        fout.write("\n")
+    if header_line is None:
+        raise RuntimeError("No MMP transform results generated.")
 
-    result_df = pd.read_csv(transform_out)
+    columns = ["property", "smiles"] + header_line.strip().split("\t")
+
+    rows = []
+    for res in all_results:
+        row_fields = res["data"].strip().split("\t")
+        row = [res["property"], res["smiles"]] + row_fields
+        rows.append(row)
+
+    with open(transform_out, "w", newline="") as fout:
+        writer = csv.writer(fout, delimiter="\t")
+        writer.writerow(columns)
+        writer.writerows(rows)
+
+    result_df = pd.read_csv(transform_out, sep="\t")
     logger.info(f"MMP: got {len(result_df)} transform rows")
 
     return (Path(input_file).stem, result_df)
+
+
