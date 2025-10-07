@@ -8,6 +8,7 @@ workflow_parallel:
   - physchem_filtering
 workflow_serial:
   - mmp_analysis
+  - mmp_report
 
 basic_lipinski:
   mw_cutoff: 450
@@ -19,6 +20,9 @@ physchem:
   tpsa_cutoff: 140
   qed_cutoff: 0.4
   stereocenters_cutoff: 2
+mmp_report:
+  min_count: 10
+  significance_level: 0.05
 
 output:
   directory: outputs/mmp
