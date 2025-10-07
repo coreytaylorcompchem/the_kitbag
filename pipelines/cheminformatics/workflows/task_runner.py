@@ -287,7 +287,7 @@ def dynamic_task_runner(config):
         combined_df = pd.DataFrame()
 
     logger.info(f"Combined dataframe shape: {combined_df.shape}")
-    logger.info(f"Combined dataframe columns: {combined_df.columns.tolist()}")
+    logger.debug(f"Combined dataframe columns: {combined_df.columns.tolist()}")
 
     final_csv = output_dir / config.get("output", {}).get("filename", "final_output.csv")
 

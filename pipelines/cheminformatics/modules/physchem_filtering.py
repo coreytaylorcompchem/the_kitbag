@@ -3,6 +3,8 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors, AllChem, rdMolDescriptors
 from rdkit.Chem.QED import qed
 from pipeline.logger import setup_logger
+
+from tqdm import tqdm
 from pathlib import Path
 import pandas as pd
 
@@ -122,7 +124,6 @@ def basic_lipinski(config, data=None):
 
     return (input_path.stem, filtered_df)
 
-
 @register_task("physchem_filtering", category="Filtering", description="Physchem filtering with mandatory and optional cutoffs + conformer generation")
 def physchem_filtering(config, data=None):
     input_file = config.get("input_file")
@@ -139,10 +140,16 @@ def physchem_filtering(config, data=None):
     mandatory_cutoffs = config.get("mandatory_cutoffs", {})
     optional_cutoffs = config.get("optional_cutoffs", {})
 
-    accepted_props = []
+    accepted_rows = []
     mols = []
 
-    for idx, row in df.iterrows():
+    use_progress = "chunk_size" not in config  # ✅ Only show progress bar if not chunked
+
+    iterator = df.iterrows()
+    if use_progress:
+        iterator = tqdm(iterator, total=len(df), desc="Processing molecules")
+
+    for idx, row in iterator:
         smi = row.get("smiles")
         if not smi or pd.isna(smi):
             continue
@@ -154,28 +161,34 @@ def physchem_filtering(config, data=None):
 
         props = compute_physchem(mol)
 
-        # Check mandatory cutoffs
-        if not all(props.get(k, float('inf')) <= mandatory_cutoffs.get(k, float('inf')) for k in MANDATORY_KEYS):
+        if not all(props.get(k, float("inf")) <= mandatory_cutoffs.get(k, float("inf")) for k in MANDATORY_KEYS):
             continue
 
-        # Filter out None from optional cutoffs and apply
         filtered_optional_cutoffs = {k: v for k, v in optional_cutoffs.items() if v is not None}
-        if not all(props.get(k, float('inf')) <= v for k, v in filtered_optional_cutoffs.items()):
+        if not all(props.get(k, float("inf")) <= v for k, v in filtered_optional_cutoffs.items()):
             continue
 
         conf_mol = generate_conformer(mol)
         if conf_mol is None:
             continue
 
-        mols.append(conf_mol)
-        accepted_props.append(props)
+        row_data = row.to_dict()
+        combined = {**row_data, **props}
 
-    if not accepted_props:
+        accepted_rows.append(combined)
+        mols.append(conf_mol)
+
+        if use_progress:
+            iterator.set_postfix({"accepted": len(accepted_rows)})
+
+    if not accepted_rows:
         logger.debug("No molecules passed filters or conformer generation.")
-        empty_df = pd.DataFrame(columns=list(MANDATORY_KEYS) + list(OPTIONAL_KEYS) + ["smiles"])
+        all_columns = list(df.columns) + list(MANDATORY_KEYS) + list(OPTIONAL_KEYS)
+        all_columns = list(dict.fromkeys(all_columns))  # remove duplicates
+        empty_df = pd.DataFrame(columns=all_columns)
         return (input_path.stem, empty_df)
 
-    output_df = pd.DataFrame(accepted_props)
+    output_df = pd.DataFrame(accepted_rows)
     logger.debug(f"physchem_filtering: {len(output_df)} molecules passed filters and conformer generation.")
 
     output_dir = Path(config.get("output", {}).get("directory", "."))

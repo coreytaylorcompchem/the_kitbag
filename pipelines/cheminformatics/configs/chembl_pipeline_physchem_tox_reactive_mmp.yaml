@@ -1,12 +1,13 @@
 workflow_name: dynamic_task_runner
 
-input_file: data/class_a_gpcr_bioactivity_small.csv
-chunk_size: 10
+input_file: data/class_a_gpcr_bioactivity_with_date_test.csv
+chunk_size: 100
 
 workflow_parallel:
   - basic_lipinski_filtering
   - physchem_filtering
-  - toxic_reactive_filtering
+workflow_serial:
+  - mmp_analysis
 
 basic_lipinski:
   mw_cutoff: 450
@@ -19,11 +20,9 @@ physchem:
   qed_cutoff: 0.4
   stereocenters_cutoff: 2
 
-toxic_reactive_file: data/toxic_reactive.csv
-
 output:
-  directory: outputs/physchem
-  filename: class_a_gpcr_physchem_tox_filtered.csv
+  directory: outputs/mmp
+  filename: class_a_gpcr_physchem_tox_filtered_mmp.csv
   overwrite: true
 
 cleanup: true  # deletes intermediate steps after success
