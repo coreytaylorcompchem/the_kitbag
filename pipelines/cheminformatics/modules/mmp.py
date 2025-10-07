@@ -69,15 +69,14 @@ def run_transform(mmpdb_file, smiles, property_name):
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         output_lines = result.stdout.strip().splitlines()
         # Add property name to each line to identify property in merged output
-        # But mmpdb output usually includes headers already, so careful to only add to data lines
-        # Let's just return raw output and handle header outside
+        # mmpdb is painful to use hereso we need to call the program on each SMILES and aggregate.
         return property_name, smiles, output_lines
     except subprocess.CalledProcessError as e:
         logger.warning(f"[!] Transform failed for SMILES {smiles} with property {property_name}")
         logger.debug(e.stderr)
         return property_name, smiles, None
 
-@register_task("mmp_analysis", category="Analysis", description="Matched Molecular Pair (MMP) analysis via mmpdb")
+@register_task("mmp_analysis", category="Project-based analyses", description="Matched Molecular Pair (MMP) analysis.")
 def mmp_analysis(config, data=None):
     input_file = config.get("input_file")
     activity_col = config.get("activity_col", "pActivity")
@@ -189,7 +188,7 @@ def mol_to_img(smiles, img_size=(100, 100)):
     img = Draw.MolToImage(mol, size=img_size)
     return img
 
-@register_task("mmp_report", category="Analysis", description="Generate MMP transform summary plots and tables")
+@register_task("mmp_report", category="Project-based analyses", description="Generate MMP transform summary plots and tables.")
 def mmp_report(config, data=None):
 
     def mol_to_img(smiles, size=(200, 100)):

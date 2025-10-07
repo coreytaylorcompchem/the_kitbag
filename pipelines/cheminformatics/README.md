@@ -42,6 +42,12 @@ Available Tasks:
     - mmp_rule_learning: Learn BRICS‑based transformation rules from actives
   [Prediction]:
     - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, A->B (Papp)) from SMILES using PyTorch models
+  [Project-based analyses]:
+    - mmp_analysis: Matched Molecular Pair (MMP) analysis.
+    - mmp_report: Generate MMP transform summary plots and tables.
+
+Available Workflows:
+ - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
