@@ -76,7 +76,7 @@ def run_transform(mmpdb_file, smiles, property_name):
         logger.debug(e.stderr)
         return property_name, smiles, None
 
-@register_task("mmp_analysis", category="Project-based analyses", description="Matched Molecular Pair (MMP) analysis.")
+@register_task("mmp_analysis", category="Project-based analyses", description="Matched Molecular Pairs (mmpdb).")
 def mmp_analysis(config, data=None):
     input_file = config.get("input_file")
     activity_col = config.get("activity_col", "pActivity")

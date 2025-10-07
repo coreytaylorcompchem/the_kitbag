@@ -26,6 +26,7 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 `python list_available_tasks_and_workflows.py`
 
 ```
+
 Available Tasks:
   [Filtering]:
     - activity_filtering: Filter molecules based on activity cutoff
@@ -43,7 +44,7 @@ Available Tasks:
   [Prediction]:
     - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, A->B (Papp)) from SMILES using PyTorch models
   [Project-based analyses]:
-    - mmp_analysis: Matched Molecular Pair (MMP) analysis.
+    - mmp_analysis: Matched Molecular Pairs (mmpdb).
     - mmp_report: Generate MMP transform summary plots and tables.
 
 Available Workflows:
