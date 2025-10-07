@@ -44,11 +44,10 @@ class XTBBackend(BaseBackend):
             if not opt_file.exists():
                 raise FileNotFoundError("xtbopt.xyz not found after optimisation.")
 
-            # Read optimised structure
             with open(opt_file) as f:
                 optimised_xyz = f.read()
 
-            # Read total energy
+        
             energy = None
             if out_file.exists():
                 with open(out_file) as f:

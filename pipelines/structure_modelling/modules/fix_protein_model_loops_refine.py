@@ -48,7 +48,7 @@ def fix_residues(backend, config, **kwargs):
 
     backend = ModellerBackend(pdb_path, n_loop_models=n_loop_models, loop_refinement=loop_refinement, output_dir=output_dir)
 
-    chain_id = "A" # hardcoded - add this to yaml
+    chain_id = "A" # hardcoded - TODO: add this to yaml
     chain_selection = modeller.Selection(backend.model)
     for res in backend.model.residues:
         if res.chain == chain_id:

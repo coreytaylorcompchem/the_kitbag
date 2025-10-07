@@ -13,14 +13,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-# from Bio.PDB import PDBParser, Polypeptide
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdMolAlign, rdMolTransforms
 from rdkit.Chem.rdForceFieldHelpers import MMFFGetMoleculeForceField, MMFFGetMoleculeProperties
 
 from modules.utils.utils import calc_rmsd, is_rotor_bond
+from pipeline.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 @register_task("build_peptide", category="Peptide modelling", description="Build peptides from sequence file")
 def build_peptide(backend, config, **kwargs):
@@ -28,7 +28,9 @@ def build_peptide(backend, config, **kwargs):
     results = backend.run()
     return results
 
-@register_task("generate_peptide_conformers", category="Peptide modelling", description="Generate peptide conformers and MMFF energies")
+@register_task("generate_peptide_conformers", 
+               category="Peptide modelling", 
+               description="Generate and minimise (MMFF) peptide conformers.")
 def generate_conformers(backend, config, **kwargs):
     conf_dir = Path(config["output_dir"]) / "conformers"
     conf_dir.mkdir(parents=True, exist_ok=True)
@@ -83,7 +85,6 @@ def generate_conformers(backend, config, **kwargs):
         sdf_writer.close()
         results[name] = conformer_paths
 
-    # Save energies for debugging
     energy_file = Path(config["output_dir"]) / "mmff_energies.txt"
     with open(energy_file, "w") as f:
         f.write("Conformer\tEnergy\n")
@@ -93,12 +94,14 @@ def generate_conformers(backend, config, **kwargs):
     return energy_map
 
 
-@register_task("analyse_peptide_flexibility", category="Peptide modelling", description="Compute peptide flexibility metrics")
+@register_task("analyse_peptide_flexibility", 
+               category="Peptide modelling", 
+               description="Compute peptide flexibility metrics.")
 def analyse_flexibility(backend, config, **kwargs):
 
     logger = logging.getLogger(__name__)
 
-    kT = 0.592  # kcal/mol at room temp (~298K)
+    kT = 0.592  # kcal/mol at RT
     energy_map = kwargs.get("energy_map", {})
     if not energy_map:
         raise ValueError("Missing energy map for analysis.")
@@ -106,13 +109,12 @@ def analyse_flexibility(backend, config, **kwargs):
     output_dir = Path(config["output_dir"])
     grouped = collections.defaultdict(list)
 
-    # Group conformers by peptide
     for conf_name, energy in energy_map.items():
         peptide_name = conf_name.split("_conf_")[0]
         grouped[peptide_name].append((conf_name, energy))
 
     def get_dihedral_indices(mol):
-        """Identify rotatable dihedrals as tuples of 4 atom indices."""
+        """Identify rotatable dihedrals."""
         dihedrals = []
         for bond in mol.GetBonds():
             if not is_rotor_bond(bond):
@@ -151,7 +153,7 @@ def analyse_flexibility(backend, config, **kwargs):
 
         logger.info(f"{peptide_name} flexibility (Boltzmann entropy): {entropy:.3f} kcal/mol")
 
-        # Load conformers from SDF
+        # Load conformers from SDF (annoying Rdkit workaround)
         sdf_path = output_dir / "conformers" / f"{peptide_name}.sdf"
         if not sdf_path.exists():
             logger.warning(f"SDF file not found for {peptide_name}")
@@ -163,11 +165,9 @@ def analyse_flexibility(backend, config, **kwargs):
             logger.warning(f"No valid molecules found in {sdf_path}")
             continue
 
-        # Pick minimum energy conformer as reference
         min_index = np.argmin(energies)
         ref_mol = mols[min_index]
 
-        # Calculate RMSDs using GetBestRMS (no in-place modification)
         rmsds = []
         for mol in mols:
             try:
@@ -179,7 +179,6 @@ def analyse_flexibility(backend, config, **kwargs):
         rmsds = np.array(rmsds)
         mean_rmsd = np.average(rmsds, weights=boltzmann_weights)
 
-        # PCA on coordinates
         coords = np.array([mol.GetConformer().GetPositions() for mol in mols])  # (n_confs, n_atoms, 3)
         flat_coords = coords.reshape((len(coords), -1))  # (n_confs, n_atoms * 3)
         flat_coords -= flat_coords.mean(axis=0)
@@ -197,7 +196,7 @@ def analyse_flexibility(backend, config, **kwargs):
                 angles = [rdMolTransforms.GetDihedralDeg(conf, *indices) for indices in dihedral_indices]
                 dihedral_angles.append(angles)
 
-            dihedral_angles = np.array(dihedral_angles)  # shape (num_confs, num_dihedrals)
+            dihedral_angles = np.array(dihedral_angles)  
             angles_rad = np.deg2rad(dihedral_angles)
 
             sin_vals = np.sin(angles_rad)
@@ -213,7 +212,6 @@ def analyse_flexibility(backend, config, **kwargs):
         else:
             dihedral_var = float("nan")
 
-        # Save Boltzmann stats
         out_file = output_dir / f"{peptide_name}_boltzmann_weights.txt"
         np.savetxt(out_file,
                    np.column_stack((conformer_names, energies, boltzmann_weights)),
@@ -221,7 +219,7 @@ def analyse_flexibility(backend, config, **kwargs):
 
         summary[peptide_name] = {
             "entropy": entropy,
-            "normalized_entropy": 0.0,  # placeholder, will be updated below
+            "normalised_entropy": 0.0,  
             "weights": dict(zip(conformer_names, boltzmann_weights.tolist())),
             "num_confs": len(conformer_names),
             "mean_rmsd": mean_rmsd,
@@ -229,7 +227,6 @@ def analyse_flexibility(backend, config, **kwargs):
             "dihedral_var": dihedral_var,
         }
 
-    # Normalize entropy
     entropies = [v["entropy"] for v in summary.values()]
     max_entropy = max(entropies) if entropies else 1.0
 
@@ -237,12 +234,12 @@ def analyse_flexibility(backend, config, **kwargs):
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Peptide", "Entropy (kcal/mol)", "Normalized Entropy", "Num Conformers",
+            "Peptide", "Entropy (kcal/mol)", "Normalised Entropy", "Num Conformers",
             "Mean RMSD", "PCA Variance (Top 3)", "Dihedral Angle Variance"
         ])
         for pep, data in summary.items():
             norm_entropy = data["entropy"] / max_entropy if max_entropy else 0.0
-            data["normalized_entropy"] = norm_entropy
+            data["normalised_entropy"] = norm_entropy
             writer.writerow([
                 pep,
                 f"{data['entropy']:.4f}",
@@ -265,8 +262,6 @@ def analyse_flexibility(backend, config, **kwargs):
             logger.warning(f"Failed to clean up conformers directory: {e}")
         
     return summary
-
-
 
 @register_task("plot_peptide_flexibility", category="Peptide modelling", description="Plot flexibility data")
 def plot_flexibility(backend, config, **kwargs):

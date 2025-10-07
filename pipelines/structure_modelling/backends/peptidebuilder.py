@@ -27,31 +27,26 @@ from openmm.app import PDBFile, Modeller, ForceField
 from openmm.unit import nanometer
 from pdbfixer import PDBFixer
 
-def add_caps(peptide_pdb_path, output_pdb_path):
-    # Load the peptide using PDBFixer
+def add_caps(peptide_pdb_path, output_pdb_path): # only hydrogen at this point
     fixer = PDBFixer(filename=peptide_pdb_path)
 
-    # Try to detect and fix missing parts
     fixer.findMissingResidues()
     fixer.findMissingAtoms()
     fixer.addMissingAtoms()
 
-    # Add hydrogens and use neutral terminal patches
+    
     fixer.addMissingHydrogens(pH=7.0)
-    fixer.addMissingTerminals = True  # Enable neutral capping
-
-    # Convert to OpenMM objects
+    fixer.addMissingTerminals = True  
     modeller = Modeller(fixer.topology, fixer.positions)
 
-    # Use a standard force field for compatibility
     forcefield = ForceField('amber14-all.xml', 'amber14/tip3p.xml')
-    modeller.addHydrogens(forcefield)  # Ensure Hs are consistent with FF
+    modeller.addHydrogens(forcefield)  
 
-    # Save final capped structure
+    # Save capped structure
     with open(output_pdb_path, 'w') as out_file:
         PDBFile.writeFile(modeller.topology, modeller.positions, out_file)
 
-SECONDARY_STRUCTURES = {
+SECONDARY_STRUCTURES = { # not really used yet, just to get a starting structure that won't break things later.
     'alpha_helix': {'phi': -57.0, 'psi': -47.0},
     'beta_sheet': {'phi': -139.0, 'psi': 135.0},
     'polyproline_II': {'phi': -75.0, 'psi': 145.0},

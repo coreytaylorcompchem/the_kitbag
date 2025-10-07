@@ -6,7 +6,8 @@ from pipeline.task_registry import get_task
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_workflow("peptide_modelling", description="Build and minimise peptides.")
+@register_workflow("peptide_modelling", 
+                   description="Build, minimise peptides and calculate metrics.")
 def run(config: dict):
     output_dir = Path(config.get("output_dir", "output"))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -27,7 +28,6 @@ def run(config: dict):
     else:
         raise ValueError(f"Unsupported backend: {backend_name}")
 
-    # New: context stores intermediate outputs
     context = {}
 
     for step in config.get("workflow", []):
@@ -36,10 +36,8 @@ def run(config: dict):
         if not task_func:
             raise ValueError(f"Unknown task: {step}")
 
-        # Pass previous task results via context
         result = task_func(backend, config, **context)
 
-        # Store outputs from relevant tasks for later use
         if step in {"generate_peptide_conformers", "optimise_peptide_conformers"}:
             context["energy_map"] = result
         elif step == "analyse_peptide_flexibility":
