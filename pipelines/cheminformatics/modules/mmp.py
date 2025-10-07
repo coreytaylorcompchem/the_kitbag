@@ -10,6 +10,8 @@ from matplotlib.cbook import get_sample_data
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
+import numpy as np
+from PIL import Image
 import seaborn as sns
 import networkx as nx
 import pandas as pd
@@ -144,7 +146,7 @@ def mmp_analysis(config, data=None):
                 if header_line is None:
                     header_line = output_lines[0]
 
-                # Get the real/original property name (e.g., pActivity)
+                # Get the real/original property name (hack)
                 real_prop_name = prop_name_map.get(prop, prop)
 
                 for line in output_lines[1:]:
@@ -178,6 +180,7 @@ def mmp_analysis(config, data=None):
 
     return (Path(input_file).stem, result_df)
 
+############### Plotting helper
 
 def mol_to_img(smiles, img_size=(100, 100)):
     mol = Chem.MolFromSmiles(smiles)
@@ -202,11 +205,6 @@ def mmp_report(config, data=None):
 
     df = pd.read_csv(input_file, sep='\t')
 
-    # Rename 'property' column to actual name if applicable
-    property_name = config.get("property", "pActivity")
-    if 'property' in df.columns:
-        df.rename(columns={'property': property_name}, inplace=True)
-
     min_count = config.get("min_count", 10)
     significance_level = config.get("significance_level", 0.05)
 
@@ -217,42 +215,65 @@ def mmp_report(config, data=None):
     mol_images_from = {smi: mol_to_img(smi) for smi in pd.unique(df_filtered['property_from_smiles'])}
     mol_images_to = {smi: mol_to_img(smi) for smi in pd.unique(df_filtered['property_to_smiles'])}
 
-    # --- 3. Heatmap ---
-    heatmap_df = df_filtered.groupby(['property_from_smiles', 'property_to_smiles']).agg({
+    # --- 3. Multi-Property Heatmap from Long Format ---
+
+    # 1. Create transform label
+    df_filtered['transform_label'] = df_filtered['property_from_smiles'] + " → " + df_filtered['property_to_smiles']
+
+    # 2. Aggregate per transform + all properties as set in the MMP analysis
+    agg_df = df_filtered.groupby(['transform_label', 'property']).agg({
         'property_avg': 'mean',
         'property_count': 'sum'
     }).reset_index()
-    heatmap_df = heatmap_df[heatmap_df['property_count'] >= min_count]
-    heatmap_df = heatmap_df.sort_values('property_avg', ascending=False)
 
-    n_transforms = len(heatmap_df)
+    # 3. Filter by min_count as set in the yaml
+    agg_df = agg_df[agg_df['property_count'] >= min_count]
 
-    fig = plt.figure(figsize=(10, max(6, n_transforms * 0.4)))
-    gs = gridspec.GridSpec(1, 2, width_ratios=[1, 3], wspace=0.05)
+    # 4. Pivot to wide
+    pivot_df = agg_df.pivot(index='property', columns='transform_label', values='property_avg')
+
+    # 5. Normalise each row (property) to z-score for comparability
+    pivot_df = pivot_df.apply(lambda row: (row - row.mean()) / row.std(ddof=0) if row.std(ddof=0) > 0 else row - row.mean(), axis=1)
+
+    # 6. Plotting - dynamically resize
+    n_properties = len(pivot_df)
+    n_transforms = pivot_df.shape[1]
+
+    fig_width = max(10, n_transforms * 0.4)
+    fig_height = max(4, n_properties * 0.8)
+
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[1, 4], wspace=0.05)
 
     ax_imgs = fig.add_subplot(gs[0])
     ax_heatmap = fig.add_subplot(gs[1])
 
-    # Plot heatmap
-    heatmap_values = heatmap_df['property_avg'].to_frame()
     sns.heatmap(
-        heatmap_values.T,
+        pivot_df,
         cmap='RdYlGn',
         center=0,
-        annot=True,
-        cbar_kws={"label": "Avg Property Change"},
-        yticklabels=False,
-        xticklabels=False,
-        ax=ax_heatmap
+        cbar_kws={"label": "Avg Property Change (z-score)"},
+        yticklabels=True,
+        xticklabels=False,  # We'll set custom ticks below
+        ax=ax_heatmap,
+        vmin=-2, vmax=2
     )
+
+    # Add integer index labels to x-axis
+    ax_heatmap.set_xticks(np.arange(n_transforms) + 0.5)
+    ax_heatmap.set_xticklabels([str(i) for i in range(n_transforms)], rotation=90, fontsize=8)
+
     ax_heatmap.set_xlabel("Transform Index")
     ax_heatmap.set_ylabel("")
 
-    # Plot images with arrow
-    for i, row in enumerate(heatmap_df.itertuples()):
-        from_img = mol_images_from.get(row.property_from_smiles)
-        to_img = mol_images_to.get(row.property_to_smiles)
+    # 8. Add molecule images with arrows
+    transform_labels = pivot_df.columns.tolist()
+    transform_smiles = [label.split(" → ") for label in transform_labels]
+    for i, (from_smiles, to_smiles) in enumerate(transform_smiles):
+        from_img = mol_images_from.get(from_smiles)
+        to_img = mol_images_to.get(to_smiles)
         y_pos = n_transforms - i - 1
+
         if from_img:
             ax_imgs.imshow(from_img, extent=(0, 0.4, y_pos + 0.1, y_pos + 0.9), aspect='auto')
         if to_img:
@@ -263,9 +284,10 @@ def mmp_report(config, data=None):
     ax_imgs.set_ylim(0, n_transforms)
     ax_imgs.axis('off')
 
-    plt.suptitle(f"Average Property Change per Transform (Count ≥ {min_count})", fontsize=14)
-    heatmap_file = output_dir / "mmp_transform_heatmap_structures.png"
-    plt.savefig(heatmap_file, bbox_inches='tight')
+    # 9. Save
+    plt.suptitle(f"Multi-Property Change per Transform (Count ≥ {min_count})", fontsize=14)
+    heatmap_file = output_dir / "mmp_transform_multi_property_heatmap.png"
+    plt.savefig(heatmap_file, bbox_inches='tight', dpi=300)
     plt.close()
 
     # --- 4. Network plot with images ---
@@ -297,7 +319,7 @@ def mmp_report(config, data=None):
     plt.savefig(network_file, bbox_inches='tight')
     plt.close()
 
-    # --- 5. Normalized histograms per property ---
+    # --- 5. Normalised histograms per property --- (needs work)
     prop_cols = [
         col for col in df_filtered.columns
         if (col.startswith('property_delta') or col == 'property_avg')
@@ -337,10 +359,10 @@ def mmp_report(config, data=None):
     top_improving.to_csv(top_improving_file, index=False)
     top_detrimental.to_csv(top_detrimental_file, index=False)
 
-    print("Top 10 Improving Transforms:")
-    print(top_improving[['property_from_smiles', 'property_to_smiles', 'property_avg']])
-    print("\nTop 10 Detrimental Transforms:")
-    print(top_detrimental[['property_from_smiles', 'property_to_smiles', 'property_avg']])
+    logger.debug("Top 10 Improving Transforms:")
+    logger.debug(top_improving[['property_from_smiles', 'property_to_smiles', 'property_avg']])
+    logger.debug("\nTop 10 Detrimental Transforms:")
+    logger.debug(top_detrimental[['property_from_smiles', 'property_to_smiles', 'property_avg']])
 
     return {
         "heatmap_png": str(heatmap_file),
