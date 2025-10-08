@@ -7,10 +7,12 @@ workflow_parallel:
   - basic_lipinski_filtering
   - physchem_filtering
 workflow_serial:
+  - physchem_property_drift 
+  - druglikeness_indices_trend
   - chemical_space_drift
   - scaffold_enrichment_trends
   - sar_cliff_analysis
-  - mmp_analysis # for now make, sure these are run last. Need to fix.
+  - mmp_analysis # for now: make sure these are run last; they use output from physchem but overwrite results (need to fix).
   - mmp_report
 
 basic_lipinski:
@@ -24,6 +26,16 @@ physchem:
   tpsa_cutoff: 140
   qed_cutoff: 0.4
   stereocenters_cutoff: 2
+
+physchem_property_drift:
+  date_col: publication_date
+  rolling_window: 4
+  output_dir: outputs/mmp/physchem_drift
+
+druglikeness_indices_trend:
+  date_col: publication_date
+  rolling_window: 4
+  output_dir: outputs/mmp/druglikeness_trends
 
 chemical_space_drift:
   fp_type: ecfp4
@@ -52,7 +64,7 @@ sar_cliff:
   delta_threshold: 1.0  # property difference threshold to call a “cliff”
   max_pairs: 500000
   output_dir: outputs/mmp/sar_cliffs
-  
+
 mmp_report:
   min_count: 10
   significance_level: 0.05

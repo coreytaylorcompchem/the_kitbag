@@ -44,8 +44,10 @@ Available Tasks:
     - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, A->B (Papp)) from SMILES using PyTorch models
   [Project-based analyses]:
     - chemical_space_drift: Track week-to-week evolution of chemical space via (UMAP / t-SNE).
+    - druglikeness_indices_trend: Calculate QED, MPO, CNS MPO trends and alert on drops in drug-likeness.
     - mmp_analysis: Matched Molecular Pairs (mmpdb).
     - mmp_report: Generate MMP transform summary plots and tables.
+    - physchem_property_drift: Monitor property balance and drift over time (MW, clogP, TPSA, etc.).
     - sar_cliff_analysis: Identify and visualise activity cliffs.
     - scaffold_enrichment_trends: Track scaffold enrichment trends over time.
 

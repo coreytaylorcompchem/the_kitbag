@@ -18,7 +18,7 @@ import seaborn as sns
 import networkx as nx
 import pandas as pd
 from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem, Draw
+from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, QED
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from mpl_toolkits.axes_grid1 import ImageGrid
@@ -75,8 +75,10 @@ def run_transform(mmpdb_file, smiles, property_name):
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         output_lines = result.stdout.strip().splitlines()
+
         # Add property name to each line to identify property in merged output
         # mmpdb is painful to use here so we need to call the program on each SMILES and aggregate.
+
         return property_name, smiles, output_lines
     except subprocess.CalledProcessError as e:
         logger.warning(f"[!] Transform failed for SMILES {smiles} with property {property_name}")
@@ -104,8 +106,7 @@ def mmp_analysis(config, data=None):
     df = df.rename(columns={activity_col: "property"})
 
     # Define property columns to process
-    # props_cols = ["property", "mw"]
-    props_cols = ["property", "mw", "logp", "hbd", "hba", "rotatable_bonds", "tpsa", "qed", "stereocenters"]
+    props_cols = ["property", "mw", "logp", "hbd", "hba", "rotatable_bonds", "tpsa", "qed", "stereocenters"] # TODO: add to yaml
     if 'toxic_flag' in df.columns:
         props_cols.append("toxic_flag")
     if 'reactive_flag' in df.columns:
@@ -123,7 +124,7 @@ def mmp_analysis(config, data=None):
     mmpdb_file = output_dir / "temp.mmpdb"
     transform_out = output_dir / out_filename
 
-    # Run mmpdb fragment/index
+    # Run mmpdb fragment/index in separate commands (!)
     cmd1 = ["mmpdb", "fragment", str(smi_path), "-o", str(fragdb)]
     cmd2 = ["mmpdb", "index", str(fragdb), "--properties", str(prop_csv_path), "-o", str(mmpdb_file)]
 
@@ -186,7 +187,7 @@ def mmp_analysis(config, data=None):
 
     return (Path(input_file).stem, result_df)
 
-############### Plotting helper
+############### Plotting helper for mmp_report
 
 def mol_to_img(smiles, img_size=(100, 100)):
     mol = Chem.MolFromSmiles(smiles)
@@ -204,7 +205,7 @@ def mmp_report(config, data=None):
             return Draw.MolToImage(mol, size=size)
         return None
 
-    # --- 1. Setup ---
+    # 1. Setup 
     input_file = config.get("input_file")
     output_dir = Path(config.get("output", {}).get("directory", "outputs/mmp_report"))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -217,13 +218,12 @@ def mmp_report(config, data=None):
     df_filtered = df[df['property_count'] >= min_count].copy()
     df_filtered['transform_label'] = df_filtered['property_from_smiles'] + " → " + df_filtered['property_to_smiles']
 
-    # --- 2. Structure image caching ---
+    #  2. Structure image caching 
     mol_images_from = {smi: mol_to_img(smi) for smi in pd.unique(df_filtered['property_from_smiles'])}
     mol_images_to = {smi: mol_to_img(smi) for smi in pd.unique(df_filtered['property_to_smiles'])}
 
-    # --- 3. Multi-Property Heatmap from Long Format ---
-
-    # 1. Create transform label
+    #  3. Multi-Property Heatmap from Long Format 
+    # 1. Create transform plot labels
     df_filtered['transform_label'] = df_filtered['property_from_smiles'] + " → " + df_filtered['property_to_smiles']
 
     # 2. Aggregate per transform + all properties as set in the MMP analysis
@@ -241,7 +241,7 @@ def mmp_report(config, data=None):
     # 5. Normalise each row (property) to z-score for comparability
     pivot_df = pivot_df.apply(lambda row: (row - row.mean()) / row.std(ddof=0) if row.std(ddof=0) > 0 else row - row.mean(), axis=1)
 
-    # 6. Plotting - dynamically resize
+    # 6. Plotting
     n_properties = len(pivot_df)
     n_transforms = pivot_df.shape[1]
 
@@ -265,7 +265,7 @@ def mmp_report(config, data=None):
         vmin=-2, vmax=2
     )
 
-    # Add integer index labels to x-axis
+    # Add integer index labels to x-axis (another hack)
     ax_heatmap.set_xticks(np.arange(n_transforms) + 0.5)
     ax_heatmap.set_xticklabels([str(i) for i in range(n_transforms)], rotation=90, fontsize=8)
 
@@ -290,13 +290,12 @@ def mmp_report(config, data=None):
     ax_imgs.set_ylim(0, n_transforms)
     ax_imgs.axis('off')
 
-    # 9. Save
     plt.suptitle(f"Multi-Property Change per Transform (Count ≥ {min_count})", fontsize=14)
     heatmap_file = output_dir / "mmp_transform_multi_property_heatmap.png"
     plt.savefig(heatmap_file, bbox_inches='tight', dpi=300)
     plt.close()
 
-    # --- 4. Network plot with images --- (needs work)
+    #  4. Network plot with images (needs work)
     sig_df = df_filtered[df_filtered['property_p_value'] < significance_level]
 
     G = nx.DiGraph()
@@ -325,7 +324,7 @@ def mmp_report(config, data=None):
     plt.savefig(network_file, bbox_inches='tight')
     plt.close()
 
-    # --- 5. Normalised histograms per property --- (needs work)
+    #  5. Normalised histograms per property (needs work)
     prop_cols = [
         col for col in df_filtered.columns
         if (col.startswith('property_delta') or col == 'property_avg')
@@ -355,7 +354,7 @@ def mmp_report(config, data=None):
     plt.savefig(hist_file)
     plt.close()
 
-    # --- 6. Top transform tables ---
+    #  6. Top transform tables 
     top_improving = df_filtered.sort_values('property_avg', ascending=False).head(10)
     top_detrimental = df_filtered.sort_values('property_avg', ascending=True).head(10)
 
@@ -415,7 +414,7 @@ def pairwise_similarity(args):
                description="Identify and visualise activity cliffs.")
 def sar_cliff_analysis(config, data=None):
 
-    # --- 1. Configuration ---
+    #  1. Load configs
     input_file = config.get("input_file")
 
     sar_cliff_cfg = config.get("sar_cliff", {})    
@@ -429,18 +428,18 @@ def sar_cliff_analysis(config, data=None):
     output_dir = Path(sar_cliff_cfg.get("output_dir", "outputs/sar_cliffs"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"[SAR Cliff] Loading input file: {input_file}")
+    logger.debug(f"[SAR Cliff] Loading input file: {input_file}")
     df = pd.read_csv(input_file)
     df = df.dropna(subset=["smiles", activity_col])
     df = df.reset_index(drop=True)
 
-    # --- 2. Fingerprint computation ---
-    logger.info("[SAR Cliff] Computing fingerprints...")
+    #  2. Fingerprint computation 
+    logger.debug("[SAR Cliff] Computing fingerprints...")
     df["fps"] = [compute_fingerprint(smi, fp_type, fp_radius, fp_nbits) for smi in df["smiles"]]
     df = df[df["fps"].notna()]
 
-    # --- 3. Pairwise similarity in parallel ---
-    logger.info(f"[SAR Cliff] Computing pairwise similarities (cutoff={similarity_cutoff})...")
+    #  3. Pairwise similarity in parallel 
+    logger.debug(f"[SAR Cliff] Computing pairwise similarities (cutoff={similarity_cutoff})...")
 
     tasks = [
         (i, row["smiles"], row["fps"], df, similarity_cutoff, delta_threshold, activity_col)
@@ -458,12 +457,12 @@ def sar_cliff_analysis(config, data=None):
     cliff_df.sort_values("delta_activity", ascending=False, inplace=True)
     logger.info(f"[SAR Cliff] Found {len(cliff_df)} cliff pairs (Δ≥{delta_threshold}, sim≥{similarity_cutoff}).")
 
-    # --- 4. Save raw results ---
+    #  4. Save
     output_csv = output_dir / "sar_cliff_pairs.csv"
     cliff_df.to_csv(output_csv, index=False)
     logger.info(f"[SAR Cliff] Results saved to: {output_csv}")
 
-    # --- 5. Visualization ---
+    #  5. Visualise
     if not cliff_df.empty:
         plt.figure(figsize=(8, 6))
         sns.scatterplot(
@@ -504,7 +503,7 @@ def sar_cliff_analysis(config, data=None):
             img_path = output_dir / f"top_cliff_{i+1}.png"
             img.save(img_path)
 
-        # Summary CSV
+        # Save
         top_csv = output_dir / "top_10_sar_cliffs.csv"
         top_cliffs.to_csv(top_csv, index=False)
         logger.info(f"[SAR Cliff] Top 10 cliffs written to: {top_csv}")
@@ -523,7 +522,7 @@ try:
     import umap
 except ImportError:
     umap = None
-    warnings.warn("UMAP not installed. Falling back to t-SNE for dimensionality reduction.")
+    logger.warning("UMAP not installed. Falling back to t-SNE for dimensionality reduction.")
 
 
 @register_task(
@@ -534,7 +533,7 @@ except ImportError:
 def chemical_space_drift(config, data=None):
     """Visualize chemical space evolution colored by time or activity."""
 
-    # --- 1. Configuration ---
+    # 1. Load configs
     task_conf = config.get("chemical_space_drift", {})
     input_file = config.get("input_file")
     output_dir = Path(task_conf.get("output_dir", "outputs/chem_space"))
@@ -547,9 +546,9 @@ def chemical_space_drift(config, data=None):
     date_col = task_conf.get("date_col", "date")
     color_by = task_conf.get("color_by", "week")
 
-    logger.info("[ChemicalSpaceDrift] Starting task...")
+    logger.debug("[ChemicalSpaceDrift] Starting task...")
 
-    # --- 2. Load input ---
+    # 2. Load inputs
     df = None
     if data is not None:
         # Case 1: Tuple
@@ -565,22 +564,22 @@ def chemical_space_drift(config, data=None):
         elif isinstance(data, pd.DataFrame):
             df = data
 
-    # Fallback to CSV input
+    # Fallback to CSV
     if df is None and input_file and Path(input_file).exists():
         df = pd.read_csv(input_file)
 
     if df is None or not isinstance(df, pd.DataFrame):
         raise TypeError(f"[ChemicalSpaceDrift] Expected DataFrame input, got {type(df)}")
 
-    logger.info(f"[ChemicalSpaceDrift] Data loaded with {len(df)} rows and {len(df.columns)} columns.")
+    logger.debug(f"[ChemicalSpaceDrift] Data loaded with {len(df)} rows and {len(df.columns)} columns.")
 
-    # --- 3. Locate SMILES column ---
+    #  3. Which columns is SMILES? Let's give options and hope I don't accidentally mess this up later... 
     smiles_col = next((c for c in ["smiles", "SMILES", "canonical_smiles"] if c in df.columns), None)
     if smiles_col is None:
         raise KeyError(f"[ChemicalSpaceDrift] No 'smiles' column found. Available: {list(df.columns)}")
 
-    # --- 4. Generate fingerprints ---
-    logger.info(f"[ChemicalSpaceDrift] Generating Morgan fingerprints (radius={fp_radius}, nBits={fp_nbits})...")
+    #  4. Generate fingerprints 
+    logger.debug(f"[ChemicalSpaceDrift] Generating Morgan fingerprints (radius={fp_radius}, nBits={fp_nbits})...")
     fps = []
     for smi in tqdm(df[smiles_col], desc="Computing fingerprints"):
         mol = Chem.MolFromSmiles(str(smi))
@@ -593,7 +592,7 @@ def chemical_space_drift(config, data=None):
         fps.append(arr)
     fps = np.array(fps)
 
-    # --- 5. Dimensionality reduction ---
+    #  5. Dimensionality reduction 
     X = StandardScaler().fit_transform(fps)
     if reducer_type == "tsne" or umap is None:
         reducer = TSNE(n_components=2, random_state=42, perplexity=30)
@@ -602,16 +601,16 @@ def chemical_space_drift(config, data=None):
         reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
         method = "UMAP"
 
-    logger.info(f"[ChemicalSpaceDrift] Performing {method} reduction...")
+    logger.debug(f"[ChemicalSpaceDrift] Performing {method} reduction...")
     embedding = reducer.fit_transform(X)
     df["x"], df["y"] = embedding[:, 0], embedding[:, 1]
 
-    # --- 6. Handle time grouping ---
+    #  6. Handle time grouping 
     if date_col in df.columns:
         df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
         df["week"] = df[date_col].dt.strftime("%Y-%U")
 
-        # Optional trimming to most recent N weeks
+        # Specify to most recent N weeks from yaml
         recent_weeks = task_conf.get("recent_weeks", 12)
         unique_weeks = sorted(df["week"].dropna().unique())
         if len(unique_weeks) > recent_weeks:
@@ -622,7 +621,7 @@ def chemical_space_drift(config, data=None):
     else:
         df["week"] = "unknown"
 
-    # --- 7. Visualization ---
+    #  7. Visualisation 
     color_label = color_by if color_by in df.columns else (
         activity_col if activity_col in df.columns else "week"
     )
@@ -641,14 +640,12 @@ def chemical_space_drift(config, data=None):
     plt.savefig(plot_path, dpi=300)
     plt.close()
 
-    # --- 8. Export data ---
     emb_csv = output_dir / "chemical_space_embedding.csv"
     df.to_csv(emb_csv, index=False)
     logger.info(f"[ChemicalSpaceDrift] Results saved: {emb_csv}")
 
     logger.info(f"[ChemicalSpaceDrift] Plot saved: {plot_path}")
 
-    # --- 9. Return dictionary of artifacts (like sar_cliff_analysis) ---
     return {
         "embedding_csv": str(emb_csv),
         "projection_plot": str(plot_path),
@@ -664,7 +661,7 @@ def chemical_space_drift(config, data=None):
 def scaffold_enrichment_trends(config, data=None):
     """Compute weekly scaffold enrichment trends."""
 
-    # --- 1. Config ---
+    # 1. Load config
     task_conf = config.get("scaffold_enrichment_trends", {})
     input_file = config.get("input_file")
     output_dir = Path(task_conf.get("output_dir", "outputs/scaffold_enrichment"))
@@ -675,7 +672,6 @@ def scaffold_enrichment_trends(config, data=None):
 
     logger.info("[ScaffoldEnrichment] Starting task...")
 
-    # --- 2. Load input ---
     df = None
     if data is not None:
         if isinstance(data, tuple) and len(data) == 2 and isinstance(data[1], pd.DataFrame):
@@ -696,7 +692,6 @@ def scaffold_enrichment_trends(config, data=None):
 
     logger.info(f"[ScaffoldEnrichment] Data loaded with {len(df)} rows and {len(df.columns)} columns.")
 
-    # --- 3. Locate SMILES column ---
     smiles_col = next((c for c in ["smiles", "SMILES", "canonical_smiles"] if c in df.columns), None)
     if smiles_col is None:
         raise KeyError(f"[ScaffoldEnrichment] No 'smiles' column found. Available: {list(df.columns)}")
@@ -708,8 +703,8 @@ def scaffold_enrichment_trends(config, data=None):
         df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
         df["week"] = df[date_col].dt.strftime("%Y-%U")
 
-    # --- 4. Compute Bemis–Murcko scaffolds ---
-    logger.info("[ScaffoldEnrichment] Computing Murcko scaffolds...")
+    # 2. Bemis–Murcko scaffolds
+    logger.debug("[ScaffoldEnrichment] Computing Murcko scaffolds...")
     scaffolds = []
     for smi in tqdm(df[smiles_col], desc="Extracting scaffolds"):
         mol = Chem.MolFromSmiles(str(smi))
@@ -728,8 +723,8 @@ def scaffold_enrichment_trends(config, data=None):
         logger.warning("[ScaffoldEnrichment] No valid scaffolds found.")
         return None
 
-    # --- 5. Weekly scaffold stats ---
-    logger.info("[ScaffoldEnrichment] Aggregating weekly scaffold statistics...")
+    #  3. Weekly scaffold stats 
+    logger.debug("[ScaffoldEnrichment] Aggregating weekly scaffold statistics...")
     agg_df = (
         df_valid.groupby(["week", "scaffold"])
         .agg(
@@ -739,11 +734,10 @@ def scaffold_enrichment_trends(config, data=None):
         .reset_index()
     )
 
-    # Identify change vs previous week
     agg_df["prev_mean"] = agg_df.groupby("scaffold")["mean_activity"].shift(1)
     agg_df["delta_mean"] = agg_df["mean_activity"] - agg_df["prev_mean"]
 
-    # --- 6. Identify improving / declining scaffolds ---
+    #  4. Identify improving / declining scaffolds
     latest_week = agg_df["week"].dropna().unique()
     latest_week = sorted(latest_week)[-1] if len(latest_week) else None
 
@@ -754,7 +748,6 @@ def scaffold_enrichment_trends(config, data=None):
     else:
         top_improving = top_declining = pd.DataFrame()
 
-    # --- 7. Save outputs ---
     trends_csv = output_dir / "scaffold_trends.csv"
     agg_df.to_csv(trends_csv, index=False)
 
@@ -763,8 +756,8 @@ def scaffold_enrichment_trends(config, data=None):
     top_improving.to_csv(improving_csv, index=False)
     top_declining.to_csv(declining_csv, index=False)
 
-    # --- 8. Visualization ---
-    image_zoom = 0.4  # hardcoding size of 2D structures for the plots 
+    # 5. Visualisation
+    image_zoom = 0.4  # hardcoding size of 2D structures for the plots. Might need to adjust.
 
     top_n = task_conf.get("top_n_scaffolds", 8)
     top_scaffolds = (
@@ -778,7 +771,6 @@ def scaffold_enrichment_trends(config, data=None):
     plt.figure(figsize=(10, 6))
     ax = plt.gca()
 
-    # Prepare scaffold images
     scaffold_imgs = {}
     for smi in top_scaffolds:
         mol = Chem.MolFromSmiles(smi)
@@ -798,7 +790,7 @@ def scaffold_enrichment_trends(config, data=None):
         except ValueError:
             return xtick_positions[-1]
 
-    # Split scaffolds into multi-point and single-point sets
+    # Split scaffolds into multi-point and single-point sets, depending on how many data points there are.
     multi_point_scaffolds = []
     single_point_scaffolds = []
     for scaffold in top_scaffolds:
@@ -820,11 +812,11 @@ def scaffold_enrichment_trends(config, data=None):
             ax=ax,
         )
 
-    # Remove default legend if present
+    # Remove default legend if present (hack)
     if ax.legend_:
         ax.legend_.remove()
 
-    # --- Add images for line plots at the far right of the plot ---
+    # Add images for line plots at the far right of the plot 
     x_left, x_right = ax.get_xlim()
     x_offset = (x_right - x_left) * 0.1  # move 10% beyond plot limit
     y_min, y_max = ax.get_ylim()
@@ -834,11 +826,10 @@ def scaffold_enrichment_trends(config, data=None):
         scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
         if scaffold_data.empty:
             continue
-        # new position for the scaffold image (further right)
+
         y_pos = y_max - (i + 1) * y_spacing
         x_img = x_right + x_offset
 
-        # place scaffold image
         img = scaffold_imgs.get(scaffold)
         if img:
             imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
@@ -848,7 +839,7 @@ def scaffold_enrichment_trends(config, data=None):
             )
             ax.add_artist(ab)
 
-    # --- Plot single data points with pastel scatter colors ---
+    #  Plot single data points with pastel scatter colors 
     if single_point_scaffolds:
         pastel_palette = sns.color_palette("Pastel1", n_colors=len(single_point_scaffolds))
         for color, scaffold in zip(pastel_palette, single_point_scaffolds):
@@ -860,10 +851,10 @@ def scaffold_enrichment_trends(config, data=None):
             y = scaffold_data["mean_activity"].iloc[0]
             x = get_x_position(x_raw)
 
-            # Plot single point
+            # Plot single point data frame
             ax.scatter(x, y, s=60, color=color, edgecolor='black', zorder=5)
 
-            # Add scaffold image slightly above the point
+            # Add scaffold image slightly above each point
             img = scaffold_imgs.get(scaffold)
             if img:
                 imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
@@ -873,7 +864,6 @@ def scaffold_enrichment_trends(config, data=None):
                 )
                 ax.add_artist(ab)
 
-    # Expand limits to fit right-hand images fully
     ax.set_xlim(x_left, x_right + x_offset * 2)
 
     plt.title(f"Top {top_n} Scaffold Enrichment Trends (mean {activity_col})")
@@ -890,11 +880,150 @@ def scaffold_enrichment_trends(config, data=None):
     logger.info(f"[ScaffoldEnrichment] Trends saved to: {trends_csv}")
     logger.info(f"[ScaffoldEnrichment] Plot saved to: {trend_plot}")
 
-    # --- 9. Return dictionary of outputs ---
     return {
         "trends_csv": str(trends_csv),
         "top_improving_csv": str(improving_csv),
         "top_declining_csv": str(declining_csv),
         "trend_plot": str(trend_plot),
         "n_valid_scaffolds": len(df_valid)
+    }
+
+@register_task("physchem_property_drift", category="Project-based analyses",
+               description="Monitor property balance and drift over time (MW, clogP, TPSA, etc.).")
+def physchem_property_drift(config, data=None):
+    """
+    Track trends in key physicochemical properties across weekly design cycles.
+    """
+
+    # 1. Load configs
+    input_file = config.get("input_file")
+    drift_cfg = config.get("physchem_property_drift", {})
+
+    date_col = drift_cfg.get("date_col", "publication_date")
+    output_dir = Path(drift_cfg.get("output_dir", "outputs/physchem_drift"))
+    rolling_window = drift_cfg.get("rolling_window", 4)  # e.g. 4 weeks
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"[PhysChem Drift] Loading input file: {input_file}")
+    df = pd.read_csv(input_file)
+    df = df.dropna(subset=["smiles", date_col])
+    df[date_col] = pd.to_datetime(df[date_col])
+
+    #  2. Calculate properties 
+    logger.debug("[PhysChem Drift] Calculating basic properties...")
+    mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
+
+    # Manual list - perhaps we should automate or select in the yaml
+
+    df["MW"] = [Descriptors.MolWt(m) if m else np.nan for m in mols]
+    df["clogP"] = [Crippen.MolLogP(m) if m else np.nan for m in mols]
+    df["TPSA"] = [rdMolDescriptors.CalcTPSA(m) if m else np.nan for m in mols]
+    df["HBD"] = [rdMolDescriptors.CalcNumHBD(m) if m else np.nan for m in mols]
+    df["HBA"] = [rdMolDescriptors.CalcNumHBA(m) if m else np.nan for m in mols]
+    df["Fsp3"] = [rdMolDescriptors.CalcFractionCSP3(m) if m else np.nan for m in mols]
+
+    # 3. Weekly aggregation
+    df["week"] = df[date_col].dt.to_period("W").apply(lambda r: r.start_time)
+    props = ["MW", "clogP", "TPSA", "HBD", "HBA", "Fsp3"]
+    agg = df.groupby("week")[props].mean().rolling(window=rolling_window, min_periods=1).mean()
+
+    #  4. Trend visualisation 
+    logger.info("[PhysChem Drift] Plotting property trends...")
+    plt.figure(figsize=(10, 6))
+    for p in ["MW", "clogP", "TPSA"]:
+        plt.plot(agg.index, agg[p], marker='o', label=p)
+    plt.legend()
+    plt.title("Rolling Property Trends")
+    plt.xlabel("Week")
+    plt.ylabel("Mean Property (Rolling Avg)")
+    plt.grid(True)
+    trend_file = output_dir / "property_trends.png"
+    plt.savefig(trend_file, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    deltas = {}
+    if len(agg) > 1:
+        latest = agg.iloc[-1]
+        prev = agg.iloc[-2]
+        deltas = (latest - prev).to_dict()
+        # if abs(deltas.get("clogP", 0)) > 0.2:
+        #     logger.warning(f"[PhysChem Drift] Average clogP changed {deltas['clogP']:+.2f} this week – watch hydrophobicity!")
+
+    # --- 6. Save summary ---
+    summary_file = output_dir / "property_drift_summary.csv"
+    agg.to_csv(summary_file)
+    logger.info(f"[PhysChem Drift] Summary saved to: {summary_file}")
+
+    return {
+        "trend_plot": str(trend_file),
+        "summary_csv": str(summary_file),
+        "property_changes": deltas,
+    }
+
+@register_task("druglikeness_indices_trend", category="Project-based analyses",
+               description="Calculate QED, MPO, CNS MPO trends and alert on drops in drug-likeness.")
+def druglikeness_indices_trend(config, data=None):
+    """
+    Calculate and monitor drug-likeness indices (QED, MPO, CNS MPO) over time.
+    """
+    # 1. Load config
+    input_file = config.get("input_file")
+    dl_cfg = config.get("druglikeness_indices_trend", {})
+
+    date_col = dl_cfg.get("date_col", "publication_date")
+    output_dir = Path(dl_cfg.get("output_dir", "outputs/druglikeness_trends"))
+    rolling_window = dl_cfg.get("rolling_window", 4)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"[Drug-likeness Trend] Loading input file: {input_file}")
+    df = pd.read_csv(input_file)
+    df = df.dropna(subset=["smiles", date_col])
+    df[date_col] = pd.to_datetime(df[date_col])
+
+    #  2. Calculate QED and MPO-like scores 
+    logger.info("[Drug-likeness Trend] Calculating indices (QED, MPO, CNS MPO)...")
+    mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
+    df["QED"] = [QED.qed(m) if m else np.nan for m in mols]
+
+    # Basic properties (required for MPO-like score) - will need to adjust this when we have real data
+    df["MW"] = [Descriptors.MolWt(m) if m else np.nan for m in mols]
+    df["clogP"] = [Crippen.MolLogP(m) if m else np.nan for m in mols]
+    df["TPSA"] = [rdMolDescriptors.CalcTPSA(m) if m else np.nan for m in mols]
+
+    # Simplified MPO-like metrics
+    df["MPO"] = 0.5 * ((6 - np.clip(df["clogP"], 0, 6)) / 6 + (140 - np.clip(df["TPSA"], 0, 140)) / 140)
+    df["CNS_MPO"] = df["MPO"] - 0.2 * (df["MW"] > 450)  # toy CNS MPO estimate
+
+    # 3. Weekly aggregation
+    df["week"] = df[date_col].dt.to_period("W").apply(lambda r: r.start_time)
+    agg = df.groupby("week")[["QED", "MPO", "CNS_MPO"]].median().rolling(rolling_window, min_periods=1).mean()
+
+    # 4. Visualisation
+    plt.figure(figsize=(10, 6))
+    for metric in ["QED", "MPO", "CNS_MPO"]:
+        plt.plot(agg.index, agg[metric], marker='o', label=metric)
+    plt.legend()
+    plt.title("Drug-likeness Index Trends (Rolling Medians)")
+    plt.xlabel("Week")
+    plt.ylabel("Score (0–1)")
+    plt.grid(True)
+    trend_file = output_dir / "druglikeness_trends.png"
+    plt.savefig(trend_file, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    if len(agg) > 1:
+        latest = agg.iloc[-1]
+        if latest["CNS_MPO"] < 4.0:
+            logger.warning("[Drug-likeness Trend] CNS MPO score dropped below 4.0.")
+        if latest["MPO"] > 0.8:
+            logger.info("[Drug-likeness Trend] > 80% of designs within oral drug-like region.")
+
+    # 6. Save results 
+    output_csv = output_dir / "druglikeness_indices_summary.csv"
+    agg.to_csv(output_csv)
+    logger.info(f"[Drug-likeness Trend] Summary saved to: {output_csv}")
+
+    return {
+        "trend_plot": str(trend_file),
+        "summary_csv": str(output_csv)
     }
