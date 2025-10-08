@@ -8,7 +8,7 @@ workflow_parallel:
   - physchem_filtering
 workflow_serial:
   - sar_cliff_analysis
-  - mmp_analysis # for now make sure this is run last. Need to fix.
+  - mmp_analysis # for now make, sure these are run last. Need to fix.
   - mmp_report
 
 basic_lipinski:

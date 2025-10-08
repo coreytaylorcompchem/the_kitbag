@@ -26,7 +26,6 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 `python list_available_tasks_and_workflows.py`
 
 ```
-
 Available Tasks:
   [Filtering]:
     - activity_filtering: Filter molecules based on activity cutoff
@@ -46,6 +45,7 @@ Available Tasks:
   [Project-based analyses]:
     - mmp_analysis: Matched Molecular Pairs (mmpdb).
     - mmp_report: Generate MMP transform summary plots and tables.
+    - sar_cliff_analysis: Identify and visualise activity cliffs.
 
 Available Workflows:
  - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI

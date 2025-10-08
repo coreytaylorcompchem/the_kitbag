@@ -407,7 +407,7 @@ def pairwise_similarity(args):
     return cliffs
 
 @register_task("sar_cliff_analysis", category="Project-based analyses",
-               description="Identify and visualize SAR cliffs between similar compounds.")
+               description="Identify and visualise activity cliffs.")
 def sar_cliff_analysis(config, data=None):
 
     # --- 1. Configuration ---
