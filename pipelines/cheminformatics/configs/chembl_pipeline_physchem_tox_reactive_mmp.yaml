@@ -7,7 +7,8 @@ workflow_parallel:
   - basic_lipinski_filtering
   - physchem_filtering
 workflow_serial:
-  - mmp_analysis
+  - sar_cliff_analysis
+  - mmp_analysis # for now make sure this is run last. Need to fix.
   - mmp_report
 
 basic_lipinski:
@@ -20,6 +21,16 @@ physchem:
   tpsa_cutoff: 140
   qed_cutoff: 0.4
   stereocenters_cutoff: 2
+sar_cliff:
+  activity_col: pActivity
+  similarity_metric: tanimoto
+  fp_type: morgan
+  fp_radius: 2
+  fp_nbits: 2048
+  similarity_cutoff: 0.85
+  delta_threshold: 1.0  # property difference threshold to call a “cliff”
+  max_pairs: 500000
+  output_dir: outputs/mmp/sar_cliffs
 mmp_report:
   min_count: 10
   significance_level: 0.05

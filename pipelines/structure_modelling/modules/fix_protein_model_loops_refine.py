@@ -103,7 +103,7 @@ def fix_loops(backend, config, **kwargs):
     return backend.cache
 
 
-@register_task("refine_loops", category="Protein modelling", description="Refine loop structures.")
+@register_task("refine_loops", category="Protein modelling", description="Refine modelled loops (energy criteria).")
 def refine_loops(backend, config, **kwargs):
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)

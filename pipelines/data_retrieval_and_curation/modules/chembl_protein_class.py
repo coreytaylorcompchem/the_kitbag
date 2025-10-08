@@ -13,7 +13,6 @@ BASE_URL = "https://www.ebi.ac.uk/chembl/api/data/target"
                category='Bioactivity',
                description="Retrieve UniProt IDs for protein target class.")
 def retrieve_protein_class_target_list(config, data=None):
-    # Determine search mode
     strict_interpro = config.get("interpro_protein_class")
     flexible_keyword = config.get("protein_class_keyword")
     interpro_accession = config.get("interpro_accession_refinement")

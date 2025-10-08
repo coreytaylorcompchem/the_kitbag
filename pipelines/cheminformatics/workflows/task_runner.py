@@ -48,7 +48,7 @@ def run_task_chain_on_chunk(chunk_file: str, task_list, config):
         logger.debug(f"Running {task_name} on chunk {chunk_file}")
         result = task(task_config, data=current_data)
 
-        # Normalize result to a dict
+        # Normalise result to a dict
         if isinstance(result, tuple):
             logger.debug(f"Task '{task_name}' returned tuple of length {len(result)}")
 

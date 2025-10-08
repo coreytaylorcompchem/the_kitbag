@@ -40,7 +40,7 @@ def retrieve_chembl_bioactivities(config, data=None):
         readouts = [readouts]
 
     target = new_client.target
-    activity = new_client.activity
+    # activity = new_client.activity
 
     # Lookup target by uniprot
     target_query = target.filter(target_components__accession=uniprot_id)
@@ -81,8 +81,29 @@ def retrieve_chembl_bioactivities(config, data=None):
 
 @register_task("clean_bioactivities", 
                category='Bioactivity',
-               description="Check and standardise bioactivities.")
+               description="Check and standardise bioactivities, and attach publication dates via CrossRef.")
 def clean_bioactivities(config, data):
+    import requests
+
+    def fetch_crossref_date(doi):
+        """Fetch full publication date (YYYY-MM-DD) from CrossRef given a DOI."""
+        if not doi:
+            return None
+        url = f"https://api.crossref.org/works/{doi}"
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                return None
+            msg = resp.json().get("message", {})
+            date_parts = msg.get("issued", {}).get("date-parts", [])
+            if date_parts and isinstance(date_parts[0], list):
+                parts = date_parts[0]
+                parts += [1] * (3 - len(parts))  
+                return f"{parts[0]:04d}-{parts[1]:02d}-{parts[2]:02d}"
+        except Exception as e:
+            logger.warning(f"CrossRef lookup failed for DOI {doi}: {e}")
+        return None
+
     uniprot_id = config.get("uniprot_id", "UNKNOWN")
     readout_priority = config.get("readout", ["IC50", "Ki", "EC50"])
     if isinstance(readout_priority, str):
@@ -99,7 +120,6 @@ def clean_bioactivities(config, data):
     cleaned_frames = []
     for readout in tqdm(readout_priority, desc=f"[{uniprot_id}] Cleaning readouts", leave=False):
         selected_readout = readout.upper()
-
         df_readout = data[data["standard_type"].str.upper() == selected_readout]
         if df_readout.empty:
             logger.info(f"[{uniprot_id}] No data for readout '{selected_readout}'")
@@ -111,7 +131,6 @@ def clean_bioactivities(config, data):
 
         df_readout = df_readout[df_readout["standard_units"].str.lower() == "nm"]
 
-        # Drop NaN in compulsory columns
         if "standard_value" not in df_readout.columns or "molecule_chembl_id" not in df_readout.columns:
             logger.info(f"❌ [{uniprot_id}] Missing required columns.")
             continue
@@ -130,23 +149,42 @@ def clean_bioactivities(config, data):
             "assay_chembl_id", "assay_type", "assay_description", "document_chembl_id",
             "uniprot_id", "target_pref_name"
         ]
-
-        # print(df_readout.columns)
-
         df_readout = df_readout[[col for col in columns_to_keep if col in df_readout.columns]]
-
         df_readout["readout"] = selected_readout
-
         logger.info(f"[{uniprot_id}] Cleaned data for '{selected_readout}': shape = {df_readout.shape}")
 
         cleaned_frames.append(df_readout)
 
-    if cleaned_frames:
-        combined = pd.concat(cleaned_frames, ignore_index=True)
-        return {"df": combined, "readout": None}
-    else:
+    if not cleaned_frames:
         logger.info(f"[{uniprot_id}] No readout data cleaned for any requested readouts.")
         return {"df": pd.DataFrame(), "readout": None}
+
+    combined = pd.concat(cleaned_frames, ignore_index=True)
+
+    # Because Chembl doesn't expose document dates, need to retrieve them.
+    if "document_chembl_id" in combined.columns:
+        document_ids = combined["document_chembl_id"].dropna().unique().tolist()
+        if document_ids:
+            logger.debug(f"[{uniprot_id}] Fetching document metadata for {len(document_ids)} entries...")
+            document_client = new_client.document
+            documents = document_client.filter(document_chembl_id__in=document_ids)
+            doc_df = pd.DataFrame(documents)
+
+            if not doc_df.empty and "doi" in doc_df.columns:
+                logger.debug(f"[{uniprot_id}] Looking up publication dates via CrossRef...")
+                doc_df["publication_date"] = doc_df["doi"].apply(fetch_crossref_date)
+
+                merge_fields = ["document_chembl_id", "doi", "year", "publication_date"]
+                doc_df = doc_df[[col for col in merge_fields if col in doc_df.columns]]
+                doc_df = doc_df.drop_duplicates(subset="document_chembl_id")
+
+                combined = pd.merge(combined, doc_df, on="document_chembl_id", how="left")
+                logger.debug(f"[{uniprot_id}] Merged CrossRef publication dates into bioactivity data.")
+            else:
+                logger.warning(f"[{uniprot_id}] No DOIs available for CrossRef lookup.")
+
+    return {"df": combined, "readout": None}
+
 
 
 @register_task("retrieve_compound_smiles", 

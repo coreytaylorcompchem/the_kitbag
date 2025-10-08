@@ -22,7 +22,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
-@register_task("build_peptide", category="Peptide modelling", description="Build peptides from sequence file")
+@register_task("build_peptide", category="Peptide modelling", description="Build peptides from a sequence file.")
 def build_peptide(backend, config, **kwargs):
     logger.info("Building peptides...")
     results = backend.run()
@@ -263,7 +263,7 @@ def analyse_flexibility(backend, config, **kwargs):
         
     return summary
 
-@register_task("plot_peptide_flexibility", category="Peptide modelling", description="Plot flexibility data")
+@register_task("plot_peptide_flexibility", category="Peptide modelling", description="Plot flexibility (Boltzmann-weighted).")
 def plot_flexibility(backend, config, **kwargs):
     output_dir = Path(config["output_dir"])
     txt_files = list(output_dir.glob("*_boltzmann_weights.txt"))

@@ -74,7 +74,7 @@ def retrieve_chembl_adme_data(config, data=None):
 
         # Use multiprocessing to fetch aliases in parallel
         num_workers = min(len(tasks), max(1, cpu_count() - 2))
-        logger.info(f"\nParallel fetching with {num_workers} workers for '{readout_key}' aliases...")
+        logger.info(f"Parallel fetching with {num_workers} workers for '{readout_key}' aliases...")
 
         # Spawn context to allow nested multiprocessing
         with ThreadPool(num_workers) as pool:    alias_dfs = list(tqdm(pool.imap(fetch_single_alias_task, tasks), total=len(tasks), desc=f"Fetching {readout_key}"))

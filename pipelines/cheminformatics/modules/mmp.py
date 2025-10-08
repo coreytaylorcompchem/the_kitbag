@@ -15,8 +15,8 @@ from PIL import Image
 import seaborn as sns
 import networkx as nx
 import pandas as pd
-from rdkit import Chem
-from rdkit.Chem import Draw
+from rdkit import Chem, DataStructs
+from rdkit.Chem import AllChem, Draw
 from rdkit.Chem.Draw import rdMolDraw2D
 from mpl_toolkits.axes_grid1 import ImageGrid
 
@@ -69,7 +69,7 @@ def run_transform(mmpdb_file, smiles, property_name):
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         output_lines = result.stdout.strip().splitlines()
         # Add property name to each line to identify property in merged output
-        # mmpdb is painful to use hereso we need to call the program on each SMILES and aggregate.
+        # mmpdb is painful to use here so we need to call the program on each SMILES and aggregate.
         return property_name, smiles, output_lines
     except subprocess.CalledProcessError as e:
         logger.warning(f"[!] Transform failed for SMILES {smiles} with property {property_name}")
@@ -371,5 +371,147 @@ def mmp_report(config, data=None):
         "top_detrimental_csv": str(top_detrimental_file),
     }
 
+################## SAR CLIFF ANALYSIS
 
+def compute_fingerprint(smiles, fp_type="morgan", radius=2, nbits=2048):
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    if fp_type.lower() == "morgan":
+        return AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
+    elif fp_type.lower() == "rdkit":
+        return Chem.RDKFingerprint(mol)
+    else:
+        raise ValueError(f"Unsupported fingerprint type: {fp_type}")
 
+def pairwise_similarity(args):
+    i, smi_i, fp_i, data, cutoff, delta_threshold, activity_col = args
+    cliffs = []
+    for j, (smi_j, fp_j, act_j) in enumerate(zip(data["smiles"], data["fps"], data[activity_col])):
+        if i >= j:
+            continue
+        if fp_i is None or fp_j is None:
+            continue
+        sim = DataStructs.TanimotoSimilarity(fp_i, fp_j)
+        if sim >= cutoff:
+            delta = abs(data.loc[i, activity_col] - act_j)
+            if delta >= delta_threshold:
+                cliffs.append({
+                    "smiles_1": smi_i,
+                    "smiles_2": smi_j,
+                    "similarity": sim,
+                    "delta_activity": delta,
+                    "activity_1": data.loc[i, activity_col],
+                    "activity_2": act_j
+                })
+    return cliffs
+
+@register_task("sar_cliff_analysis", category="Project-based analyses",
+               description="Identify and visualize SAR cliffs between similar compounds.")
+def sar_cliff_analysis(config, data=None):
+
+    # --- 1. Configuration ---
+    input_file = config.get("input_file")
+
+    sar_cliff_cfg = config.get("sar_cliff", {})    
+    activity_col = sar_cliff_cfg.get("activity_col", "pActivity")
+    similarity_cutoff = sar_cliff_cfg.get("similarity_cutoff", 0.85)
+    delta_threshold = sar_cliff_cfg.get("delta_threshold", 1.0)
+    fp_type = sar_cliff_cfg.get("fp_type", "morgan")
+    fp_radius = sar_cliff_cfg.get("fp_radius", 2)
+    fp_nbits = sar_cliff_cfg.get("fp_nbits", 2048)
+    max_pairs = sar_cliff_cfg.get("max_pairs", 500000)
+    output_dir = Path(sar_cliff_cfg.get("output_dir", "outputs/sar_cliffs"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(max_pairs)
+
+    logger.info(f"[SAR Cliff] Loading input file: {input_file}")
+    df = pd.read_csv(input_file)
+    df = df.dropna(subset=["smiles", activity_col])
+    df = df.reset_index(drop=True)
+
+    # --- 2. Fingerprint computation ---
+    logger.info("[SAR Cliff] Computing fingerprints...")
+    df["fps"] = [compute_fingerprint(smi, fp_type, fp_radius, fp_nbits) for smi in df["smiles"]]
+    df = df[df["fps"].notna()]
+
+    # --- 3. Pairwise similarity in parallel ---
+    logger.info(f"[SAR Cliff] Computing pairwise similarities (cutoff={similarity_cutoff})...")
+
+    tasks = [
+        (i, row["smiles"], row["fps"], df, similarity_cutoff, delta_threshold, activity_col)
+        for i, row in df.iterrows()
+    ]
+
+    all_cliffs = []
+    with ProcessPoolExecutor() as executor:
+        for future in as_completed(executor.submit(pairwise_similarity, t) for t in tasks):
+            all_cliffs.extend(future.result())
+            if len(all_cliffs) > max_pairs:
+                break
+
+    cliff_df = pd.DataFrame(all_cliffs)
+    cliff_df.sort_values("delta_activity", ascending=False, inplace=True)
+    logger.info(f"[SAR Cliff] Found {len(cliff_df)} cliff pairs (Δ≥{delta_threshold}, sim≥{similarity_cutoff}).")
+
+    # --- 4. Save raw results ---
+    output_csv = output_dir / "sar_cliff_pairs.csv"
+    cliff_df.to_csv(output_csv, index=False)
+    logger.info(f"[SAR Cliff] Results saved to: {output_csv}")
+
+    # --- 5. Visualization ---
+    if not cliff_df.empty:
+        plt.figure(figsize=(8, 6))
+        sns.scatterplot(
+            data=cliff_df,
+            x="similarity",
+            y="delta_activity",
+            s=40,
+            alpha=0.7
+        )
+        plt.axvline(similarity_cutoff, color='red', linestyle='--', label=f"sim ≥ {similarity_cutoff}")
+        plt.axhline(delta_threshold, color='orange', linestyle='--', label=f"Δact ≥ {delta_threshold}")
+        plt.xlabel("Tanimoto Similarity")
+        plt.ylabel(f"|Δ {activity_col}|")
+        plt.title("Activity Cliff Landscape")
+        plt.legend()
+        scatter_file = output_dir / "sar_cliff_scatter.png"
+        plt.savefig(scatter_file, bbox_inches='tight', dpi=300)
+        plt.close()
+
+        # Top 10 cliffs — with molecule images
+        top_cliffs = cliff_df.head(10)
+        imgs = []
+        for _, row in top_cliffs.iterrows():
+            mol1 = Chem.MolFromSmiles(row["smiles_1"])
+            mol2 = Chem.MolFromSmiles(row["smiles_2"])
+            img = Draw.MolsToGridImage(
+                [mol1, mol2],
+                legends=[
+                    f"Act={row['activity_1']:.2f}",
+                    f"Act={row['activity_2']:.2f}"
+                ],
+                molsPerRow=2,
+                subImgSize=(200, 200)
+            )
+            imgs.append(img)
+
+        for i, img in enumerate(imgs):
+            img_path = output_dir / f"top_cliff_{i+1}.png"
+            img.save(img_path)
+
+        # Summary CSV
+        top_csv = output_dir / "top_10_sar_cliffs.csv"
+        top_cliffs.to_csv(top_csv, index=False)
+        logger.info(f"[SAR Cliff] Top 10 cliffs written to: {top_csv}")
+
+        return {
+            "cliff_csv": str(output_csv),
+            "scatter_png": str(scatter_file),
+            "top_cliffs_csv": str(top_csv),
+        }
+
+    else:
+        logger.warning("[SAR Cliff] No activity cliffs found.")
+        return None

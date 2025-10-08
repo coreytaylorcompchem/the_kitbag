@@ -74,7 +74,7 @@ def basic_lipinski(config, data=None):
 
     accepted_rows = []
 
-    # Lipinski cutoffs - can override via config.basic_lipinski.{key}_cutoff
+    # Lipinski cutoffs
     mw_cutoff = config.get("basic_lipinski", {}).get("mw_cutoff", 500)
     hbd_cutoff = config.get("basic_lipinski", {}).get("hbd_cutoff", 5)
     hba_cutoff = config.get("basic_lipinski", {}).get("hba_cutoff", 10)
@@ -143,7 +143,7 @@ def physchem_filtering(config, data=None):
     accepted_rows = []
     mols = []
 
-    use_progress = "chunk_size" not in config  # ✅ Only show progress bar if not chunked
+    use_progress = "chunk_size" not in config 
 
     iterator = df.iterrows()
     if use_progress:
