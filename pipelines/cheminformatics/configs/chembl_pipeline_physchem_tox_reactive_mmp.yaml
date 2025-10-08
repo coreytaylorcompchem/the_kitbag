@@ -7,6 +7,8 @@ workflow_parallel:
   - basic_lipinski_filtering
   - physchem_filtering
 workflow_serial:
+  - chemical_space_drift
+  - scaffold_enrichment_trends
   - sar_cliff_analysis
   - mmp_analysis # for now make, sure these are run last. Need to fix.
   - mmp_report
@@ -16,11 +18,30 @@ basic_lipinski:
   hbd_cutoff: 5
   hba_cutoff: 10
   rotatable_bonds_cutoff: 10
+
 physchem:
   logp_cutoff: 4.5
   tpsa_cutoff: 140
   qed_cutoff: 0.4
   stereocenters_cutoff: 2
+
+chemical_space_drift:
+  fp_type: ecfp4
+  fp_radius: 2
+  fp_nbits: 1024
+  reducer: umap
+  color_by: week
+  recent_weeks: 12
+  activity_col: pActivity
+  date_col: publication_date
+  output_dir: outputs/mmp/chem_space
+
+scaffold_enrichment_trends:
+  activity_col: pActivity
+  date_col: publication_date
+  top_n_scaffolds: 5
+  output_dir: outputs/mmp/scaffold_trends
+
 sar_cliff:
   activity_col: pActivity
   similarity_metric: tanimoto
@@ -31,6 +52,7 @@ sar_cliff:
   delta_threshold: 1.0  # property difference threshold to call a “cliff”
   max_pairs: 500000
   output_dir: outputs/mmp/sar_cliffs
+  
 mmp_report:
   min_count: 10
   significance_level: 0.05

@@ -43,9 +43,11 @@ Available Tasks:
   [Prediction]:
     - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, A->B (Papp)) from SMILES using PyTorch models
   [Project-based analyses]:
+    - chemical_space_drift: Track week-to-week evolution of chemical space via (UMAP / t-SNE).
     - mmp_analysis: Matched Molecular Pairs (mmpdb).
     - mmp_report: Generate MMP transform summary plots and tables.
     - sar_cliff_analysis: Identify and visualise activity cliffs.
+    - scaffold_enrichment_trends: Track scaffold enrichment trends over time.
 
 Available Workflows:
  - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI

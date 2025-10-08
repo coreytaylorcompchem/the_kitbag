@@ -2,9 +2,11 @@ import csv
 import logging
 import subprocess
 from pathlib import Path
+from tqdm import tqdm
 
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.offsetbox as offsetbox
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.cbook import get_sample_data
 import matplotlib.pyplot as plt
@@ -18,7 +20,12 @@ import pandas as pd
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, Draw
 from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem.Scaffolds import MurckoScaffold
 from mpl_toolkits.axes_grid1 import ImageGrid
+
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
+import umap
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pipeline.task_registry import register_task
@@ -97,8 +104,8 @@ def mmp_analysis(config, data=None):
     df = df.rename(columns={activity_col: "property"})
 
     # Define property columns to process
-    props_cols = ["property", "mw"]
-    # props_cols = ["property", "mw", "logp", "hbd", "hba", "rotatable_bonds", "tpsa", "qed", "stereocenters"]
+    # props_cols = ["property", "mw"]
+    props_cols = ["property", "mw", "logp", "hbd", "hba", "rotatable_bonds", "tpsa", "qed", "stereocenters"]
     if 'toxic_flag' in df.columns:
         props_cols.append("toxic_flag")
     if 'reactive_flag' in df.columns:
@@ -289,7 +296,7 @@ def mmp_report(config, data=None):
     plt.savefig(heatmap_file, bbox_inches='tight', dpi=300)
     plt.close()
 
-    # --- 4. Network plot with images ---
+    # --- 4. Network plot with images --- (needs work)
     sig_df = df_filtered[df_filtered['property_p_value'] < significance_level]
 
     G = nx.DiGraph()
@@ -371,8 +378,6 @@ def mmp_report(config, data=None):
         "top_detrimental_csv": str(top_detrimental_file),
     }
 
-################## SAR CLIFF ANALYSIS
-
 def compute_fingerprint(smiles, fp_type="morgan", radius=2, nbits=2048):
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -423,8 +428,6 @@ def sar_cliff_analysis(config, data=None):
     max_pairs = sar_cliff_cfg.get("max_pairs", 500000)
     output_dir = Path(sar_cliff_cfg.get("output_dir", "outputs/sar_cliffs"))
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    print(max_pairs)
 
     logger.info(f"[SAR Cliff] Loading input file: {input_file}")
     df = pd.read_csv(input_file)
@@ -515,3 +518,383 @@ def sar_cliff_analysis(config, data=None):
     else:
         logger.warning("[SAR Cliff] No activity cliffs found.")
         return None
+
+try:
+    import umap
+except ImportError:
+    umap = None
+    warnings.warn("UMAP not installed. Falling back to t-SNE for dimensionality reduction.")
+
+
+@register_task(
+    "chemical_space_drift",
+    category="Project-based analyses",
+    description="Track week-to-week evolution of chemical space via (UMAP / t-SNE)."
+)
+def chemical_space_drift(config, data=None):
+    """Visualize chemical space evolution colored by time or activity."""
+
+    # --- 1. Configuration ---
+    task_conf = config.get("chemical_space_drift", {})
+    input_file = config.get("input_file")
+    output_dir = Path(task_conf.get("output_dir", "outputs/chem_space"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fp_radius = task_conf.get("fp_radius", 2)
+    fp_nbits = task_conf.get("fp_nbits", 1024)
+    reducer_type = task_conf.get("reducer", "umap").lower()
+    activity_col = task_conf.get("activity_col", "pActivity")
+    date_col = task_conf.get("date_col", "date")
+    color_by = task_conf.get("color_by", "week")
+
+    logger.info("[ChemicalSpaceDrift] Starting task...")
+
+    # --- 2. Load input ---
+    df = None
+    if data is not None:
+        # Case 1: Tuple
+        if isinstance(data, tuple) and len(data) == 2 and isinstance(data[1], pd.DataFrame):
+            df = data[1]
+        # Case 2: Dict of task outputs
+        elif isinstance(data, dict):
+            for v in data.values():
+                if isinstance(v, pd.DataFrame):
+                    df = v
+                    break
+        # Case 3: Already a DataFrame
+        elif isinstance(data, pd.DataFrame):
+            df = data
+
+    # Fallback to CSV input
+    if df is None and input_file and Path(input_file).exists():
+        df = pd.read_csv(input_file)
+
+    if df is None or not isinstance(df, pd.DataFrame):
+        raise TypeError(f"[ChemicalSpaceDrift] Expected DataFrame input, got {type(df)}")
+
+    logger.info(f"[ChemicalSpaceDrift] Data loaded with {len(df)} rows and {len(df.columns)} columns.")
+
+    # --- 3. Locate SMILES column ---
+    smiles_col = next((c for c in ["smiles", "SMILES", "canonical_smiles"] if c in df.columns), None)
+    if smiles_col is None:
+        raise KeyError(f"[ChemicalSpaceDrift] No 'smiles' column found. Available: {list(df.columns)}")
+
+    # --- 4. Generate fingerprints ---
+    logger.info(f"[ChemicalSpaceDrift] Generating Morgan fingerprints (radius={fp_radius}, nBits={fp_nbits})...")
+    fps = []
+    for smi in tqdm(df[smiles_col], desc="Computing fingerprints"):
+        mol = Chem.MolFromSmiles(str(smi))
+        if mol is None:
+            fps.append(np.zeros(fp_nbits, dtype=int))
+            continue
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=fp_radius, nBits=fp_nbits)
+        arr = np.zeros((fp_nbits,), dtype=int)
+        DataStructs.ConvertToNumpyArray(fp, arr)
+        fps.append(arr)
+    fps = np.array(fps)
+
+    # --- 5. Dimensionality reduction ---
+    X = StandardScaler().fit_transform(fps)
+    if reducer_type == "tsne" or umap is None:
+        reducer = TSNE(n_components=2, random_state=42, perplexity=30)
+        method = "t-SNE"
+    else:
+        reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
+        method = "UMAP"
+
+    logger.info(f"[ChemicalSpaceDrift] Performing {method} reduction...")
+    embedding = reducer.fit_transform(X)
+    df["x"], df["y"] = embedding[:, 0], embedding[:, 1]
+
+    # --- 6. Handle time grouping ---
+    if date_col in df.columns:
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df["week"] = df[date_col].dt.strftime("%Y-%U")
+
+        # Optional trimming to most recent N weeks
+        recent_weeks = task_conf.get("recent_weeks", 12)
+        unique_weeks = sorted(df["week"].dropna().unique())
+        if len(unique_weeks) > recent_weeks:
+            recent_weeks_set = set(unique_weeks[-recent_weeks:])
+            df = df[df["week"].isin(recent_weeks_set)]
+            logger.info(f"[ChemicalSpaceDrift] Filtering to last {recent_weeks} weeks "
+                        f"({unique_weeks[-recent_weeks]} → {unique_weeks[-1]}).")
+    else:
+        df["week"] = "unknown"
+
+    # --- 7. Visualization ---
+    color_label = color_by if color_by in df.columns else (
+        activity_col if activity_col in df.columns else "week"
+    )
+
+    plt.figure(figsize=(8, 6))
+    sns.scatterplot(
+        data=df,
+        x="x", y="y",
+        hue=df[color_label],
+        palette="viridis", s=40, alpha=0.8
+    )
+    plt.title(f"{method} projection of chemical space – colored by {color_label}")
+    plt.tight_layout()
+
+    plot_path = output_dir / f"chemical_space_{method.lower()}_weekly.png"
+    plt.savefig(plot_path, dpi=300)
+    plt.close()
+
+    # --- 8. Export data ---
+    emb_csv = output_dir / "chemical_space_embedding.csv"
+    df.to_csv(emb_csv, index=False)
+    logger.info(f"[ChemicalSpaceDrift] Results saved: {emb_csv}")
+
+    logger.info(f"[ChemicalSpaceDrift] Plot saved: {plot_path}")
+
+    # --- 9. Return dictionary of artifacts (like sar_cliff_analysis) ---
+    return {
+        "embedding_csv": str(emb_csv),
+        "projection_plot": str(plot_path),
+        "n_molecules": len(df),
+        "method": method
+    }
+
+@register_task(
+    "scaffold_enrichment_trends",
+    category="Project-based analyses",
+    description="Track scaffold enrichment trends over time."
+)
+def scaffold_enrichment_trends(config, data=None):
+    """Compute weekly scaffold enrichment trends."""
+
+    # --- 1. Config ---
+    task_conf = config.get("scaffold_enrichment_trends", {})
+    input_file = config.get("input_file")
+    output_dir = Path(task_conf.get("output_dir", "outputs/scaffold_enrichment"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    activity_col = task_conf.get("activity_col", "pActivity")
+    date_col = task_conf.get("date_col", "date")
+
+    logger.info("[ScaffoldEnrichment] Starting task...")
+
+    # --- 2. Load input ---
+    df = None
+    if data is not None:
+        if isinstance(data, tuple) and len(data) == 2 and isinstance(data[1], pd.DataFrame):
+            df = data[1]
+        elif isinstance(data, dict):
+            for v in data.values():
+                if isinstance(v, pd.DataFrame):
+                    df = v
+                    break
+        elif isinstance(data, pd.DataFrame):
+            df = data
+
+    if df is None and input_file and Path(input_file).exists():
+        df = pd.read_csv(input_file)
+
+    if df is None or not isinstance(df, pd.DataFrame):
+        raise TypeError(f"[ScaffoldEnrichment] Expected DataFrame input, got {type(df)}")
+
+    logger.info(f"[ScaffoldEnrichment] Data loaded with {len(df)} rows and {len(df.columns)} columns.")
+
+    # --- 3. Locate SMILES column ---
+    smiles_col = next((c for c in ["smiles", "SMILES", "canonical_smiles"] if c in df.columns), None)
+    if smiles_col is None:
+        raise KeyError(f"[ScaffoldEnrichment] No 'smiles' column found. Available: {list(df.columns)}")
+
+    if date_col not in df.columns:
+        logger.warning(f"[ScaffoldEnrichment] No '{date_col}' column found — using 'week'='unknown'.")
+        df["week"] = "unknown"
+    else:
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df["week"] = df[date_col].dt.strftime("%Y-%U")
+
+    # --- 4. Compute Bemis–Murcko scaffolds ---
+    logger.info("[ScaffoldEnrichment] Computing Murcko scaffolds...")
+    scaffolds = []
+    for smi in tqdm(df[smiles_col], desc="Extracting scaffolds"):
+        mol = Chem.MolFromSmiles(str(smi))
+        if mol is None:
+            scaffolds.append(None)
+            continue
+        try:
+            scaf = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+            scaffolds.append(scaf)
+        except Exception:
+            scaffolds.append(None)
+    df["scaffold"] = scaffolds
+
+    df_valid = df.dropna(subset=["scaffold"]).copy()
+    if df_valid.empty:
+        logger.warning("[ScaffoldEnrichment] No valid scaffolds found.")
+        return None
+
+    # --- 5. Weekly scaffold stats ---
+    logger.info("[ScaffoldEnrichment] Aggregating weekly scaffold statistics...")
+    agg_df = (
+        df_valid.groupby(["week", "scaffold"])
+        .agg(
+            count=("scaffold", "size"),
+            mean_activity=(activity_col, "mean")
+        )
+        .reset_index()
+    )
+
+    # Identify change vs previous week
+    agg_df["prev_mean"] = agg_df.groupby("scaffold")["mean_activity"].shift(1)
+    agg_df["delta_mean"] = agg_df["mean_activity"] - agg_df["prev_mean"]
+
+    # --- 6. Identify improving / declining scaffolds ---
+    latest_week = agg_df["week"].dropna().unique()
+    latest_week = sorted(latest_week)[-1] if len(latest_week) else None
+
+    if latest_week:
+        latest_data = agg_df[agg_df["week"] == latest_week]
+        top_improving = latest_data.nlargest(5, "delta_mean", keep="all")
+        top_declining = latest_data.nsmallest(5, "delta_mean", keep="all")
+    else:
+        top_improving = top_declining = pd.DataFrame()
+
+    # --- 7. Save outputs ---
+    trends_csv = output_dir / "scaffold_trends.csv"
+    agg_df.to_csv(trends_csv, index=False)
+
+    improving_csv = output_dir / "top5_improving_scaffolds.csv"
+    declining_csv = output_dir / "top5_declining_scaffolds.csv"
+    top_improving.to_csv(improving_csv, index=False)
+    top_declining.to_csv(declining_csv, index=False)
+
+    # --- 8. Visualization ---
+    image_zoom = 0.4  # hardcoding size of 2D structures for the plots 
+
+    top_n = task_conf.get("top_n_scaffolds", 8)
+    top_scaffolds = (
+        agg_df.groupby("scaffold")["count"].sum()
+        .sort_values(ascending=False)
+        .head(top_n)
+        .index
+    )
+    plot_df = agg_df[agg_df["scaffold"].isin(top_scaffolds)]
+
+    plt.figure(figsize=(10, 6))
+    ax = plt.gca()
+
+    # Prepare scaffold images
+    scaffold_imgs = {}
+    for smi in top_scaffolds:
+        mol = Chem.MolFromSmiles(smi)
+        if mol:
+            img = Draw.MolToImage(mol, size=(100, 100))
+            scaffold_imgs[smi] = img
+
+    # Helper for mapping week labels to x-axis positions
+    xtick_labels = [label.get_text() for label in ax.get_xticklabels()]
+    xtick_positions = ax.get_xticks()
+    def get_x_position(x_val):
+        if isinstance(x_val, (int, float)):
+            return x_val
+        try:
+            idx = xtick_labels.index(str(x_val))
+            return xtick_positions[idx]
+        except ValueError:
+            return xtick_positions[-1]
+
+    # Split scaffolds into multi-point and single-point sets
+    multi_point_scaffolds = []
+    single_point_scaffolds = []
+    for scaffold in top_scaffolds:
+        count_points = len(plot_df[plot_df["scaffold"] == scaffold])
+        if count_points > 1:
+            multi_point_scaffolds.append(scaffold)
+        else:
+            single_point_scaffolds.append(scaffold)
+
+    # Plot lines for scaffolds with multiple points
+    if multi_point_scaffolds:
+        sns.lineplot(
+            data=plot_df[plot_df["scaffold"].isin(multi_point_scaffolds)],
+            x="week",
+            y="mean_activity",
+            hue="scaffold",
+            palette="tab10",
+            lw=2,
+            ax=ax,
+        )
+
+    # Remove default legend if present
+    if ax.legend_:
+        ax.legend_.remove()
+
+    # --- Add images for line plots at the far right of the plot ---
+    x_left, x_right = ax.get_xlim()
+    x_offset = (x_right - x_left) * 0.1  # move 10% beyond plot limit
+    y_min, y_max = ax.get_ylim()
+    y_spacing = (y_max - y_min) / (len(multi_point_scaffolds) + 1)
+
+    for i, scaffold in enumerate(multi_point_scaffolds):
+        scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
+        if scaffold_data.empty:
+            continue
+        # new position for the scaffold image (further right)
+        y_pos = y_max - (i + 1) * y_spacing
+        x_img = x_right + x_offset
+
+        # place scaffold image
+        img = scaffold_imgs.get(scaffold)
+        if img:
+            imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
+            ab = offsetbox.AnnotationBbox(
+                imagebox, (x_img, y_pos),
+                frameon=False, box_alignment=(0, 0.5)
+            )
+            ax.add_artist(ab)
+
+    # --- Plot single data points with pastel scatter colors ---
+    if single_point_scaffolds:
+        pastel_palette = sns.color_palette("Pastel1", n_colors=len(single_point_scaffolds))
+        for color, scaffold in zip(pastel_palette, single_point_scaffolds):
+            scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
+            if scaffold_data.empty:
+                continue
+
+            x_raw = scaffold_data["week"].iloc[0]
+            y = scaffold_data["mean_activity"].iloc[0]
+            x = get_x_position(x_raw)
+
+            # Plot single point
+            ax.scatter(x, y, s=60, color=color, edgecolor='black', zorder=5)
+
+            # Add scaffold image slightly above the point
+            img = scaffold_imgs.get(scaffold)
+            if img:
+                imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
+                ab = offsetbox.AnnotationBbox(
+                    imagebox, (x, y + 0.02),
+                    frameon=False, box_alignment=(0.5, 0)
+                )
+                ax.add_artist(ab)
+
+    # Expand limits to fit right-hand images fully
+    ax.set_xlim(x_left, x_right + x_offset * 2)
+
+    plt.title(f"Top {top_n} Scaffold Enrichment Trends (mean {activity_col})")
+    plt.xticks(rotation=45)
+    plt.xlabel("Week")
+    plt.ylabel(f"Mean {activity_col}")
+    plt.tight_layout()
+
+    trend_plot = output_dir / "scaffold_trends_plot.png"
+    plt.savefig(trend_plot, dpi=300)
+    plt.close()
+
+
+    logger.info(f"[ScaffoldEnrichment] Trends saved to: {trends_csv}")
+    logger.info(f"[ScaffoldEnrichment] Plot saved to: {trend_plot}")
+
+    # --- 9. Return dictionary of outputs ---
+    return {
+        "trends_csv": str(trends_csv),
+        "top_improving_csv": str(improving_csv),
+        "top_declining_csv": str(declining_csv),
+        "trend_plot": str(trend_plot),
+        "n_valid_scaffolds": len(df_valid)
+    }
