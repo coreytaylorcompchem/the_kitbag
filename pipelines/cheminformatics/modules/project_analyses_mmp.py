@@ -1,8 +1,11 @@
 import csv
 import logging
 import subprocess
+import json
 from pathlib import Path
 from tqdm import tqdm
+import hashlib
+import io
 
 import matplotlib
 matplotlib.use('Agg')
@@ -11,6 +14,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.cbook import get_sample_data
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import matplotlib.cm as cm
 
 import numpy as np
 from PIL import Image
@@ -18,7 +22,7 @@ import seaborn as sns
 import networkx as nx
 import pandas as pd
 from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, QED
+from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, QED, rdRGroupDecomposition, Scaffolds
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from mpl_toolkits.axes_grid1 import ImageGrid
@@ -107,6 +111,7 @@ def mmp_analysis(config, data=None):
 
     # Define property columns to process
     props_cols = ["property", "mw", "logp", "hbd", "hba", "rotatable_bonds", "tpsa", "qed", "stereocenters"] # TODO: add to yaml
+    # props_cols = ["property", "mw"] # Keep for testing
     if 'toxic_flag' in df.columns:
         props_cols.append("toxic_flag")
     if 'reactive_flag' in df.columns:
@@ -571,7 +576,7 @@ def chemical_space_drift(config, data=None):
     if df is None or not isinstance(df, pd.DataFrame):
         raise TypeError(f"[ChemicalSpaceDrift] Expected DataFrame input, got {type(df)}")
 
-    logger.debug(f"[ChemicalSpaceDrift] Data loaded with {len(df)} rows and {len(df.columns)} columns.")
+    logger.info(f"[ChemicalSpaceDrift] Data loaded with {len(df)} rows and {len(df.columns)} columns.")
 
     #  3. Which columns is SMILES? Let's give options and hope I don't accidentally mess this up later... 
     smiles_col = next((c for c in ["smiles", "SMILES", "canonical_smiles"] if c in df.columns), None)
@@ -946,8 +951,6 @@ def physchem_property_drift(config, data=None):
         latest = agg.iloc[-1]
         prev = agg.iloc[-2]
         deltas = (latest - prev).to_dict()
-        # if abs(deltas.get("clogP", 0)) > 0.2:
-        #     logger.warning(f"[PhysChem Drift] Average clogP changed {deltas['clogP']:+.2f} this week – watch hydrophobicity!")
 
     # --- 6. Save summary ---
     summary_file = output_dir / "property_drift_summary.csv"
@@ -975,13 +978,13 @@ def druglikeness_indices_trend(config, data=None):
     rolling_window = dl_cfg.get("rolling_window", 4)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"[Drug-likeness Trend] Loading input file: {input_file}")
+    logger.debug(f"[Drug-likeness Trend] Loading input file: {input_file}")
     df = pd.read_csv(input_file)
     df = df.dropna(subset=["smiles", date_col])
     df[date_col] = pd.to_datetime(df[date_col])
 
     #  2. Calculate QED and MPO-like scores 
-    logger.info("[Drug-likeness Trend] Calculating indices (QED, MPO, CNS MPO)...")
+    logger.debug("[Drug-likeness Trend] Calculating indices (QED, MPO, CNS MPO)...")
     mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
     df["QED"] = [QED.qed(m) if m else np.nan for m in mols]
 
@@ -1027,3 +1030,339 @@ def druglikeness_indices_trend(config, data=None):
         "trend_plot": str(trend_file),
         "summary_csv": str(output_csv)
     }
+
+@register_task("rgroup_frequency_tracking",
+               category="Project-based analyses",
+               description="Track introduction and activity impact of new R-groups week-to-week.")
+def rgroup_frequency_tracking(config, data=None):
+    cfg = config.get("rgroup_frequency_tracking", {})
+    input_file = config.get("input_file")
+    activity_col = cfg.get("activity_col", "pActivity")
+    date_col = cfg.get("date_col", "publication_date")
+    top_n = cfg.get("top_n", 10)
+    window_weeks = cfg.get("window_weeks", 1)
+    output_dir = Path(cfg.get("output_dir", "outputs/mmp/rgroup_frequency"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Better way to handle flexible inputs ---
+    if data is None:
+        df = pd.read_csv(input_file)
+    elif isinstance(data, pd.DataFrame):
+        df = data
+    elif isinstance(data, dict):
+        # If dict contains a path to a CSV output from previous step, then...
+        possible_path = data.get("filtered_csv") or data.get("output_csv") or data.get("summary_csv")
+        if possible_path and Path(possible_path).exists():
+            df = pd.read_csv(possible_path)
+        else:
+            # fallback: reload original filtered file
+            logger.warning("[RGroup Tracking] Got dict input; loading from input_file instead.")
+            df = pd.read_csv(input_file)
+    else:
+        raise TypeError(f"Unexpected data type: {type(data)}")
+    
+    df = df.dropna(subset=["smiles", activity_col, date_col])
+    df[date_col] = pd.to_datetime(df[date_col])
+    df["week"] = df[date_col].dt.to_period("W").apply(lambda r: r.start_time)
+
+    logger.debug("[RGroup Tracking] Performing R-group decomposition...")
+    mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
+    scaffolds = [Chem.Scaffolds.MurckoScaffold.GetScaffoldForMol(m) for m in mols]
+    unique_cores = list({Chem.MolToSmiles(s) for s in scaffolds if s})
+
+    rgroups_all = []
+    for core_smiles in unique_cores:
+        core = Chem.MolFromSmiles(core_smiles)
+        matches = [m for m in mols if m and core and m.HasSubstructMatch(core)]
+        if len(matches) < 3:
+            continue
+        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], matches)
+        for mol_idx, row in enumerate(groups):
+            for label, frag in row.items():
+                if frag:
+                    rgroups_all.append({
+                        "core": core_smiles,
+                        "rgroup_label": label,
+                        "rgroup_smiles": Chem.MolToSmiles(frag),
+                        "pActivity": df.iloc[mol_idx][activity_col],
+                        "week": df.iloc[mol_idx]["week"]
+                    })
+    rgroups_df = pd.DataFrame(rgroups_all)
+    if rgroups_df.empty:
+        logger.warning("[RGroup Tracking] No R-groups extracted.")
+        return None
+
+    grouped = (
+        rgroups_df.groupby(["week", "rgroup_smiles"])
+        .agg(count=("pActivity", "size"), mean_activity=(activity_col, "mean"))
+        .reset_index()
+    )
+
+    # Find top N new R-groups introduced by week
+    grouped = grouped.sort_values(["week", "count"], ascending=[True, False])
+    all_weeks = grouped["week"].sort_values().unique()
+    if len(all_weeks) < 2:
+        logger.warning("[RGroup Tracking] Not enough weeks for comparison.")
+        return None
+
+    latest, prev = all_weeks[-1], all_weeks[-2]
+    current_week = grouped[grouped["week"] == latest]
+    previous_week = grouped[grouped["week"] == prev]
+
+    new_rgroups = set(current_week["rgroup_smiles"]) - set(previous_week["rgroup_smiles"])
+    new_df = current_week[current_week["rgroup_smiles"].isin(new_rgroups)]
+    top_new = new_df.nlargest(top_n, "count")
+
+    summary_csv = output_dir / f"top_rgroups_{latest.date()}.csv"
+    top_new.to_csv(summary_csv, index=False)
+    
+    plt.figure(figsize=(8,5))
+    plt.barh(top_new["rgroup_smiles"], top_new["mean_activity"], color="teal")
+    plt.xlabel("Average pActivity")
+    plt.ylabel("R-group (SMILES)")
+    plt.title(f"Top {top_n} New R-groups Introduced - {latest.date()}")
+    plt.tight_layout()
+    plt.savefig(output_dir / f"rgroup_top_{latest.date()}.png", dpi=300)
+    plt.close()
+
+    logger.info(f"[RGroup Tracking] Saved summary: {summary_csv}")
+    return {"summary_csv": str(summary_csv)}
+
+def draw_core_with_large_atom_numbers(mol, size=(300, 300), font_size=40):
+    """
+    Draw the core molecule with large atom numbers for attachment points.
+    Returns a PIL Image.
+    """
+    if mol is None:
+        return None
+
+    # Create 2D coords if not present
+    if not mol.GetNumConformers():
+        rdMolDraw2D.PrepareMolForDrawing(mol)
+
+    drawer = rdMolDraw2D.MolDraw2DCairo(size[0], size[1])
+    opts = drawer.drawOptions()
+    opts.fontSize = font_size
+
+    # Label dummy atoms (atomic number == 0) or atoms with R-group-like mapping
+    atom_labels = {}
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() == 0:
+            # try atom map numbers, else index+1
+            amap = atom.GetAtomMapNum()
+            label = f"R{amap}" if amap else str(atom.GetIdx() + 1)
+            atom_labels[atom.GetIdx()] = label
+
+    for idx, label in atom_labels.items():
+        opts.atomLabels[idx] = label
+
+    rdMolDraw2D.PrepareAndDrawMolecule(drawer, mol)
+    drawer.FinishDrawing()
+
+    png_data = drawer.GetDrawingText()
+    return Image.open(io.BytesIO(png_data))
+
+@register_task("rgroup_sar_tree",
+               category="Project-based analyses",
+               description="Build hierarchical SAR trees (core → R-group → mean potency).")
+def rgroup_sar_tree(config, data=None):
+    cfg = config.get("rgroup_sar_tree", {})
+    input_file = config.get("input_file")
+    output_dir = Path(cfg.get("output_dir", "outputs/mmp/rgroup_sar_tree"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    activity_col = cfg.get("activity_col", "pActivity")
+    date_col = cfg.get("date_col", "publication_date")
+    core_method = cfg.get("core_method", "murcko")
+    min_variants = cfg.get("min_variants", 3)
+
+    # Better handling of multiple input types
+    if data is None:
+        df = pd.read_csv(input_file)
+    elif isinstance(data, pd.DataFrame):
+        df = data
+    elif isinstance(data, dict):
+        possible_paths = [
+            data.get("filtered_csv"),
+            data.get("output_csv"),
+            data.get("summary_csv"),
+        ]
+        loaded = False
+        for path in possible_paths:
+            if path and Path(path).exists():
+                df_try = pd.read_csv(path)
+                if {"smiles", activity_col}.issubset(df_try.columns):
+                    df = df_try
+                    loaded = True
+                    break
+        if not loaded:
+            logger.warning("[RGroup SAR Tree] Input dict lacks molecule data; reloading from input_file.")
+            df = pd.read_csv(input_file)
+    else:
+        raise TypeError(f"Unexpected data type: {type(data)}")
+
+    # Quick sanity check
+    if not {"smiles", activity_col}.issubset(df.columns):
+        raise KeyError(f"Input dataset for SAR tree must contain ['smiles', '{activity_col}'], found: {df.columns.tolist()}")
+
+    df = df.dropna(subset=["smiles", activity_col])
+    mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
+
+    # Get core scaffolds
+    logger.info(f"[RGroup SAR Tree] Using core method: {core_method}")
+    if core_method == "murcko":
+        cores = [Scaffolds.MurckoScaffold.GetScaffoldForMol(m) for m in mols]
+    else:
+        raise NotImplementedError(f"Core method {core_method} not implemented yet.")
+    df["core"] = [Chem.MolToSmiles(c) if c else None for c in cores]
+
+    # Group by core and build decomp
+    all_records = []
+    for core_smiles, subset in df.groupby("core"):
+        if not core_smiles or len(subset) < min_variants:
+            continue
+        core = Chem.MolFromSmiles(core_smiles)
+        matches = [Chem.MolFromSmiles(s) for s in subset["smiles"]]
+        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], matches)
+        for mol_idx, row in enumerate(groups):
+            for label, frag in row.items():
+                if frag:
+                    all_records.append({
+                        "core": core_smiles,
+                        "rgroup_label": label,
+                        "rgroup_smiles": Chem.MolToSmiles(frag),
+                        "pActivity": subset.iloc[mol_idx][activity_col]
+                    })
+
+    rg_df = pd.DataFrame(all_records)
+    if rg_df.empty:
+        logger.warning("[RGroup SAR Tree] No decompositions generated.")
+        return None
+
+    sar_summary = (
+        rg_df.groupby(["core", "rgroup_label", "rgroup_smiles"])
+        .agg(mean_pActivity=(activity_col, "mean"),
+             std_pActivity=(activity_col, "std"),
+             count=("pActivity", "size"))
+        .reset_index()
+    )
+
+    output_csv = output_dir / "rgroup_sar_tree.csv"
+    sar_summary.to_csv(output_csv, index=False)
+    logger.info(f"[RGroup SAR Tree] SAR table saved: {output_csv}")
+
+    # Outputting a hierarchical json for later use (interactive html or something else silly)
+    tree_json = {}
+    for core, subdf in sar_summary.groupby("core"):
+        tree_json[core] = (
+            subdf[["rgroup_label", "rgroup_smiles", "mean_pActivity", "std_pActivity"]]
+            .sort_values("mean_pActivity", ascending=False)
+            .to_dict(orient="records")
+        )
+
+    json_path = output_dir / "rgroup_sar_tree.json"
+    with open(json_path, "w") as fout:
+        json.dump(tree_json, fout, indent=2)
+    
+    # Begin per-core entered SAR viz
+    logger.debug("[RGroup SAR Tree] Generating centered per-core SAR visualizations (per-core, with true core fragments)...")
+    try:
+
+        cmap = cm.get_cmap("viridis")
+
+        for core, rgroups in tree_json.items():
+            if not rgroups:
+                continue
+
+            # Try to find the true decomposition core (rgroup_label == 'Core')
+            core_frag = None
+            for rg in rgroups:
+                if str(rg["rgroup_label"]).lower() == "core":
+                    core_frag = rg["rgroup_smiles"]
+                    break
+            if not core_frag:
+                core_frag = core  # fallback to Murcko core SMILES
+
+            # Build graph for one core
+            G = nx.DiGraph()
+            core_label = "CORE"
+            G.add_node(core_label, kind="core", smiles=core_frag, pAct=None)
+            for rg in rgroups:
+                if str(rg["rgroup_label"]).lower() == "core":
+                    continue  # skip duplicate central core node
+                r_smiles = rg["rgroup_smiles"]
+                pAct = rg["mean_pActivity"]
+                label = rg["rgroup_label"]
+                G.add_node(label, kind="rgroup", smiles=r_smiles, pAct=pAct)
+                G.add_edge(core_label, label)
+
+            n = len(G.nodes)
+            radius = 1.5
+            pos = {core_label: np.array([0.0, 0.0])}
+            angle_step = 2 * np.pi / max(1, n - 1)
+            for i, node in enumerate(G.nodes):
+                if node == core_label:
+                    continue
+                angle = i * angle_step
+                pos[node] = np.array([radius * np.cos(angle), radius * np.sin(angle)])
+
+            # Normalise pActivity
+            pActs = [d.get("pAct") for _, d in G.nodes(data=True) if d["pAct"] is not None]
+            norm = plt.Normalize(min(pActs or [0]), max(pActs or [1]))
+
+            fig, ax = plt.subplots(figsize=(7, 7))
+            ax.axis("off")
+
+            # Draw edges
+            nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#666666", width=1.2, arrows=False)
+
+            # Draw central core
+            core_mol = Chem.MolFromSmiles(core_frag)
+            if core_mol:
+                core_img = draw_core_with_large_atom_numbers(core_mol, size=(300, 300), font_size=50)
+                im = OffsetImage(core_img, zoom=0.5)
+                ab = AnnotationBbox(im, (0, 0), frameon=True,
+                                    bboxprops=dict(facecolor="#ffcc00", edgecolor="#333333", lw=1.5))
+                ax.add_artist(ab)
+
+            # Draw R-group molecules
+            for node, data in G.nodes(data=True):
+                if data["kind"] != "rgroup":
+                    continue
+                x, y = pos[node]
+                mol = Chem.MolFromSmiles(data["smiles"])
+                if mol:
+                    img = Draw.MolToImage(mol, size=(120, 120))
+                    im = OffsetImage(img, zoom=0.45)
+                    ab = AnnotationBbox(im, (x, y), frameon=False)
+                    ax.add_artist(ab)
+
+                    # R-group label (TODO: get rid of this)
+                    ax.text(x, y + 0.25, node, ha="center", va="bottom",
+                            fontsize=8, fontweight="bold", color="#333333")
+
+                    # Potency
+                    if data["pAct"] is not None:
+                        ax.text(x, y - 0.25, f"{data['pAct']:.2f}",
+                                ha="center", va="top", fontsize=8,
+                                color=cm.viridis(norm(data["pAct"])))
+
+            # Add potency colorbar
+            if pActs:
+                sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+                sm.set_array([])
+                cbar = fig.colorbar(sm, ax=ax, shrink=0.75, pad=0.03)
+                cbar.set_label("Mean pActivity")
+
+            core_hash = hashlib.sha1(core_frag.encode()).hexdigest()[:8]
+            plot_path = output_dir / f"rgroup_tree_{core_hash}.png"
+            fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+            plt.close(fig)
+            logger.info(f"[RGroup SAR Tree] Saved: {plot_path}")
+
+    except Exception as e:
+        logger.warning(f"[RGroup SAR Tree] Plot generation failed: {e}")
+
+
+
+    return {"summary_csv": str(output_csv), "hierarchy_json": str(json_path)}

@@ -1,3 +1,6 @@
+# Objective: run a standard package of impactful week-to-week analyses for drug discovery projects.
+# Output: scaffold, R-group, MMP and other analyses as summary csvs and plots.
+
 workflow_name: dynamic_task_runner
 
 input_file: data/class_a_gpcr_bioactivity_with_date_test.csv
@@ -12,6 +15,8 @@ workflow_serial:
   - chemical_space_drift
   - scaffold_enrichment_trends
   - sar_cliff_analysis
+  - rgroup_frequency_tracking
+  - rgroup_sar_tree
   - mmp_analysis # for now: make sure these are run last; they use output from physchem but overwrite results (need to fix).
   - mmp_report
 
@@ -64,6 +69,20 @@ sar_cliff:
   delta_threshold: 1.0  # property difference threshold to call a “cliff”
   max_pairs: 500000
   output_dir: outputs/mmp/sar_cliffs
+
+rgroup_frequency_tracking:
+  activity_col: pActivity
+  date_col: publication_date
+  output_dir: outputs/mmp/rgroup_frequency
+  top_n: 10
+  window_weeks: 1
+
+rgroup_sar_tree:
+  activity_col: pActivity
+  date_col: publication_date
+  output_dir: outputs/mmp/rgroup_sar_tree
+  core_method: murcko  # or bemis-murcko, scaffold-tree
+  min_variants: 10
 
 mmp_report:
   min_count: 10

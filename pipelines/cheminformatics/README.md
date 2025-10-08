@@ -48,6 +48,8 @@ Available Tasks:
     - mmp_analysis: Matched Molecular Pairs (mmpdb).
     - mmp_report: Generate MMP transform summary plots and tables.
     - physchem_property_drift: Monitor property balance and drift over time (MW, clogP, TPSA, etc.).
+    - rgroup_frequency_tracking: Track introduction and activity impact of new R-groups week-to-week.
+    - rgroup_sar_tree: Build hierarchical SAR trees (core → R-group → mean potency).
     - sar_cliff_analysis: Identify and visualise activity cliffs.
     - scaffold_enrichment_trends: Track scaffold enrichment trends over time.
 
