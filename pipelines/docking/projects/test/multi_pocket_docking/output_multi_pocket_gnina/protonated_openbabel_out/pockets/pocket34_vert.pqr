@@ -13,26 +13,26 @@ HEADER 5  - Mean B-factor                     : 0.0000
 HEADER 6  - Hydrophobicity Score              : 17.8750
 HEADER 7  - Polarity Score                    :     6
 HEADER 8  - Volume Score                      : 5.0000
-HEADER 9  - Real volume (approximation)       : 196.1267
+HEADER 9  - Real volume (approximation)       : 197.9627
 HEADER 10 - Charge Score                      :     1
 HEADER 11 - Local hydrophobic density Score   : 7.0000
 HEADER 12 - Number of apolar alpha sphere     :     8
 HEADER 13 - Proportion of apolar alpha sphere : 0.5000
-ATOM      1    O STP    34     -29.890-111.464  -4.444    0.00     3.67
-ATOM      2    O STP    34     -29.728-111.890  -6.020    0.00     3.80
-ATOM      3    O STP    34     -30.489-111.317  -5.786    0.00     4.02
-ATOM      4    O STP    34     -30.528-111.277  -5.722    0.00     4.03
-ATOM      5    C STP    34     -30.827-110.885  -6.018    0.00     4.17
-ATOM      6    C STP    34     -31.011-110.629  -6.184    0.00     4.29
-ATOM      7    C STP    34     -31.008-110.723  -6.139    0.00     4.23
-ATOM      8    O STP    34     -29.840-111.497  -4.435    0.00     3.65
-ATOM      9    O STP    34     -29.139-112.225  -5.650    0.00     3.60
-ATOM     10    O STP    34     -29.096-112.228  -5.657    0.00     3.58
-ATOM     11    C STP    34     -29.992-111.109  -4.322    0.00     3.59
-ATOM     12    C STP    34     -31.018-110.618  -6.189    0.00     4.29
-ATOM     13    O STP    34     -32.682-109.142  -6.931    0.00     4.64
-ATOM     14    C STP    34     -31.664-110.473  -6.214    0.00     4.10
-ATOM     15    C STP    34     -31.607-110.480  -6.251    0.00     4.15
-ATOM     16    C STP    34     -31.646-110.705  -6.143    0.00     3.97
+ATOM      1    C STP    34     -31.646-110.705  -6.143    0.00     3.97
+ATOM      2    C STP    34     -31.607-110.480  -6.251    0.00     4.15
+ATOM      3    C STP    34     -31.008-110.723  -6.139    0.00     4.23
+ATOM      4    O STP    34     -29.728-111.890  -6.020    0.00     3.80
+ATOM      5    O STP    34     -29.139-112.225  -5.650    0.00     3.60
+ATOM      6    O STP    34     -29.096-112.228  -5.657    0.00     3.58
+ATOM      7    C STP    34     -31.018-110.618  -6.189    0.00     4.29
+ATOM      8    C STP    34     -31.011-110.629  -6.184    0.00     4.29
+ATOM      9    C STP    34     -29.992-111.109  -4.322    0.00     3.59
+ATOM     10    O STP    34     -30.528-111.277  -5.722    0.00     4.03
+ATOM     11    O STP    34     -30.489-111.317  -5.786    0.00     4.02
+ATOM     12    C STP    34     -30.827-110.885  -6.018    0.00     4.17
+ATOM     13    O STP    34     -29.890-111.464  -4.444    0.00     3.67
+ATOM     14    O STP    34     -29.840-111.497  -4.435    0.00     3.65
+ATOM     15    C STP    34     -31.664-110.473  -6.214    0.00     4.10
+ATOM     16    O STP    34     -32.682-109.142  -6.931    0.00     4.64
 TER
 END

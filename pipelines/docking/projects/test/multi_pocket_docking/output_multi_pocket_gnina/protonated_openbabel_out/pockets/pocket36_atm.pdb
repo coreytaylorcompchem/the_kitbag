@@ -12,29 +12,29 @@ HEADER 5  - Mean B-factor of pocket residues  : 0.0000
 HEADER 6  - Hydrophobicity Score              : 26.5000
 HEADER 7  - Polarity Score                    :     3
 HEADER 8  - Amino Acid based volume Score     : 4.1667
-HEADER 9  - Pocket volume (Monte Carlo)       : 286.4197
+HEADER 9  - Pocket volume (Monte Carlo)       : 291.7203
 HEADER 10  -Pocket volume (convex hull)       : 12.2491
 HEADER 11 - Charge Score                      :     1
 HEADER 12 - Local hydrophobic density Score   : 8.0000
 HEADER 13 - Number of apolar alpha sphere     :     9
 HEADER 14 - Proportion of apolar alpha sphere : 0.3462
-ATOM    778   OH TYR A 101     -70.254 -15.035  -6.877  0.00  0.00           O 0
-ATOM   1468  CD1 LEU A 188     -68.783 -17.118 -10.992  0.00  0.00           C 0
-ATOM   1516  NH1 ARG A 195     -71.791 -10.331 -14.355  0.00  0.00           N 0
-ATOM   1517  NH2 ARG A 195     -71.057  -8.728 -12.886  0.00  0.00           N 0
-ATOM   1487   CA ALA A 192     -65.460 -11.262 -12.684  0.00  0.00           C 0
-ATOM   1514   NE ARG A 195     -69.964  -9.039 -14.886  0.00  0.00           N 1
-ATOM   1515   CZ ARG A 195     -70.937  -9.366 -14.043  0.00  0.00           C 0
-ATOM   1513   CD ARG A 195     -69.750  -9.679 -16.180  0.00  0.00           C 0
-ATOM   1485    O GLY A 191     -65.328 -11.988 -15.332  0.63  3.21           O 0
-ATOM    806  OD1 ASN A 105     -70.218  -9.952  -6.693  0.00  0.00           O 0
-ATOM    805   CG ASN A 105     -69.898 -10.895  -5.969  0.00  0.00           C 0
-ATOM    776  CE1 TYR A 101     -67.891 -14.852  -7.103  0.00  0.00           C 0
-ATOM   1490   CB ALA A 192     -65.628 -11.288 -11.165  0.00  0.00           C 0
-ATOM   1464    O LEU A 188     -65.254 -14.415 -10.920  0.00  0.00           O 0
-ATOM    804   CB ASN A 105     -68.456 -11.099  -5.550  0.00  0.00           C 0
-ATOM   1486    N ALA A 192     -65.077 -12.583 -13.175  0.60  1.09           N 0
-ATOM   1484    C GLY A 191     -65.012 -12.830 -14.487  0.00  0.00           C 0
-ATOM   1483   CA GLY A 191     -64.546 -14.212 -14.907  0.00  0.00           C 0
+ATOM   1517  NH2 ARG A 212     -71.057  -8.728 -12.886  0.00  0.00           N 0
+ATOM    778   OH TYR A 118     -70.254 -15.035  -6.877  0.00  0.00           O 0
+ATOM    806  OD1 ASN A 122     -70.218  -9.952  -6.693  0.00  0.00           O 0
+ATOM   1516  NH1 ARG A 212     -71.791 -10.331 -14.355  0.00  0.00           N 0
+ATOM   1468  CD2 LEU A 205     -68.783 -17.118 -10.992  0.00  0.00           C 0
+ATOM   1490   CB ALA A 209     -65.628 -11.288 -11.165  0.00  0.00           C 0
+ATOM   1515   CZ ARG A 212     -70.937  -9.366 -14.043  0.00  0.00           C 0
+ATOM   1487   CA ALA A 209     -65.460 -11.262 -12.684  0.00  0.00           C 0
+ATOM   1514   NE ARG A 212     -69.964  -9.039 -14.886  0.00  0.00           N 1
+ATOM    805   CG ASN A 122     -69.898 -10.895  -5.969  0.00  0.00           C 0
+ATOM    804   CB ASN A 122     -68.456 -11.099  -5.550  0.00  0.00           C 0
+ATOM   1513   CD ARG A 212     -69.750  -9.679 -16.180  0.00  0.00           C 0
+ATOM   1485    O GLY A 208     -65.328 -11.988 -15.332  0.63  3.21           O 0
+ATOM    776  CE2 TYR A 118     -67.891 -14.852  -7.103  0.00  0.00           C 0
+ATOM   1464    O LEU A 205     -65.254 -14.415 -10.920  0.00  0.00           O 0
+ATOM   1486    N ALA A 209     -65.077 -12.583 -13.175  0.60  1.09           N 0
+ATOM   1484    C GLY A 208     -65.012 -12.830 -14.487  0.00  0.00           C 0
+ATOM   1483   CA GLY A 208     -64.546 -14.212 -14.907  0.00  0.00           C 0
 TER
 END

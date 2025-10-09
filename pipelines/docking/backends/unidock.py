@@ -76,7 +76,7 @@ class UniDockBackend(BaseBackend):
             if not self.use_gpu:
                 logger.warning("'use_gpu' is set to False, but Uni-Dock does not support CPU-only mode directly. Ignoring.")
 
-            logger.info("Docking %s conf %d:", ligand['name'], i)
+            logger.debug("Docking %s conf %d:", ligand['name'], i)
             logger.debug("Running command: %s", " ".join(cmd))
 
             result = subprocess.run(cmd, capture_output=True, text=True)

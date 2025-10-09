@@ -58,15 +58,18 @@ Available Workflows:
  - multi_pocket_docking: Dock ligands into top N pockets detected by fpocket.
  - multi_structure_docking: Dock ligands into multiple PDB structures.
  - vanilla_docking: Prepare, dock and score with no constraints.
-(docking_md) ┌─[corey@thetinkerfactory]─[~/Documents/the_kitbag/pipe
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
+
+## Performance
+
+[Click here for a comparison of Gnina vs Unidock](https://docs.google.com/spreadsheets/d/1b8IvSBlcC0kmzoTG9YV1Gm6nOiDCGrEKMdmMHDxkT7c/edit?gid=0#gid=0). The winner in this case is clearly **Gnina** but I'm not 100% sure if I have optimal parameters for Unidock.
+
+All docking methods run in parallel. I've set the maximum number of CPUs up to 20 - 2 to be safe, but maybe I'll add some options to the yaml to tune this.
 
 ## TODO
 
 See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a more complete list.
 
 * Add ML-based docking backends like [Diffdock](https://github.com/gcorso/DiffDock) and [Equibind](https://github.com/HannesStark/EquiBind).
-* Add other docking modes (constrained core, ensemble, etc.)
-* Run docking on multiple targets. 

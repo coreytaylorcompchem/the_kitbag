@@ -9,43 +9,43 @@ HEADER 2  - Number of alpha spheres           :    29
 HEADER 3  - Mean alpha-sphere radius          : 4.1533
 HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5505
 HEADER 5  - Mean B-factor of pocket residues  : 0.0000
-HEADER 6  - Hydrophobicity Score              : -17.0000
+HEADER 6  - Hydrophobicity Score              : -9.9091
 HEADER 7  - Polarity Score                    :     9
-HEADER 8  - Amino Acid based volume Score     : 3.8333
-HEADER 9  - Pocket volume (Monte Carlo)       : 482.4435
+HEADER 8  - Amino Acid based volume Score     : 3.8182
+HEADER 9  - Pocket volume (Monte Carlo)       : 476.4323
 HEADER 10  -Pocket volume (convex hull)       : 38.3713
 HEADER 11 - Charge Score                      :     1
 HEADER 12 - Local hydrophobic density Score   : 12.8750
 HEADER 13 - Number of apolar alpha sphere     :    16
 HEADER 14 - Proportion of apolar alpha sphere : 0.5517
-ATOM   5183  CG2 THR D 164     -29.547 -95.331   3.770  0.00  0.00           C 0
-ATOM   5208  OD1 ASP D 167     -24.721 -90.728   6.436  0.00  0.00           O 0
-ATOM   3512  CD2 PRO D  44     -25.195 -94.782   7.046  0.00  0.00           C 0
-ATOM   5181   CB THR D 164     -28.960 -94.460   2.674  0.00  0.00           C 0
-ATOM   4217   CD PRO D  40     -31.695 -83.603   1.165  0.00  0.00           C 0
-ATOM   4210   NZ LYS D  39     -27.852 -79.077   2.382  0.68  5.47           N 1
-ATOM   4207   CG LYS D  39     -30.827 -79.414   2.323  0.00  0.00           C 0
-ATOM   4208   CD LYS D  39     -30.046 -79.083   3.582  0.00  0.00           C 0
-ATOM   3518    O LYS D  45     -31.991 -94.809   6.514  0.00  0.00           O 0
-ATOM   5182  OG1 THR D 164     -27.631 -94.908   2.377  0.37  2.14           O 0
-ATOM   5187    O ASP D 165     -27.341 -91.480   1.344  0.61  4.29           O 0
-ATOM   3506   CA PRO D  44     -27.806 -95.729   8.770  0.00  0.00           C 0
-ATOM   3501    O SER D  43     -26.696 -93.538  10.138  0.44  5.36           O 0
-ATOM   4542    O MET D  83     -27.871 -80.636  -0.267  0.73  1.07           O 0
-ATOM   4544   CG MET D  83     -25.614 -82.779   0.327  0.00  0.00           C 0
-ATOM   4545   SD MET D  83     -25.288 -84.527   0.628  0.00  0.00           S 0
-ATOM   5195    O GLN D 166     -26.328 -88.143   1.739  0.77  2.14           O 0
-ATOM   4216   CG PRO D  40     -31.813 -85.061   0.818  0.00  0.00           C 0
-ATOM   4215   CB PRO D  40     -32.912 -85.589   1.670  0.00  0.00           C 0
-ATOM   5188   CB ASP D 165     -30.124 -89.821   0.278  0.00  0.00           C 0
-ATOM   5202   CA ASP D 167     -24.636 -89.299   3.600  0.00  0.00           C 0
-ATOM   5209    N SER D 168     -24.554 -87.156   4.722  0.00  0.00           N 0
-ATOM   4214    O PRO D  40     -34.001 -84.053   4.147  0.00  0.00           O 0
-ATOM   4227   CG LYS D  42     -35.073 -80.662   6.160  0.00  0.00           C 0
-ATOM   4230   NZ LYS D  42     -34.392 -81.149   9.015  0.00  0.00           N 1
-ATOM   4206   CB LYS D  39     -31.957 -80.391   2.601  0.00  0.00           C 0
-ATOM   3515    N LYS D  45     -30.218 -95.417   8.718  0.62  3.28           N 0
-ATOM   5213   CB SER D 168     -25.147 -85.018   5.751  0.00  0.00           C 0
-ATOM   5214   OG SER D 168     -25.341 -85.670   6.995  0.62  5.36           O 0
+ATOM   4210   NZ LYS L  61     -27.852 -79.077   2.382  0.68  5.47           N 1
+ATOM   4544   CG MET L 105     -25.614 -82.779   0.327  0.00  0.00           C 0
+ATOM   4217   CD PRO L  62     -31.695 -83.603   1.165  0.00  0.00           C 0
+ATOM   4542    O MET L 105     -27.871 -80.636  -0.267  0.73  1.07           O 0
+ATOM   5213   CB SER L 190     -25.147 -85.018   5.751  0.00  0.00           C 0
+ATOM   4215   CB PRO L  62     -32.912 -85.589   1.670  0.00  0.00           C 0
+ATOM   4216   CG PRO L  62     -31.813 -85.061   0.818  0.00  0.00           C 0
+ATOM   4214    O PRO L  62     -34.001 -84.053   4.147  0.00  0.00           O 0
+ATOM   4545   SD MET L 105     -25.288 -84.527   0.628  0.00  0.00           S 0
+ATOM   4208   CD LYS L  61     -30.046 -79.083   3.582  0.00  0.00           C 0
+ATOM   4207   CG LYS L  61     -30.827 -79.414   2.323  0.00  0.00           C 0
+ATOM   4227   CG LYS L  64     -35.073 -80.662   6.160  0.00  0.00           C 0
+ATOM   4230   NZ LYS L  64     -34.392 -81.149   9.015  0.00  0.00           N 1
+ATOM   4206   CB LYS L  61     -31.957 -80.391   2.601  0.00  0.00           C 0
+ATOM   5195    O GLN L 188     -26.328 -88.143   1.739  0.68  7.50           O 0
+ATOM   5209    N SER L 190     -24.554 -87.156   4.722  0.00  0.00           N 0
+ATOM   5214   OG SER L 190     -25.341 -85.670   6.995  0.62  5.36           O 0
+ATOM   5208  OD2 ASP L 189     -24.721 -90.728   6.436  0.00  0.00           O 0
+ATOM   5202   CA ASP L 189     -24.636 -89.299   3.600  0.00  0.00           C 0
+ATOM   5188   CB ASP L 187     -30.124 -89.821   0.278  0.00  0.00           C 0
+ATOM   5187    O ASP L 187     -27.341 -91.480   1.344  0.61  4.29           O 0
+ATOM   3515    N THR H 192     -30.218 -95.417   8.718  0.62  3.28           N 0
+ATOM   3506   CA HIS H 191     -27.806 -95.729   8.770  0.00  0.00           C 0
+ATOM   5183  CG2 THR L 186     -29.547 -95.331   3.770  0.00  0.00           C 0
+ATOM   3501    O VAL H 190     -26.696 -93.538  10.138  0.44  5.36           O 0
+ATOM   3512  CD2 HIS H 191     -25.195 -94.782   7.046  0.00  0.00           C 0
+ATOM   5181   CB THR L 186     -28.960 -94.460   2.674  0.00  0.00           C 0
+ATOM   5182  OG1 THR L 186     -27.631 -94.908   2.377  0.37  2.14           O 0
+ATOM   3518    O THR H 192     -31.991 -94.809   6.514  0.00  0.00           O 0
 TER
 END

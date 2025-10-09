@@ -22,9 +22,9 @@ ligands_txt: "ligs.txt"
 
 active_learning:
   model: random_forest # or LightGBM TODO: add GNN model
-  n_cycles: 5 # Number of AL cycles
-  n_initial: 5 # initial list of compounds to dock. Bump this 20-50 for production runs.
-  batch_size: 5 # initial list of compounds to dock. Bump this 20-50 for production runs.
+  n_cycles: 20 # Number of AL cycles
+  n_initial: 20 # initial list of compounds to dock. Bump this 20-50 for production runs.
+  batch_size: 20 # initial list of compounds to dock. Bump this 20-50 for production runs.
   scoring: docking_score # TODO: add affinity predictor
   acquisition: uncertainty_sampling  # many options exist here; see modules/utils/acquisition_strategies for all available
   sample_size: 5000 # sample size to predict on and select batch from.  

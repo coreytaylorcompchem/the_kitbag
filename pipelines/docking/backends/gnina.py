@@ -94,7 +94,7 @@ class GninaBackend(BaseBackend):
             cmd.extend(extra_args)
 
         # Run docking
-        logger.info(f"Running GNINA for ligand: {ligand['name']}")
+        logger.debug(f"Running GNINA for ligand: {ligand['name']}")
         logger.debug(f"Command: {' '.join(cmd)}")
 
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -103,6 +103,6 @@ class GninaBackend(BaseBackend):
             logger.error(f"GNINA failed:\n{result.stderr}")
             raise RuntimeError(f"GNINA docking failed for {ligand['name']}")
 
-        logger.debug(f"Docking completed for {ligand['name']}. Output: {output_path}")
+        logger.info(f"Docking completed for {ligand['name']}. Output: {output_path}")
         return [output_path]
 

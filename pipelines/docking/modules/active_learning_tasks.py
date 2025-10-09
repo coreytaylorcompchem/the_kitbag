@@ -5,6 +5,8 @@ from sklearn.ensemble import RandomForestRegressor
 import lightgbm as lgb
 from rdkit import Chem
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 
 from modules.utils.plot_performance import plot_performance
 from pipeline.task_registry import register_task, get_task
@@ -19,7 +21,7 @@ def active_learn_docking(backend, ligands, config, **kwargs):
     batch_size = al_config['batch_size']
     n_cycles = al_config['n_cycles']
     seed = al_config.get('seed', 42)
-    sample_size = al_config.get('sample_size', None)  # Optional sampling
+    sample_size = al_config.get('sample_size', None)
     model_name = al_config.get('model', 'random_forest')
     acquisition_method = al_config.get('acquisition', 'uncertainty_sampling')
     run_baseline = al_config.get('run_random_baseline', False)
@@ -34,7 +36,6 @@ def active_learn_docking(backend, ligands, config, **kwargs):
 
     use_confs = config.get('options', {}).get('use_conformer_generation', True)
 
-    # DataFrames to track per-cycle results
     al_results = []
     random_baseline_results = []
 
@@ -47,64 +48,84 @@ def active_learn_docking(backend, ligands, config, **kwargs):
 
     def select_acquisition(X_unlabeled, model, method):
         if method == "uncertainty_sampling":
-            # Uncertainty = std deviation of estimators predictions (RF or LGB model with n_estimators)
-            if hasattr(model, 'estimators_'):  # RF
+            if hasattr(model, 'estimators_'):
                 preds_per_tree = np.array([est.predict(X_unlabeled) for est in model.estimators_])
                 uncertainty = np.std(preds_per_tree, axis=0)
-            elif hasattr(model, 'booster_'):  # LightGBM model
-                # LightGBM does not expose individual tree predictions easily; fallback to predictive variance approx
+            elif hasattr(model, 'booster_'):
                 preds = model.predict(X_unlabeled)
-                uncertainty = np.abs(preds - np.mean(preds))  # crude proxy, improve if desired
+                uncertainty = np.abs(preds - np.mean(preds))
             else:
                 uncertainty = np.zeros(len(X_unlabeled))
             return uncertainty
-
         elif method == "greedy_max_score":
             preds = model.predict(X_unlabeled)
-            # If lower score is better, pick lowest predicted score (highest negative)
             return -preds
-
         elif method == "random_sampling":
             return np.random.rand(len(X_unlabeled))
-
         else:
             logger.warning(f"Unknown acquisition method {method}, defaulting to random.")
             return np.random.rand(len(X_unlabeled))
 
+    #  Helper for per-ligand docking
+    def dock_single_ligand(ligand, cycle, scores_dict, tag="main"):
+        """Run prep+docking for one ligand and return result dict."""
+        try:
+            get_task("standardise_ligand")(backend, ligand, config)
+
+            if use_confs:
+                get_task("generate_conformers")(backend, ligand, config)
+                get_task("cluster_conformers")(backend, ligand, config)
+
+            get_task("convert_to_pdbqt")(backend, ligand, config)
+            get_task("dock")(backend, ligand, config)
+
+            ligand_score = ligand.get('score')
+            scores_dict[ligand['name']] = ligand_score
+
+            logger.debug(f"[{tag.upper()}] {ligand['name']} score = {ligand_score}")
+
+            return {
+                'cycle': cycle + 1,
+                'name': ligand['name'],
+                'smiles': ligand['smiles'],
+                'score': ligand_score,
+                'tag': tag
+            }
+        except Exception as e:
+            logger.error(f"[{tag.upper()}] ❌ {ligand['name']} failed: {e}")
+            ligand['score'] = None
+            scores_dict[ligand['name']] = None
+            return {
+                'cycle': cycle + 1,
+                'name': ligand['name'],
+                'smiles': ligand['smiles'],
+                'score': None,
+                'tag': tag
+            }
+
+    # --- Main AL Loop ---
     for cycle in range(n_cycles):
-        logger.info(f">>>>>>>>>> Active Learning Cycle {cycle + 1}/{n_cycles} <<<<<<<<<<")
+        logger.info(f"\n>>>>>>>>>> ACTIVE LEARNING CYCLE {cycle + 1}/{n_cycles} <<<<<<<<<<")
 
-        # Dock all ligands in labeled_indices that have not been scored yet
+        # Dock current labeled batch (new ligands)
         current_batch = [ligands[i] for i in labeled_indices if ligands[i]['name'] not in scores]
+        if not current_batch:
+            logger.info("No new ligands to dock in this cycle.")
+            continue
 
-        for ligand in current_batch:
-            try:
-                get_task("standardise_ligand")(backend, ligand, config)
+        n_cores = os.cpu_count() or 20
+        n_workers = max(1, n_cores - 2)
+        logger.info(f"Using {n_workers} parallel workers for this docking round")
 
-                if use_confs:
-                    get_task("generate_conformers")(backend, ligand, config)
-                    get_task("cluster_conformers")(backend, ligand, config)
+        cycle_results = []
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [executor.submit(dock_single_ligand, lig, cycle, scores, "main") for lig in current_batch]
+            for future in as_completed(futures):
+                cycle_results.append(future.result())
 
-                get_task("convert_to_pdbqt")(backend, ligand, config)
-                get_task("dock")(backend, ligand, config)
+        al_results.extend(cycle_results)
 
-                ligand_score = ligand.get('score')
-                scores[ligand['name']] = ligand_score
-                logger.info(f"Docked ligand {ligand['name']} with score: {ligand_score}")
-
-                # Track results for plotting
-                al_results.append({
-                    'cycle': cycle + 1,
-                    'name': ligand['name'],
-                    'smiles': ligand['smiles'],
-                    'score': ligand_score
-                })
-            except Exception as e:
-                logger.error(f"Failed to prep/dock ligand {ligand['name']}: {e}")
-                ligand['score'] = None
-                scores[ligand['name']] = None
-
-        # Prepare training data (only ligands with valid scores)
+        # Train ML model
         X, y = [], []
         for idx in labeled_indices:
             lig = ligands[idx]
@@ -121,7 +142,6 @@ def active_learn_docking(backend, ligands, config, **kwargs):
         X = np.array(X)
         y = np.array(y)
 
-        # Train model
         if model_name == "random_forest":
             model = RandomForestRegressor(random_state=seed)
             model.fit(X, y)
@@ -132,13 +152,12 @@ def active_learn_docking(backend, ligands, config, **kwargs):
         else:
             raise ValueError(f"Unsupported model {model_name}")
 
-        # Subsample unlabeled set if sample_size is set
+        # Select next batch
         if sample_size is not None and len(unlabeled_indices) > sample_size:
             sampled_unlabeled = random.sample(unlabeled_indices, sample_size)
         else:
             sampled_unlabeled = unlabeled_indices
 
-        # Prepare fingerprints for unlabeled set
         X_unlabeled = []
         unlabeled_map = {}
         for idx_pos, idx in enumerate(sampled_unlabeled):
@@ -153,63 +172,41 @@ def active_learn_docking(backend, ligands, config, **kwargs):
             break
 
         X_unlabeled = np.array(X_unlabeled)
-
-        # Acquisition
         acquisition_scores = select_acquisition(X_unlabeled, model, acquisition_method)
-
-        # Select top batch_size indices by acquisition score
         selected_idx = np.argsort(-acquisition_scores)[:batch_size]
         new_indices = [unlabeled_map[i] for i in selected_idx]
-
-        # Add selected ligands to labeled set and remove from unlabeled
         labeled_indices.extend(new_indices)
         unlabeled_indices = list(set(unlabeled_indices) - set(new_indices))
 
-        logger.info(f"Selected {len(new_indices)} new ligands for docking.")
+        logger.info(f"Selected {len(new_indices)} new ligands for next cycle.")
 
-        # --- Random baseline (randomly select same batch size from unlabeled) ---
+        #  Random baseline docking (if selected in yaml)
         if run_baseline and len(unlabeled_indices) >= batch_size:
             random_sample_indices = random.sample(unlabeled_indices, batch_size)
-            for idx in random_sample_indices:
-                ligand = ligands[idx]
-                try:
-                    get_task("standardise_ligand")(backend, ligand, config)
+            random_ligands = [ligands[i] for i in random_sample_indices]
+            logger.info(f"Running random baseline on {len(random_ligands)} ligands...")
 
-                    if use_confs:
-                        get_task("generate_conformers")(backend, ligand, config)
-                        get_task("cluster_conformers")(backend, ligand, config)
+            baseline_results = []
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                futures = [executor.submit(dock_single_ligand, lig, cycle, scores, "baseline") for lig in random_ligands]
+                for future in as_completed(futures):
+                    baseline_results.append(future.result())
 
-                    get_task("convert_to_pdbqt")(backend, ligand, config)
-                    get_task("dock")(backend, ligand, config)
-
-                    baseline_score = ligand.get('score')
-                    if baseline_score is not None:
-                        random_baseline_results.append({
-                            'cycle': cycle + 1,
-                            'name': ligand['name'],
-                            'smiles': ligand['smiles'],
-                            'score': baseline_score
-                        })
-                    logger.info(f"Random baseline docked ligand {ligand['name']} with score: {baseline_score}")
-                except Exception as e:
-                    logger.warning(f"Random baseline ligand {ligand['name']} failed: {e}")
+            random_baseline_results.extend(baseline_results)
 
         if len(unlabeled_indices) == 0:
             logger.info("No more unlabeled ligands remaining. Ending active learning.")
             break
 
-    # Save AL scores per cycle
+    #  Save Results 
     cycle_df = pd.DataFrame(al_results)
     cycle_df.to_csv(config['output_dir'] / "per_cycle_scores.csv", index=False)
 
-    # Save baseline scores if applicable
+    baseline_df = None
     if run_baseline and random_baseline_results:
         baseline_df = pd.DataFrame(random_baseline_results)
         baseline_df.to_csv(config['output_dir'] / "baseline_scores.csv", index=False)
-    else:
-        baseline_df = None
 
-    # Plot results with batch and sample size in title
     plot_performance(
         per_cycle_df=cycle_df,
         output_dir=config['output_dir'],
@@ -219,6 +216,5 @@ def active_learn_docking(backend, ligands, config, **kwargs):
         acquisition_method=acquisition_method
     )
 
-    # Save overall docking scores (final)
     final_scores_df = pd.DataFrame({'name': list(scores.keys()), 'score': list(scores.values())})
     final_scores_df.to_csv(config['output_dir'] / "docking_scores.csv", index=False)

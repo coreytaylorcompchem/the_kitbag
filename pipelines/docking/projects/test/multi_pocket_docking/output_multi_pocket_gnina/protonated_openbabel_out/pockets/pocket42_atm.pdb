@@ -12,33 +12,33 @@ HEADER 5  - Mean B-factor of pocket residues  : 0.0000
 HEADER 6  - Hydrophobicity Score              : 14.8182
 HEADER 7  - Polarity Score                    :     7
 HEADER 8  - Amino Acid based volume Score     : 3.7273
-HEADER 9  - Pocket volume (Monte Carlo)       : 417.6803
+HEADER 9  - Pocket volume (Monte Carlo)       : 413.0123
 HEADER 10  -Pocket volume (convex hull)       : 33.3169
 HEADER 11 - Charge Score                      :     1
 HEADER 12 - Local hydrophobic density Score   : 8.9091
 HEADER 13 - Number of apolar alpha sphere     :    11
 HEADER 14 - Proportion of apolar alpha sphere : 0.3793
-ATOM    908   CE LYS A 116     -56.748 -12.243  15.248  0.00  0.00           C 0
-ATOM    907   CD LYS A 116     -57.191 -11.693  13.900  0.00  0.00           C 0
-ATOM    300  OG1 THR A  39     -54.275 -14.442   8.482  0.73  5.36           O 0
-ATOM    935   CA GLY A 120     -59.518 -18.009  12.581  0.00  0.00           C 0
-ATOM    904    O LYS A 116     -60.163 -14.272  12.968  0.50  5.36           O 0
-ATOM    909   NZ LYS A 116     -55.286 -12.092  15.479  0.00  0.00           N 1
-ATOM    934    N GLY A 120     -59.994 -17.108  11.538  0.75  1.09           N 0
-ATOM    271  CG2 THR A  36     -56.047 -10.383   8.361  0.00  0.00           C 0
-ATOM    301  CG2 THR A  39     -52.229 -13.251   8.950  0.00  0.00           C 0
-ATOM    959  CD2 LEU A 123     -56.482 -20.695  10.170  0.00  0.00           C 0
-ATOM    933   CB ALA A 119     -59.777 -15.641   8.880  0.00  0.00           C 0
-ATOM    896    O ASP A 115     -58.454 -12.329   9.265  0.74  2.14           O 0
-ATOM    902   CA LYS A 116     -59.705 -12.383  11.590  0.00  0.00           C 0
-ATOM    308  CD2 LEU A  40     -57.544 -18.864   7.037  0.00  0.00           C 0
-ATOM    302    N LEU A  40     -53.953 -16.823   6.788  0.00  0.00           N 0
-ATOM    298    O THR A  39     -52.642 -17.801   8.339  0.70  5.36           O 0
-ATOM    219   CD LYS A  30     -49.069  -7.836  10.489  0.00  0.00           C 0
-ATOM    216    O LYS A  30     -50.222  -5.719   7.489  0.19  4.29           O 0
-ATOM    263  OG1 THR A  35     -51.851  -8.272   6.657  0.45  5.36           O 0
-ATOM    220   CE LYS A  30     -49.282  -7.058  11.779  0.00  0.00           C 0
-ATOM    234    O GLN A  32     -53.845  -5.971   6.077  0.00  0.00           O 0
-ATOM    299   CB THR A  39     -52.904 -14.612   8.863  0.00  0.00           C 0
+ATOM    220   CE LYS A  47     -49.282  -7.058  11.779  0.00  0.00           C 0
+ATOM    219   CD LYS A  47     -49.069  -7.836  10.489  0.00  0.00           C 0
+ATOM    263  OG1 THR A  52     -51.851  -8.272   6.657  0.45  5.36           O 0
+ATOM    216    O LYS A  47     -50.222  -5.719   7.489  0.29  5.36           O 0
+ATOM    271  CG2 THR A  53     -56.047 -10.383   8.361  0.00  0.00           C 0
+ATOM    301  CG2 THR A  56     -52.229 -13.251   8.950  0.00  0.00           C 0
+ATOM    299   CB THR A  56     -52.904 -14.612   8.863  0.00  0.00           C 0
+ATOM    907   CD LYS A 133     -57.191 -11.693  13.900  0.00  0.00           C 0
+ATOM    909   NZ LYS A 133     -55.286 -12.092  15.479  0.00  0.00           N 1
+ATOM    904    O LYS A 133     -60.163 -14.272  12.968  0.65  5.36           O 0
+ATOM    896    O ASP A 132     -58.454 -12.329   9.265  0.74  2.14           O 0
+ATOM    902   CA LYS A 133     -59.705 -12.383  11.590  0.00  0.00           C 0
+ATOM    933   CB ALA A 136     -59.777 -15.641   8.880  0.00  0.00           C 0
+ATOM    934    N GLY A 137     -59.994 -17.108  11.538  0.75  1.09           N 0
+ATOM    234    O GLN A  49     -53.845  -5.971   6.077  0.00  0.00           O 0
+ATOM    300  OG1 THR A  56     -54.275 -14.442   8.482  0.73  5.36           O 0
+ATOM    959  CD1 LEU A 140     -56.482 -20.695  10.170  0.00  0.00           C 0
+ATOM    298    O THR A  56     -52.642 -17.801   8.339  0.70  5.36           O 0
+ATOM    908   CE LYS A 133     -56.748 -12.243  15.248  0.00  0.00           C 0
+ATOM    935   CA GLY A 137     -59.518 -18.009  12.581  0.00  0.00           C 0
+ATOM    308  CD1 LEU A  57     -57.544 -18.864   7.037  0.00  0.00           C 0
+ATOM    302    N LEU A  57     -53.953 -16.823   6.788  0.00  0.00           N 0
 TER
 END

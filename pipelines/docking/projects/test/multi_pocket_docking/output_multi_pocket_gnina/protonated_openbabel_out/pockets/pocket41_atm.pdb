@@ -12,28 +12,28 @@ HEADER 5  - Mean B-factor of pocket residues  : 0.0000
 HEADER 6  - Hydrophobicity Score              : -17.0000
 HEADER 7  - Polarity Score                    :     7
 HEADER 8  - Amino Acid based volume Score     : 4.8571
-HEADER 9  - Pocket volume (Monte Carlo)       : 289.5574
+HEADER 9  - Pocket volume (Monte Carlo)       : 287.3268
 HEADER 10  -Pocket volume (convex hull)       : 5.2943
 HEADER 11 - Charge Score                      :    -1
 HEADER 12 - Local hydrophobic density Score   : 2.0000
 HEADER 13 - Number of apolar alpha sphere     :     3
 HEADER 14 - Proportion of apolar alpha sphere : 0.1304
-ATOM   4120  OD1 ASN D  30     -42.449 -57.648 -17.261  0.64  9.64           O 0
-ATOM   1856   CG GLU B  42     -43.585 -52.912 -11.629  0.00  0.00           C 0
-ATOM   1880   CE LYS B  45     -46.698 -50.068 -16.351  0.00  0.00           C 0
-ATOM   1881   NZ LYS B  45     -47.261 -50.908 -17.443  0.58  7.66           N 1
-ATOM   4141  CE1 TYR D  32     -43.516 -59.508 -12.451  0.00  0.00           C 0
-ATOM   4121  ND2 ASN D  30     -43.528 -59.613 -17.399  0.19  6.56           N 0
-ATOM   1838  OE2 GLU B  40     -49.917 -54.258 -13.521  0.50  9.64           O 1
-ATOM   1839  OE1 GLU B  40     -48.172 -52.980 -13.867  0.41  6.43           O 0
-ATOM   4624  OD2 ASP D  92     -45.486 -62.031 -14.850  0.00  0.00           O 1
-ATOM   1855   CB GLU B  42     -44.862 -53.740 -11.613  0.00  0.00           C 0
-ATOM   1858  OE1 GLU B  42     -42.280 -54.894 -11.358  0.65  2.14           O 0
-ATOM   4144   OH TYR D  32     -43.900 -57.632 -11.038  0.83  2.14           O 0
-ATOM   1851    N GLU B  42     -46.629 -54.806 -10.296  0.62  1.09           N 0
-ATOM   4119   CG ASN D  30     -42.642 -58.791 -16.847  0.00  0.00           C 0
-ATOM   1844   CB ARG B  41     -48.090 -57.490  -9.878  0.00  0.00           C 0
-ATOM   1845   CG ARG B  41     -49.233 -58.485  -9.935  0.00  0.00           C 0
-ATOM   1846   CD ARG B  41     -48.701 -59.871 -10.245  0.00  0.00           C 0
+ATOM   1856   CG GLU A 305     -43.585 -52.912 -11.629  0.00  0.00           C 0
+ATOM   1855   CB GLU A 305     -44.862 -53.740 -11.613  0.00  0.00           C 0
+ATOM   1880   CE LYS A 308     -46.698 -50.068 -16.351  0.00  0.00           C 0
+ATOM   1881   NZ LYS A 308     -47.261 -50.908 -17.443  0.52  7.66           N 1
+ATOM   4120  OD1 ASN L  52     -42.449 -57.648 -17.261  0.43  9.64           O 0
+ATOM   4141  CE1 TYR L  54     -43.516 -59.508 -12.451  0.00  0.00           C 0
+ATOM   1846   CD ARG A 304     -48.701 -59.871 -10.245  0.00  0.00           C 0
+ATOM   1844   CB ARG A 304     -48.090 -57.490  -9.878  0.00  0.00           C 0
+ATOM   4624  OD1 ASP L 114     -45.486 -62.031 -14.850  0.00  0.00           O 1
+ATOM   1838  OE1 GLU A 303     -49.917 -54.258 -13.521  0.76  9.64           O 0
+ATOM   4121  ND2 ASN L  52     -43.528 -59.613 -17.399  0.19  6.56           N 0
+ATOM   1845   CG ARG A 304     -49.233 -58.485  -9.935  0.00  0.00           C 0
+ATOM   4144   OH TYR L  54     -43.900 -57.632 -11.038  0.76  2.14           O 0
+ATOM   1858  OE1 GLU A 305     -42.280 -54.894 -11.358  0.53  3.21           O 0
+ATOM   1851    N GLU A 305     -46.629 -54.806 -10.296  0.62  1.09           N 0
+ATOM   1839  OE2 GLU A 303     -48.172 -52.980 -13.867  0.68  6.43           O 1
+ATOM   4119   CG ASN L  52     -42.642 -58.791 -16.847  0.00  0.00           C 0
 TER
 END

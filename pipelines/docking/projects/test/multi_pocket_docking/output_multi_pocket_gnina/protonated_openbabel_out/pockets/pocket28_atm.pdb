@@ -9,34 +9,34 @@ HEADER 2  - Number of alpha spheres           :    21
 HEADER 3  - Mean alpha-sphere radius          : 3.7342
 HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5467
 HEADER 5  - Mean B-factor of pocket residues  : 0.0000
-HEADER 6  - Hydrophobicity Score              : 29.1667
-HEADER 7  - Polarity Score                    :     3
-HEADER 8  - Amino Acid based volume Score     : 4.1667
-HEADER 9  - Pocket volume (Monte Carlo)       : 296.3277
+HEADER 6  - Hydrophobicity Score              : -2.0000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.3333
+HEADER 9  - Pocket volume (Monte Carlo)       : 290.6482
 HEADER 10  -Pocket volume (convex hull)       : 19.4476
-HEADER 11 - Charge Score                      :    -1
+HEADER 11 - Charge Score                      :     2
 HEADER 12 - Local hydrophobic density Score   : 5.0000
 HEADER 13 - Number of apolar alpha sphere     :     6
 HEADER 14 - Proportion of apolar alpha sphere : 0.2857
-ATOM   3796    C MET D  83     -49.370 -97.786  18.582  0.00  0.00           C 0
-ATOM   3815   NZ ASN D  85     -46.471 -93.337  21.512  0.00  0.00           N 1
-ATOM   3798   CB MET D  83     -51.608 -96.603  18.669  0.00  0.00           C 0
-ATOM   3797    O MET D  83     -49.793 -98.570  19.434  0.00  0.00           O 0
-ATOM   3811   CB ASN D  85     -44.225 -97.067  21.739  0.00  0.00           C 0
-ATOM   3812   CG ASN D  85     -44.678 -95.722  21.208  0.00  0.00           C 0
-ATOM   3807    N ASN D  85     -45.362 -98.591  20.162  0.00  0.00           N 0
-ATOM   3813   CD ASN D  85     -44.495 -94.641  22.258  0.00  0.00           C 0
-ATOM   3795   CA MET D  83     -50.253 -96.700  17.963  0.00  0.00           C 0
-ATOM   3799    O MET D  83     -52.357 -95.499  18.193  0.64  8.57           O 0
-ATOM   3779    O TYR D  80     -50.485 -94.306  15.270  0.69  6.43           O 0
-ATOM   3777   CA TYR D  80     -48.197 -93.659  15.096  0.00  0.00           C 0
-ATOM   3769    O GLU D  79     -47.640 -96.217  15.797  0.00  0.00           O 0
-ATOM   3803    O GLY D  84     -45.380 -97.233  18.354  0.00  0.00           O 0
-ATOM   3768    C GLU D  79     -46.820 -95.653  15.051  0.00  0.00           C 0
-ATOM   3781   CG TYR D  80     -46.455 -92.181  14.302  0.00  0.00           C 0
-ATOM   3765   CB LEU D  78     -42.439 -94.440  17.578  0.00  0.00           C 0
-ATOM   3780   CB TYR D  80     -47.920 -92.223  14.624  0.00  0.00           C 0
-ATOM   3814   CE ASN D  85     -45.006 -93.300  21.768  0.00  0.00           C 0
-ATOM   3776    N TYR D  80     -47.015 -94.400  14.629  0.00  0.00           N 0
+ATOM   3796    C SER H 230     -49.370 -97.786  18.582  0.00  0.00           C 0
+ATOM   3815   NZ LYS H 232     -46.471 -93.337  21.512  0.00  0.00           N 1
+ATOM   3798   CB SER H 230     -51.608 -96.603  18.669  0.00  0.00           C 0
+ATOM   3797    O SER H 230     -49.793 -98.570  19.434  0.00  0.00           O 0
+ATOM   3795   CA SER H 230     -50.253 -96.700  17.963  0.00  0.00           C 0
+ATOM   3799   OG SER H 230     -52.357 -95.499  18.193  0.64  8.57           O 0
+ATOM   3779    O PRO H 227     -50.485 -94.306  15.270  0.69  6.43           O 0
+ATOM   3777   CA PRO H 227     -48.197 -93.659  15.096  0.00  0.00           C 0
+ATOM   3776    N PRO H 227     -47.015 -94.400  14.629  0.00  0.00           N 0
+ATOM   3765   CB ALA H 225     -42.439 -94.440  17.578  0.00  0.00           C 0
+ATOM   3803    O THR H 231     -45.380 -97.233  18.354  0.00  0.00           O 0
+ATOM   3769    O HIS H 226     -47.640 -96.217  15.797  0.00  0.00           O 0
+ATOM   3768    C HIS H 226     -46.820 -95.653  15.051  0.00  0.00           C 0
+ATOM   3811   CB LYS H 232     -44.225 -97.067  21.739  0.00  0.00           C 0
+ATOM   3812   CG LYS H 232     -44.678 -95.722  21.208  0.00  0.00           C 0
+ATOM   3813   CD LYS H 232     -44.495 -94.641  22.258  0.00  0.00           C 0
+ATOM   3807    N LYS H 232     -45.362 -98.591  20.162  0.00  0.00           N 0
+ATOM   3814   CE LYS H 232     -45.006 -93.300  21.768  0.00  0.00           C 0
+ATOM   3781   CG PRO H 227     -46.455 -92.181  14.302  0.00  0.00           C 0
+ATOM   3780   CB PRO H 227     -47.920 -92.223  14.624  0.00  0.00           C 0
 TER
 END

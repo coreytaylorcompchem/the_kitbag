@@ -1,6 +1,8 @@
 import yaml
 import csv
+import os
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 
 from backends import get_backend
@@ -27,6 +29,72 @@ logger = setup_logger(
     debug_mode=False,
     simple_format=True
 )
+
+
+def run_single_ligand_for_pocket(ligand, pocket_idx, backend, config, workflow_steps, output_dir):
+    """
+    Runs all workflow steps for one ligand in one pocket.
+    Returns a DataFrame of scores for this ligand-pocket pair.
+    """
+    ligand_name = ligand["name"]
+    docking_outputs = []
+
+    logger.debug(f"Starting ligand {ligand_name} in pocket {pocket_idx + 1}")
+
+    for step in workflow_steps:
+        task_func = get_task(step)
+        if not task_func:
+            raise ValueError(f"Workflow step '{step}' is not a registered task.")
+        result = task_func(backend, ligand, config, pocket_id=pocket_idx + 1)
+
+        if isinstance(result, list):
+            docking_outputs.extend(result)
+        elif result:
+            docking_outputs.append(result)
+
+    logger.debug(f"[Pocket {pocket_idx + 1}][{ligand_name}] docking_outputs = {docking_outputs}")
+
+    if not docking_outputs:
+        logger.warning(f"No docking outputs for ligand {ligand_name} in pocket {pocket_idx + 1}")
+        return pd.DataFrame()
+
+    pocket_dir = output_dir / f"pocket_{pocket_idx + 1}"
+    pocket_dir.mkdir(parents=True, exist_ok=True)
+
+    score_rows = []
+    for entry in docking_outputs:
+        pdbqt = entry["pdbqt"]
+        conformer = entry["conformer"]
+        docked_outputs = entry["docked_output"]
+
+        if not isinstance(docked_outputs, (list, tuple)):
+            docked_outputs = [docked_outputs]
+
+        for sdf_path in docked_outputs:
+            if isinstance(sdf_path, list):
+                if len(sdf_path) == 0:
+                    continue
+                sdf_path = sdf_path[0]
+
+            score_data = extract_scores_from_docking_output(sdf_path)
+            for score_entry in score_data:
+                score_rows.append({
+                    "ligand": ligand_name,
+                    "conformer": conformer,
+                    "pose_idx": score_entry["pose_idx"],
+                    "score": score_entry["score"],
+                    "pose_rank": score_entry["pose_rank"],
+                    "pdbqt": pdbqt,
+                    "docked_sdf": str(sdf_path),
+                    "pocket": pocket_idx + 1
+                })
+
+    if not score_rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(score_rows)
+    logger.debug(f"Completed ligand {ligand_name} in pocket {pocket_idx + 1}")
+    return df
 
 
 @register_workflow("multi_pocket_docking", description="Dock ligands into top N pockets detected by fpocket.")
@@ -125,71 +193,47 @@ def run(config_path: str):
     # Multi-pocket Docking
     # ----------------------
     for i, center in enumerate(pocket_centers):
-        logger.info(f">>>>>>>>>> Docking into pocket {i+1}/{len(pocket_centers)} <<<<<<<<<<")
+        logger.info(f"\n>>>>>>>>>> Docking into pocket {i + 1}/{len(pocket_centers)} <<<<<<<<<<")
         config['docking']['center'] = center
         config['docking']['size'] = [20, 20, 20]  # TODO: make dynamic later
 
-        for ligand in ligands:
-            logger.info(f"Processing ligand: {ligand['name']} for pocket {i+1}")
-            docking_outputs = []
+        # ---- Parallel docking per ligand for this pocket ----
+        n_cores = os.cpu_count() or 20
+        n_workers = max(1, n_cores - 2)
+        logger.info(f"Using {n_workers} parallel workers for pocket {i + 1}")
 
-            for step in workflow_steps:
-                task_func = get_task(step)
-                if not task_func:
-                    raise ValueError(f"Workflow step '{step}' is not a registered task.")
-                result = task_func(backend, ligand, config, pocket_id=i+1)
+        all_scores = []
 
-                if isinstance(result, list):
-                    docking_outputs.extend(result)
-                elif result:
-                    docking_outputs.append(result)
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [
+                executor.submit(
+                    run_single_ligand_for_pocket,
+                    ligand,
+                    i,
+                    backend,
+                    config,
+                    workflow_steps,
+                    output_dir
+                )
+                for ligand in ligands
+            ]
 
-            logger.debug(f"docking_outputs = {docking_outputs}")
+            for future in as_completed(futures):
+                try:
+                    df = future.result()
+                    if not df.empty:
+                        all_scores.append(df)
+                except Exception as e:
+                    logger.error(f"❌ Error docking ligand in pocket {i + 1}: {e}")
 
-            if docking_outputs:
-                pocket_dir = output_dir / f"pocket_{i+1}"
-                pocket_dir.mkdir(parents=True, exist_ok=True)
-
-                score_rows = []
-
-                for entry in docking_outputs:
-                    pdbqt = entry["pdbqt"]
-                    conformer = entry["conformer"]
-                    docked_outputs = entry["docked_output"]
-
-                    if not isinstance(docked_outputs, (list, tuple)):
-                        docked_outputs = [docked_outputs]
-
-                    for sdf_path in docked_outputs:
-                        if isinstance(sdf_path, list):
-                            if len(sdf_path) == 0:
-                                logger.warning(f"No docking outputs found for ligand {ligand['name']}")
-                                continue
-                            sdf_path = sdf_path[0]
-
-                        score_data = extract_scores_from_docking_output(sdf_path)
-
-                        for score_entry in score_data:
-                            score_rows.append({
-                                "ligand": ligand["name"],
-                                "conformer": conformer,
-                                "pose_idx": score_entry["pose_idx"],
-                                "score": score_entry["score"],
-                                "pose_rank": score_entry["pose_rank"],
-                                "pdbqt": pdbqt,
-                                "docked_sdf": str(sdf_path),
-                                "pocket": i + 1  # use 1-based indexing
-                            })
-
-                # Save scores for this pocket
-                score_csv_path = pocket_dir / "docking_scores.csv"
-                if score_csv_path.exists() and score_csv_path.stat().st_size > 0:
-                    existing_df = pd.read_csv(score_csv_path)
-                    df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
-                else:
-                    df = pd.DataFrame(score_rows)
-
-                df.to_csv(score_csv_path, index=False)
+        # ---- Save per-pocket docking scores ----
+        if all_scores:
+            pocket_dir = output_dir / f"pocket_{i + 1}"
+            pocket_dir.mkdir(parents=True, exist_ok=True)
+            score_csv_path = pocket_dir / "docking_scores.csv"
+            combined_df = pd.concat(all_scores, ignore_index=True)
+            combined_df.to_csv(score_csv_path, index=False)
+            logger.info(f"Saved docking scores for pocket {i + 1} to {score_csv_path}")
 
     # ----------------------
     # Summarise & Plot
@@ -215,4 +259,4 @@ def run(config_path: str):
     else:
         logger.info("Skipping result plotting.")
 
-    logger.info("Multi-pocket docking workflow completed.")
+    logger.info("Multi-pocket docking workflow completed successfully.")

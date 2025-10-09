@@ -12,26 +12,26 @@ HEADER 5  - Mean B-factor of pocket residues  : 0.0000
 HEADER 6  - Hydrophobicity Score              : 83.2857
 HEADER 7  - Polarity Score                    :     0
 HEADER 8  - Amino Acid based volume Score     : 4.2857
-HEADER 9  - Pocket volume (Monte Carlo)       : 230.3719
+HEADER 9  - Pocket volume (Monte Carlo)       : 236.6785
 HEADER 10  -Pocket volume (convex hull)       : 7.0074
 HEADER 11 - Charge Score                      :     0
 HEADER 12 - Local hydrophobic density Score   : 15.8824
 HEADER 13 - Number of apolar alpha sphere     :    17
 HEADER 14 - Proportion of apolar alpha sphere : 0.9444
-ATOM   2170  CG2 ILE B  81     -47.183  -8.912 -16.006  0.00  0.00           C 0
-ATOM   1565  CG2 ILE B   5     -51.862  -9.200 -10.643  0.00  0.00           C 0
-ATOM   1598  CD1 ILE B   9     -49.497 -12.854 -10.717  0.00  0.00           C 0
-ATOM   2143  CG1 ILE B  78     -47.404  -9.558 -10.920  0.00  0.00           C 0
-ATOM   2144  CG2 ILE B  78     -48.062  -7.200 -11.470  0.00  0.00           C 0
-ATOM   2171  CD1 ILE B  81     -48.104 -11.359 -17.372  0.00  0.00           C 0
-ATOM   2135    C ALA B  77     -44.084  -9.364 -13.462  0.00  0.00           C 0
-ATOM   2136    O ALA B  77     -44.401  -9.148 -14.637  0.42  3.21           O 0
-ATOM   1566  CD1 ILE B   5     -52.746  -6.372 -10.956  0.00  0.00           C 0
-ATOM   2141    O ILE B  78     -46.601  -6.462 -14.162  0.00  0.00           O 0
-ATOM   2186   SG CYS B  83     -47.757  -4.318 -16.676  0.00  0.00           S 0
-ATOM   2137   CB ALA B  77     -43.049 -11.556 -12.804  0.00  0.00           C 0
-ATOM   2116  CD1 LEU B  74     -45.965 -13.235  -9.150  0.00  0.00           C 0
-ATOM   2138    N ILE B  78     -44.843  -8.972 -12.435  0.00  0.00           N 0
-ATOM   2139   CA ILE B  78     -46.106  -8.271 -12.655  0.00  0.00           C 0
+ATOM   2137   CB ALA A 340     -43.049 -11.556 -12.804  0.00  0.00           C 0
+ATOM   2171  CD1 ILE A 344     -48.104 -11.359 -17.372  0.00  0.00           C 0
+ATOM   1598  CD1 ILE A 272     -49.497 -12.854 -10.717  0.00  0.00           C 0
+ATOM   2143  CG1 ILE A 341     -47.404  -9.558 -10.920  0.00  0.00           C 0
+ATOM   2141    O ILE A 341     -46.601  -6.462 -14.162  0.00  0.00           O 0
+ATOM   1566  CD1 ILE A 268     -52.746  -6.372 -10.956  0.00  0.00           C 0
+ATOM   2144  CG2 ILE A 341     -48.062  -7.200 -11.470  0.00  0.00           C 0
+ATOM   2186   SG CYS A 346     -47.757  -4.318 -16.676  0.00  0.00           S 0
+ATOM   2135    C ALA A 340     -44.084  -9.364 -13.462  0.00  0.00           C 0
+ATOM   2136    O ALA A 340     -44.401  -9.148 -14.637  0.42  3.21           O 0
+ATOM   2138    N ILE A 341     -44.843  -8.972 -12.435  0.00  0.00           N 0
+ATOM   2170  CG2 ILE A 344     -47.183  -8.912 -16.006  0.00  0.00           C 0
+ATOM   2139   CA ILE A 341     -46.106  -8.271 -12.655  0.00  0.00           C 0
+ATOM   1565  CG2 ILE A 268     -51.862  -9.200 -10.643  0.00  0.00           C 0
+ATOM   2116  CD1 LEU A 337     -45.965 -13.235  -9.150  0.00  0.00           C 0
 TER
 END

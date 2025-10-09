@@ -12,34 +12,34 @@ HEADER 5  - Mean B-factor of pocket residues  : 0.0000
 HEADER 6  - Hydrophobicity Score              : 15.0000
 HEADER 7  - Polarity Score                    :     5
 HEADER 8  - Amino Acid based volume Score     : 4.6250
-HEADER 9  - Pocket volume (Monte Carlo)       : 256.9076
+HEADER 9  - Pocket volume (Monte Carlo)       : 260.7011
 HEADER 10  -Pocket volume (convex hull)       : 16.6246
 HEADER 11 - Charge Score                      :     0
 HEADER 12 - Local hydrophobic density Score   : 13.0000
 HEADER 13 - Number of apolar alpha sphere     :    14
 HEADER 14 - Proportion of apolar alpha sphere : 0.4828
-ATOM    857   OH TYR A 110     -59.218  -9.298   3.417  0.00  0.00           O 0
-ATOM    855  CE2 TYR A 110     -61.079  -7.814   3.390  0.00  0.00           C 0
-ATOM    244   CB LYS A  33     -57.828  -5.583   4.575  0.00  0.00           C 0
-ATOM    254   CG GLU A  34     -54.430  -6.992   0.082  0.00  0.00           C 0
-ATOM    250   CA GLU A  34     -54.607  -8.094   2.392  0.00  0.00           C 0
-ATOM   1583   CE MET B   7     -54.951 -10.671  -0.554  0.00  0.00           C 0
-ATOM   1582   SD MET B   7     -56.160 -11.129  -1.793  0.00  0.00           S 0
-ATOM    790    O ALA A 103     -63.601  -8.382  -2.938  0.32  9.64           O 0
-ATOM    850   CB TYR A 110     -64.706  -8.321   2.322  0.00  0.00           C 0
-ATOM    851   CG TYR A 110     -63.241  -8.581   2.632  0.00  0.00           C 0
-ATOM    853  CD2 TYR A 110     -62.415  -7.576   3.122  0.00  0.00           C 0
-ATOM    249    N GLU A  34     -55.041  -7.034   3.294  0.00  0.00           N 0
-ATOM    242    C LYS A  33     -55.993  -7.234   4.210  0.00  0.00           C 0
-ATOM   1558  OE2 GLU B   4     -58.278  -5.508  -3.352  0.00  0.00           O 1
-ATOM    822   CB ALA A 107     -66.208  -3.913  -1.133  0.00  0.00           C 0
-ATOM    819   CA ALA A 107     -66.468  -5.252  -0.427  0.00  0.00           C 0
-ATOM    821    O ALA A 107     -66.075  -5.291   1.928  0.77  4.29           O 0
-ATOM    856   CZ TYR A 110     -60.547  -9.063   3.152  0.00  0.00           C 0
-ATOM   1557  OE1 GLU B   4     -58.580  -7.222  -4.695  0.81  7.50           O 0
-ATOM    791   CB ALA A 103     -62.136 -10.681  -1.269  0.00  0.00           C 0
-ATOM    763   NE ARG A 100     -58.309 -13.282   0.225  0.00  0.00           N 1
-ATOM    766  NH2 ARG A 100     -57.929 -12.203   2.220  0.00  0.00           N 0
-ATOM   1556   CD GLU B   4     -57.842  -6.449  -4.047  0.00  0.00           C 0
+ATOM    254   CG GLU A  51     -54.430  -6.992   0.082  0.00  0.00           C 0
+ATOM    249    N GLU A  51     -55.041  -7.034   3.294  0.00  0.00           N 0
+ATOM    244   CB LYS A  50     -57.828  -5.583   4.575  0.00  0.00           C 0
+ATOM    857   OH TYR A 127     -59.218  -9.298   3.417  0.00  0.00           O 0
+ATOM   1582   SD MET A 270     -56.160 -11.129  -1.793  0.00  0.00           S 0
+ATOM   1558  OE2 GLU A 267     -58.278  -5.508  -3.352  0.00  0.00           O 1
+ATOM   1556   CD GLU A 267     -57.842  -6.449  -4.047  0.00  0.00           C 0
+ATOM   1583   CE MET A 270     -54.951 -10.671  -0.554  0.00  0.00           C 0
+ATOM    855  CE2 TYR A 127     -61.079  -7.814   3.390  0.00  0.00           C 0
+ATOM    856   CZ TYR A 127     -60.547  -9.063   3.152  0.00  0.00           C 0
+ATOM    242    C LYS A  50     -55.993  -7.234   4.210  0.00  0.00           C 0
+ATOM    250   CA GLU A  51     -54.607  -8.094   2.392  0.00  0.00           C 0
+ATOM    853  CD2 TYR A 127     -62.415  -7.576   3.122  0.00  0.00           C 0
+ATOM    790    O ALA A 120     -63.601  -8.382  -2.938  0.57  9.64           O 0
+ATOM    822   CB ALA A 124     -66.208  -3.913  -1.133  0.00  0.00           C 0
+ATOM    819   CA ALA A 124     -66.468  -5.252  -0.427  0.00  0.00           C 0
+ATOM    821    O ALA A 124     -66.075  -5.291   1.928  0.75  4.29           O 0
+ATOM    851   CG TYR A 127     -63.241  -8.581   2.632  0.00  0.00           C 0
+ATOM    850   CB TYR A 127     -64.706  -8.321   2.322  0.00  0.00           C 0
+ATOM   1557  OE1 GLU A 267     -58.580  -7.222  -4.695  0.71  6.43           O 0
+ATOM    791   CB ALA A 120     -62.136 -10.681  -1.269  0.00  0.00           C 0
+ATOM    763   NE ARG A 117     -58.309 -13.282   0.225  0.00  0.00           N 1
+ATOM    766  NH2 ARG A 117     -57.929 -12.203   2.220  0.00  0.00           N 0
 TER
 END

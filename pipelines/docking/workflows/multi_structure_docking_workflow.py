@@ -1,7 +1,10 @@
 import yaml
 import csv
 import pandas as pd
+import os
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from rdkit import Chem
 
 from backends import get_backend
@@ -21,6 +24,80 @@ from workflows.utils.docking import (
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+
+def run_single_ligand_for_protein(ligand, pdb_path, backend, config, workflow_steps, protein_output_dir):
+    """
+    Runs all workflow steps for one ligand against one protein structure.
+    Returns DataFrame of docking scores for this ligand-protein pair.
+    """
+    docking_outputs = []
+    ligand_name = ligand["name"]
+
+    logger.debug(f"Starting ligand {ligand_name} vs {pdb_path.name}")
+
+    for step in workflow_steps:
+        task_func = get_task(step)
+        if not task_func:
+            raise ValueError(f"Workflow step '{step}' is not a registered task.")
+
+        result = task_func(
+            backend,
+            ligand,
+            config,
+            protein_id=pdb_path.stem,
+            pdb_path=pdb_path
+        )
+
+        if isinstance(result, list):
+            docking_outputs.extend(result)
+        elif result:
+            docking_outputs.append(result)
+
+    logger.debug(f"[{ligand_name}] docking_outputs = {docking_outputs}")
+
+    if not docking_outputs:
+        logger.warning(f"No docking outputs for ligand {ligand_name} vs {pdb_path.name}")
+        return pd.DataFrame()
+
+    pocket_dir = protein_output_dir / "pocket_0"
+    pocket_dir.mkdir(parents=True, exist_ok=True)
+
+    score_rows = []
+
+    for entry in docking_outputs:
+        pdbqt = entry["pdbqt"]
+        conformer = entry["conformer"]
+        docked_outputs = entry["docked_output"]
+        if not isinstance(docked_outputs, (list, tuple)):
+            docked_outputs = [docked_outputs]
+
+        for sdf_path in docked_outputs:
+            if isinstance(sdf_path, list):
+                if len(sdf_path) == 0:
+                    continue
+                sdf_path = sdf_path[0]
+
+            score_data = extract_scores_from_docking_output(sdf_path)
+            for score_entry in score_data:
+                score_rows.append({
+                    "ligand": ligand_name,
+                    "conformer": conformer,
+                    "pose_idx": score_entry["pose_idx"],
+                    "score": score_entry["score"],
+                    "pose_rank": score_entry["pose_rank"],
+                    "pdbqt": pdbqt,
+                    "docked_sdf": str(sdf_path),
+                    "structure": pdb_path.stem
+                })
+
+    if not score_rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(score_rows)
+    logger.debug(f"✅ Completed ligand {ligand_name} vs {pdb_path.name}")
+    return df
+
 
 @register_workflow("multi_structure_docking", description="Dock ligands into multiple PDB structures.")
 def run(config_path: str):
@@ -48,7 +125,7 @@ def run(config_path: str):
     config["output_dir"] = output_dir
 
     # ----------------------
-    # Handle conformer generation flag
+    # Conformer generation flag
     # ----------------------
     options = config.get("options", {})
     use_conformer_generation = options.get("use_conformer_generation", True)
@@ -101,6 +178,9 @@ def run(config_path: str):
 
     logger.info(f"Found {len(pdb_files)} PDB files for docking.")
 
+    # ----------------------
+    # Loop over protein structures
+    # ----------------------
     for i, pdb_path in enumerate(pdb_files):
         pdb_path = Path(pdb_path)
         logger.info(f"\n>>>>>>>>>> Docking to structure {i+1}/{len(pdb_files)}: {pdb_path.name} <<<<<<<<<<")
@@ -126,82 +206,41 @@ def run(config_path: str):
         # Ensure config['protein']['pdb_path'] is set
         config.setdefault("protein", {})["pdb_path"] = str(pdb_path)
 
-        for ligand in ligands:
-            logger.info(f"Processing ligand: {ligand['name']} against {pdb_path.name}")
-            docking_outputs = []
+        # ----------------------
+        # Parallel docking per ligand for this protein
+        # ----------------------
+        n_cores = os.cpu_count() or 20
+        n_workers = max(1, n_cores - 2)
+        logger.info(f"Using {n_workers} parallel workers for {pdb_path.name}")
 
-            for step in workflow_steps:  # <-- use filtered workflow steps here
-                task_func = get_task(step)
-                if not task_func:
-                    raise ValueError(f"Workflow step '{step}' is not a registered task.")
+        all_scores = []
 
-                result = task_func(
-                    backend,
-                    ligand,
-                    config,
-                    protein_id=pdb_path.stem,
-                    pdb_path=pdb_path
-                )
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [
+                executor.submit(run_single_ligand_for_protein, ligand, pdb_path, backend, config, workflow_steps, protein_output_dir)
+                for ligand in ligands
+            ]
+            for future in as_completed(futures):
+                try:
+                    df = future.result()
+                    if not df.empty:
+                        all_scores.append(df)
+                except Exception as e:
+                    logger.error(f"❌ Error docking ligand for {pdb_path.name}: {e}")
 
-                if isinstance(result, list):
-                    docking_outputs.extend(result)
-                elif result:
-                    docking_outputs.append(result)
-
-            logger.debug(f"docking_outputs = {docking_outputs}")
-
-            if docking_outputs:
-                pocket_dir = protein_output_dir / "pocket_0"
-                pocket_dir.mkdir(parents=True, exist_ok=True)
-
-                score_rows = []
-
-                for entry in docking_outputs:
-                    pdbqt = entry["pdbqt"]
-                    conformer = entry["conformer"]
-
-                    docked_outputs = entry["docked_output"]
-                    if not isinstance(docked_outputs, (list, tuple)):
-                        docked_outputs = [docked_outputs]
-
-                    for sdf_path in docked_outputs:
-                        if isinstance(sdf_path, list):
-                            if len(sdf_path) == 0:
-                                logger.warning(f"No docking outputs found for ligand {ligand['name']}")
-                                continue
-                            sdf_path = sdf_path[0]
-
-                        score_data = extract_scores_from_docking_output(sdf_path)
-
-                        for score_entry in score_data:
-                            score_rows.append({
-                                "ligand": ligand["name"],
-                                "conformer": conformer,
-                                "pose_idx": score_entry["pose_idx"],
-                                "score": score_entry["score"],
-                                "pose_rank": score_entry["pose_rank"],
-                                "pdbqt": pdbqt,
-                                "docked_sdf": str(sdf_path),
-                                "structure": pdb_path.stem
-                            })
-
-                # Check if docking_scores.csv already exists
-                score_csv_path = pocket_dir / "docking_scores.csv"
-
-                if score_csv_path.exists():
-                    if score_csv_path.stat().st_size > 0:
-                        existing_df = pd.read_csv(score_csv_path)
-                        df = pd.concat([existing_df, pd.DataFrame(score_rows)], ignore_index=True)
-                    else:
-                        logger.warning(f"Existing docking_scores.csv is empty — will overwrite it.")
-                        df = pd.DataFrame(score_rows)
-                else:
-                    df = pd.DataFrame(score_rows)
-
-                df.to_csv(score_csv_path, index=False)
+        # ----------------------
+        # Save per-protein docking scores
+        # ----------------------
+        if all_scores:
+            pocket_dir = protein_output_dir / "pocket_0"
+            pocket_dir.mkdir(parents=True, exist_ok=True)
+            score_csv_path = pocket_dir / "docking_scores.csv"
+            combined_df = pd.concat(all_scores, ignore_index=True)
+            combined_df.to_csv(score_csv_path, index=False)
+            logger.info(f"✅ Saved docking scores to {score_csv_path}")
 
     # ----------------------
-    # Summarise
+    # Summarise all results
     # ----------------------
     final_summary_csv = output_dir / "multi_structure_docking_summary.csv"
     summarise_docking_results(output_dir, final_summary_csv)
@@ -211,4 +250,4 @@ def run(config_path: str):
     else:
         logger.info("Skipping result plotting.")
 
-    logger.info("Multi-structure docking workflow completed.")
+    logger.info("Multi-structure docking workflow completed successfully.")

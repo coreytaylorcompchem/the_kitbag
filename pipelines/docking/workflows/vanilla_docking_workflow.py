@@ -1,6 +1,9 @@
+import os
 import yaml
 import csv
 from pathlib import Path
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from backends import get_backend, discover_backends
 from modules.protein_preparation import ProteinPreparer
@@ -16,6 +19,18 @@ logger = setup_logger(
     debug_mode=False,
     simple_format=True
 )
+
+def run_single_ligand(ligand, backend, config, workflow_steps):
+    """
+    Run all workflow steps for a single ligand.
+    Returns ligand name for logging.
+    """
+    for step in workflow_steps:
+        task_func = get_task(step)
+        if not task_func:
+            raise ValueError(f"Workflow step '{step}' is not a registered task.")
+        task_func(backend, ligand, config)
+    return ligand['name']
 
 # --------------------------
 # Main Workflow Function
@@ -42,9 +57,11 @@ def run(config_path: str):
     validate_config(config, required_fields)
 
     docking_cfg = config.get("docking", {})
+    backend_cfg = config.get("backend", {})
 
     logger.info("---------------------------------------------")
     logger.info("Loaded YAML configuration:")
+    logger.info(f"Backend / using GPU: {backend_cfg.get('name')} / {backend_cfg.get('use_gpu')}")
     logger.info(f"Output directory: {docking_cfg.get('output_dir')}")
     logger.info(f"Conformer generation: max final conformers: {docking_cfg.get('final_n_conformers', 5)}")
     logger.info(f"Conformer generation: RMSD threshold:   {docking_cfg.get('rmsd_threshold', 0.75)}")
@@ -147,14 +164,23 @@ def run(config_path: str):
             if step not in ("generate_conformers", "cluster_conformers", "save_final_conformers")
         ]
 
-    # Execute workflow per ligand
-    for ligand in ligands:
-        logger.debug(f"Processing ligand: {ligand['name']}")
-        for step in workflow_steps:
-            task_func = get_task(step)
-            if not task_func:
-                raise ValueError(f"Workflow step '{step}' is not a registered task.")
-            logger.debug(f"Running step: {step}")
-            task_func(backend, ligand, config)
+    # ----------------------
+    # Parallel Execution (per ligand)
+    # ----------------------
+    n_cores = os.cpu_count() or 20
+    n_workers = max(1, n_cores - 2)  # reserve 2 cores
+    logger.info(f"Using {n_workers} parallel workers (out of {n_cores} cores).")
+
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = [
+            executor.submit(run_single_ligand, lig, backend, config, workflow_steps)
+            for lig in ligands
+        ]
+        for future in as_completed(futures):
+            try:
+                ligand_name = future.result()
+                # logger.info(f"Completed ligand: {ligand_name}")
+            except Exception as e:
+                logger.error(f"❌ Error during ligand processing: {e}")
 
     logger.info("Vanilla docking workflow completed.")
