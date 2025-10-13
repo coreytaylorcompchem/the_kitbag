@@ -1,0 +1,37 @@
+workflow_name: pbpk_brain_workflow
+
+input_file: data/ligands.csv
+input_mode: smiles    # "logp" or "smiles"
+
+workflow_serial:
+  - pbpk_parameter_prediction
+  - pbpk_model_assembly
+  - pbpk_simulation
+  - pbpk_analysis
+
+pbpk_parameter_prediction:
+  predictors:
+    clint_model: true
+    fu_p_model: true
+    logbb_model: true
+  output_dir: outputs/pbpk/params
+
+pbpk_model_assembly:
+  physiology_file: data/human_physiology.yaml
+  output_dir: outputs/pbpk/models
+
+pbpk_simulation:
+  solver: scipy
+  simulation_time: 480   # minutes
+  dose_mg: 10
+  exchange_model: hybrid  # flow_limited | permeability_limited | hybrid
+  output_dir: outputs/pbpk/simulations
+
+pbpk_analysis:
+  metrics: [auc_plasma, auc_brain, kp_brain, kp_uu, cmax, cmax_ratio]
+  output_dir: outputs/pbpk/analysis
+
+output:
+  directory: outputs/pbpk
+  filename: pbpk_summary.csv
+  overwrite: true

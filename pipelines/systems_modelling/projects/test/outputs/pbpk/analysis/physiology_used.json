@@ -1,0 +1,13 @@
+{
+  "plasma": {
+    "V_p": 3.0
+  },
+  "brain": {
+    "V_b": 1.4,
+    "Q_brain": 0.75,
+    "PS_BBB": 0.05,
+    "k_efflux": 0.001,
+    "fu_brain_default": 0.05,
+    "B_to_P": 1.0
+  }
+}

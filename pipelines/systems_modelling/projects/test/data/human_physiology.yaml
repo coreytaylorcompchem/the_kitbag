@@ -1,0 +1,14 @@
+physiology:
+  plasma:
+    V_p: 3.0        # L
+  brain:
+    V_b: 1.4        # L
+    Q_brain: 0.75   # L/min
+    PS_BBB: 0.05    # L/min
+    k_efflux: 0.001 # 1/min # could model this instead of using lit value as it varies with compounds that have significant efflux or transporter interactions
+    fu_brain_default: 0.05 # could model this instead of using lit value
+    B_to_P: 1.0
+metadata:
+  species: human
+  source: "Simcyp, 2023 defaults"
+  notes: "Baseline adult human parameters used for PBPK model assembly"
