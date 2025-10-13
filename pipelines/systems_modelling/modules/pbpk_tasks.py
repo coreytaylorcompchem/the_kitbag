@@ -71,7 +71,7 @@ def get_available_pbpk_models():
 # ----------------------------------------------------------
 @register_task("pbpk_parameter_prediction", category="PBPK", description="Predict PBPK parameters from SMILES")
 def pbpk_parameter_prediction(config, df=None):
-    """Predict PBPK parameters like Clint, fu_p, logBB from SMILES."""
+    """Predict PBPK parameters from SMILES."""
     pbpk_cfg = config.get("pbpk_parameter_prediction", {})
     predictors_cfg = pbpk_cfg.get("predictors", {})
     output_dir = Path(pbpk_cfg.get("output_dir", "outputs/pbpk/params"))
@@ -79,10 +79,7 @@ def pbpk_parameter_prediction(config, df=None):
 
     logger.info(f"[Config check] Predictors in YAML: {predictors_cfg}")
 
-    # Load all available PBPK models (defined centrally)
     all_models = get_available_pbpk_models()
-
-    # Determine which models are enabled
     selected_models = {
         name: all_models[name]
         for name, enabled in predictors_cfg.items()
@@ -97,7 +94,6 @@ def pbpk_parameter_prediction(config, df=None):
 
     logger.info(f"Enabled PBPK models: {list(selected_models.keys())}")
 
-    # --- Input file handling ---
     input_file = config.get("input_file")
     if not input_file:
         raise ValueError("Missing 'input_file' in config.")
@@ -113,7 +109,7 @@ def pbpk_parameter_prediction(config, df=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    # --- Run predictions for each enabled model ---
+    # Run predictions for each enabled model
     for model_name, info in selected_models.items():
         model_path = info["path"]
         model_class = info["class"]
@@ -125,12 +121,11 @@ def pbpk_parameter_prediction(config, df=None):
         logger.info(f"Loading model '{model_name}' from {model_path}")
         checkpoint = torch.load(model_path, map_location=device)
 
-        # --- Automatically detect model init signature ---
         sig = inspect.signature(model_class.__init__)
         init_params = sig.parameters
 
         model_args = {}
-        for arg in list(init_params.keys())[1:]:  # skip 'self'
+        for arg in list(init_params.keys())[1:]:
             if arg in checkpoint:
                 model_args[arg] = checkpoint[arg]
             elif arg in checkpoint.get("model_hparams", {}):
@@ -184,7 +179,7 @@ def pbpk_parameter_prediction(config, df=None):
         model.eval()
 
 
-        # --- Run inference ---
+        #  Run inference for selected DL models
         preds = []
         for smi in df["smiles"]:
             graph_data = featuriser(smi)
@@ -201,7 +196,6 @@ def pbpk_parameter_prediction(config, df=None):
 
         result_df[model_name.replace("_model", "")] = preds
 
-    # --- Save outputs ---
     out_path = output_dir / "pbpk_params.csv"
     result_df.to_csv(out_path, index=False)
     logger.info(f"Parameter predictions saved to {out_path}")
@@ -227,7 +221,6 @@ def pbpk_model_assembly(config, df=None):
     if not physiology_file:
         raise ValueError("Missing 'physiology_file' in pbpk_model_assembly configuration.")
 
-    # --- Load physiology YAML ---
     physiology_path = Path(os.path.expandvars(os.path.expanduser(physiology_file))).resolve()
     if not physiology_path.exists():
         raise FileNotFoundError(f"Physiology file not found at: {physiology_path}")
@@ -236,11 +229,10 @@ def pbpk_model_assembly(config, df=None):
     with open(physiology_path, "r") as f:
         physiology = yaml.safe_load(f)
 
-    # --- Extract section for validation/logging ---
     brain_phys = physiology.get("physiology", {}).get("brain", {})
     logger.debug(f"Loaded brain physiology keys: {list(brain_phys.keys())}")
 
-    # --- Save combined physiology + model parameters ---
+    # Save combined physiology + model parameters
     assembled_path = output_dir / "pbpk_assembled_model.json"
     with open(assembled_path, "w") as f:
         json.dump(physiology, f, indent=2)
@@ -254,7 +246,6 @@ def pbpk_model_assembly(config, df=None):
 
     logger.info(f"PBPK model assembled and saved to {output_dir}")
 
-    # --- Return the correct data for downstream tasks ---
     result = {
         "physiology": physiology.get("physiology", physiology),
         "df": df
@@ -275,13 +266,11 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
     Combines ML-predicted PK parameters with physiology constants.
     """
 
-    # --- Validate inputs ---
     if df is None:
         raise ValueError("Missing 'df' (predicted PBPK parameters) for PBPK simulation.")
     if physiology is None:
         raise ValueError("Missing 'physiology' data for PBPK simulation.")
 
-    # --- Simulation configuration ---
     sim_cfg = config.get("pbpk_simulation", {})
     t_max = sim_cfg.get("simulation_time", 240)
     dose = sim_cfg.get("dose_mg", 10.0)
@@ -290,8 +279,7 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
     outdir = Path(sim_cfg.get("output_dir", "outputs/pbpk/simulations"))
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # --- Extract physiological parameters (handle both nested and flat YAMLs) ---
-    phys_root = physiology.get("physiology", physiology)  # handle nested structure
+    phys_root = physiology.get("physiology", physiology)
     brain_phys = phys_root.get("brain", {})
     plasma_phys = phys_root.get("plasma", {})
     flows = phys_root.get("flows", {})
@@ -306,39 +294,36 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
 
     results = []
 
-    # Ensure fu_p is a proportion (i.e., between 0 and 1)
+    # Helper: ensure fu_p is a proportion
     def fix_fu_p(fu_p_percentage):
         return min(max(fu_p_percentage / 100, 0), 1)
 
-    # --- Iterate compounds ---
+    # Loop over compounds 
     for _, row in df.iterrows():
         Cp0, Cb0 = 0.0, 0.0
 
-        fu_p_percentage = row["fu_p"]  # Assuming it's in percentage form
-        fu_p = fix_fu_p(fu_p_percentage)  # Convert to proportion
+        fu_p_percentage = row["fu_p"]
+        fu_p = fix_fu_p(fu_p_percentage) 
 
         logger.info(f"{fu_p_percentage}_{fu_p}")
 
-        # --- Key model parameters from ML + physiology ---
         Kp = 10 ** row["logbb"]
         # fu_p = row["fu_p"]
         CLint = row["clint"] / 60.0  # per minute
         PS = row.get("PS_BBB", PS_default)
         k_efflux = row.get("k_efflux", k_efflux_default)
 
-        # --- Select the exchange model ---
         if exchange_model == "flow_limited":
             def brain_flux(Cp, Cb):
                 return Q_brain * (Cp - Cb / Kp)
         elif exchange_model == "permeability_limited":
             def brain_flux(Cp, Cb):
                 return PS * (Cp - Cb / Kp)
-        else:  # hybrid default
+        else:
             def brain_flux(Cp, Cb):
                 eff_flux = (Q_brain * PS) / (Q_brain + PS)
                 return eff_flux * (Cp - Cb / Kp)
 
-        # --- ODE system ---
         def ode(t, y):
             Cp, Cb = y
             input_term = (dose / V_p) if t < 1 else 0
@@ -347,11 +332,10 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
             dCb = (J / V_b) - k_efflux * Cb
             return [dCp, dCb]
 
-        # --- Solve ODEs ---
+        # Solve ODEs 
         sol = solve_ivp(ode, [0, t_max], [Cp0, Cb0], t_eval=np.linspace(0, t_max, 200))
         Cp, Cb = sol.y
 
-        # --- Derived metrics ---
         auc_p = np.trapz(Cp, sol.t)
         auc_b = np.trapz(Cb, sol.t)
         cmax_p = Cp.max()
@@ -372,7 +356,7 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
             "k_efflux": k_efflux,
         })
 
-        # --- Plot time courses ---
+        # Plotting
         plt.figure(figsize=(5, 3))
         plt.plot(sol.t, Cp, label="Plasma", lw=1.8)
         plt.plot(sol.t, Cb, label="Brain", lw=1.8)
@@ -384,13 +368,11 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
         plt.savefig(outdir / f"{row.get('name', 'compound')}_{exchange_model}.png", dpi=150)
         plt.close()
 
-    # --- Save results ---
     result_df = pd.DataFrame(results)
     result_path = outdir / "pbpk_simulation_results.csv"
     result_df.to_csv(result_path, index=False)
     logger.info(f"Simulation results saved to: {result_path}")
 
-    # --- Return both df and physiology for downstream analysis ---
     return {
         "df": result_df,
         "physiology": physiology
@@ -415,19 +397,16 @@ def pbpk_analysis(config, df=None, physiology=None, **kwargs):
     outdir = Path(analysis_cfg.get("output_dir", "outputs/pbpk/analysis"))
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Example summary statistics
     summary = df.describe()
     summary_path = outdir / "pbpk_summary.csv"
     summary.to_csv(summary_path)
     logger.info(f"Saved PBPK summary to {summary_path}")
 
-    # Optionally include physiology in any downstream summary
     if physiology:
         physio_path = outdir / "physiology_used.json"
         with open(physio_path, "w") as f:
             json.dump(physiology, f, indent=2)
         logger.debug(f"Saved physiology snapshot to {physio_path}")
 
-    # Return updated context for any further tasks
     return {"df": df, "physiology": physiology}
 

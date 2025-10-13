@@ -13,6 +13,7 @@ At the moment, the pipelines are separately stored and run in `pipelines`:
 
 * [Data curation and retrieval](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/data_retrieval_and_curation)
 * [Structure modelling](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/structure_modelling)
+* [Systems modelling](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/systems_modelling)
 * [Cheminformatics](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/cheminformatics)
 * [Docking](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/docking)
 * [Molecular dynamics](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/md)
@@ -33,6 +34,8 @@ The code is organised into sections that reflect various computational chem soft
     * Fixing structures
     * Modelling of proteins and short peptides
     * Minimisation
+* Systems modelling
+    * PBPK modelling
 * Cheminformatics 
     * Various data-driven use cases for:
         * Hit discovery

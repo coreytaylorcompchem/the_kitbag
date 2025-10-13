@@ -1,7 +1,7 @@
 workflow_name: pbpk_brain_workflow
 
 input_file: data/ligands.csv
-input_mode: smiles    # "logp" or "smiles"
+input_mode: smiles    # "logp" or "smiles" + ID (otherwise plots will be overwritten).
 
 workflow_serial:
   - pbpk_parameter_prediction
@@ -24,7 +24,7 @@ pbpk_simulation:
   solver: scipy
   simulation_time: 480   # minutes
   dose_mg: 10
-  exchange_model: hybrid  # flow_limited | permeability_limited | hybrid
+  exchange_model: hybrid  # flow_limited or permeability_limited or hybrid
   output_dir: outputs/pbpk/simulations
 
 pbpk_analysis:

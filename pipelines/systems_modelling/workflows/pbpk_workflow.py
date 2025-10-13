@@ -18,7 +18,6 @@ def run(config: dict):
     output_dir.mkdir(parents=True, exist_ok=True)
     config["output_dir"] = output_dir
 
-    # --- Normalise predictor section (for safety) ---
     pbpk_section = config.setdefault("pbpk_parameter_prediction", {})
     predictors = pbpk_section.get("predictors", {})
     if not isinstance(predictors, dict):
@@ -27,7 +26,7 @@ def run(config: dict):
     pbpk_section["predictors"] = predictors
     logger.info(f"[Config check] Predictors in YAML: {predictors}")
 
-    # --- Workflow steps ---
+    # instantiate workflow
     context = {}
     workflow_steps = config.get("workflow_serial", [])
     if not workflow_steps:
@@ -39,17 +38,14 @@ def run(config: dict):
         if not task_func:
             raise ValueError(f"Unknown task: {step}")
 
-        # Log any per-step config sections for transparency
         step_section = config.get(step, None)
         if step_section:
             logger.debug(f"Subconfig for step '{step}': {step_section}")
 
-        # Run the step
         result = task_func(config, **context)
 
-            # --- Carry all returned data forward ---
+            # Carry all returned data forward
         if isinstance(result, dict):
-            # Keep all previous keys, update with any new ones from the task
             context.update({k: v for k, v in result.items() if v is not None})
         else:
             logger.debug(f"Task {step} returned non-dict result; context unchanged.")
