@@ -2,7 +2,7 @@
 
 PK modelling for brain penetration, liver PK and others.
 
-![Systems modelling logo](_images/systems_modelling_logo.jpg)
+![Systems modelling logo](_images/systems_modelling_logo.png)
 
 ## Setup and dependencies
 
@@ -46,5 +46,4 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a more complete list.
 
-* Model membrane proteins + membrane.
-* Model proteins with the *Fold ecosystem once I have access to a decent GPU or two.
+* Add multi-compartment models, non-linear PK, some stochasticity, error analysis.
