@@ -1,2 +1,2 @@
 uniprot_id,num_structures,num_aligned,aligned_files,output_dir
-P35408,8,2,5yhl_std.pdb;5ywy_std_aligned.pdb,outputs/multi_target_pdb/P35408
+P35408,8,1,8gcp_std.pdb,outputs/multi_target_pdb/P35408

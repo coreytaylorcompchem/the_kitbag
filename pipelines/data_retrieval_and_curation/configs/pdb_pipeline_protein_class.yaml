@@ -1,0 +1,16 @@
+# Purpose: retrieve and standardise PDB data all uniprots within a target class (interpro  ID)
+task: workflow
+workflow_name: pdb_multi_target
+
+interpro_id:
+  - IPR000276 # Class A GPCRs
+
+remove_waters: true
+
+workflow:
+  - analyse_pdbs_by_interpro_accession 
+  - retrieve_pdbs
+
+output:
+  directory: outputs/target_class_pdb
+  overwrite: true

@@ -1,4 +1,4 @@
-# Purpose: retrieve and standardise PDB data for a single target
+# Purpose: retrieve and standardise PDB data for multiple targets
 
 task: workflow
 workflow_name: pdb_multi_target

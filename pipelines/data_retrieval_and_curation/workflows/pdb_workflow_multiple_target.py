@@ -50,6 +50,20 @@ def generate_target_summary(uniprot_id, pdb_paths, aligned_paths, output_dir):
 
 @register_workflow("pdb_multi_target", description="Process PDB structures for multiple UniProt targets.")
 def run_pdb_multi_target(config):
+
+    # --- NEW: Optional InterPro pre-analysis stage ---
+    if config.get("interpro_id"):
+        logger.info("🔍 Running InterPro analysis to determine UniProt targets...")
+        analysis_task = get_task("analyse_pdbs_by_interpro_accession")
+        if not analysis_task:
+            raise ValueError("Task 'analyse_pdbs_by_interpro_accession' not found.")
+        data = analysis_task(config)
+        if not data or "uniprots" not in data:
+            raise ValueError("No UniProt IDs retrieved from InterPro analysis.")
+        config["uniprot_ids"] = data["uniprots"]
+        logger.info(f"✅ Retrieved {len(data['uniprots'])} UniProt targets from InterPro analysis.")
+    # -------------------------------------------------
+    
     if not config.get("uniprot_ids"):
         raise ValueError("❌ No UniProt IDs provided in config under 'uniprot_ids'")
 
