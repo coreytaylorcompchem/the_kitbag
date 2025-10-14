@@ -34,7 +34,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(
     __name__,
-    debug_mode=True,
+    debug_mode=False,
     simple_format=True
 )
 
@@ -258,6 +258,11 @@ def pbpk_model_assembly(config, df=None):
 # ----------------------------------------------------------
 # 3. PBPK Simulation
 # ----------------------------------------------------------
+
+# Helper: ensure fu_p is a proportion
+def fix_fu_p(fu_p_percentage):
+    return min(max(fu_p_percentage / 100, 0), 1)
+    
 @register_task("pbpk_simulation", category="PBPK - brain:plasma",
                description="Run 2-compartment plasma–brain PBPK simulation with selectable exchange model.")
 def pbpk_simulation(config, df=None, physiology=None, **kwargs):
@@ -294,10 +299,6 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
 
     results = []
 
-    # Helper: ensure fu_p is a proportion
-    def fix_fu_p(fu_p_percentage):
-        return min(max(fu_p_percentage / 100, 0), 1)
-
     # Loop over compounds 
     for _, row in df.iterrows():
         Cp0, Cb0 = 0.0, 0.0
@@ -305,10 +306,7 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
         fu_p_percentage = row["fu_p"]
         fu_p = fix_fu_p(fu_p_percentage) 
 
-        logger.info(f"{fu_p_percentage}_{fu_p}")
-
         Kp = 10 ** row["logbb"]
-        # fu_p = row["fu_p"]
         CLint = row["clint"] / 60.0  # per minute
         PS = row.get("PS_BBB", PS_default)
         k_efflux = row.get("k_efflux", k_efflux_default)
@@ -377,8 +375,6 @@ def pbpk_simulation(config, df=None, physiology=None, **kwargs):
         "df": result_df,
         "physiology": physiology
     }
-
-
 
 # ----------------------------------------------------------
 # 4. Analysis / Derived Metrics

@@ -8,6 +8,7 @@ PK modelling for brain penetration, liver PK and others.
 
 * [Rdkit](https://www.rdkit.org/docs/Install.html)
 * [Scipy](https://scipy.org/install/) - solve ODEs.
+* [PyMC3](https://pypi.org/project/pymc3/)
 * [Pytorch](https://pytorch.org/get-started/locally/) - instantiate Torch-based ML models.
 
 See `environment.yml` for the rest. The list is indicative only, as this repo is under development.

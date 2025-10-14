@@ -1,6 +1,6 @@
-# Structural modelling pipeline
+# Structure modelling pipeline
 
-Modelling of proteins and peptide.
+Modelling of proteins and peptides, mainly.
 
 ![Structure modelling logo](_images/structure_modelling_logo.jpg)
 

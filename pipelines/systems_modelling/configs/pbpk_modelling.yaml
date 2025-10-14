@@ -1,4 +1,4 @@
-workflow_name: pbpk_brain_workflow
+workflow_name: pbpk_workflow
 
 input_file: data/ligands.csv
 input_mode: smiles    # "logp" or "smiles" + ID (otherwise plots will be overwritten).
