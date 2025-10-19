@@ -2,10 +2,10 @@ task: workflow
 workflow_name: molecular_dynamics
 
 system:
-  pdb_file: input/3BGP.pdb
+  pdb_file: input/7XVY.pdb
   # ligand_file: input/ligand.sdf  # Optional
-  ligand_parameters: openff-2.0.0.offxml  # Optional
-  forcefield: ["amber14-all.xml", "amber14/tip3p.xml"] # Optional
+  ligand_parameters: openff-2.0.0  # Optional
+  forcefield: ["amber14-all.xml", "amber14/tip3p.xml"]
   ionic_strength: 0.15
   box_padding: 1.0
 
