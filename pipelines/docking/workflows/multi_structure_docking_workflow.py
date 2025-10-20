@@ -132,7 +132,7 @@ def run(config_path: str):
 
     workflow_steps = config.get("workflow", [])
     if not use_conformer_generation:
-        logger.warning("⚠️  Conformer generation steps disabled - skipping.")
+        logger.warning("Conformer generation steps disabled - skipping.")
         workflow_steps = [
             step for step in workflow_steps
             if step not in ("generate_conformers", "cluster_conformers", "save_final_conformers")
@@ -163,7 +163,7 @@ def run(config_path: str):
     # ----------------------
     backend_name = config['backend']['name']
     backend_kwargs = {k: v for k, v in config['backend'].items() if k != 'name'}
-    backend = get_backend(backend_name, **backend_kwargs)
+    # backend = get_backend(backend_name, **backend_kwargs)
 
     # ----------------------
     # Multi-structure Docking
@@ -184,6 +184,8 @@ def run(config_path: str):
     for i, pdb_path in enumerate(pdb_files):
         pdb_path = Path(pdb_path)
         logger.info(f"\n>>>>>>>>>> Docking to structure {i+1}/{len(pdb_files)}: {pdb_path.name} <<<<<<<<<<")
+
+        backend = get_backend(backend_name, **backend_kwargs)
 
         # Setup per-protein subdir
         protein_output_dir = output_dir / pdb_path.stem
@@ -237,7 +239,7 @@ def run(config_path: str):
             score_csv_path = pocket_dir / "docking_scores.csv"
             combined_df = pd.concat(all_scores, ignore_index=True)
             combined_df.to_csv(score_csv_path, index=False)
-            logger.info(f"✅ Saved docking scores to {score_csv_path}")
+            logger.info(f"Saved docking scores to {score_csv_path}")
 
     # ----------------------
     # Summarise all results
