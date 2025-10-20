@@ -25,36 +25,78 @@ def get_protein_preparer(backend, config):
 
 
 class ProteinPreparer:
-    def __init__(self, pdb_path: Path, name: str = "receptor", method: str = "autodocktools"):
+    """
+    Prepares receptor PDBQT files for docking:
+      - Removes crystal ligands and water
+      - Saves extracted ligand separately (for binding site definition)
+      - Adds Gasteiger partial charges via Open Babel
+    """
+
+    def __init__(self, pdb_path: Path, name: str = "receptor", method: str = "autodocktools", pH: float = 7.4):
         self.pdb_path = Path(pdb_path)
         self.name = name
         self.method = method.lower()
+        self.pH = pH
         self.pdbqt_path = None
+        self.cleaned_pdb = None
+        self.extracted_ligand_path = None
 
     def prepare(self, output_dir: Path):
         output_dir.mkdir(parents=True, exist_ok=True)
         self.pdbqt_path = output_dir / f"{self.name}.pdbqt"
+        self.cleaned_pdb = output_dir / f"{self.name}_clean.pdb"
+        self.extracted_ligand_path = output_dir / f"{self.name}_crystal_ligand.pdb"
 
+        # If receptor already exists, reuse it
         if self.pdbqt_path.exists():
-            logger.debug(f"Using existing receptor PDBQT at: {self.pdbqt_path}")
+            logger.debug(f"[ProteinPreparer] Using existing receptor PDBQT at: {self.pdbqt_path}")
             return self.pdbqt_path
 
-        logger.info(f"Preparing receptor using Open Babel")
+        logger.debug(f"[ProteinPreparer] Cleaning and preparing receptor: {self.pdb_path.name}")
 
+        # --- Step 1: Separate protein and ligand atoms ---
+        with open(self.pdb_path, 'r') as infile, \
+             open(self.cleaned_pdb, 'w') as protein_out, \
+             open(self.extracted_ligand_path, 'w') as ligand_out:
+
+            current_resname = None
+            hetatm_blocks = {}
+
+            for line in infile:
+                if line.startswith("ATOM"):
+                    protein_out.write(line)
+                elif line.startswith("HETATM"):
+                    res_name = line[17:20].strip()
+                    # Save all non-water heteroatoms to a ligand file
+                    if res_name not in ("HOH", "WAT"):
+                        hetatm_blocks.setdefault(res_name, []).append(line)
+                elif line.startswith(("TER", "END")):
+                    protein_out.write(line)
+
+            # Pick the largest HETATM group (usually the bound ligand)
+            if hetatm_blocks:
+                largest_res = max(hetatm_blocks, key=lambda r: len(hetatm_blocks[r]))
+                for l in hetatm_blocks[largest_res]:
+                    ligand_out.write(l)
+                logger.info(f"[ProteinPreparer] Extracted crystal ligand: {largest_res} -> {self.extracted_ligand_path}")
+            else:
+                logger.warning("[ProteinPreparer] No non-water HETATM groups found — no crystal ligand extracted.")
+
+        # Convert cleaned receptor to PDBQT
         cmd = [
             "obabel",
-            str(self.pdb_path),
+            str(self.cleaned_pdb),
             "-O", str(self.pdbqt_path),
-            "-xr",  # Remove water
-            "--partialcharge", "gasteiger"
+            "--partialcharge", "gasteiger",
+            "-xr"  # Remove any leftover water
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"Open Babel failed:\n{result.stderr}")
-            raise RuntimeError("Protein preparation failed.")
+            logger.error(f"Open Babel failed while preparing receptor:\n{result.stderr}")
+            raise RuntimeError(f"Protein preparation failed for {self.pdb_path.name}")
 
-        logger.info(f"[Protein] Receptor PDBQT saved at: {self.pdbqt_path}")
+        logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
         return self.pdbqt_path
 
 def get_ligand_preparer(backend, ligand):
