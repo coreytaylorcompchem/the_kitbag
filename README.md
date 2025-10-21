@@ -16,6 +16,7 @@ At the moment, the pipelines are separately stored and run in `pipelines`:
 * [Systems modelling](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/systems_modelling)
 * [Cheminformatics](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/cheminformatics)
 * [Docking](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/docking)
+* [Machine learning](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/machine_learning)
 * [Molecular dynamics](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/md)
 * [Quantum chemistry](https://github.com/coreytaylorcompchem/the_kitbag/tree/main/pipelines/qchem)
 
@@ -46,6 +47,13 @@ The code is organised into sections that reflect various computational chem soft
     * Running the docking
     * Post-processing
     * Benchmarking
+* Machine learning
+    * Model training
+        * Pose ranker
+        * ADME models
+        * Affinity models
+    * AI tools
+        * Molecular generation.
 * MD
     * System prep, setup, run.
     * Post-processing

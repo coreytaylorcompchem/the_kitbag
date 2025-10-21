@@ -1,6 +1,6 @@
 # Machine learning pipeline
 
-![Machine learning logo](_images/machine_learning_logo.png)
+![Machine learning logo](_images/machine_learning_logo.jpg)
 
 In this repo are workflows to train various useful data-driven models for affinity, ADME and others for use in virtual screening workflows. 
 
