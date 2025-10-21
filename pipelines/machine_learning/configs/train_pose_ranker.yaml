@@ -1,0 +1,48 @@
+workflow_name: dynamic_task_runner
+
+workflow:
+  - load_targets_prepare_graphs
+  - featurise
+  - load_model_spec
+  - load_data_and_split
+  - train_model
+  - evaluate
+
+load_targets_prepare_graphs:
+  input_trajs: data/md_trajectories
+  ligand_resname: UNK
+  save_graphs_to: data/processed/graphs.pkl
+
+featurise:
+  normalise_targets: true
+  output_file: data/processed/featurised_graphs.pkl
+
+load_model_spec:
+  hidden_dim: 128
+  n_outputs: 9
+  device: cuda
+
+load_data_and_split:
+  train_size: 80
+  val_size: 20
+  batch_size: 32
+  normalise_labels: true
+  data_input: data/processed/featurised_graphs.pkl
+  output_dir: data/splits/
+
+train_model:
+  num_epochs: 100
+  grid_search_hidden_dim: [64, 128, 256]
+  grid_search_lr: [1e-3, 5e-4, 1e-4]
+  loss_fn: MSELoss
+  optimiser: adam
+  plot_loss_curves: true
+  loss_curve_output: output/training_loss_curves
+  retrain_best_model: true
+  cuda: true
+  saved_model: pose_scoring_gnn_best.pth
+
+evaluate:
+  save_plots: true
+  plots_output: output/eval_plots
+  use_best_model: true
