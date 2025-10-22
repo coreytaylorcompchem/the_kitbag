@@ -1,0 +1,16 @@
+task: workflow
+workflow_name: chembl_all_molecules
+
+max_records: 1000000  # total to retrieve from ChEMBL
+batch_size: 1000     # how many per worker
+
+workflow:
+  - retrieve_compound_metadata_batch
+
+output:
+  directory: outputs/chembl_molecules
+  filename: all_molecules.csv
+  overwrite: true
+
+resume: true
+cleanup: false

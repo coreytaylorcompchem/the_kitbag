@@ -32,7 +32,7 @@ Available Tasks:
     - clean_adme_data: Check and standardise ADME data.
     - retrieve_chembl_adme_data: Retrieve CHEMBL ADME data.
   [Bioactivity]:
-    - annotate_bioactivity_pactivity: Compute p(readout)) and add to retrieval results.
+    - annotate_bioactivity_pactivity: Compute p(readout) and add to retrieval results.
     - clean_bioactivities: Check and standardise bioactivities.
     - retrieve_chembl_bioactivities: Retrieve bioactivity data from CHEMBL.
     - retrieve_compound_smiles: Retrieve SMILES from downloaded compound data.
