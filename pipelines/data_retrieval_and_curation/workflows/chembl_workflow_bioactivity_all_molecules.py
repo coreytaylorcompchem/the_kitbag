@@ -24,11 +24,11 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def fetch_all_molecule_ids_webclient(config):
-    molecule_client = new_client.molecule
 
+    molecule_client = new_client.molecule
     max_records = config.get("max_records", 100000)
     if isinstance(max_records, str) and max_records.lower() == "all":
-        max_records = None  # Fetch all
+        max_records = None  # Fetch all!
 
     resume = config.get("resume", False)
     cleanup = config.get("cleanup", False)
@@ -38,67 +38,80 @@ def fetch_all_molecule_ids_webclient(config):
     os.makedirs(output_dir, exist_ok=True)
 
     all_ids = []
-    start_index = 0
+    offset = 0
 
-    # Load checkpoint if resuming
+    # Set up resume, reading in json file if previous queries were interrupted.
     if resume and os.path.exists(checkpoint_file):
         with open(checkpoint_file, "r") as f:
             checkpoint = json.load(f)
             all_ids = checkpoint.get("collected_ids", [])
-            start_index = checkpoint.get("last_index", 0)
-        logger.info(f"⏸ Resuming from index {start_index}, {len(all_ids)} IDs loaded")
+            offset = checkpoint.get("last_index", 0)
+        logger.info(f"Resuming from offset {offset}, {len(all_ids)} IDs loaded")
 
-    total_to_fetch = max_records if max_records is not None else "all"
-    logger.info(f"Fetching up to {total_to_fetch} molecule IDs with resume={'on' if resume else 'off'}...")
+    limit = 1000  # max page size supported by ChEMBL
+    pbar = tqdm(desc="Fetching molecules", initial=len(all_ids), total=max_records)
 
-    try:
-        iterator = molecule_client.filter().only("molecule_chembl_id")
+    def fetch_page(offset, limit):
+        return molecule_client.filter().only("molecule_chembl_id")[offset:offset + limit]
 
-        # Skip ahead to start_index
-        if start_index > 0:
-            # If QuerySet supports slicing (usually does)
-            iterator = iterator[start_index:]
-        else:
-            # else skip manually (less efficient)
-            pass
-
-        pbar = tqdm(total=max_records, desc="Fetching molecules", initial=len(all_ids))
-        for mol in iterator:
-            if "molecule_chembl_id" in mol:
-                all_ids.append(mol["molecule_chembl_id"])
-
-            start_index += 1
-            pbar.update(1)
-            time.sleep(0.05)
-
-            # Save checkpoint every 100 records to avoid overhead
-            if resume and start_index % 100 == 0:
-                with open(checkpoint_file, "w") as f:
-                    json.dump({"last_index": start_index, "collected_ids": all_ids}, f)
-
-            if max_records and len(all_ids) >= max_records:
+    while True:
+        try:
+            page = retry_fetch(lambda: fetch_page(offset, limit))
+            if not page:
+                logger.info("No more results. Finished.")
                 break
-        pbar.close()
 
-    except Exception as e:
-        logger.warning(f"Failed to fetch molecules: {e}")
+            for mol in page:
+                if "molecule_chembl_id" in mol:
+                    all_ids.append(mol["molecule_chembl_id"])
+                    offset += 1 
+                    pbar.update(1)
 
-    # Save final checkpoint (optional)
+                    if resume and offset % 100 == 0:
+                        with open(checkpoint_file, "w") as f:
+                            json.dump({"last_index": offset, "collected_ids": all_ids}, f)
+
+                if max_records and len(all_ids) >= max_records:
+                    logger.info("Reached max_records limit.")
+                    raise StopIteration
+
+            if resume and offset % 1000 == 0:
+                with open(checkpoint_file, "w") as f:
+                    json.dump({"last_index": offset, "collected_ids": all_ids}, f)
+
+        except StopIteration:
+            break
+        except Exception as e:
+            logger.warning(f"Error while fetching: {e}. Retrying...")
+            time.sleep(10)
+
+    pbar.close()
+
     if resume:
         with open(checkpoint_file, "w") as f:
-            json.dump({"last_index": start_index, "collected_ids": all_ids}, f)
+            json.dump({"last_index": offset, "collected_ids": all_ids}, f)
 
-    logger.info(f"Total molecule IDs collected: {len(all_ids)}")
-
-    # Delete checkpoint file after finishing, if resume is True and cleanup is True
     if resume and cleanup and os.path.exists(checkpoint_file):
         try:
             os.remove(checkpoint_file)
-            logger.info("Checkpoint file deleted after successful fetch.")
+            logger.info("Checkpoint file deleted.")
         except Exception as e:
             logger.warning(f"Failed to delete checkpoint file: {e}")
 
+    logger.info(f"Total molecule IDs collected: {len(all_ids)}")
     return all_ids
+
+
+def retry_fetch(fetch_fn, retries=5, backoff=5):
+    import random
+    for i in range(retries):
+        try:
+            return fetch_fn()
+        except requests.exceptions.RequestException as e:
+            wait = backoff * (2 ** i) + random.uniform(0, 1)
+            logger.warning(f"Retry {i + 1}/{retries} after error: {e}. Waiting {wait:.1f}s...")
+            time.sleep(wait)
+    raise RuntimeError("❌ Maximum retries exceeded.")
 
 
 @register_workflow("chembl_all_molecules",
@@ -121,7 +134,7 @@ def run_chembl_all_molecules_parallel(config):
 
     runner = ParallelWorkflowRunner(
         workflow_func=_single_batch_runner,
-        config={**config, "molecule_batches": [(i, batch) for i, batch in enumerate(batches)]},  # <- inject here
+        config={**config, "molecule_batches": [(i, batch) for i, batch in enumerate(batches)]},
         input_key="molecule_batches",
         output_key="batch_index",
         filename_pattern="batch_{batch_index}.csv",
@@ -131,8 +144,6 @@ def run_chembl_all_molecules_parallel(config):
         use_multiprocessing=True
     )
 
-
-    # Format inputs as (index, batch) tuples
     runner.inputs = [(i, batch) for i, batch in enumerate(batches)]
     return runner.run()
 
