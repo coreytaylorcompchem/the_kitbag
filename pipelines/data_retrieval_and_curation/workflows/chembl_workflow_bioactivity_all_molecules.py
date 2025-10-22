@@ -6,7 +6,6 @@ from pipeline.task_registry import get_task
 from pipeline.logger import setup_logger
 
 import math
-import random
 import os
 import json
 import requests
@@ -39,70 +38,63 @@ def fetch_all_molecule_ids_webclient(config):
     os.makedirs(output_dir, exist_ok=True)
 
     all_ids = []
-    current_index = 0
+    start_index = 0
 
+    # Load checkpoint if resuming
     if resume and os.path.exists(checkpoint_file):
         with open(checkpoint_file, "r") as f:
             checkpoint = json.load(f)
             all_ids = checkpoint.get("collected_ids", [])
-            current_index = checkpoint.get("last_index", 0)
-        logger.info(f"⏸ Resuming from index {current_index}, {len(all_ids)} IDs loaded")
+            start_index = checkpoint.get("last_index", 0)
+        logger.info(f"⏸ Resuming from index {start_index}, {len(all_ids)} IDs loaded")
 
-    logger.info(f"Fetching up to {max_records if max_records else 'all'} molecule IDs...")
+    total_to_fetch = max_records if max_records is not None else "all"
+    logger.info(f"Fetching up to {total_to_fetch} molecule IDs with resume={'on' if resume else 'off'}...")
 
-    max_retries = 5
-    retry_wait = 1  # base seconds
+    try:
+        iterator = molecule_client.filter().only("molecule_chembl_id")
 
-    pbar = tqdm(total=max_records, desc="Fetching molecules", initial=len(all_ids))
+        # Skip ahead to start_index
+        if start_index > 0:
+            # If QuerySet supports slicing (usually does)
+            iterator = iterator[start_index:]
+        else:
+            # else skip manually (less efficient)
+            pass
 
-    while not max_records or len(all_ids) < max_records:
-        attempt = 0
-        while attempt <= max_retries:
-            try:
-                # slice 1 item at a time for reliability
-                result = molecule_client.filter().only("molecule_chembl_id")[current_index:current_index+1]
-                if not result:
-                    logger.info("No more results returned from API.")
-                    pbar.close()
-                    return all_ids
+        pbar = tqdm(total=max_records, desc="Fetching molecules", initial=len(all_ids))
+        for mol in iterator:
+            if "molecule_chembl_id" in mol:
+                all_ids.append(mol["molecule_chembl_id"])
 
-                mol = result[0]
-                if "molecule_chembl_id" in mol:
-                    all_ids.append(mol["molecule_chembl_id"])
-                current_index += 1
-                pbar.update(1)
+            start_index += 1
+            pbar.update(1)
+            time.sleep(0.05)
 
-                if resume and current_index % 100 == 0:
-                    with open(checkpoint_file, "w") as f:
-                        json.dump({"last_index": current_index, "collected_ids": all_ids}, f)
+            # Save checkpoint every 100 records to avoid overhead
+            if resume and start_index % 100 == 0:
+                with open(checkpoint_file, "w") as f:
+                    json.dump({"last_index": start_index, "collected_ids": all_ids}, f)
 
-                time.sleep(0.05)
-                break  # success, exit retry loop
+            if max_records and len(all_ids) >= max_records:
+                break
+        pbar.close()
 
-            except Exception as e:
-                attempt += 1
-                if attempt > max_retries:
-                    logger.warning(f"Max retries reached for index {current_index}. Skipping...")
-                    current_index += 1
-                    break
-                else:
-                    wait = retry_wait * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
-                    logger.warning(f"Error fetching molecule at index {current_index}: {e}. "
-                                   f"Retry {attempt}/{max_retries} in {wait:.1f}s.")
-                    time.sleep(wait)
+    except Exception as e:
+        logger.warning(f"Failed to fetch molecules: {e}")
 
-    pbar.close()
-
+    # Save final checkpoint (optional)
     if resume:
         with open(checkpoint_file, "w") as f:
-            json.dump({"last_index": current_index, "collected_ids": all_ids}, f)
+            json.dump({"last_index": start_index, "collected_ids": all_ids}, f)
 
-    logger.info(f"✅ Total molecule IDs collected: {len(all_ids)}")
+    logger.info(f"Total molecule IDs collected: {len(all_ids)}")
 
+    # Delete checkpoint file after finishing, if resume is True and cleanup is True
     if resume and cleanup and os.path.exists(checkpoint_file):
         try:
             os.remove(checkpoint_file)
-            logger.info("🧹 Checkpoint file deleted after successful fetch.")
+            logger.info("Checkpoint file deleted after successful fetch.")
         except Exception as e:
             logger.warning(f"Failed to delete checkpoint file: {e}")
 
