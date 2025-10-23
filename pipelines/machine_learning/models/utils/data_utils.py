@@ -16,7 +16,7 @@ def denormalise(y: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
     return y * std + mean
 
 def normalise_graph_labels(graphs):
-    """Normalize graph.y labels feature-wise across dataset."""
+    """Normalise graph.y labels feature-wise across dataset."""
     all_y = np.stack([g.y.squeeze(0).numpy() for g in graphs])
     y_mean = all_y.mean(axis=0)
     y_std = all_y.std(axis=0) + 1e-8

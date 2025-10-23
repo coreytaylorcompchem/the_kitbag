@@ -4,7 +4,7 @@ from pathlib import Path
 
 from workflows import register_workflow
 from pipeline.logger import setup_logger
-from pipeline.task_registry import get_task
+from pipeline.task_registry import get_task, list_tasks
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
@@ -37,12 +37,12 @@ def train_model(config_path: str):
             raise ValueError(f"Task '{task_name}' not found in registry.")
 
         task_config = config.get(task_name, {})
-        logger.info(f"▶ Running task: {task_name}")
+        logger.info(f">>>>>>>>>> Running task: {task_name}")
 
         try:
             result = task_func(task_config, current_data)
         except Exception as e:
-            logger.error(f"💥 Task '{task_name}' failed: {e}")
+            logger.error(f"❌ Task '{task_name}' failed: {e}")
             raise
 
         if isinstance(result, dict):

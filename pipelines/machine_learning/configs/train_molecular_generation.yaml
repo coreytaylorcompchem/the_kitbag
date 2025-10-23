@@ -2,9 +2,10 @@ workflow_name: train_model
 
 workflow:
   - load_preprocess_standardise_data
-  # - build_model
-  # - train_model
-  # - evaluate_model
+  - split_and_create_dataloaders
+  - build_model
+  - train_model
+  - evaluate_model
   # - generate_and_evaluate
 
 load_preprocess_standardise_data:
@@ -14,38 +15,45 @@ load_preprocess_standardise_data:
   tokenize_smiles: true
   save_vocab: true
 
-# build_model:
-#   vocab_size: 5000
-#   embed_dim: 512
-#   num_heads: 8
-#   hidden_dim: 2048
-#   num_layers: 6
-#   dropout: 0.1
-#   max_len: 128
-#   device: cuda
+split_and_create_dataloaders:
+  max_len: 128
+  batch_size: 64 # pump this up to 128 or more when you have a better GPU than my laptop does!
+  test_size: 0.1
+  random_state: 42
 
-# train_model:
-#   num_epochs: 5
-#   batch_size: 64
-#   learning_rate: 1e-3
-#   warmup_steps: 4000
-#   loss_fn: LabelSmoothingLoss
-#   optimizer: Adam
-#   scheduler: WarmupInverseSqrtScheduler
-#   save_dir: output/models/
-#   save_frequency: 1
+build_model:
+  vocab_size: 5000
+  embed_dim: 512
+  num_heads: 8
+  hidden_dim: 2048
+  num_layers: 6
+  dropout: 0.1
+  max_len: 128
+  device: cuda
 
-# evaluate_model:
-#   batch_size: 64
-#   eval_metrics:
-#     - validity
-#     - uniqueness
-#     - novelty
-#     - avg_length
-#     - qed_mean
-#     - mol_wt_mean
-#     - logp_mean
-#     - tpsa_mean
+train_model:
+  num_epochs: 10
+  # batch_size: 64
+  learning_rate: 1e-3
+  warmup_steps: 4000
+  loss_fn: LabelSmoothingLoss
+  optimizer: Adam
+  scheduler: WarmupInverseSqrtScheduler
+  save_dir: models
+  save_frequency: 1
+
+evaluate_model:
+  batch_size: 64
+  eval_metrics:
+    - validity
+    - uniqueness
+    - novelty
+    - avg_length
+    - qed_mean
+    - mol_wt_mean
+    - logp_mean
+    - tpsa_mean
+  save_dir: evaluation
 
 # generate_and_evaluate:
 #   n_samples: 200
@@ -55,3 +63,8 @@ load_preprocess_standardise_data:
 #   output_dir: output/generated_smiles/
 #   generate_for_epoch: true
 #   save_plots: true
+
+output:
+  directory: outputs/molecular_generation
+  # filename: class_a_gpcr_focused_library.csv
+  overwrite: true
