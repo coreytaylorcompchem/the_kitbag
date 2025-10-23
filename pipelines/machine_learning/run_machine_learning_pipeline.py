@@ -1,9 +1,12 @@
 import argparse
+import os
 import sys
 import yaml
 from pathlib import Path
 
-from workflows import get_workflow, list_workflows
+from workflows import get_workflow, load_all_workflows, list_workflows
+from pipeline.import_utilities import import_modules_recursively
+from pipeline.task_registry import list_tasks, get_task
 
 from pipeline.logger import setup_logger
 
@@ -27,6 +30,18 @@ def parse_args():
 
 
 def main():
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, project_root)
+
+    load_all_workflows()
+    logger.info(f"Discovered workflows: {list_workflows()}")
+
+    import_modules_recursively(
+        base_dir=os.path.join(project_root, "modules"),
+        base_package="modules"
+    )
+    logger.info(f"Registered tasks: {list_tasks()}")
+
     args = parse_args()
     config_path = Path(args.params)
 

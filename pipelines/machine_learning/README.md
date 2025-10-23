@@ -53,3 +53,6 @@ See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a mor
    * ADME models (hERG, LogD, met stab, etc.)
    * Single-task affinity models (pIC50). 
    * MTLs for within-family selectivity. 
+   * Reactivity prediction
+* Deployment routines.
+  * Feed in docked structures from docking pipeline for pose evaluation.

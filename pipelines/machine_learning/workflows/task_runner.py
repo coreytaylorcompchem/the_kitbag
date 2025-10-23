@@ -4,15 +4,14 @@ from pathlib import Path
 
 from workflows import register_workflow
 from pipeline.logger import setup_logger
-from pipeline.task_registry import get_task, list_tasks
+from pipeline.task_registry import get_task
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_workflow("train_pose_ranker", description="Train and evaluate GNN-based pose ranking model")
-def train_pose_ranker(config_path: str):
+@register_workflow("train_model", description="Train and evaluate specified model")
+def train_model(config_path: str):
     """
-    Dynamically runs the ML pose ranker workflow as defined in a YAML config file.
-    Uses the global task registry — no module imports required.
+    Dynamically runs model training workflow as defined in a YAML config file.
     """
     config_path = Path(config_path)
     if not config_path.exists():
