@@ -7,7 +7,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def evaluate_generated_smiles(samples, train_smiles, max_samples=1000, max_smi_len=200):
+def evaluate_generated_smiles(samples, train_smiles, max_samples=1000, max_smi_len=2000):
     if not samples:
         logger.warning("No samples provided to evaluate_generated_smiles.")
         return 0.0, 0.0, 0.0
@@ -43,6 +43,7 @@ def evaluate_generated_smiles(samples, train_smiles, max_samples=1000, max_smi_l
     unique_samples = set(samples)
     uniqueness = len(unique_samples) / len(samples) if samples else 0.0
     novelty = len([s for s in unique_samples if s not in train_smiles]) / len(unique_samples) if unique_samples else 0.0
+    
     return validity, uniqueness, novelty
 
 def eval_epoch_enc_dec(model, val_loader, criterion, device):

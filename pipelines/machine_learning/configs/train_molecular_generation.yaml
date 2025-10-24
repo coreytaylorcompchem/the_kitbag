@@ -5,14 +5,14 @@ workflow:
   - split_and_create_dataloaders
   - build_model
   - train_molecular_generation
-  # - evaluate_molecular_generation
-  # - generate_and_evaluate
+  - evaluate_molecular_generation
+  # - generate_and_evaluate # after we train at scale
 
 load_preprocess_standardise_data:
   input_file: data/smiles.csv
   max_len: 128
-  standardize_smiles: true
-  tokenize_smiles: true
+  standardise_smiles: true
+  tokenise_smiles: true
   save_vocab: true
 
 split_and_create_dataloaders:

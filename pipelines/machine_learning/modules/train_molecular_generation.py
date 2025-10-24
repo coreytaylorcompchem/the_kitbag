@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import random
 
 import matplotlib.pyplot as plt
 import torch
@@ -17,10 +18,14 @@ from tqdm import tqdm
 
 from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
+from rdkit import RDLogger
+
+# Disable RDKit warnings
+RDLogger.DisableLog('rdApp.*')
 
 from models.molecular_generation import SmilesTransformerEncDec
 from models.utils.train_utils import train_epoch_enc_dec
-from models.utils.generation_utils import generate_smiles_beam
+from models.utils.generation_utils import generate_smiles_beam, sample_smiles_topk
 from models.utils.eval_utils import evaluate_generated_smiles, eval_epoch_enc_dec
 from models.utils.chemistry_utils import calculate_properties
 from models.utils.losses_and_schedulers import LabelSmoothingLoss, WarmupInverseSqrtScheduler
@@ -51,37 +56,38 @@ def standardise_smiles(smi):
     mol = uncharger.uncharge(mol)
     return Chem.MolToSmiles(mol)
 
-def tokenize_smiles(smiles):
-    # Basic regex for tokenizing SMILES
-    pattern =  "(\[[^\[\]]{1,6}\])" + \
-               "|Br|Cl" + \
-               "|Si|Se|Na|Li|Ca|Fe|Zn|Cu" + \
-               "|[B-Zb-z]" + \
-               "|\d+" + \
-               "|=|#|\(|\)|\.|:|\/|\\|\+|\-|\%|\@|\?"  # extended syntax
-    regex = re.compile(pattern)
-    tokens = regex.findall(smiles)
+def tokenise_smiles(smiles):
+    """Match SMARTS/SMILES tokens, preserving bracketed atoms and multi-char atoms"""
+    pattern = (
+        r"\[[^\[\]]{1,6}\]"  # atoms in brackets, like [C@@H], [O-], etc.
+        r"|Br|Cl|Si|Se|Na|Li|Ca|Fe|Zn|Cu"  # common multi-character elements
+        r"|[A-Z][a-z]?"  # single uppercase letter, optionally followed by lowercase (for other elements)
+        r"|[a-z]"        # aromatic atoms
+        r"|\d"           # single ring closure digits (not \d+)
+        r"|=|#|\(|\)|\.|:|\/|\\|\+|\-|\%|\@|\?"  # bonds and other special symbols
+    )
+    tokens = re.findall(pattern, smiles)
     return tokens
 
 @register_task("load_preprocess_standardise_data", category="Molecular generation")
 def load_data_and_standardise(config: dict, context: dict):
+    """Load SMILES data, clean, standardise, tokenise, and build vocabulary."""
     input_file = config.get("input_file")
     max_len = config.get("max_len", 128)
     save_vocab = config.get("save_vocab", True)
+    min_freq = config.get("min_freq", 1)  # ignore ultra-rare tokens
 
-    # --- UPDATED: get output config from top-level context if available ---
-    # If 'output' is in context, use that; else fallback to config or default
+    # Output setup
     output_cfg = context.get("output") or config.get("output", {})
     output_dir = Path(output_cfg.get("directory", "outputs/molecular_generation"))
     overwrite = output_cfg.get("overwrite", True)
-
     output_dir.mkdir(parents=True, exist_ok=True)
 
     processed_path = output_dir / "processed_smiles.csv"
     vocab_path = output_dir / "vocab.json"
 
     if processed_path.exists() and not overwrite:
-        logger.warning(f"{processed_path} exists and overwrite=False — skipping processing.")
+        logger.warning(f"{processed_path} exists and overwrite=False - skipping processing.")
         context.update({
             "processed_data_path": str(processed_path),
             "vocab_path": str(vocab_path),
@@ -89,7 +95,7 @@ def load_data_and_standardise(config: dict, context: dict):
         })
         return context
 
-    # --- main data load + preprocessing ---
+    # Load and preprocess SMILES from CSV
     df = pd.read_csv(input_file)
     if "smiles" not in df.columns:
         raise ValueError("Input CSV must contain a 'smiles' column.")
@@ -98,28 +104,34 @@ def load_data_and_standardise(config: dict, context: dict):
     df['standardised_smiles'] = df['smiles'].apply(standardise_smiles)
     df = df[df['standardised_smiles'].notnull()].reset_index(drop=True)
 
-    logger.info(f"After standardization: {len(df)} SMILES")
+    logger.info(f"After standardisation: {len(df)} SMILES")
 
+    # Build vocabulary
     token_counts = Counter()
-    for smi in tqdm(df['standardised_smiles']):
-        tokens = tokenize_smiles(smi)
+    for smi in tqdm(df['standardised_smiles'], desc="Tokenising SMILES"):
+        tokens = tokenise_smiles(smi)
         token_counts.update(tokens)
 
+    # Filter rare tokens
+    vocab_tokens = [tok for tok, count in token_counts.items() if count >= min_freq]
+    vocab_tokens = sorted(vocab_tokens)
+
     special_tokens = ['<pad>', '<bos>', '<eos>', '<unk>']
-    vocab = special_tokens + sorted(token_counts.keys())
+    vocab = special_tokens + vocab_tokens
+
     token_to_idx = {tok: i for i, tok in enumerate(vocab)}
-    idx_to_token = {idx: token for token, idx in token_to_idx.items()}
+    idx_to_token = {i: tok for tok, i in token_to_idx.items()}
 
+    # Save processed data
     df.to_csv(processed_path, index=False)
-
     if save_vocab:
-        import json
         with open(vocab_path, "w") as f:
             json.dump(token_to_idx, f, indent=2)
 
     logger.info(f"Saved processed data to: {processed_path}")
-    logger.info(f"Saved vocab to: {vocab_path}")
+    logger.info(f"Saved vocab (size {len(vocab)}) to: {vocab_path}")
 
+    # Update context for downstream tasks
     context.update({
         "processed_data_path": str(processed_path),
         "vocab_path": str(vocab_path),
@@ -131,7 +143,10 @@ def load_data_and_standardise(config: dict, context: dict):
 
     return context
 
+
 class SmilesDataset(Dataset):
+    """PyTorch dataset for tokenised SMILES strings."""
+
     def __init__(self, smiles_list, token_to_idx, max_len=128):
         self.smiles_list = smiles_list
         self.token_to_idx = token_to_idx
@@ -142,16 +157,21 @@ class SmilesDataset(Dataset):
 
     def __getitem__(self, idx):
         smiles = self.smiles_list[idx]
-        tokens = tokenize_smiles(smiles)
+        tokens = tokenise_smiles(smiles)
         tokens = ['<bos>'] + tokens + ['<eos>']
-        token_ids = [self.token_to_idx.get(tok, self.token_to_idx['<unk>']) for tok in tokens]
+
+        token_ids = [self.token_to_idx.get(tok, self.token_to_idx['<unk>'])
+                     for tok in tokens]
+
+        # Pad or truncate
         if len(token_ids) > self.max_len:
             token_ids = token_ids[:self.max_len]
         else:
             token_ids += [self.token_to_idx['<pad>']] * (self.max_len - len(token_ids))
+
         return (
-            torch.tensor(token_ids[:-1], dtype=torch.long),
-            torch.tensor(token_ids[1:], dtype=torch.long)
+            torch.tensor(token_ids[:-1], dtype=torch.long),  # input
+            torch.tensor(token_ids[1:], dtype=torch.long)    # target
         )
 
 @register_task(
@@ -161,16 +181,15 @@ class SmilesDataset(Dataset):
 )
 def split_and_create_dataloaders(config: dict, context: dict):
     """
-    Split the standardized SMILES into train/val sets and create PyTorch DataLoaders.
+    Split the standardised SMILES into train/val sets and create PyTorch DataLoaders.
 
     Args:
         config (dict): task configuration from YAML
         context (dict): shared context between workflow tasks
     """
 
-    # === Retrieve context from previous task ===
+    # Retrieve context from previous task
     token_to_idx = context.get("token_to_idx")
-    # idx_to_token = context.get("idx_to_token")
 
     output_cfg = context.get("output", {})
     output_dir = Path(output_cfg.get("directory", "outputs/molecular_generation"))
@@ -186,39 +205,37 @@ def split_and_create_dataloaders(config: dict, context: dict):
 
     smiles_list = df["standardised_smiles"].tolist()
 
-    # === Config parameters ===
+    # Configs
     test_size = config.get("test_size", 0.1)
     random_state = config.get("random_state", 42)
     batch_size = config.get("batch_size", 64)
     max_len = config.get("max_len", 128)
 
-    # === Split data ===
+    # train/val split
     train_smiles, val_smiles = train_test_split(smiles_list, test_size=test_size, random_state=random_state)
 
-    # === Save splits for reproducibility ===
+    # Save splits (reproducibility)
     split_dir = output_dir / "splits"
     split_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"smiles": train_smiles}).to_csv(split_dir / "train_smiles.csv", index=False)
     pd.DataFrame({"smiles": val_smiles}).to_csv(split_dir / "val_smiles.csv", index=False)
     logger.info(f"Saved train/val splits to: {split_dir}")
 
-    # === Create datasets/loaders ===
+    # Instantiate train/val DataLoaders
     train_dataset = SmilesDataset(train_smiles, token_to_idx, max_len=max_len)
     val_dataset = SmilesDataset(val_smiles, token_to_idx, max_len=max_len)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    logger.info(f"Created dataloaders — Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
+    logger.info(f"Created dataloaders - Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
 
-    # === Update context for downstream tasks ===
+    # Again, update context for downstream tasks
     context.update({
         "train_loader": train_loader,
         "val_loader": val_loader,
         "train_smiles": train_smiles,
         "val_smiles": val_smiles,
-        # "token_to_idx": token_to_idx,
-        # "idx_to_token": idx_to_token
     })
 
     return {
@@ -232,11 +249,11 @@ def split_and_create_dataloaders(config: dict, context: dict):
 def build_model(config: dict, context: dict):
     vocab_size = context.get("vocab_size")
     if vocab_size is None:
-        raise ValueError("vocab_size not found in context — did you run load_preprocess_standardise_data?")
+        raise ValueError("vocab_size not found in context - did you run load_preprocess_standardise_data?")
 
     token_to_idx = context.get("token_to_idx")
     if token_to_idx is None:
-        raise ValueError("token_to_idx not found in context — did you pass it from previous task?")
+        raise ValueError("token_to_idx not found in context - did you pass it from previous task?")
 
     device = torch.device(config.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
 
@@ -260,6 +277,40 @@ def build_model(config: dict, context: dict):
 
     return context
 
+def smiles_to_tensor(smiles, token_to_idx, max_len=128, device='cpu'):
+    tokens = tokenise_smiles(smiles)
+    tokens = ['<bos>'] + tokens + ['<eos>']
+    token_ids = [token_to_idx.get(tok, token_to_idx['<unk>']) for tok in tokens]
+    
+    if len(token_ids) > max_len:
+        token_ids = token_ids[:max_len]
+    else:
+        token_ids += [token_to_idx['<pad>']] * (max_len - len(token_ids))
+    
+    return torch.tensor(token_ids, dtype=torch.long).unsqueeze(0).to(device)
+
+def decode_tokens(tokens, idx_to_token):
+    """Convert token IDs to a SMILES string."""
+    smiles_tokens = []
+    for t in tokens:
+        tok = idx_to_token.get(int(t), '<unk>')
+        if tok == '<eos>':
+            break
+        if tok not in ('<pad>', '<bos>'):
+            smiles_tokens.append(tok)
+    return ''.join(smiles_tokens)
+
+def validate_and_clean(smiles_list):
+    """Keep only syntactically valid SMILES (canonicalized)."""
+    valid = []
+    for smi in smiles_list:
+        try:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is not None:
+                valid.append(Chem.MolToSmiles(mol))
+        except Exception as e:
+            logger.debug(f"Ignored invalid SMILES: {smi} | Error: {e}")
+    return valid
 
 @register_task(
     "train_molecular_generation",
@@ -274,21 +325,10 @@ def train_model(config: dict, context: dict):
         config: Dict of hyperparameters from the YAML task block.
         context: Shared dictionary containing objects passed from previous tasks (model, dataloaders, vocab, etc.)
     """
-    # def smiles_to_tensor(smiles, token_to_idx, max_len=128, device='cpu'):
-    #     tokens = tokenize_smiles(smiles)  # your SMILES tokenizer
-    #     tokens = ['<bos>'] + tokens + ['<eos>']
-    #     token_ids = [token_to_idx.get(tok, token_to_idx['<unk>']) for tok in tokens]
-        
-    #     if len(token_ids) > max_len:
-    #         token_ids = token_ids[:max_len]
-    #     else:
-    #         token_ids += [token_to_idx['<pad>']] * (max_len - len(token_ids))
-        
-    #     return torch.tensor(token_ids, dtype=torch.long).unsqueeze(0).to(device)  # shape: [1, max_len]
 
     logger.info("Starting model training...")
 
-    # === Retrieve required context objects ===
+    # Retrieve mandatory context objects from previous task
     model = context.get("model")
     train_loader = context.get("train_loader")
     val_loader = context.get("val_loader")
@@ -308,7 +348,6 @@ def train_model(config: dict, context: dict):
     if missing:
         raise ValueError(f"Missing one or more objects in context ({', '.join(missing)}).")
 
-    # === Task-specific config parameters from YAML ===
     num_epochs = config.get("num_epochs", 5)
     batch_size = config.get("batch_size", 64)
     learning_rate = float(config.get("learning_rate", 1e-3))
@@ -319,12 +358,10 @@ def train_model(config: dict, context: dict):
     save_dir = config.get("save_dir", "output/models/")
     save_frequency = config.get("save_frequency", 1)
 
-    # === Read global output directory from YAML ===
     output_cfg = context.get("output", {})
     base_output_dir = output_cfg.get("directory", "outputs/molecular_generation")
     overwrite = output_cfg.get("overwrite", True)
 
-    # Final model save directory
     save_dir = os.path.join(base_output_dir, save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
@@ -335,7 +372,6 @@ def train_model(config: dict, context: dict):
     logger.info(f"Training on device: {device}")
     logger.info(f"Model save directory: {save_dir}")
 
-    # === Initialize optimizer, loss, scheduler ===
     if optimizer_name.lower() == "adam":
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     else:
@@ -351,7 +387,7 @@ def train_model(config: dict, context: dict):
     else:
         scheduler = None
 
-    # === Initialize metric history ===
+    # Initialise drug-like metrics
     history = {
         "train_loss": [], "val_loss": [],
         "train_perplexity": [], "val_perplexity": [],
@@ -360,7 +396,7 @@ def train_model(config: dict, context: dict):
         "qed_mean": [], "mol_wt_mean": [], "logp_mean": [], "tpsa_mean": []
     }
 
-    # === Training loop ===
+    # >>>>> TRAINING LOOP <<<<<
     for epoch in range(num_epochs):
         logger.info(f">>>>>>>>>> Epoch {epoch + 1}/{num_epochs} <<<<<<<<<<")
 
@@ -371,40 +407,75 @@ def train_model(config: dict, context: dict):
         val_perplexity = np.exp(val_loss)
 
         logger.info(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
-        logger.info(f"Perplexity — Train: {train_perplexity:.2f} | Val: {val_perplexity:.2f}")
+        logger.info(f"Perplexity - Train: {train_perplexity:.2f} | Val: {val_perplexity:.2f}")
 
-        # === Generate and evaluate molecules ===
-        dummy_src = torch.tensor([[token_to_idx["<bos>"]]], device=device)
+        # Generate and evaluate molecules
 
-        samples = generate_smiles_beam(
-            model, dummy_src,
-            token_to_idx=token_to_idx, idx_to_token=idx_to_token,
-            n_samples=200, beam_width=5, max_len=100, temperature=1.0, device=device
-        )
+        # 1. generate dummy tensor for testing only. 
 
-        # import random
-        # seed_smiles = random.sample(train_smiles, 20)
-        # generated_samples = []
+        # dummy_src = torch.tensor([[token_to_idx["<bos>"]]], device=device)
 
-        ### NEED TO DEBUG FEEDING IN REAL DATA, SEEMS TO BE SILENTLY FAILING SOMETIMES.
+        # samples = generate_smiles_beam(
+        #     model, dummy_src,
+        #     token_to_idx=token_to_idx, idx_to_token=idx_to_token,
+        #     n_samples=200, beam_width=5, max_len=100, temperature=1.0, device=device
+        # )
+
+        # 2. generate real tensors to generate molecules at each epoch
+
+        seed_smiles = random.sample(train_smiles, 5)
+        logger.info(f'Sampling {len(seed_smiles)} SMILES for inference, running on valid molecules.')
+        generated_samples = []
+
+        ## NEED TO DEBUG FEEDING IN REAL DATA, SEEMS TO BE SILENTLY FAILING.
+        ## Nope; TODO beam search is too heavy, integrate later on prod runs
+
+        for smi in seed_smiles:
+            src_tensor = smiles_to_tensor(smi, token_to_idx, max_len=128, device=device)
+            logger.debug(f'Sampled: {smi}')
+            # samples = generate_smiles_beam( 
+            #     model, src_tensor,
+            #     token_to_idx=token_to_idx,
+            #     idx_to_token=idx_to_token,
+            #     n_samples=5,       # number of beams per seed molecule
+            #     beam_width=5,
+            #     max_len=100,
+            #     temperature=1.2,
+            #     device=device
+            # )
+            for _ in range(5):  # generate 5 molecules per seed
+                tokens = sample_smiles_topk(
+                    model, src_tensor,
+                    token_to_idx, idx_to_token,
+                    max_len=100,
+                    temperature=0.7,
+                    top_k=3,
+                    top_p=0.9,
+                    device=device
+                )
+                
+                # decode to string if necessary
+                if isinstance(tokens, list) and isinstance(tokens[0], (int, torch.Tensor)):
+                    gen_smi = decode_tokens(tokens, idx_to_token)
+                elif isinstance(tokens, str):
+                    gen_smi = tokens
+                else:
+                    gen_smi = ''.join(str(t) for t in tokens)
+
+                generated_samples.append(gen_smi)
         
-        # for smi in seed_smiles:
-        #     src_tensor = smiles_to_tensor(smi, token_to_idx, max_len=128, device=device)
-        #     samples = generate_smiles_beam(
-        #         model, src_tensor,
-        #         token_to_idx=token_to_idx,
-        #         idx_to_token=idx_to_token,
-        #         n_samples=5,       # number of beams per seed molecule
-        #         beam_width=5,
-        #         max_len=100,
-        #         temperature=1.0,
-        #         device=device
-        #     )
-        #     generated_samples.extend(samples)
+        # Validate / clean Generated SMILES 
+        valid_smiles = validate_and_clean(generated_samples)
+        n_valid = len(valid_smiles)
+        n_total = len(generated_samples)
+        logger.info(f"Generated {n_valid}/{n_total} valid SMILES from train set ({n_valid / n_total:.2%})")
 
-        validity, uniqueness, novelty = evaluate_generated_smiles(samples, train_smiles)
-        avg_length = np.mean([len(s) for s in samples]) if samples else 0
-        properties = calculate_properties(samples)
+        # Use only valid SMILES for evaluation metrics
+        eval_set = valid_smiles if valid_smiles else generated_samples
+
+        validity, uniqueness, novelty = evaluate_generated_smiles(eval_set, train_smiles)
+        avg_length = np.mean([len(s) for s in eval_set]) if eval_set else 0
+        properties = calculate_properties(eval_set)
 
         logger.info(
             f"Validity: {validity:.2%}, Uniqueness: {uniqueness:.2%}, Novelty: {novelty:.2%}, "
@@ -412,7 +483,7 @@ def train_model(config: dict, context: dict):
             f"LogP={properties['logp_mean']:.2f}, TPSA={properties['tpsa_mean']:.2f}"
         )
 
-        # === Update history ===
+        # Update metrics
         for k, v in [
             ("train_loss", train_loss), ("val_loss", val_loss),
             ("train_perplexity", train_perplexity), ("val_perplexity", val_perplexity),
@@ -423,7 +494,7 @@ def train_model(config: dict, context: dict):
         ]:
             history[k].append(v)
 
-        # === Save checkpoint ===
+        # Save model checkpoint 
         if (epoch + 1) % save_frequency == 0:
             ckpt_path = os.path.join(save_dir, f"model_epoch_{epoch + 1}.pt")
             torch.save(model.state_dict(), ckpt_path)
@@ -443,7 +514,7 @@ def train_model(config: dict, context: dict):
     return {"model": model, "training_history": history}
 
 @register_task(
-    "evaluate_model",
+    "evaluate_molecular_generation",
     category="Molecular generation",
     description="Plot training history and evaluation metrics."
 )
@@ -460,19 +531,15 @@ def evaluate_model(config: dict, context: dict):
     if history is None:
         raise ValueError("training_history not found in context. Run train_model first.")
 
-    # Get global output directory from context, default to current dir if missing
+    # Get output and save dirs, combine.
     global_output_dir = context.get("output_directory", ".")
-
-    # Get local save_dir from task config, default to "evaluation"
     local_save_dir = config.get("save_dir", "evaluation")
-
-    # Combine paths
     save_dir = os.path.join(global_output_dir, local_save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
     epochs = range(1, len(history["train_loss"]) + 1)
 
-    # Plot 1: Loss, Perplexity, Validity, Uniqueness, Novelty, Avg Length
+    # Plot 1 (model metrics) : Loss, Perplexity, Validity, Uniqueness, Novelty, Avg Length
     plt.figure(figsize=(12, 8))
 
     plt.subplot(2, 2, 1)
@@ -507,9 +574,9 @@ def evaluate_model(config: dict, context: dict):
     plot1_path = os.path.join(save_dir, "training_and_quality_metrics.png")
     plt.savefig(plot1_path)
     plt.close()
-    print(f"Saved plot to {plot1_path}")
+    logger.debug(f"Saved plot to {plot1_path}")
 
-    # Plot 2: Drug-like properties
+    # Plot 2 (drug-like properties): qed, mw, logp, tpsa
     plt.figure(figsize=(12, 8))
 
     plt.subplot(2, 2, 1)
@@ -541,7 +608,7 @@ def evaluate_model(config: dict, context: dict):
     plot2_path = os.path.join(save_dir, "drug_like_properties.png")
     plt.savefig(plot2_path)
     plt.close()
-    print(f"Saved plot to {plot2_path}")
+    logger.debug(f"Saved plot to {plot2_path}")
 
     # Update context with actual save_dir and plot paths
     context.update({
