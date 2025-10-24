@@ -18,9 +18,9 @@ from pipeline.task_registry import register_task
 
 from modules.utils.graph_construction import load_all_targets
 
-from pipeline.utils.data_utils import normalise_graph_labels
-from pipeline.utils.data_utils import denormalise
-from pipeline.utils.train_utils import train_epoch, eval_epoch, EarlyStopping
+from models.utils.data_utils import normalise_graph_labels
+from models.utils.data_utils import denormalise
+from models.utils.train_utils import train_epoch, eval_epoch, EarlyStopping
 
 from pipeline.logger import setup_logger
 
@@ -126,7 +126,7 @@ def prepare_dataloaders(config: dict, context: dict):
         "y_std": y_std,
     }
 
-@register_task("train_model", category="Pose ranker", description="Train Pose Ranker model with grid search.")
+@register_task("train_pose_ranker", category="Pose ranker", description="Train Pose Ranker model with grid search.")
 def train_model(config: dict, context: dict):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

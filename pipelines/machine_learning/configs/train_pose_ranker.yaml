@@ -5,7 +5,7 @@ workflow:
   - featurise
   - load_model_spec
   - load_data_and_split
-  - train_model
+  - train_pose_ranker
   - evaluate
 
 load_targets_prepare_graphs:
@@ -30,7 +30,7 @@ load_data_and_split:
   data_input: data/processed/featurised_graphs.pkl
   output_dir: data/splits/
 
-train_model:
+train_pose_ranker:
   num_epochs: 100
   grid_search_hidden_dim: [64, 128, 256]
   grid_search_lr: [1e-3, 5e-4, 1e-4]

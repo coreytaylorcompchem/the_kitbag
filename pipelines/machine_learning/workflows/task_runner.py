@@ -52,5 +52,5 @@ def train_model(config_path: str):
 
         gc.collect()
 
-    logger.info(f"[{workflow_name}] ✅ Workflow complete.")
+    logger.info(f"[{workflow_name}] Workflow complete.")
     return current_data

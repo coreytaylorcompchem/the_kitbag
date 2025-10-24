@@ -4,8 +4,8 @@ workflow:
   - load_preprocess_standardise_data
   - split_and_create_dataloaders
   - build_model
-  - train_model
-  - evaluate_model
+  - train_molecular_generation
+  # - evaluate_molecular_generation
   # - generate_and_evaluate
 
 load_preprocess_standardise_data:
@@ -31,8 +31,8 @@ build_model:
   max_len: 128
   device: cuda
 
-train_model:
-  num_epochs: 10
+train_molecular_generation:
+  num_epochs: 5
   # batch_size: 64
   learning_rate: 1e-3
   warmup_steps: 4000
@@ -66,5 +66,4 @@ evaluate_model:
 
 output:
   directory: outputs/molecular_generation
-  # filename: class_a_gpcr_focused_library.csv
   overwrite: true

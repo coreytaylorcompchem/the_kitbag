@@ -210,7 +210,7 @@ def split_and_create_dataloaders(config: dict, context: dict):
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     logger.info(f"Created dataloaders — Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
-    
+
     # === Update context for downstream tasks ===
     context.update({
         "train_loader": train_loader,
@@ -262,7 +262,7 @@ def build_model(config: dict, context: dict):
 
 
 @register_task(
-    "train_model",
+    "train_molecular_generation",
     category="Molecular generation",
     description="Train SMILES Transformer model using configuration-driven hyperparameters."
 )
@@ -274,6 +274,17 @@ def train_model(config: dict, context: dict):
         config: Dict of hyperparameters from the YAML task block.
         context: Shared dictionary containing objects passed from previous tasks (model, dataloaders, vocab, etc.)
     """
+    # def smiles_to_tensor(smiles, token_to_idx, max_len=128, device='cpu'):
+    #     tokens = tokenize_smiles(smiles)  # your SMILES tokenizer
+    #     tokens = ['<bos>'] + tokens + ['<eos>']
+    #     token_ids = [token_to_idx.get(tok, token_to_idx['<unk>']) for tok in tokens]
+        
+    #     if len(token_ids) > max_len:
+    #         token_ids = token_ids[:max_len]
+    #     else:
+    #         token_ids += [token_to_idx['<pad>']] * (max_len - len(token_ids))
+        
+    #     return torch.tensor(token_ids, dtype=torch.long).unsqueeze(0).to(device)  # shape: [1, max_len]
 
     logger.info("Starting model training...")
 
@@ -364,13 +375,33 @@ def train_model(config: dict, context: dict):
 
         # === Generate and evaluate molecules ===
         dummy_src = torch.tensor([[token_to_idx["<bos>"]]], device=device)
-        print(dummy_src)
+
         samples = generate_smiles_beam(
             model, dummy_src,
             token_to_idx=token_to_idx, idx_to_token=idx_to_token,
             n_samples=200, beam_width=5, max_len=100, temperature=1.0, device=device
         )
-        print(samples)
+
+        # import random
+        # seed_smiles = random.sample(train_smiles, 20)
+        # generated_samples = []
+
+        ### NEED TO DEBUG FEEDING IN REAL DATA, SEEMS TO BE SILENTLY FAILING SOMETIMES.
+        
+        # for smi in seed_smiles:
+        #     src_tensor = smiles_to_tensor(smi, token_to_idx, max_len=128, device=device)
+        #     samples = generate_smiles_beam(
+        #         model, src_tensor,
+        #         token_to_idx=token_to_idx,
+        #         idx_to_token=idx_to_token,
+        #         n_samples=5,       # number of beams per seed molecule
+        #         beam_width=5,
+        #         max_len=100,
+        #         temperature=1.0,
+        #         device=device
+        #     )
+        #     generated_samples.extend(samples)
+
         validity, uniqueness, novelty = evaluate_generated_smiles(samples, train_smiles)
         avg_length = np.mean([len(s) for s in samples]) if samples else 0
         properties = calculate_properties(samples)
