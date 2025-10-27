@@ -5,7 +5,7 @@ max_records: 2000000  # total to retrieve from ChEMBL
 batch_size: 1000     # how many per worker
 
 workflow:
-  - retrieve_compound_metadata_batch
+  - retrieve_compound_metadata_batched
 
 output:
   directory: outputs/chembl_molecules

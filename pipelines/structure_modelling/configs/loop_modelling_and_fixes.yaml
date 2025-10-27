@@ -10,7 +10,7 @@ workflow:
 
 protein:
   pdb_path: "/home/corey/Documents/the_kitbag/pipelines/structure_modelling/projects/test/data/5yhl.pdb"
-  uniprot_id: P35408
+  uniprot_id: P35408 # mandatory - to retrieve sequence for modelling from Uniprot
   allow_missing_atoms_fix: true
 
   # capping:

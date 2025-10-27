@@ -113,6 +113,8 @@ class MDWorkflow:
         self.simulation.reporters.append(DCDReporter(output_trajectory, step_chunk))
         self.simulation.reporters.append(StateDataReporter(output_logfile,
                                                         1000, step=True, temperature=True,
+                                                        potentialEnergy=True,totalEnergy=True,
+                                                        density=True,
                                                         progress=True, remainingTime=True,
                                                         speed=True, totalSteps=total_steps,
                                                         separator='\t'))

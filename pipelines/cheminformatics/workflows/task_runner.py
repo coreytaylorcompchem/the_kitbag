@@ -210,7 +210,7 @@ def dynamic_task_runner(config):
 
         return {"df": combined_df}
 
-    # === ELSE do chunking + parallelism (your existing code below) ===
+    # === ELSE do chunking + parallelism ===
 
     df = pd.read_csv(input_file, sep=",", quotechar='"', escapechar='\\', engine="python")
     if "smiles" not in df.columns:

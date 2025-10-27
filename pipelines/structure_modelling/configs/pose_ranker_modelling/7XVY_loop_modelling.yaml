@@ -1,0 +1,35 @@
+
+task: workflow
+workflow_name: protein_modelling
+
+workflow:
+  - fix_residues
+  - fix_loops
+  # - cap_terminals
+  - refine_loops
+
+protein:
+  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/structure_modelling/projects/pose_ranker_modelling/good_poses/7XVY/7XVY_A.pdb"
+  uniprot_id: Q92731
+  allow_missing_atoms_fix: true
+
+  # capping:
+  #   enabled: true
+  #   n_term: ACE
+  #   c_term: NME
+
+backend:
+  name: modeller
+  loop_refinement:
+    n_loop_models: 5
+    enabled: true
+    optimization_level: 2
+    
+    # TODO
+
+    # vary_ca_restraints: true
+    # max_var_iterations: 300
+    # skip_hetero: true
+    # assess_methods: [DOPE, GA341]
+
+output_dir: "outputs/loop_modelling"

@@ -48,7 +48,7 @@ def fetch_all_molecule_ids_webclient(config):
             offset = checkpoint.get("last_index", 0)
         logger.info(f"Resuming from offset {offset}, {len(all_ids)} IDs loaded")
 
-    limit = 1000  # max page size supported by ChEMBL
+    limit = 1000  # max page size supported by the ChEMBL web client
     pbar = tqdm(desc="Fetching molecules", initial=len(all_ids), total=max_records)
 
     def fetch_page(offset, limit):
@@ -115,7 +115,7 @@ def retry_fetch(fetch_fn, retries=5, backoff=5):
 
 
 @register_workflow("chembl_all_molecules",
-                   description="Download ChEMBL molecule metadata in parallel.")
+                   description="Download ChEMBL molecule metadata.")
 def run_chembl_all_molecules_parallel(config):
     max_records = config.get("max_records", 100000)
     batch_size = config.get("batch_size", 1000)
@@ -149,7 +149,7 @@ def run_chembl_all_molecules_parallel(config):
 
 def _single_batch_runner(input_pair):
     batch_index, chembl_ids = input_pair
-    task = get_task("retrieve_compound_metadata_batch")
+    task = get_task("retrieve_compound_metadata_batched")
     if not task:
         raise RuntimeError("Task 'retrieve_compound_metadata_batch' not registered.")
     local_config = {"molecule_chembl_ids": chembl_ids}

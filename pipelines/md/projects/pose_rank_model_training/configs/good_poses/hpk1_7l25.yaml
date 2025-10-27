@@ -1,0 +1,31 @@
+task: workflow
+workflow_name: molecular_dynamics
+
+system:
+  pdb_file: input/7L25.pdb
+  # ligand_file: input/ligand.sdf  # Optional
+  ligand_parameters: openff-2.0.0  # Optional
+  forcefield: ["amber14-all.xml", "amber14/tip3p.xml"]
+  ionic_strength: 0.15
+  box_padding: 1.0
+
+simulation: 
+  platform: "OpenCL" # CPU, if you're crazy. CUDA if you're sane. OpenCL is slower (~ 20-50%) but usable.
+  pH: 7.0
+  timestep: 2.0  # fs
+  temperature: 300  # K
+  # friction: 1.0
+
+heating_and_equilibration:
+  num_heating_steps: 6
+  target_temp: 300
+  steps_per_round: 100
+  restraint_strengths: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
+
+production:
+  length_ns: 1
+  output_trajectory: "output/trajectory.dcd"
+  output_logfile: "output/log.txt"
+
+output:
+  overwrite: true

@@ -137,7 +137,7 @@ class OpenMMBackend:
         config = self.config
 
         # Step 1: Mutate unnatural residues
-        # TODO: makethis work with others.
+        # TODO: make this work with others.
         mutated_pdb = config["system"]["pdb_file"].replace(".pdb", "_mutated.pdb")
         self.mutate_residue_in_pdb(config["system"]["pdb_file"], mutated_pdb, 'SEP', 'SER')
 
@@ -269,6 +269,8 @@ class OpenMMBackend:
 
         # Step 7: Create hybrid Anber/OFF ForceField 
         # Load Amber for protein/water
+        logger.info(f"Calculating forcefield parameters for ligand {ligand_resname}.")
+
         protein_ff_files = config["system"].get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
         ligand_ff_name = config["system"].get("ligand_parameters", "openff-2.0.0.offxml")
 
@@ -316,7 +318,7 @@ class OpenMMBackend:
             os.makedirs(output_dir)
         topology_path = os.path.join(output_dir, "topology.pdb")
         with open(topology_path, "w") as f:
-            PDBFile.writeFile(self.topology, self.positions, f)
+            PDBFile.writeFile(self.topology, self.positions, f, keepIds=True)
 
         logger.info(f"Saved prepared protein + ligand system topology to {topology_path}")
 

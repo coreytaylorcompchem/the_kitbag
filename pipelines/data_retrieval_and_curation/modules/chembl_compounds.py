@@ -13,7 +13,7 @@ logger = setup_logger(
     simple_format=True
 )
 
-@register_task("retrieve_compound_metadata_batch",
+@register_task("retrieve_compound_metadata_batched",
                category="Compound",
                description="Retrieve metadata for a batch of ChEMBL molecule IDs.")
 def retrieve_compound_metadata_batch(config, data=None):
