@@ -1,3 +1,9 @@
+# Purpose: to run a two-compartment ODE-based model for predicting brain: plasma concentration for molecules provided.
+# Inputs: csv of SMILES + ID
+# Outputs: 
+# - CSVs of individual population and aggregated plasma concentration and various phyiological parameters.
+# - Per-molecule and per-subject concentration curves (individual and aggregated).    
+
 workflow_name: pbpk_workflow
 
 input_file: data/ligands.csv
@@ -24,7 +30,14 @@ pbpk_simulation:
   solver: scipy
   simulation_time: 480   # minutes
   dose_mg: 10
-  exchange_model: hybrid  # flow_limited or permeability_limited or hybrid
+  exchange_model: hybrid  # flow_limited | permeability_limited | hybrid
+  n_subjects: 50    # number of virtual humans
+  variability:
+    Vp: 0.2         # 20% CV for plasma volume
+    Vb: 0.15        # 15% CV for brain volume
+    Q_brain: 0.25   # 25% CV for brain blood flow
+    PS_BBB: 0.3     # 30% CV for BBB permeability
+    fu_p: 0.4       # 40% CV for plasma free fraction
   output_dir: outputs/pbpk/simulations
 
 pbpk_analysis:

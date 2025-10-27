@@ -21,7 +21,7 @@ See a few workflow runs in `projects/test` Run the code from there with, for exa
 
 `python ../../run_systems_modelling_pipeline.py --params ../../configs/pbpk_modelling.yaml > log.log`
 
-If the calculation runs correctly, you should see output (`log.log`) and a `output/loop_modelling` directory should appear.
+If the calculation runs correctly, you should see output (`log.log`) and a `output/pbpk` directory should appear.
 
 ## So what can it do?
 
@@ -35,7 +35,7 @@ Available Tasks:
     - pbpk_model_assembly: Assemble PBPK model
     - pbpk_parameter_prediction: Predict PBPK parameters from SMILES
   [PBPK - brain:plasma]:
-    - pbpk_simulation: Run 2-compartment plasma–brain PBPK simulation with selectable exchange model.
+    - pbpk_simulation: Run multi-compartment plasma–brain PBPK simulation with selectable exchange model.
 
 Available Workflows:
  - pbpk_workflow: Predict PBPK parameters, assemble model, simulate, and analyse.
