@@ -33,14 +33,20 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 ```
 Available Tasks:
+  [Molecular generation]:
+    - build_model: 
+    - evaluate_molecular_generation: Plot training history and evaluation metrics.
+    - load_preprocess_standardise_data: 
+    - split_and_create_dataloaders: Create train/val dataloaders for SMILES transformer training.
+    - train_molecular_generation: Train SMILES Transformer model.
   [Pose ranker]:
     - evaluate_model: Evaluate trained model stats and plots.
     - load_model_spec: Load Pose Ranker model spec.
     - load_targets_prepare_graphs: Load MD trajs and parameterise as graphs.
     - prepare_dataloaders: Normalise labels and create train/val DataLoaders
-    - train_model: Train Pose Ranker model with grid search.
+    - train_pose_ranker: Train Pose Ranker model with grid search.
 Available Workflows:
- - train_pose_ranker: Train and evaluate GNN-based pose ranking model
+ - train_model: Train and evaluate specified model
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
