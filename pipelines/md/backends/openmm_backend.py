@@ -23,6 +23,7 @@ from rdkit.Chem import AllChem
 
 from pdbfixer import PDBFixer
 
+from backends.utils.orient_gpcr import orient_gpcr_with_ligand
 
 from pipeline.logger import setup_logger
 
@@ -269,7 +270,7 @@ class OpenMMBackend:
 
         # Step 7: Create hybrid Anber/OFF ForceField 
         # Load Amber for protein/water
-        logger.info(f"Calculating forcefield parameters for ligand {ligand_resname}.")
+        logger.debug(f"Calculating forcefield parameters for ligand {ligand_resname}.")
 
         protein_ff_files = config["system"].get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
         ligand_ff_name = config["system"].get("ligand_parameters", "openff-2.0.0.offxml")
@@ -290,6 +291,42 @@ class OpenMMBackend:
             )
             forcefield.registerTemplateGenerator(smirnoff_generator.generator)
             logger.debug("Registered SMIRNOFFTemplateGenerator for ligand.")
+        
+        # --- Step 7a: Orient protein for membrane
+        if config["system"].get("membrane", False):
+            oriented_pdb_path = os.path.join(input_pdb_dir, "protein_oriented.pdb")
+            logger.info("Orienting GPCR for membrane embedding (may take some time)...")
+            orient_gpcr_with_ligand(
+                pdb_path=stripped_pdb_path,
+                output_path=oriented_pdb_path,
+                ligand_resnames=[ligand_resname] if ligand_offmol else None
+            )
+            
+            # Reload oriented structure into modeller
+            pdb_oriented = PDBFile(oriented_pdb_path)
+            modeller = Modeller(pdb_oriented.topology, pdb_oriented.positions)
+
+            # Remove pre-existing ligand residue from the oriented PDB
+            if ligand_offmol:
+                atoms_to_delete = [atom for atom in modeller.topology.atoms() if atom.residue.name == ligand_resname]
+                if atoms_to_delete:
+                    modeller.delete(atoms_to_delete)
+                    logger.debug(f"Removed pre-existing ligand {ligand_resname} from oriented PDB")
+
+                # Hack: re-add ligand using OpenFF topology and coordinates
+                ligand_topology = ligand_offmol.to_topology().to_openmm()
+                conf = ligand_offmol.conformers[0]
+                coords_array = conf.to('angstrom').magnitude
+                ligand_positions = unit.Quantity(coords_array, unit.angstrom).in_units_of(unit.nanometer)
+                modeller.add(ligand_topology, ligand_positions)
+                logger.debug(f"Re-added ligand {ligand_resname} using OpenFF template")
+
+        # --- Step 7b: Add membrane
+        if config["system"].get("membrane", False):
+            lipid_type = config["system"].get("lipid_type", "POPC")
+            padding = config["system"].get("membrane_padding", 1.0) * unit.nanometer
+            logger.info(f"Adding membrane: {lipid_type}")
+            modeller.addMembrane(forcefield, lipidType=lipid_type, minimumPadding=padding)
 
         # --- Step 8: Solvate system ---
         ionic_strength = config["system"].get("ionic_strength", 0.0)
@@ -321,6 +358,4 @@ class OpenMMBackend:
             PDBFile.writeFile(self.topology, self.positions, f, keepIds=True)
 
         logger.info(f"Saved prepared protein + ligand system topology to {topology_path}")
-
-
 

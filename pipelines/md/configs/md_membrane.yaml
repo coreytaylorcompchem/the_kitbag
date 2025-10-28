@@ -1,0 +1,33 @@
+task: workflow
+workflow_name: molecular_dynamics
+
+system:
+  pdb_file: input_membrane/5L7I.pdb
+  # ligand_file: input/ligand.sdf  # Optional
+  ligand_parameters: openff-2.0.0.offxml  # Optional
+  forcefield: ["amber14-all.xml", "amber14/tip3p.xml"] # Optional
+  ionic_strength: 0.15
+  box_padding: 1.0
+  membrane: true
+  lipid_type: POPC
+
+simulation: 
+  platform: "OpenCL" # CPU, if you're crazy. CUDA if you're sane. OpenCL is slower (~ 20-50%) but usable.
+  pH: 7.0
+  timestep: 2.0  # fs
+  temperature: 300  # K
+  # friction: 1.0
+
+heating_and_equilibration:
+  num_heating_steps: 6
+  target_temp: 300
+  steps_per_round: 100
+  restraint_strengths: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
+
+production:
+  length_ns: 1
+  output_trajectory: "output_membrane/trajectory.dcd"
+  output_logfile: "output_membrane/log.txt"
+
+output:
+  overwrite: true
