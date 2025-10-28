@@ -181,6 +181,7 @@ class OpenMMBackend:
             logger.info(f"Wrote stripped protein + ligand PDB to {stripped_pdb_path}")
 
             # Step 4b: Use Open Babel to separate and filter small molecules
+            # TODO: this needs to be more robust to different PDB structures
             cmd = [
                 "obabel", stripped_pdb_path,
                 "-O", os.path.join(input_pdb_dir, "ligand_output.sdf"),
@@ -301,7 +302,7 @@ class OpenMMBackend:
                 output_path=oriented_pdb_path,
                 ligand_resnames=[ligand_resname] if ligand_offmol else None
             )
-            
+
             # Reload oriented structure into modeller
             pdb_oriented = PDBFile(oriented_pdb_path)
             modeller = Modeller(pdb_oriented.topology, pdb_oriented.positions)
