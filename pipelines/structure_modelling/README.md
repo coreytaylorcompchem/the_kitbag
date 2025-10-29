@@ -31,17 +31,26 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 `python list_available_tasks_and_workflows.py`
 
 ```
+Available Backends:
+ - base
+ - colabfold
+ - modeller
+ - peptidebuilder
+ - pyrosetta
+ - xtb
 Available Tasks:
   [Peptide modelling]:
-    - build_peptide: Build peptides from sequence file
-    - minimise_peptide: Minimize peptide structures
+    - analyse_peptide_flexibility: Compute peptide flexibility metrics.
+    - build_peptide: Build peptides from a sequence file.
+    - generate_peptide_conformers: Generate and minimise (MMFF) peptide conformers.
+    - plot_peptide_flexibility: Plot flexibility (Boltzmann-weighted).
   [Protein modelling]:
     - fix_loops: Model missing loops.
     - fix_residues: Fix incomplete residues.
-    - refine_loops: Refine loop structures.
+    - refine_loops: Refine modelled loops (energy criteria).
 
 Available Workflows:
- - peptide_modelling: Build and minimise peptides.
+ - peptide_modelling: Build, minimise peptides and calculate metrics.
  - protein_modelling: Fix, model, and refine protein structure.
 ```
 
