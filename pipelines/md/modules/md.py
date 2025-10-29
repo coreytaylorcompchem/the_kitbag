@@ -6,6 +6,7 @@ from openmm.unit import picoseconds
 
 from tqdm import tqdm
 
+from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
@@ -17,33 +18,38 @@ class MDWorkflow:
         self.integrator = None
         self.simulation = None
 
+    @register_task("prepare_system", category='Molecular dynamics',
+                   description="Load inputs, cap chains, parameterise ligand and protein, solvate and save final topology.")
     def prepare_system(self):
-        self.backend.prepare_system()
+        self.backend.prepare_system(self.config["prepare_system"])
         self.system = self.backend.system
         self.topology = self.backend.topology
         self.positions = self.backend.positions
 
+    @register_task("setup_simulation", category='Molecular dynamics', description="Set up integrator and simulation.")
     def setup_simulation(self):
-        logger.info(f"Setting up integrator.")
+        cfg = self.config["setup_simulation"]
         self.integrator = LangevinIntegrator(
-            self.config["simulation"]["temperature"]*kelvin,
-            1.0/picosecond,
-            self.config["simulation"]["timestep"]*femtoseconds
+            cfg["temperature"]*kelvin,
+            1.0/picoseconds,
+            cfg["timestep"]*femtoseconds
         )
-        self.simulation = Simulation(self.topology, self.system, self.integrator, self.backend.platform)
+        self.simulation = Simulation(self.topology, self.system, self.integrator,
+                                     Platform.getPlatformByName(cfg["platform"]))
         self.simulation.context.setPositions(self.positions)
 
+    @register_task("minimize", category='Molecular dynamics', description="Initial energy minimization.")
     def minimize(self):
-        logger.info(f"Performing initial minimisation.")
         self.simulation.minimizeEnergy()
 
+    @register_task("heat_and_equilibrate", category='Molecular dynamics', description="Heating and equilibration.")
     def heat_and_equilibrate(self):
-    # Config params fed in here.
-        heating_config = self.config.get("heating_and_equilibration", {})
-        num_steps = heating_config.get("num_heating_steps", 6)
-        heating_increment = heating_config.get("heating_increment", 298.15 / num_steps)
-        restraints = heating_config.get("restraint_strengths", [5.0, 4.0, 3.0, 2.0, 1.0, 0.0])
-        steps_per_round = heating_config.get("steps_per_round", 5000)
+        cfg = self.config["heat_and_equilibrate"]
+        num_steps = cfg.get("num_heating_steps", 6)
+        heating_increment = cfg.get("heating_increment", 298.15 / num_steps)
+        target_temp = cfg.get("target_temp", 300)
+        steps_per_round = cfg.get("steps_per_round", 5000)
+        restraints = cfg.get("restraint_strengths", [5.0, 4.0, 3.0, 2.0, 1.0, 0.0])
 
         # Backbone atoms heating/equil constraints
         backbone_atoms = [atom.index for atom in self.topology.atoms() if atom.name in {"N", "CA", "C", "O"}]
@@ -84,8 +90,10 @@ class MDWorkflow:
 
             self.simulation.step(steps_per_round)
 
-    def run_production(self):
-        ns = self.config["production"]["length_ns"]
+    @register_task("production", category='Molecular dynamics', description="Run production simulation.")
+    def production(self):
+        cfg = self.config["production"]
+        ns = cfg.get("length_ns", 1)
         timestep = self.integrator.getStepSize() 
         
         # Timestep -> ns
@@ -94,8 +102,8 @@ class MDWorkflow:
         steps_per_ns = int(1.0 / timestep_ns)
         total_steps = int(ns * steps_per_ns)
 
-        output_trajectory = self.config["production"]["output_trajectory"]
-        output_logfile = self.config["production"]["output_logfile"]
+        output_trajectory = cfg.get("output_trajectory", "output")
+        output_logfile = cfg.get("output_logfile", "poo.log")
 
         output_dir = os.path.dirname(output_trajectory)
         if output_dir and not os.path.exists(output_dir):
@@ -133,3 +141,4 @@ class MDWorkflow:
                 logger.debug(f"Saving checkpoint to {checkpoint_file} every {steps_to_run} steps. Current step: {self.simulation.currentStep}")
 
                 pbar.update(steps_to_run)
+

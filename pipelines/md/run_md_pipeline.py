@@ -6,7 +6,6 @@ import sys
 from pipeline.import_utilities import import_modules_recursively
 from workflows import get_workflow, load_all_workflows, list_workflows
 from pipeline.logger import setup_logger
-
 from pipeline.dependency_checker import check_dependencies, fail_if_missing
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
@@ -19,7 +18,6 @@ def main():
     project_root = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, project_root)
 
-    # Define what dependencies your pipeline expects (based on config)
     required_deps = {
         "openmm": "pip install openmm",
         "rdkit": "conda install -c conda-forge rdkit",
@@ -28,11 +26,9 @@ def main():
         "tqdm": "pip install tqdm",
     }
 
-    # Check and exit early if anything's missing
     missing = check_dependencies(required_deps)
     fail_if_missing(missing)
 
-    # Import all modules and workflows
     import_modules_recursively(os.path.join(project_root, "modules"), "modules")
     import_modules_recursively(os.path.join(project_root, "workflows"), "workflows")
     load_all_workflows()
@@ -45,8 +41,7 @@ def main():
 
     config = load_yaml(args.params)
 
-    platform = config["simulation"]["platform"]
-
+    platform = config.get("setup_simulation", {}).get("platform", "CPU")
     logger.info(f"Running on platform: {platform}")
 
     workflow_name = config.get("workflow_name")
@@ -54,15 +49,23 @@ def main():
         raise ValueError("Missing 'workflow_name' in config")
 
     logger.info(f"Running workflow: '{workflow_name}'")
-
     workflow_func = get_workflow(workflow_name)
     if not workflow_func:
         raise ValueError(f"Workflow '{workflow_name}' not found")
 
-    result = workflow_func(config)
+    # Inject flags to control workflow steps based on YAML list
+    steps = config.get("workflow", [])
+    config["run_prepare_system"] = "prepare_system" in steps
+    config["run_setup_simulation"] = "setup_simulation" in steps
+    config["run_minimize"] = "minimize" in steps
+    config["run_heat_and_equilibrate"] = "heat_and_equilibrate" in steps
+    config["run_production"] = "production" in steps
 
-    if isinstance(result, dict) and "df" in result:
-        result_df = result["df"]
+    workflow_result = workflow_func(config)
+
+    # Handle DataFrame output if returned
+    if isinstance(workflow_result, dict) and "df" in workflow_result:
+        result_df = workflow_result["df"]
         output_cfg = config.get("output", {})
         filename = output_cfg.get("filename", "output.csv")
         directory = output_cfg.get("directory", "outputs")

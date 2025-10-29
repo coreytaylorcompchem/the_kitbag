@@ -1,42 +1,41 @@
-_TASK_REGISTRY = {}
+_task_registry = {}
+_task_metadata = {}
 
-def register_task(name, description=None):
-    # # If not given, detect which backends implement it
-    # if supported_backends is None:
-    #     supported_backends = backends_supporting_task(name)
-
-    def wrapper(func):
-        _TASK_REGISTRY[name.lower()] = {
-            'func': func,
-            'description': description or '',
-            # 'supported_backends': supported_backends,
+def register_task(name: str, category=None, description: str = "", required=None):
+    def decorator(func):
+        _task_registry[name] = func
+        _task_metadata[name] = {
+            "description": description,
+            "supported_backends": [],
+            'category': category or '',
+            'required': required or '',
         }
         return func
-    return wrapper
+    return decorator
 
 def get_task(name):
-    """
-    Return the registered task function (callable) for a given name.
-    """
-    entry = _TASK_REGISTRY.get(name.lower())
-    if entry is None:
-        return None
-    return entry["func"] 
+    return _task_registry.get(name)
 
 def list_tasks():
-    """
-    List all registered task names.
-    """
-    return list(_TASK_REGISTRY.keys())
+    return list(_task_registry.keys())
 
 def get_task_metadata(name):
-    """
-    Get metadata dictionary for a given task name.
-    """
-    return _TASK_REGISTRY.get(name.lower(), {})
+    return _task_metadata.get(name, {})
 
-# def get_unregistered_tasks_used():
-#     """
-#     Return list of task names used but not registered.
-#     """
-#     return [name for name in used_task_names if name not in _TASK_REGISTRY]
+def populate_supported_backends_from_backends(backend_classes: dict):
+    """
+    Matches each registered task to backends that declare support via 'supported_tasks'.
+    This should be called after all tasks and backends have been imported.
+    """
+    for task_name in _task_registry:
+        for backend_name, backend_cls in backend_classes.items():
+            supported = getattr(backend_cls, "supported_tasks", [])
+            if task_name in supported:
+                _task_metadata[task_name]["supported_backends"].append(backend_name)
+
+def finalise_task_registration():
+    """
+    Should be called after all task modules and backend modules have been loaded.
+    """
+    from backends import get_backend_classes
+    populate_supported_backends_from_backends(get_backend_classes())

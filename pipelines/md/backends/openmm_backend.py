@@ -30,9 +30,16 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class OpenMMBackend:
+    supported_tasks = [ 
+            "minimize",
+            "prepare_system",
+            "setup_simulation",
+            "heat_and_equilibrate",
+            "production",
+            "solvent_hbonds"]
     def __init__(self, config):
         self.config = config
-        self.platform = Platform.getPlatformByName(config["simulation"]["platform"])
+        self.platform = Platform.getPlatformByName(config.get("setup_simulation", {}).get("platform", "CPU"))
 
     def load_pdb(self, pdb_file):
         return PDBFile(pdb_file)
@@ -43,7 +50,7 @@ class OpenMMBackend:
 
     def add_solvent(self, modeller, forcefield=None, ionic_strength=0.0, box_padding=1.0):
         if forcefield is None:
-            forcefield = ForceField(*self.config["system"]["forcefield"])
+            forcefield = ForceField(*self.config["prepare_system"]["forcefield"])
 
         modeller.addSolvent(forcefield, model='tip3p', ionicStrength=ionic_strength*unit.molar, padding=box_padding*unit.nanometer)
         return modeller
@@ -133,17 +140,22 @@ class OpenMMBackend:
 
         return new_topology
 
-    def prepare_system(self):
+    def prepare_system(self, cfg):
 
-        config = self.config
+        pdb_file = cfg["pdb_file"]
+        forcefield_files = cfg.get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
+        ligand_params = cfg.get("ligand_parameters", None)
+        ionic_strength = cfg.get("ionic_strength", 0.0)
+        box_padding = cfg.get("box_padding", 1.0)
+        ph = cfg.get("pH", 7.4)
 
         # Step 1: Mutate unnatural residues
         # TODO: make this work with others.
-        mutated_pdb = config["system"]["pdb_file"].replace(".pdb", "_mutated.pdb")
-        self.mutate_residue_in_pdb(config["system"]["pdb_file"], mutated_pdb, 'SEP', 'SER')
+        mutated_pdb = pdb_file.replace(".pdb", "_mutated.pdb")
+        self.mutate_residue_in_pdb(pdb_file, mutated_pdb, 'SEP', 'SER')
 
         # Step 2: Fix with PDBFixer
-        fixed_pdb_file = self.fix_pdb(mutated_pdb, pH=config["simulation"]["pH"])
+        fixed_pdb_file = self.fix_pdb(mutated_pdb, pH=ph)
         pdb = PDBFile(fixed_pdb_file)
         modeller = Modeller(pdb.topology, pdb.positions)
 
@@ -273,8 +285,8 @@ class OpenMMBackend:
         # Load Amber for protein/water
         logger.debug(f"Calculating forcefield parameters for ligand {ligand_resname}.")
 
-        protein_ff_files = config["system"].get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
-        ligand_ff_name = config["system"].get("ligand_parameters", "openff-2.0.0.offxml")
+        protein_ff_files = cfg.get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
+        ligand_ff_name = cfg.get("ligand_parameters", "openff-2.0.0.offxml")
 
         # If user wrote "openff-2.0.0" instead of "openff-2.0.0.offxml", fix it
         if not ligand_ff_name.endswith(".offxml"):
@@ -294,7 +306,7 @@ class OpenMMBackend:
             logger.debug("Registered SMIRNOFFTemplateGenerator for ligand.")
         
         # --- Step 7a: Orient protein for membrane
-        if config["system"].get("membrane", False):
+        if cfg.get("membrane", False):
             oriented_pdb_path = os.path.join(input_pdb_dir, "protein_oriented.pdb")
             logger.info("Orienting GPCR for membrane embedding (may take some time)...")
             orient_gpcr_with_ligand(
@@ -322,16 +334,16 @@ class OpenMMBackend:
                 modeller.add(ligand_topology, ligand_positions)
                 logger.debug(f"Re-added ligand {ligand_resname} using OpenFF template")
 
-        # --- Step 7b: Add membrane
-        if config["system"].get("membrane", False):
-            lipid_type = config["system"].get("lipid_type", "POPC")
-            padding = config["system"].get("membrane_padding", 1.0) * unit.nanometer
+        #  Step 7b: Add membrane
+        if cfg.get("membrane", False):
+            lipid_type = cfg.get("lipid_type", "POPC")
+            padding = cfg.get("membrane_padding", 1.0) * unit.nanometer
             logger.info(f"Adding membrane: {lipid_type}")
             modeller.addMembrane(forcefield, lipidType=lipid_type, minimumPadding=padding)
 
-        # --- Step 8: Solvate system ---
-        ionic_strength = config["system"].get("ionic_strength", 0.0)
-        box_padding = config["system"].get("box_padding", 1.0)
+        # Step 8: Solvate system
+        ionic_strength = cfg.get("ionic_strength", 0.0)
+        box_padding = cfg.get("box_padding", 1.0)
         modeller.addSolvent(
             forcefield,
             model='tip3p',
@@ -339,7 +351,7 @@ class OpenMMBackend:
             padding=box_padding * unit.nanometer
         )
 
-        # --- Step 9: Create final OpenMM System ---
+        # Step 9: Create final OpenMM System
         self.system = forcefield.createSystem(
             modeller.topology,
             nonbondedMethod=PME,
@@ -349,8 +361,8 @@ class OpenMMBackend:
         self.topology = modeller.topology
         self.positions = modeller.positions
 
-        # --- Step 10: Save prepared topology ---
-        output_trajectory = self.config["production"]["output_trajectory"]
+        # Step 10: Save prepared topology
+        output_trajectory = cfg.get("output_trajectory")
         output_dir = os.path.dirname(output_trajectory)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)

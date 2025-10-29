@@ -1,22 +1,32 @@
 task: workflow
 workflow_name: molecular_dynamics
 
-system:
+workflow:
+  - prepare_system
+  - setup_simulation
+  - minimize
+  - heat_and_equilibrate
+  - production
+
+prepare_system:
   pdb_file: input/3BGP.pdb
   # ligand_file: input/ligand.sdf  # Optional
   ligand_parameters: openff-2.0.0.offxml  # Optional
   forcefield: ["amber14-all.xml", "amber14/tip3p.xml"] # Optional
   ionic_strength: 0.15
   box_padding: 1.0
+  membrane: false
+  lipid_type: POPC
+  output_trajectory: "output"
 
-simulation: 
+setup_simulation: 
   platform: "OpenCL" # CPU, if you're crazy. CUDA if you're sane. OpenCL is slower (~ 20-50%) but usable.
   pH: 7.0
   timestep: 2.0  # fs
   temperature: 300  # K
   # friction: 1.0
 
-heating_and_equilibration:
+heat_and_equilibrate:
   num_heating_steps: 6
   target_temp: 300
   steps_per_round: 100
@@ -27,5 +37,5 @@ production:
   output_trajectory: "output/trajectory.dcd"
   output_logfile: "output/log.txt"
 
-output:
-  overwrite: true
+# output:
+#   overwrite: true

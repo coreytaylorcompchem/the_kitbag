@@ -28,12 +28,23 @@ If the calculation runs correctly, you should see outputs like logs, trajectorie
 `python list_available_tasks_and_workflows.py`
 
 ```
-Importing workflow module: workflows.md_workflow
-INFO 
 Available Tasks:
-INFO 
+  [Analyses]:
+    - solvent_hbonds: Compute direct and water-mediated hydrogen bonds.
+       ↳ Backends: openmm
+  [Molecular dynamics]:
+    - heat_and_equilibrate: Heating and equilibration.
+       ↳ Backends: openmm
+    - minimize: Initial energy minimization.
+       ↳ Backends: openmm
+    - prepare_system: Load inputs, cap chains, parameterise ligand and protein, solvate and save final topology.
+       ↳ Backends: openmm
+    - production: Run production simulation.
+       ↳ Backends: openmm
+    - setup_simulation: Set up integrator and simulation.
+       ↳ Backends: openmm
 Available Workflows:
-INFO  - molecular_dynamics: Perform MD.
+ - molecular_dynamics: Perform molecular dynamics simulation using OpenMM.
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
