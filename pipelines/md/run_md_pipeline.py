@@ -53,7 +53,7 @@ def main():
     if not workflow_func:
         raise ValueError(f"Workflow '{workflow_name}' not found")
 
-    # Inject flags to control workflow steps based on YAML list
+    # Hack: inject flags to control workflow steps based on YAML list
     steps = config.get("workflow", [])
     config["run_prepare_system"] = "prepare_system" in steps
     config["run_setup_simulation"] = "setup_simulation" in steps
@@ -63,7 +63,6 @@ def main():
 
     workflow_result = workflow_func(config)
 
-    # Handle DataFrame output if returned
     if isinstance(workflow_result, dict) and "df" in workflow_result:
         result_df = workflow_result["df"]
         output_cfg = config.get("output", {})

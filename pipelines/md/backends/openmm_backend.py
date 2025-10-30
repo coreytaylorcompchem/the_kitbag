@@ -363,10 +363,9 @@ class OpenMMBackend:
 
         # Step 10: Save prepared topology
         output_trajectory = cfg.get("output_trajectory")
-        output_dir = os.path.dirname(output_trajectory)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        topology_path = os.path.join(output_dir, "topology.pdb")
+        if output_trajectory and not os.path.exists(output_trajectory):
+            os.makedirs(output_trajectory)
+        topology_path = os.path.join(output_trajectory, "topology.pdb")
         with open(topology_path, "w") as f:
             PDBFile.writeFile(self.topology, self.positions, f, keepIds=True)
 

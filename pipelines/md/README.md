@@ -30,7 +30,7 @@ If the calculation runs correctly, you should see outputs like logs, trajectorie
 ```
 Available Tasks:
   [Analyses]:
-    - solvent_hbonds: Compute direct and water-mediated hydrogen bonds.
+    - solvent_hbonds: Compute direct and water-mediated hydrogen bonds between binding site and ligand.
        ↳ Backends: openmm
   [Molecular dynamics]:
     - heat_and_equilibrate: Heating and equilibration.

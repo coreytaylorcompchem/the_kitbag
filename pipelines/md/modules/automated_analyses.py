@@ -1,40 +1,78 @@
+import os
+import warnings
+import json
+
 import MDAnalysis as mda
 import networkx as nx
-import tqdm
-# from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis as HBA
-from typing import List
+import tqdm as tqdm
+import numpy as np
+
+
+# suppress MDA warnings.
+
+warnings.filterwarnings("ignore", category=UserWarning, module="MDAnalysis")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="MDAnalysis")
+
+from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis as HBA
+
+from typing import List, Optional, Dict, Any
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 
+@register_task(
+    "solvent_hbonds",
+    category="Analyses",
+    description="Compute direct and water-mediated hydrogen bonds between binding site and ligand."
+)
 class HydrogenBondAnalysisTask:
     """
     Task to calculate both direct and water-mediated hydrogen bonds
-    between a binding site and a ligand.
+    between binding site and ligand, then plot summary results.
     """
 
     def __init__(self,
                  topology: str,
                  trajectory: str,
-                 binding_site_resids: List[int],
-                 ligand_resname: str,
+                 binding_site_resids: Optional[List[int]] = None,
+                 ligand_resname: str = "LIG",
+                 water_resname: str = "HOH",
+                 top_n: int = 20,
                  start: int = 0,
                  stop: int = -1,
                  step: int = 1,
-                 water_resname: str = "HOH"):
+                 binding_site_cutoff: float = 5.0,
+                 output_dir: str = "output",
+                 context: Optional[Dict[str, Any]] = None):
         self.topology = topology
         self.trajectory = trajectory
         self.binding_site_resids = binding_site_resids
         self.ligand_resname = ligand_resname
+        self.water_resname = water_resname
         self.start = start
         self.stop = stop
         self.step = step
-        self.water_resname = water_resname
+        self.binding_site_cutoff = binding_site_cutoff
+        self.output_dir = output_dir
+        self.context = context or {}
+        self.top_n = top_n
 
-        # Load universe
+        # Load MDAnalysis Universe
         self.u = mda.Universe(self.topology, self.trajectory)
+
+        # Automatically detect binding site if not provided
+        if not self.binding_site_resids:
+            self.u.trajectory[0]
+            sel = self.u.select_atoms(f"protein and around {self.binding_site_cutoff} resname {self.ligand_resname}")
+            self.binding_site_resids = list(sel.resids)
+            logger.info(f"Detected {len(self.binding_site_resids)} binding site residues.")
+
         self.direct_paths = []
         self.water_paths = []
 
@@ -75,6 +113,14 @@ class HydrogenBondAnalysisTask:
                 d_h_a_angle_cutoff=120,
                 d_a_cutoff=3.0
             )
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"No hydrogen bonds were found given angle of",
+                    category=UserWarning,
+                    module="MDAnalysis.analysis.hydrogenbonds.hbond_analysis"
+                )
             hba.run(start=ts.frame, stop=ts.frame + 1)
             unique_hbs = [list(i) for i in hba.hbonds[:, 1:-2] if i[0] != i[1]]
 
@@ -101,15 +147,103 @@ class HydrogenBondAnalysisTask:
                                     paths.append([list(p), ts.frame])
         return paths
 
-    @register_task(
-        "solvent_hbonds",
-        category="Analyses",
-        description="Compute direct and water-mediated hydrogen bonds."
-    )
+    def _plot_summary(self, results):
+        """Generate and save summary plot of water-mediated HBond probabilities."""
+        if not results["water_mediated"]:
+            logger.warning("No water-mediated HBonds found — skipping plot.")
+            return None
+
+        logger.info(f"Number of water-mediated paths: {len(results['water_mediated'])}")
+
+        df = pd.DataFrame({
+            "path": [" -- ".join(p[0]) for p in results["water_mediated"]],
+            "frame": [p[1] for p in results["water_mediated"]],
+        })
+
+        frame_count = len(self.u.trajectory[self.start:self.stop:self.step])
+        counts = df["path"].value_counts(normalize=True) * 100
+        df_plot = counts.reset_index()
+        df_plot.columns = ["Water bridge", "Probability (%)"]
+
+        df_plot = df_plot.head(self.top_n)
+
+        # Plot water-mediated interactions
+
+        sns.set(style="whitegrid", context="talk")
+        plt.figure(figsize=(8, max(4, len(df_plot) * 0.3)))
+        sns.barplot(data=df_plot, y="Water bridge", x="Probability (%)", color="#5DADE2")
+        plt.title("Water-mediated Hydrogen Bonds")
+        plt.xlabel("Occurrence probability (%)")
+        plt.ylabel("Residue ↔ Ligand Water Bridge")
+        plt.tight_layout()
+
+        out_plot = os.path.join(self.output_dir, "solvent_hbond_summary.png")
+        plt.savefig(out_plot, bbox_inches="tight", dpi=300)
+        plt.close()
+        logger.info(f"Saved solvent hydrogen bond summary plot to {out_plot}")
+
+        
+        # Plot direct h-bonds
+        
+        if results["direct"]:
+            df_direct = pd.DataFrame({
+                "path": [" -- ".join(p[0]) for p in results["direct"]],
+                "frame": [p[1] for p in results["direct"]],
+            })
+            counts = df_direct["path"].value_counts(normalize=True) * 100
+            df_direct_plot = counts.reset_index()
+            df_direct_plot.columns = ["Direct H-bond", "Probability (%)"]
+
+            df_direct_plot = df_direct_plot[df_direct_plot["Probability (%)"] > 1.0]
+            df_direct_plot = df_direct_plot.head(20)
+
+            plt.figure(figsize=(8, max(4, len(df_direct_plot) * 0.3)))
+            sns.barplot(data=df_direct_plot, y="Direct H-bond", x="Probability (%)", color="#58D68D")
+            plt.title("Direct Hydrogen Bonds (Protein ↔ Ligand)")
+            plt.xlabel("Occurrence probability (%)")
+            plt.ylabel("Residue ↔ Ligand H-Bond")
+            plt.tight_layout()
+
+            out_plot_direct = os.path.join(self.output_dir, "direct_hbond_summary.png")
+            plt.savefig(out_plot_direct, bbox_inches="tight", dpi=300)
+            plt.close()
+            logger.info(f"Saved direct hydrogen bond summary plot to {out_plot_direct}")
+        else:
+            logger.warning("No direct hydrogen bonds found — skipping direct plot.")
+
+        return out_plot
+
+
     def run(self):
         logger.info("Calculating direct hydrogen bonds...")
         self.direct_paths = self._compute_hbonds(water_mediated=False)
+
         logger.info("Calculating water-mediated hydrogen bonds...")
         self.water_paths = self._compute_hbonds(water_mediated=True)
-        logger.info(f"HBond analysis complete. Frames analyzed: {len(self.u.trajectory[self.start:self.stop:self.step])}")
-        return {"direct": self.direct_paths, "water_mediated": self.water_paths}
+
+        results = {
+            "direct": self.direct_paths,
+            "water_mediated": self.water_paths,
+            "binding_site_resids": self.binding_site_resids
+        }
+
+        plot_path = self._plot_summary(results)
+        results["plot_file"] = plot_path
+
+        # Dump JSON of plotted data for later use (all probs will be dumped here).
+
+        out_json = os.path.join(self.output_dir, "solvent_hbonds.json")
+        def _json_safe(obj):
+            if isinstance(obj, (np.integer, np.int64, np.int32)):
+                return int(obj)
+            if isinstance(obj, (np.floating, np.float64, np.float32)):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+        with open(out_json, "w") as f:
+            json.dump(results, f, indent=2, default=_json_safe)
+        logger.info(f"Saved solvent hydrogen bond data to {out_json}")
+
+        return results
