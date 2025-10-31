@@ -24,9 +24,15 @@ def list_workflows():
 def get_workflow_metadata(name):
     return _workflow_registry.get(name.lower(), {})
 
-def load_all_workflows():
-    for _, name, _ in pkgutil.iter_modules(workflows.__path__):
-        importlib.import_module(f"{workflows.__name__}.{name}")
+def load_all_workflows(package=workflows):
+    """Recursively load all workflow modules under the given package"""
+    for loader, module_name, is_pkg in pkgutil.iter_modules(package.__path__):
+        full_module_name = f"{package.__name__}.{module_name}"
+        importlib.import_module(full_module_name)
+        # Recursively load sub-packages
+        if is_pkg:
+            subpackage = importlib.import_module(full_module_name)
+            load_all_workflows(subpackage)
 
 # Load all workflows at import time
 load_all_workflows()
