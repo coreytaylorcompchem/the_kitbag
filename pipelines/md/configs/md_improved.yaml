@@ -47,10 +47,10 @@ post_processing:
   water_resname: "HOH"
   start: 0
   stop: -1
-  step: 100 # stride length for the traj. For sims > 5 ns, you'd probably bump this to 100. This is for demonstration purposes.
+  step: 10 # stride length for the traj. For sims > 5 ns, you'd probably bump this to 100. This is for demonstration purposes.
   trajectory_analysis:
     time_series: ["rmsd", "rmsf", "interactions"]
-    structural: ["torsions", "ramachandran", "solvent_lifetimes"]
+    # structural: ["torsions", "ramachandran", "solvent_lifetimes"]
   solvent_analyses:
     enabled: true
     binding_site_cutoff: 5.0 # distance around the ligand (A) to find hbonds. 

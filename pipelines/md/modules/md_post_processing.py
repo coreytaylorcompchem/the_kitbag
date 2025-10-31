@@ -3,6 +3,7 @@ from modules.automated_analyses import (
     HydrogenBondAnalysisTask,
     RMSDAnalysisTask,
     RMSFAnalysisTask,
+    InteractionFingerprintTask,
 )
 from pipeline.logger import setup_logger
 
@@ -92,8 +93,38 @@ class MDPostProcessingWorkflow:
                 output_dir=rmsf_outdir,
             )
             results["rmsf"] = rmsf_task.run()
+        
+        # Prolif
+        if "interactions" in time_series:
+            logger.info("Running interactions analysis...")
+            interactions_outdir = os.path.join(output_dir, "interactions")
+            os.makedirs(interactions_outdir, exist_ok=True)
+            interactions_task = InteractionFingerprintTask(
+                topology=topology,
+                trajectory=trajectory,
+                ligand_selection=f"resname {ligand_resname}",  # respect YAML
+                protein_selection="(protein or resname WAT) and byres around 20.0 group ligand",
+                start=start,
+                stop=stop,
+                step=step,
+                output_dir=interactions_outdir,
+            )
 
-        # (future: interactions, etc.)
+            # Select ligand from YAML
+            ligand = interactions_task.u.select_atoms(interactions_task.ligand_selection)
+            if len(ligand) == 0:
+                raise ValueError(f"No atoms found for ligand selection: {interactions_task.ligand_selection}")
+
+            # Now select protein around the ligand AtomGroup
+            protein = interactions_task.u.select_atoms(
+                f"(protein or resname WAT) and byres around 20.0 group atomgroup",
+                atomgroup=ligand  # pass the AtomGroup explicitly
+            )
+            if len(protein) == 0:
+                raise ValueError("No protein atoms found around the ligand")
+
+            results["interactions"] = interactions_task.run()
+
         # ==============================================================
         # 2️⃣  Solvent-mediated hydrogen bond analysis
         # ==============================================================

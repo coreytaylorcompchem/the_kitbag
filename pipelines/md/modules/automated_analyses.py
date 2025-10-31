@@ -2,23 +2,27 @@ import os
 import warnings
 import json
 
-import MDAnalysis as mda
-from MDAnalysis.analysis import rms, align
 import networkx as nx
 import tqdm as tqdm
 import numpy as np
-
+import prolif as plf
+from prolif.plotting.utils import separated_interaction_colors
 
 # suppress MDA warnings.
 
 warnings.filterwarnings("ignore", category=UserWarning, module="MDAnalysis")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="MDAnalysis")
 
+import MDAnalysis as mda
+from MDAnalysis.analysis import rms, align
 from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis as HBA
+from modules.utils.mda_utils import _bit_to_color_value, _get_inv_color_mapper, _get_color_mapper
 
 from typing import List, Optional, Dict, Any
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
 import pandas as pd
 
 from pipeline.task_registry import register_task
@@ -30,7 +34,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 @register_task(
     "solvent_hbonds",
     category="Analyses",
-    description="Compute direct and water-mediated hydrogen bonds between binding site and ligand."
+    description="Compute direct and water-mediated hbonds with ligand."
 )
 class HydrogenBondAnalysisTask:
     """
@@ -151,7 +155,7 @@ class HydrogenBondAnalysisTask:
     def _plot_summary(self, results):
         """Generate and save summary plot of water-mediated HBond probabilities."""
         if not results["water_mediated"]:
-            logger.warning("No water-mediated HBonds found — skipping plot.")
+            logger.warning("No water-mediated hbonds found — skipping plot.")
             return None
 
         logger.info(f"Number of water-mediated paths: {len(results['water_mediated'])}")
@@ -252,11 +256,11 @@ class HydrogenBondAnalysisTask:
 @register_task(
     "rmsd_analysis",
     category="Analyses",
-    description="Compute RMSD of protein backbone and ligand separately over time."
+    description="Compute RMSD of protein bb and ligand."
 )
 class RMSDAnalysisTask:
     """
-    Compute RMSD for protein backbone and ligand (if present), relative to the first frame.
+    Compute RMSD for protein backbone and ligand (if present) relative to the first frame.
     """
 
     def __init__(self,
@@ -281,7 +285,7 @@ class RMSDAnalysisTask:
         self.u = mda.Universe(self.topology, self.trajectory)
 
     def run(self):
-        logger.info("Starting RMSD analysis...")
+        logger.debug("Starting RMSD analysis...")
 
         protein = self.u.select_atoms("protein and backbone")
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
@@ -292,7 +296,7 @@ class RMSDAnalysisTask:
         if len(ligand) == 0:
             logger.warning(f"No ligand atoms found for resname {self.ligand_resname}. Skipping ligand RMSD.")
 
-        # Reference (first frame)
+        # Reference (frame0)
         ref = mda.Universe(self.topology)
         ref_protein = ref.select_atoms("protein and backbone")
         ref_ligand = ref.select_atoms(f"resname {self.ligand_resname}") if len(ligand) > 0 else None
@@ -372,7 +376,7 @@ class RMSFAnalysisTask:
         self.u = mda.Universe(self.topology, self.trajectory)
 
     def run(self):
-        logger.info("Starting RMSF analysis...")
+        logger.debug("Starting RMSF analysis...")
 
         protein = self.u.select_atoms("protein")
         calphas = self.u.select_atoms("protein and name CA")
@@ -381,12 +385,12 @@ class RMSFAnalysisTask:
             raise ValueError("No protein atoms found for RMSF calculation.")
 
         # Align trajectory to backbone reference
-        logger.info("Aligning trajectory to protein backbone reference...")
+        logger.debug("Aligning trajectory to protein backbone reference...")
         align.AlignTraj(self.u, self.u, select="protein and backbone",
                         in_memory=True).run()
 
         # ------------------------------------------------------------------
-        # RMSF for all protein atoms (average per residue)
+        # Per-residue RMSF
         # ------------------------------------------------------------------
         rmsf_all = rms.RMSF(protein).run()
         df_all_atoms = pd.DataFrame({
@@ -398,7 +402,7 @@ class RMSFAnalysisTask:
         df_all["Component"] = "Protein (all atoms)"
 
         # ------------------------------------------------------------------
-        # RMSF for alpha carbons (Cα only)
+        # Cα RMSF
         # ------------------------------------------------------------------
         rmsf_ca = rms.RMSF(calphas).run()
         df_ca = pd.DataFrame({
@@ -407,21 +411,15 @@ class RMSFAnalysisTask:
             "Component": "Cα only"
         })
 
-        # Combine
         df_rmsf = pd.concat([df_all, df_ca], ignore_index=True)
-        logger.info(f"Computed RMSF for {len(df_all)} residues (all atoms) "
+        logger.debug(f"Computed RMSF for {len(df_all)} residues (all atoms) "
                     f"and {len(df_ca)} alpha carbons.")
 
-        # ------------------------------------------------------------------
-        # Save results
-        # ------------------------------------------------------------------
         out_json = os.path.join(self.output_dir, "rmsf_data.json")
         df_rmsf.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved RMSF data to {out_json}")
 
-        # ------------------------------------------------------------------
-        # Plot per-residue RMSF
-        # ------------------------------------------------------------------
+        # Plot
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(10, 5))
         sns.lineplot(data=df_rmsf, x="Residue", y="RMSF (Å)", hue="Component", lw=2)
@@ -435,3 +433,143 @@ class RMSFAnalysisTask:
 
         return {"rmsf_data": out_json, "rmsf_plot": out_plot}
 
+def _bit_to_color_value(series):
+    return series.astype(int)
+
+@register_task(
+    "interaction_fingerprint",
+    category="Analyses",
+    description="Compute IFP using ProLIF, generate barcode plot."
+)
+class InteractionFingerprintTask:
+    """
+    Generate a time-series interaction 'barcode' plot using ProLIF.
+    """
+
+    def __init__(
+        self,
+        topology: str,
+        trajectory: str,
+        ligand_selection: str = "resname UNK",
+        protein_selection: str = "(protein or resname WAT) and byres around 20.0 group ligand",
+        start: int = 0,
+        stop: int = -1,
+        step: int = 1,
+        output_dir: str = "output_fp",
+        n_frame_ticks: int = 10,
+        residues_tick_location: str = "top",
+        figsize: tuple = (8, 10),
+        dpi: int = 100,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        self.topology = topology
+        self.trajectory = trajectory
+        self.ligand_selection = ligand_selection
+        self.protein_selection = protein_selection
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.output_dir = output_dir
+        self.n_frame_ticks = n_frame_ticks
+        self.residues_tick_location = residues_tick_location
+        self.figsize = figsize
+        self.dpi = dpi
+        self.context = context or {}
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def run(self):
+        logger.debug("Starting ProLIF interaction fingerprint analysis...")
+
+        # Select lig
+        ligand = self.u.select_atoms(self.ligand_selection)
+        if len(ligand) == 0:
+            raise ValueError(f"No atoms found for ligand selection: {self.ligand_selection}")
+
+        # Select prot
+        protein = self.u.select_atoms(self.protein_selection, ligand=ligand)
+        if len(protein) == 0:
+            raise ValueError(f"No atoms found for protein selection: {self.protein_selection}")
+
+        # Prolif FP calculation
+        logger.debug("Running ProLIF fingerprint calculation...")
+        fp = plf.Fingerprint()
+        fp.run(self.u.trajectory[self.start:self.stop:self.step], ligand, protein)
+        fp_df = fp.to_dataframe()
+
+        out_data_path = os.path.join(self.output_dir, "fp_data.pkl")
+        fp_df.to_pickle(out_data_path)
+        logger.info(f"Saved fingerprint DataFrame to {out_data_path}")
+
+        # Generate barcode plot
+        logger.info("Generating interaction barcode plot...")
+
+        # Calculate time per frame in ns
+        times_ps = [ts.time for ts in self.u.trajectory[self.start:self.stop:self.step]]
+        times_ns = np.array(times_ps) / 1000  # convert ps to ns
+
+        fp_transposed = fp_df.astype(np.uint8).T.apply(_bit_to_color_value, axis=1)
+
+        color_mapper = _get_color_mapper()  
+        inv_color_mapper = _get_inv_color_mapper()
+
+        # Convert MultiIndex df to integer array for plotting
+        plot_data = fp_transposed.copy()
+        for idx in plot_data.index:
+            interaction_type = idx[2]  # i.e. third level of MultiIndex
+            plot_data.loc[idx] = plot_data.loc[idx] * color_mapper.get(interaction_type, 0)
+
+        plot_data_array = plot_data.values.astype(int)
+
+        cmap = ListedColormap([separated_interaction_colors.get(name, "white") for name in [None]+list(color_mapper.keys())])
+
+        sns.set(style="whitegrid", context="talk")
+        fig, ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
+
+        im = ax.imshow(
+            plot_data_array,
+            aspect="auto",
+            interpolation="none",
+            cmap=cmap,
+            vmin=0,
+            vmax=max(color_mapper.values()),
+        )
+
+        # Format X-axis: nicer frame ticks
+        frames = fp_transposed.columns.astype(int)
+        num_ticks = min(self.n_frame_ticks, len(frames)) 
+        tick_indices = np.round(np.linspace(0, len(frames) - 1, num_ticks)).astype(int)
+
+        ax.set_xticks(tick_indices)
+        ax.set_xticklabels([f"{times_ns[i]:.1f}" for i in tick_indices])
+        ax.set_xlabel("Simulation Time (ns)")
+
+        # Format Y-axis
+        residues = [f"{prot}" for lig, prot, inter in fp_transposed.index]
+        ax.set_yticks(np.arange(len(residues)))
+        ax.set_yticklabels(residues)
+
+        # Legend
+        unique_values = np.unique(plot_data_array)
+        unique_values = [v for v in unique_values if v != 0]  # remove 0 (white)
+        legend_colors = {inv_color_mapper[v]: im.cmap(v) for v in unique_values}
+        patches = [Patch(color=color, label=interaction) for interaction, color in legend_colors.items()]
+        ax.legend(handles=patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+          fancybox=True, shadow=False, ncol=3)
+        
+        plt.tight_layout(rect=[0, 0.05, 1, 1])  # leave 5% at bottom for legend
+
+        out_plot_path = os.path.join(self.output_dir, "interaction_barcode.png")
+
+        ligands = sorted({lig[:3] for lig, prot, inter in fp_transposed.index})
+        ligand_str = ", ".join(ligands)
+
+        ax.set_title(f"Ligand interaction fingerprint for ligand {ligand_str}.")
+        plt.tight_layout()
+        plt.savefig(out_plot_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        logger.info(f"Saved interaction barcode plot to {out_plot_path}")
+
+        return {"fp_data": out_data_path, "fp_plot": out_plot_path}
