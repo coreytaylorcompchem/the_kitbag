@@ -1,6 +1,7 @@
 import os
 import warnings
 import json
+import itertools
 
 import networkx as nx
 import tqdm as tqdm
@@ -15,6 +16,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="MDAnalysi
 
 import MDAnalysis as mda
 from MDAnalysis.analysis import rms, align
+from MDAnalysis.lib.distances import distance_array
 from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis as HBA
 from modules.utils.mda_utils import _bit_to_color_value, _get_inv_color_mapper, _get_color_mapper
 
@@ -573,3 +575,526 @@ class InteractionFingerprintTask:
         logger.info(f"Saved interaction barcode plot to {out_plot_path}")
 
         return {"fp_data": out_data_path, "fp_plot": out_plot_path}
+
+@register_task(
+    "protein_ligand_communities",
+    category="Analyses",
+    description="Detect cooperative residue clusters (communities) in the protein–ligand interaction network."
+)
+class ProteinLigandCommunityTask:
+    def __init__(self,
+                 topology: str,
+                 trajectory: str,
+                 ligand_resname: str = "UNK",
+                 start: int = 0,
+                 stop: int = -1,
+                 step: int = 10,
+                 binding_site_cutoff: float = 5.0,
+                 output_dir: str = "output_plin_communities",
+                 context: Optional[Dict[str, Any]] = None):
+        self.topology = topology
+        self.trajectory = trajectory
+        self.ligand_resname = ligand_resname
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.binding_site_cutoff = binding_site_cutoff
+        self.output_dir = output_dir
+        self.context = context or {}
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def run(self):
+        logger.info("Building time-averaged residue–ligand interaction network...")
+        ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
+        if len(ligand) == 0:
+            raise ValueError(f"No ligand found for resname {self.ligand_resname}")
+        protein = self.u.select_atoms(f"protein and around {self.binding_site_cutoff} resname {self.ligand_resname}")
+
+        contact_counts = {}
+        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Contacts"):
+            for res in protein.residues:
+                res_atoms = res.atoms
+                d = mda.lib.distances.distance_array(res_atoms.positions, ligand.positions).min()
+                if d < self.binding_site_cutoff:
+                    key = res.resid
+                    contact_counts[key] = contact_counts.get(key, 0) + 1
+
+        # Build weighted graph
+        G = nx.Graph()
+        for res in protein.residues:
+            G.add_node(res.resid, name=res.resname)
+        for i, j in itertools.combinations(contact_counts.keys(), 2):
+            G.add_edge(i, j, weight=(contact_counts[i] + contact_counts[j]) / 2)
+
+        # Community detection (Louvain)
+        logger.info("Detecting residue communities...")
+        import community as community_louvain
+        partition = community_louvain.best_partition(G, weight='weight')
+        nx.set_node_attributes(G, partition, "community")
+
+        df_nodes = pd.DataFrame([
+            {"Resid": n, "Resname": G.nodes[n]["name"], "Community": G.nodes[n]["community"]}
+            for n in G.nodes
+        ])
+        out_json = os.path.join(self.output_dir, "plin_communities.json")
+        df_nodes.to_json(out_json, orient="records", indent=2)
+        logger.info(f"Saved community assignments to {out_json}")
+
+        # Plot network
+        sns.set(style="white", context="talk")
+        plt.figure(figsize=(8, 6))
+        pos = nx.spring_layout(G, seed=42, weight='weight')
+        communities = [G.nodes[n]["community"] for n in G.nodes]
+        cmap = sns.color_palette("husl", len(set(communities)))
+        nx.draw(G, pos, node_color=[cmap[c] for c in communities], with_labels=True, font_size=8)
+        plt.title("Protein–Ligand Interaction Communities")
+        out_plot = os.path.join(self.output_dir, "plin_community_network.png")
+        plt.savefig(out_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved PLIN community network to {out_plot}")
+
+        return {"communities_data": out_json, "communities_plot": out_plot}
+
+@register_task(
+    "hydration_site_energy",
+    category="Analyses",
+    description="Identify hydration sites and rank them by approximate free energy."
+)
+class HydrationSiteEnergyTask:
+    def __init__(self,
+                 topology: str,
+                 trajectory: str,
+                 water_resname: str = "HOH",
+                 ligand_resname: str = "UNK",
+                 cutoff: float = 5.0,
+                 grid_spacing: float = 0.5,
+                 start: int = 0,
+                 stop: int = -1,
+                 step: int = 1,
+                 output_dir: str = "output_hydration_energy",
+                 context: Optional[Dict[str, Any]] = None):
+        self.topology = topology
+        self.trajectory = trajectory
+        self.water_resname = water_resname
+        self.ligand_resname = ligand_resname
+        self.cutoff = cutoff
+        self.grid_spacing = grid_spacing
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.output_dir = output_dir
+        self.context = context or {}
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def run(self):
+        logger.info("Detecting hydration sites via water oxygen clustering...")
+        ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
+        water_oxygens = self.u.select_atoms(f"resname {self.water_resname} and name O and around {self.cutoff} resname {self.ligand_resname}")
+        coords = []
+
+        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Waters"):
+            coords.append(water_oxygens.positions.copy())
+        coords = np.concatenate(coords, axis=0)
+
+        from sklearn.cluster import DBSCAN
+        db = DBSCAN(eps=1.5, min_samples=5).fit(coords)
+        labels = db.labels_
+
+        df = pd.DataFrame(coords, columns=["x", "y", "z"])
+        df["Cluster"] = labels
+        site_counts = df["Cluster"].value_counts()
+        site_probs = site_counts / site_counts.sum()
+        R, T = 8.314, 300.0
+        df_energy = pd.DataFrame({
+            "Site": site_probs.index,
+            "Occupancy": site_probs.values,
+            "DeltaG_kJmol": -R * T * np.log(site_probs.values)
+        })
+
+        out_json = os.path.join(self.output_dir, "hydration_sites.json")
+        df_energy.to_json(out_json, orient="records", indent=2)
+        logger.info(f"Saved hydration site free energies to {out_json}")
+
+        plt.figure(figsize=(6, 4))
+        sns.barplot(data=df_energy, x="Site", y="DeltaG_kJmol", color="#5DADE2")
+        plt.ylabel("ΔG (kJ/mol)")
+        plt.title("Relative Hydration Site Free Energies")
+        plt.tight_layout()
+        out_plot = os.path.join(self.output_dir, "hydration_sites_energy.png")
+        plt.savefig(out_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved hydration site energy plot to {out_plot}")
+
+        return {"hydration_data": out_json, "hydration_plot": out_plot}
+
+@register_task(
+    "temporal_motif_persistence",
+    category="Analyses",
+    description="Quantify persistence of small recurring motifs (e.g., ligand–water–residue triangles) in the solvent network."
+)
+class TemporalMotifPersistenceTask:
+    def __init__(self,
+                 topology: str,
+                 trajectory: str,
+                 ligand_resname: str = "UNK",
+                 water_resname: str = "HOH",
+                 cutoff: float = 3.5,
+                 start: int = 0,
+                 stop: int = -1,
+                 step: int = 10,
+                 output_dir: str = "output_motif_persistence",
+                 top_n_motifs: int = 100,
+                 smoothing_window: int = 20,
+                 context: Optional[Dict[str, Any]] = None):
+        self.topology = topology
+        self.trajectory = trajectory
+        self.ligand_resname = ligand_resname
+        self.water_resname = water_resname
+        self.cutoff = cutoff
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.output_dir = output_dir
+        self.top_n_motifs = top_n_motifs
+        self.smoothing_window = smoothing_window
+        self.context = context or {}
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def run(self):
+        logger.info("Analyzing temporal motif persistence...")
+        ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
+        waters = self.u.select_atoms(f"resname {self.water_resname} and name O")
+        protein = self.u.select_atoms("protein")
+
+        motif_history = {}
+
+        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Frames"):
+            ligand_atoms = ligand.atoms.positions
+            water_atoms = waters.positions
+            prot_atoms = protein.positions
+            
+            lw_dist = distance_array(ligand_atoms, water_atoms)
+            pw_dist = distance_array(prot_atoms, water_atoms)
+
+            ligand_near_wat = np.where(lw_dist < self.cutoff)
+            prot_near_wat = np.where(pw_dist < self.cutoff)
+
+            for l_idx, w_idx in zip(*ligand_near_wat):
+                for p_idx, w2_idx in zip(*prot_near_wat):
+                    if w_idx == w2_idx:
+                        motif = (int(l_idx), int(w_idx), int(p_idx))
+                        motif_history.setdefault(motif, []).append(ts.frame)
+
+        lifetimes = []
+        filtered_motifs = {}
+        for motif, frames in motif_history.items():
+            if len(frames) > 1:
+                lifetime = frames[-1] - frames[0]
+                lifetimes.append(lifetime)
+                filtered_motifs[motif] = frames
+
+        if not lifetimes:
+            logger.warning("No motifs with persistence > 1 frame found.")
+            return {}
+
+        # Group motifs by core identity: (LigandRes, WaterIndex, ProteinResNum, ProteinResName)
+        grouped_motifs = {}
+
+        for motif in filtered_motifs:
+            l_idx, w_idx, p_idx = motif
+            ligand_res = ligand.atoms[l_idx].resname
+            water_index = w_idx
+            prot_atom = protein.atoms[p_idx]
+            prot_resnum = prot_atom.resid
+            prot_resname = prot_atom.resname
+            
+            key = (ligand_res, water_index, prot_resnum, prot_resname)
+            frames = filtered_motifs[motif]
+
+            # Append all frames for this core motif key
+            if key not in grouped_motifs:
+                grouped_motifs[key] = set()
+            grouped_motifs[key].update(frames)
+
+        # Convert frames sets to sorted lists
+        for key in grouped_motifs:
+            grouped_motifs[key] = sorted(grouped_motifs[key])
+
+        # Limit to top_n_motifs by lifetime (max span of frames)
+        top_grouped_keys = sorted(
+            grouped_motifs.keys(),
+            key=lambda k: grouped_motifs[k][-1] - grouped_motifs[k][0],
+            reverse=True
+        )[:self.top_n_motifs]
+
+        # Prepare DataFrame rows with combined start, end, lifetime
+        top_motifs_data = []
+        for key in top_grouped_keys:
+            ligand_res, water_index, prot_resnum, prot_resname = key
+            frames = grouped_motifs[key]
+            start_frame = frames[0]
+            end_frame = frames[-1]
+            lifetime = end_frame - start_frame + 1
+
+            top_motifs_data.append({
+                "LigandRes": ligand_res,
+                "WaterIndex": water_index,
+                "ProteinResNum": prot_resnum,
+                "ProteinResName": prot_resname,
+                "StartFrame": start_frame,
+                "EndFrame": end_frame,
+                "LifetimeFrames": lifetime,
+            })
+
+        top_motifs_df = pd.DataFrame(top_motifs_data)
+
+        # Save summary CSV and JSON
+        out_csv = os.path.join(self.output_dir, "motif_persistence.csv")
+        out_json = os.path.join(self.output_dir, "motif_persistence.json")
+        top_motifs_df.to_csv(out_csv, index=False)
+        top_motifs_df.to_json(out_json, orient="records", indent=2)
+        logger.info(f"Saved grouped motif persistence data to {out_csv} and {out_json}")
+
+        # Prepare heatmap presence matrix
+        # Collect all unique frames across grouped motifs
+        all_frames_set = set()
+        for key in top_grouped_keys:
+            all_frames_set.update(grouped_motifs[key])
+        all_frames_sorted = sorted(all_frames_set)
+        frame_to_col = {frame: idx for idx, frame in enumerate(all_frames_sorted)}
+
+        presence_matrix = np.zeros((len(top_grouped_keys), len(all_frames_sorted)), dtype=np.float32)
+
+        for i, key in enumerate(top_grouped_keys):
+            frames_present = grouped_motifs[key]
+            cols = [frame_to_col[f] for f in frames_present if f in frame_to_col]
+            presence_matrix[i, cols] = 1.0
+
+        # Smooth presence matrix
+        window = self.smoothing_window
+        smoothed_matrix = np.zeros_like(presence_matrix)
+        for i in range(presence_matrix.shape[0]):
+            smoothed_matrix[i] = np.convolve(presence_matrix[i], np.ones(window) / window, mode='same')
+
+        motif_labels = [f"L:{k[0]} W:{k[1]} P:{k[3]}{k[2]}" for k in top_grouped_keys]
+
+        plt.figure(figsize=(14, 12))
+        sns.heatmap(
+            smoothed_matrix,
+            cmap="Blues",
+            cbar_kws={"label": "Fraction of active motif"},
+            yticklabels=motif_labels,
+            vmin=0, vmax=1
+        )
+
+        frame_time_ns = 2.0 * 100 * self.step / 1e6
+        num_frames = smoothed_matrix.shape[1]
+        tick_positions = list(range(0, num_frames, max(1, num_frames // 10)))
+        tick_labels = [f"{pos * frame_time_ns:.2f}" for pos in tick_positions]
+        plt.xticks(ticks=tick_positions, labels=tick_labels, rotation=45)
+
+        plt.ylabel(f"Top {self.top_n_motifs} Unique Motifs by Lifetime")
+        plt.xlabel("Simulation Time (ns)")
+        plt.title("Top Motif Persistence Heatmap (Smoothed & Grouped)")
+        plt.tight_layout()
+        out_plot = os.path.join(self.output_dir, "motif_persistence_heatmap.png")
+        plt.savefig(out_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved grouped motif persistence heatmap to {out_plot}")
+
+        # Plot histogram of lifetimes (from original motifs, optional)
+        plt.figure(figsize=(6, 4))
+        sns.histplot(pd.Series(lifetimes), bins=20, color="#58D68D", kde=True)
+        plt.xlabel("Lifetime (frames)")
+        plt.ylabel("Count")
+        plt.title("Temporal Motif Persistence Distribution")
+        plt.tight_layout()
+        out_hist = os.path.join(self.output_dir, "motif_persistence_hist.png")
+        plt.savefig(out_hist, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved motif persistence histogram to {out_hist}")
+
+        return {
+            "motif_csv": out_csv,
+            "motif_json": out_json,
+            "motif_heatmap": out_plot,
+            "motif_histogram": out_hist,
+        }
+
+@register_task(
+    "network_embedding_analysis",
+    category="GraphAnalyses",
+    description="Convert trajectory frames into residue–ligand contact graphs, then perform Node2Vec + t-SNE embedding to visualise network evolution."
+)
+class NetworkEmbeddingAnalysisTask:
+    """
+    Builds per-frame contact graphs directly from a trajectory and then embeds
+    the evolving network topology using Node2Vec + t-SNE.
+
+    Nodes  → protein residues + ligand
+    Edges  → residue within distance_cutoff Å of ligand atom
+    Frame embedding  → mean Node2Vec vector
+    Output  → t-SNE plot coloured by simulation time
+    """
+
+    def __init__(self,
+                 topology: str,
+                 trajectory: str,
+                 ligand_resname: str = "UNK",
+                 distance_cutoff: float = 4.0,
+                 start: int = 0,
+                 stop: int = -1,
+                 step: int = 10,
+                 output_dir: str = "output_network_embedding",
+                 node2vec_dim: int = 64,
+                 node2vec_walk_length: int = 10,
+                 node2vec_num_walks: int = 50,
+                 node2vec_p: float = 1.0,
+                 node2vec_q: float = 1.0,
+                 perplexity: float = 30.0,
+                 random_state: int = 42,
+                 context: Optional[Dict[str, Any]] = None):
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+        self.topology = topology
+        self.trajectory = trajectory
+        self.ligand_resname = ligand_resname
+        self.distance_cutoff = distance_cutoff
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.output_dir = output_dir
+        self.node2vec_dim = node2vec_dim
+        self.node2vec_walk_length = node2vec_walk_length
+        self.node2vec_num_walks = node2vec_num_walks
+        self.node2vec_p = node2vec_p
+        self.node2vec_q = node2vec_q
+        self.perplexity = perplexity
+        self.random_state = random_state
+        self.context = context or {}
+
+        import MDAnalysis as mda
+        self.u = mda.Universe(topology, trajectory)
+
+    # ----------------------------------------------------------------------
+    def _frame_to_graph(self, ts):
+        import networkx as nx
+        import numpy as np
+
+        ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
+        protein = self.u.select_atoms("protein")
+
+        if len(ligand) == 0:
+            raise ValueError(f"No ligand atoms found for resname {self.ligand_resname}")
+
+        G = nx.Graph(frame=ts.frame)
+
+        lig_center = ligand.center_of_geometry()
+        nearby = protein.select_atoms(f"around {self.distance_cutoff} resname {self.ligand_resname}")
+
+        for res in nearby.residues:
+            resid_label = f"{res.resname}{res.resid}"
+            G.add_node(resid_label, type="residue")
+
+        G.add_node(self.ligand_resname, type="ligand")
+
+        for res in nearby.residues:
+            resid_label = f"{res.resname}{res.resid}"
+            G.add_edge(resid_label, self.ligand_resname, weight=1.0)
+
+        # Optional: add co-contact edges between residues contacting same ligand atom
+        res_list = [f"{res.resname}{res.resid}" for res in nearby.residues]
+        for i, r1 in enumerate(res_list):
+            for r2 in res_list[i + 1:]:
+                G.add_edge(r1, r2, weight=0.5)
+
+        return G
+
+    # ----------------------------------------------------------------------
+    def _generate_graphs(self):
+        import tqdm
+        graphs = []
+        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Building contact graphs"):
+            G = self._frame_to_graph(ts)
+            graphs.append(G)
+        return graphs
+
+    # ----------------------------------------------------------------------
+    def _compute_node2vec_embeddings(self, graphs):
+        from node2vec import Node2Vec
+        import numpy as np
+        import tqdm
+
+        frame_embeddings = []
+        for i, G in enumerate(tqdm.tqdm(graphs, desc="Node2Vec embeddings")):
+            if G.number_of_nodes() < 2:
+                frame_embeddings.append(np.zeros(self.node2vec_dim))
+                continue
+
+            n2v = Node2Vec(G,
+                           dimensions=self.node2vec_dim,
+                           walk_length=self.node2vec_walk_length,
+                           num_walks=self.node2vec_num_walks,
+                           p=self.node2vec_p,
+                           q=self.node2vec_q,
+                           workers=1,
+                           seed=self.random_state,
+                           quiet=True)
+            model = n2v.fit(window=5, min_count=1, batch_words=4)
+            emb = np.mean([model.wv[node] for node in G.nodes if node in model.wv], axis=0)
+            frame_embeddings.append(emb)
+
+        return np.vstack(frame_embeddings)
+
+    # ----------------------------------------------------------------------
+    def _tsne_projection(self, frame_embeddings):
+        from sklearn.manifold import TSNE
+        tsne = TSNE(
+            n_components=2,
+            perplexity=self.perplexity,
+            random_state=self.random_state,
+            init="pca",
+            learning_rate="auto",
+        )
+        return tsne.fit_transform(frame_embeddings)
+
+    # ----------------------------------------------------------------------
+    def run(self):
+        import numpy as np, pandas as pd, os, json
+        import seaborn as sns, matplotlib.pyplot as plt
+
+        logger.info("Starting network embedding analysis (from trajectory)...")
+        graphs = self._generate_graphs()
+        frame_embeddings = self._compute_node2vec_embeddings(graphs)
+        emb_2d = self._tsne_projection(frame_embeddings)
+
+        df_emb = pd.DataFrame({
+            "Frame": np.arange(len(emb_2d)),
+            "Dim1": emb_2d[:, 0],
+            "Dim2": emb_2d[:, 1],
+        })
+        out_json = os.path.join(self.output_dir, "network_embedding_tsne.json")
+        df_emb.to_json(out_json, orient="records", indent=2)
+        logger.info(f"Saved t-SNE embedding data to {out_json}")
+
+        # ---- Plot ----
+        sns.set(style="whitegrid", context="talk")
+        plt.figure(figsize=(7, 6))
+        sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
+                         c=df_emb["Frame"], cmap="viridis",
+                         s=60, alpha=0.9, edgecolors="k")
+        plt.colorbar(sc, label="Frame index / time progression")
+        plt.xlabel("t-SNE 1")
+        plt.ylabel("t-SNE 2")
+        plt.title("Network Embedding Evolution (contact graph)")
+        plt.tight_layout()
+
+        out_plot = os.path.join(self.output_dir, "network_embedding_tsne.png")
+        plt.savefig(out_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved t-SNE embedding plot to {out_plot}")
+
+        return {"embedding_data": out_json, "embedding_plot": out_plot}

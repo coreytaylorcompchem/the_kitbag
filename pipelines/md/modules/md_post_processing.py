@@ -4,6 +4,10 @@ from modules.automated_analyses import (
     RMSDAnalysisTask,
     RMSFAnalysisTask,
     InteractionFingerprintTask,
+    ProteinLigandCommunityTask,        # new
+    HydrationSiteEnergyTask,           # new
+    TemporalMotifPersistenceTask,      # new
+    NetworkEmbeddingAnalysisTask,      # new
 )
 from pipeline.logger import setup_logger
 
@@ -124,6 +128,69 @@ class MDPostProcessingWorkflow:
                 raise ValueError("No protein atoms found around the ligand")
 
             results["interactions"] = interactions_task.run()
+
+        # ==============================================================
+        # 2️⃣  Graph / Network Analyses (advanced)
+        # ==============================================================
+        graph_analyses = traj_analysis_cfg.get("graph_analyses", [])
+
+        # --- Protein–Ligand Community Detection ---
+        if "protein_ligand_communities" in graph_analyses:
+            logger.info("Running protein–ligand community analysis...")
+            plin_task = ProteinLigandCommunityTask(
+                topology=topology,
+                trajectory=trajectory,
+                ligand_resname=ligand_resname,
+                start=start,
+                stop=stop,
+                step=step,
+                output_dir=os.path.join(output_dir, "protein_ligand_communities"),
+            )
+            results["protein_ligand_communities"] = plin_task.run()
+
+        # --- Hydration Site Energetics ---
+        if "hydration_site_energy" in graph_analyses:
+            logger.info("Running hydration site energy analysis...")
+            hse_task = HydrationSiteEnergyTask(
+                topology=topology,
+                trajectory=trajectory,
+                ligand_resname=ligand_resname,
+                water_resname=water_resname,
+                start=start,
+                stop=stop,
+                step=step,
+                # binding_site_cutoff=post_cfg.get("solvent_analyses", {}).get("binding_site_cutoff", 5.0),
+                output_dir=os.path.join(output_dir, "hydration_site_energy"),
+            )
+            results["hydration_site_energy"] = hse_task.run()
+
+        # --- Temporal Motif Persistence ---
+        if "temporal_motif_persistence" in graph_analyses:
+            logger.info("Running temporal motif persistence analysis...")
+            tmp_task = TemporalMotifPersistenceTask(
+                topology=topology,
+                trajectory=trajectory,
+                ligand_resname=ligand_resname,
+                start=start,
+                stop=stop,
+                step=step,
+                output_dir=os.path.join(output_dir, "temporal_motif_persistence"),
+            )
+            results["temporal_motif_persistence"] = tmp_task.run()
+
+        # --- Network Embedding Analysis ---
+        if "network_embedding_analysis" in graph_analyses:
+            logger.info("Running network embedding analysis...")
+            ne_task = NetworkEmbeddingAnalysisTask(
+                topology=topology,
+                trajectory=trajectory,
+                ligand_resname=ligand_resname,
+                start=start,
+                stop=stop,
+                step=step,
+                output_dir=os.path.join(output_dir, "network_embedding_analysis"),
+            )
+            results["network_embedding_analysis"] = ne_task.run()
 
         # ==============================================================
         # 2️⃣  Solvent-mediated hydrogen bond analysis

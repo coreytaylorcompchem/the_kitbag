@@ -143,8 +143,8 @@ class OpenMMBackend:
     def prepare_system(self, cfg):
 
         pdb_file = cfg["pdb_file"]
-        forcefield_files = cfg.get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
-        ligand_params = cfg.get("ligand_parameters", None)
+        # forcefield_files = cfg.get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
+        # ligand_params = cfg.get("ligand_parameters", None)
         ionic_strength = cfg.get("ionic_strength", 0.0)
         box_padding = cfg.get("box_padding", 1.0)
         ph = cfg.get("pH", 7.4)
@@ -286,13 +286,17 @@ class OpenMMBackend:
         logger.debug(f"Calculating forcefield parameters for ligand {ligand_resname}.")
 
         protein_ff_files = cfg.get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
+        
+        logger.debug(f'Protein forcefield files loaded: {protein_ff_files}')
+        
         ligand_ff_name = cfg.get("ligand_parameters", "openff-2.0.0.offxml")
+
+        logger.debug(f'Ligand forcefield files loaded: {ligand_ff_name}')
 
         # If user wrote "openff-2.0.0" instead of "openff-2.0.0.offxml", fix it
         if not ligand_ff_name.endswith(".offxml"):
             ligand_ff_name = f"{ligand_ff_name}.offxml"
 
-        logger.debug(f"Using protein forcefields: {protein_ff_files}")
         logger.debug(f"Using ligand parameters: {ligand_ff_name}")
 
         forcefield = ForceField(*protein_ff_files)
