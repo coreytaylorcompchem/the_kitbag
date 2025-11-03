@@ -10,17 +10,17 @@
     "Community":0
   },
   {
+    "Resid":14,
+    "Resname":"SER",
+    "Community":0
+  },
+  {
     "Resid":17,
     "Resname":"PHE",
     "Community":0
   },
   {
     "Resid":20,
-    "Resname":"VAL",
-    "Community":0
-  },
-  {
-    "Resid":32,
     "Resname":"VAL",
     "Community":0
   },
@@ -75,13 +75,13 @@
     "Community":0
   },
   {
-    "Resid":96,
-    "Resname":"ASP",
+    "Resid":95,
+    "Resname":"GLN",
     "Community":0
   },
   {
-    "Resid":139,
-    "Resname":"GLU",
+    "Resid":96,
+    "Resname":"ASP",
     "Community":0
   },
   {
@@ -97,16 +97,6 @@
   {
     "Resid":154,
     "Resname":"ASP",
-    "Community":0
-  },
-  {
-    "Resid":155,
-    "Resname":"PHE",
-    "Community":0
-  },
-  {
-    "Resid":156,
-    "Resname":"GLY",
     "Community":0
   }
 ]

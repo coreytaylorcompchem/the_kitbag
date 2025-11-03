@@ -2,10 +2,21 @@ import os
 import warnings
 import json
 import itertools
+import h5py
 
 import networkx as nx
 import tqdm as tqdm
 import numpy as np
+
+from typing import List, Optional, Dict, Any
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
+import pandas as pd
+
+from modules.utils.mda_utils import _bit_to_color_value, _get_inv_color_mapper, _get_color_mapper
+
 import prolif as plf
 from prolif.plotting.utils import separated_interaction_colors
 
@@ -18,14 +29,13 @@ import MDAnalysis as mda
 from MDAnalysis.analysis import rms, align
 from MDAnalysis.lib.distances import distance_array
 from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis as HBA
-from modules.utils.mda_utils import _bit_to_color_value, _get_inv_color_mapper, _get_color_mapper
 
-from typing import List, Optional, Dict, Any
-import seaborn as sns
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
-from matplotlib.patches import Patch
-import pandas as pd
+from sklearn.decomposition import IncrementalPCA
+from sklearn.manifold import TSNE
+from sklearn.cluster import DBSCAN
+
+from node2vec import Node2Vec
+import community as community_louvain
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
@@ -291,6 +301,8 @@ class RMSDAnalysisTask:
 
         protein = self.u.select_atoms("protein and backbone")
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
+        align.AlignTraj(self.u, self.u, select="protein and backbone",
+                        in_memory=True).run()
 
         if len(protein) == 0:
             raise ValueError("No protein atoms found in topology for RMSD calculation.")
@@ -496,6 +508,7 @@ class InteractionFingerprintTask:
 
         # Prolif FP calculation
         logger.debug("Running ProLIF fingerprint calculation...")
+        
         fp = plf.Fingerprint()
         fp.run(self.u.trajectory[self.start:self.stop:self.step], ligand, protein)
         fp_df = fp.to_dataframe()
@@ -629,7 +642,7 @@ class ProteinLigandCommunityTask:
 
         # Community detection (Louvain)
         logger.info("Detecting residue communities...")
-        import community as community_louvain
+        
         partition = community_louvain.best_partition(G, weight='weight')
         nx.set_node_attributes(G, partition, "community")
 
@@ -698,7 +711,6 @@ class HydrationSiteEnergyTask:
             coords.append(water_oxygens.positions.copy())
         coords = np.concatenate(coords, axis=0)
 
-        from sklearn.cluster import DBSCAN
         db = DBSCAN(eps=1.5, min_samples=5).fit(coords)
         labels = db.labels_
 
@@ -930,16 +942,6 @@ class TemporalMotifPersistenceTask:
     description="Convert trajectory frames into residue–ligand contact graphs, then perform Node2Vec + t-SNE embedding to visualise network evolution."
 )
 class NetworkEmbeddingAnalysisTask:
-    """
-    Builds per-frame contact graphs directly from a trajectory and then embeds
-    the evolving network topology using Node2Vec + t-SNE.
-
-    Nodes  → protein residues + ligand
-    Edges  → residue within distance_cutoff Å of ligand atom
-    Frame embedding  → mean Node2Vec vector
-    Output  → t-SNE plot coloured by simulation time
-    """
-
     def __init__(self,
                  topology: str,
                  trajectory: str,
@@ -975,110 +977,197 @@ class NetworkEmbeddingAnalysisTask:
         self.perplexity = perplexity
         self.random_state = random_state
         self.context = context or {}
-
-        import MDAnalysis as mda
         self.u = mda.Universe(topology, trajectory)
 
-    # ----------------------------------------------------------------------
     def _frame_to_graph(self, ts):
-        import networkx as nx
-        import numpy as np
-
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
-        protein = self.u.select_atoms("protein")
+        protein = self.u.select_atoms("protein")  # only protein
 
+        # Debug: selections
         if len(ligand) == 0:
-            raise ValueError(f"No ligand atoms found for resname {self.ligand_resname}")
+            logger.debug(f"Warning: No ligand atoms found for resname {self.ligand_resname} at frame {ts.frame}")
+        else:
+            logger.debug(f"Found {len(ligand)} ligand atoms at frame {ts.frame}")
+
+        if len(protein) == 0:
+            logger.debug(f"Warning: No protein atoms found at frame {ts.frame}")
+        
+        logger.debug(f"Ligand selection (frame {ts.frame}): {len(ligand)} atoms")
+        logger.debug(f"Protein selection (frame {ts.frame}): {len(protein)} atoms")
+
+        lig_center = ligand.center_of_geometry()
+        logger.debug(f"Ligand center of geometry (frame {ts.frame}): {lig_center}")
+        logger.debug(f"Frame {ts.frame}: Ligand center of geometry: {lig_center}, Protein selection size: {len(protein)}")
+
+        if len(ligand) == 0 or len(protein) == 0:
+            return nx.Graph()  # Return empty graph
 
         G = nx.Graph(frame=ts.frame)
 
-        lig_center = ligand.center_of_geometry()
-        nearby = protein.select_atoms(f"around {self.distance_cutoff} resname {self.ligand_resname}")
+        min_dist = np.min(np.linalg.norm(ligand.positions[:, None, :] - protein.positions[None, :, :], axis=-1))
+        logger.debug(f"Frame {ts.frame}: minimum ligand-protein atom distance = {min_dist:.2f} Å")
+
+        G.add_node(self.ligand_resname, type="ligand")
+
+        # Only protein residues within distance_cutoff
+        nearby = self.u.select_atoms(f"protein and around {self.distance_cutoff} group ligand", ligand=ligand)
+        logger.debug(f"Found {len(nearby.residues)} protein residues within {self.distance_cutoff} Å of ligand at frame {ts.frame}")
+
+        if len(nearby.residues) == 0:
+            logger.info(f"Warning: No residues found within {self.distance_cutoff} Å of the ligand at frame {ts.frame}")
 
         for res in nearby.residues:
             resid_label = f"{res.resname}{res.resid}"
             G.add_node(resid_label, type="residue")
-
-        G.add_node(self.ligand_resname, type="ligand")
-
-        for res in nearby.residues:
-            resid_label = f"{res.resname}{res.resid}"
             G.add_edge(resid_label, self.ligand_resname, weight=1.0)
 
-        # Optional: add co-contact edges between residues contacting same ligand atom
+        # Residue–residue edges
         res_list = [f"{res.resname}{res.resid}" for res in nearby.residues]
         for i, r1 in enumerate(res_list):
             for r2 in res_list[i + 1:]:
                 G.add_edge(r1, r2, weight=0.5)
 
+        logger.debug(f"Graph at frame {ts.frame} has {len(G.nodes)} nodes and {len(G.edges)} edges")
         return G
 
-    # ----------------------------------------------------------------------
     def _generate_graphs(self):
-        import tqdm
         graphs = []
         for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Building contact graphs"):
             G = self._frame_to_graph(ts)
             graphs.append(G)
         return graphs
 
-    # ----------------------------------------------------------------------
     def _compute_node2vec_embeddings(self, graphs):
-        from node2vec import Node2Vec
-        import numpy as np
-        import tqdm
 
-        frame_embeddings = []
-        for i, G in enumerate(tqdm.tqdm(graphs, desc="Node2Vec embeddings")):
-            if G.number_of_nodes() < 2:
-                frame_embeddings.append(np.zeros(self.node2vec_dim))
+        embeddings_file = os.path.join(self.output_dir, "node2vec_embeddings.h5")
+
+        with h5py.File(embeddings_file, 'w') as f:
+            emb_dataset = f.create_dataset("embeddings", 
+                                        shape=(len(graphs), self.node2vec_dim), 
+                                        dtype=np.float32)
+
+            for i, G in tqdm.tqdm(enumerate(graphs), total=len(graphs), desc="Node2Vec embeddings"):
+                if G.number_of_nodes() < 2:
+                    emb_dataset[i] = np.zeros(self.node2vec_dim, dtype=np.float32)
+                    logger.info(f"Skipping frame {i} because the graph has fewer than 2 nodes")
+                    continue
+
+                logger.debug(f"Processing frame {i} with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
+
+                n2v = Node2Vec(G, dimensions=self.node2vec_dim, walk_length=self.node2vec_walk_length, 
+                            num_walks=self.node2vec_num_walks, p=self.node2vec_p, q=self.node2vec_q, 
+                            workers=1, seed=self.random_state, quiet=True)
+
+                # Debugging: Check graph info before fitting
+                logger.debug(f"Graph {i}: number of nodes = {len(G.nodes)}, number of edges = {len(G.edges)}")
+
+                model = n2v.fit(window=5, min_count=1, batch_words=4)
+                
+                # Compute the mean of node embeddings
+                emb = np.mean([model.wv[node] for node in G.nodes if node in model.wv], axis=0)
+
+                if np.isnan(emb).any():
+                    logger.debug(f"Warning: NaN values encountered in embedding for frame {i}")
+
+                emb_dataset[i] = emb
+
+                # Debug: Check embedding
+                logger.debug(f"Embedding saved for frame {i}: {emb[:5]}...")
+
+            logger.info(f"Embeddings saved to {embeddings_file}")
+        return embeddings_file
+
+    def _load_node2vec_embeddings_in_chunks(self, embeddings_file, chunk_size=100):
+        with h5py.File(embeddings_file, 'r') as f:
+            total_frames = len(f['embeddings'])
+            embeddings = []
+
+            for start_idx in range(0, total_frames, chunk_size):
+                end_idx = min(start_idx + chunk_size, total_frames)
+                chunk = f['embeddings'][start_idx:end_idx]
+                chunk = np.nan_to_num(chunk, nan=0.0, posinf=0.0, neginf=0.0)  # Clean NaN/Inf
+                embeddings.append(chunk)
+        
+        return np.concatenate(embeddings, axis=0)
+
+    def _incremental_pca(self, embeddings, chunk_size=100):
+        ipca = IncrementalPCA(n_components=50)
+        for start_idx in range(0, len(embeddings), chunk_size):
+            end_idx = min(start_idx + chunk_size, len(embeddings))
+            ipca.partial_fit(embeddings[start_idx:end_idx])
+        
+        reduced_embeddings = ipca.transform(embeddings)
+        return reduced_embeddings
+
+    def _incremental_tsne(self, embeddings, chunk_size=100):
+        tsne = TSNE(n_components=2, perplexity=self.perplexity, random_state=self.random_state, init="pca", learning_rate="auto")
+        n_frames = len(embeddings)
+        tsne_embeddings = []
+
+        for start_idx in range(0, n_frames, chunk_size):
+            end_idx = min(start_idx + chunk_size, n_frames)
+            chunk = embeddings[start_idx:end_idx]
+            tsne_embeddings.append(tsne.fit_transform(chunk))
+        
+        return np.concatenate(tsne_embeddings, axis=0)
+
+    def _cluster_embeddings(self, emb_2d):
+        # DBSCAN can be tuned; eps may need adjustment depending on t-SNE scale
+        db = DBSCAN(eps=2.0, min_samples=5)
+        cluster_labels = db.fit_predict(emb_2d)
+        return cluster_labels
+
+    def _compute_cluster_contact_frequencies(self, graphs, cluster_labels):
+        """
+        Count how often each protein residue appears in each cluster.
+        Only residues (type="residue") are counted.
+        """
+        from collections import Counter
+        import pandas as pd
+
+        cluster_res_counts = {}
+        for i, G in enumerate(graphs):
+            cluster = cluster_labels[i]
+            if cluster not in cluster_res_counts:
+                cluster_res_counts[cluster] = Counter()
+
+            if self.ligand_resname not in G:
+                logger.debug(f"Frame {i}: ligand not in graph, skipping")
                 continue
 
-            n2v = Node2Vec(G,
-                           dimensions=self.node2vec_dim,
-                           walk_length=self.node2vec_walk_length,
-                           num_walks=self.node2vec_num_walks,
-                           p=self.node2vec_p,
-                           q=self.node2vec_q,
-                           workers=1,
-                           seed=self.random_state,
-                           quiet=True)
-            model = n2v.fit(window=5, min_count=1, batch_words=4)
-            emb = np.mean([model.wv[node] for node in G.nodes if node in model.wv], axis=0)
-            frame_embeddings.append(emb)
+            for neighbor in G.neighbors(self.ligand_resname):
+                if G.nodes[neighbor].get("type") == "residue":
+                    cluster_res_counts[cluster][neighbor] += 1
 
-        return np.vstack(frame_embeddings)
+        # Convert to DataFrame
+        all_residues = sorted({res for c in cluster_res_counts for res in cluster_res_counts[c]})
+        df = pd.DataFrame(0, index=sorted(cluster_res_counts.keys()), columns=all_residues)
 
-    # ----------------------------------------------------------------------
-    def _tsne_projection(self, frame_embeddings):
-        from sklearn.manifold import TSNE
-        tsne = TSNE(
-            n_components=2,
-            perplexity=self.perplexity,
-            random_state=self.random_state,
-            init="pca",
-            learning_rate="auto",
-        )
-        return tsne.fit_transform(frame_embeddings)
+        for cluster, counter in cluster_res_counts.items():
+            for res, count in counter.items():
+                df.loc[cluster, res] = count
+                logger.debug(f"Cluster {cluster}: Residue {res} count = {count}")
 
-    # ----------------------------------------------------------------------
+        return df
+
     def run(self):
-        import numpy as np, pandas as pd, os, json
-        import seaborn as sns, matplotlib.pyplot as plt
-
         logger.info("Starting network embedding analysis (from trajectory)...")
         graphs = self._generate_graphs()
-        frame_embeddings = self._compute_node2vec_embeddings(graphs)
-        emb_2d = self._tsne_projection(frame_embeddings)
+
+        embeddings_file = self._compute_node2vec_embeddings(graphs)
+        frame_embeddings = self._load_node2vec_embeddings_in_chunks(embeddings_file, chunk_size=100)
+
+        # Step 1: Apply Incremental PCA
+        reduced_embeddings = self._incremental_pca(frame_embeddings, chunk_size=100)
+
+        # Step 2: Apply Incremental t-SNE
+        emb_2d = self._incremental_tsne(reduced_embeddings, chunk_size=100)
 
         df_emb = pd.DataFrame({
             "Frame": np.arange(len(emb_2d)),
             "Dim1": emb_2d[:, 0],
             "Dim2": emb_2d[:, 1],
         })
-        out_json = os.path.join(self.output_dir, "network_embedding_tsne.json")
-        df_emb.to_json(out_json, orient="records", indent=2)
-        logger.info(f"Saved t-SNE embedding data to {out_json}")
 
         # ---- Plot ----
         sns.set(style="whitegrid", context="talk")
@@ -1097,4 +1186,74 @@ class NetworkEmbeddingAnalysisTask:
         plt.close()
         logger.info(f"Saved t-SNE embedding plot to {out_plot}")
 
-        return {"embedding_data": out_json, "embedding_plot": out_plot}
+        # ----- Step 3: Clustering -----
+        cluster_labels = self._cluster_embeddings(emb_2d)
+        df_emb["Cluster"] = cluster_labels
+
+        out_json = os.path.join(self.output_dir, "network_embedding_tsne.json")
+        df_emb.to_json(out_json, orient="records", indent=2)
+        logger.info(f"Saved t-SNE embedding + cluster data to {out_json}")
+
+        # ----- Plot: t-SNE colored by cluster -----
+        sns.set(style="whitegrid", context="talk")
+        plt.figure(figsize=(7, 6))
+        sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
+                         c=df_emb["Cluster"], cmap="tab10",
+                         s=60, alpha=0.9, edgecolors="k")
+        plt.colorbar(sc, label="Cluster ID")
+        plt.xlabel("t-SNE 1")
+        plt.ylabel("t-SNE 2")
+        plt.title("Network Embedding Clusters (contact graph)")
+        plt.tight_layout()
+        out_plot = os.path.join(self.output_dir, "network_embedding_tsne_clusters.png")
+        plt.savefig(out_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved cluster-colored t-SNE plot to {out_plot}")
+
+        # ----- Step 4–5: Compute cluster-specific residue contact frequencies -----
+        cluster_contact_freq = self._compute_cluster_contact_frequencies(graphs, cluster_labels)
+        df_heatmap = pd.DataFrame(cluster_contact_freq).fillna(0).T
+
+        import re
+        def resid_sort_key(res_label):
+            """
+            Sort residue labels by numeric residue number.
+            Example: ARG15 -> 15, GLY2 -> 2
+            """
+            match = re.search(r'(\d+)$', res_label)
+            if match:
+                return int(match.group(1))
+            else:
+                return float('inf')  # in case label has no number, push to end
+
+        # Sort residues by numeric order
+        df_heatmap = df_heatmap.loc[sorted(df_heatmap.index, key=resid_sort_key)]
+
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(df_heatmap,
+                    annot=False,        # show counts
+                    fmt="d",           # format as integers
+                    cmap="YlGnBu",
+                    cbar_kws={"label": "Contact frequency"})  # colorbar label
+
+        plt.xlabel("Cluster")
+        plt.ylabel("Residue")
+        plt.title("Residue-Ligand Contact Frequency per Cluster")
+        plt.tight_layout()
+
+        heatmap_plot = os.path.join(self.output_dir, "cluster_contact_frequencies.png")
+        plt.savefig(heatmap_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved cluster contact frequency heatmap to {heatmap_plot}")
+        # Also save numeric data
+        out_csv = os.path.join(self.output_dir, "cluster_contact_frequencies.csv")
+        df_heatmap.to_csv(out_csv)
+        logger.info(f"Saved cluster contact frequencies to {out_csv}")
+
+        return {
+            "embedding_data": out_json,
+            "embedding_plot": out_plot,
+            "cluster_contact_heatmap": heatmap_plot,
+            "cluster_contact_csv": out_csv
+        }
+

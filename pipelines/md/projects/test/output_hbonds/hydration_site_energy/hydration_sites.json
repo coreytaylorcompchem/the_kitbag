@@ -1,17 +1,22 @@
 [
   {
     "Site":-1,
-    "Occupancy":0.7386363636,
-    "DeltaG_kJmol":755.6167540978
-  },
-  {
-    "Site":0,
-    "Occupancy":0.1534090909,
-    "DeltaG_kJmol":4675.7448692362
+    "Occupancy":0.9415384615,
+    "DeltaG_kJmol":150.2508084772
   },
   {
     "Site":1,
-    "Occupancy":0.1079545455,
-    "DeltaG_kJmol":5552.2014785872
+    "Occupancy":0.0215384615,
+    "DeltaG_kJmol":9572.5276759931
+  },
+  {
+    "Site":2,
+    "Occupancy":0.0215384615,
+    "DeltaG_kJmol":9572.5276759931
+  },
+  {
+    "Site":0,
+    "Occupancy":0.0153846154,
+    "DeltaG_kJmol":10411.7567285737
   }
 ]

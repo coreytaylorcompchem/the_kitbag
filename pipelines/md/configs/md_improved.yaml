@@ -2,12 +2,12 @@ task: workflow
 workflow_name: molecular_dynamics
 
 workflow:
-  - prepare_system
-  - setup_simulation
-  - minimize
-  - heat_and_equilibrate
-  - production
-  # - post_processing
+  # - prepare_system
+  # - setup_simulation
+  # - minimize
+  # - heat_and_equilibrate
+  # - production
+  - post_processing
 
 prepare_system:
   pdb_file: input/3BGP.pdb
@@ -61,9 +61,9 @@ post_processing:
   trajectory_analysis:
     # time_series: ["rmsd", "rmsf", "interactions"]
     # structural: ["torsions", "ramachandran", "solvent_lifetimes"]
-    graph_analyses: ["temporal_motif_persistence"]
+    graph_analyses: ["network_embedding_analysis"]
     # graph_analyses: ["protein_ligand_communities", "hydration_site_energy", "temporal_motif_persistence", "network_embedding_analysis"]
   # solvent_analyses:
-    # enabled: true
-    # binding_site_cutoff: 5.0 # distance around the ligand (A) to find hbonds. 
-    # top_n: 25  # select top N solvent interactions to include on the plot
+  #   enabled: true
+  #   binding_site_cutoff: 5.0 # distance around the ligand (A) to find hbonds. 
+  #   top_n: 25  # select top N solvent interactions to include on the plot
