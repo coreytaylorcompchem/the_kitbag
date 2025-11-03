@@ -29,22 +29,24 @@ If the calculation runs correctly, you should see outputs like logs, trajectorie
 
 ```
 Available Tasks:
-  [Analyses]:
-    - solvent_hbonds: Compute direct and water-mediated hydrogen bonds between binding site and ligand.
-       ↳ Backends: openmm
   [Molecular dynamics]:
     - heat_and_equilibrate: Heating and equilibration.
-       ↳ Backends: openmm
     - minimize: Initial energy minimization.
-       ↳ Backends: openmm
     - prepare_system: Load inputs, cap chains, parameterise ligand and protein, solvate and save final topology.
-       ↳ Backends: openmm
     - production: Run production simulation.
-       ↳ Backends: openmm
     - setup_simulation: Set up integrator and simulation.
-       ↳ Backends: openmm
+  [Post-proc; graph analyses]:
+    - hydration_site_energy: Identify hydration sites and rank them by approximate free energy.
+    - network_embedding_analysis: Convert trajectory frames into residue–ligand contact graphs, then perform Node2Vec + t-SNE embedding to visualise network evolution.
+    - protein_ligand_communities: Detect cooperative residue clusters (communities) in the protein–ligand interaction network.
+    - solvent_hbonds: Compute direct and water-mediated hbonds with ligand.
+    - temporal_motif_persistence: Quantify persistence of small recurring motifs (e.g., ligand–water–residue triangles) in the solvent network.
+  [Post-proc; traj analyses]:
+    - interaction_fingerprint: Compute IFP using ProLIF, generate barcode plot.
+    - rmsd_analysis: Compute RMSD of protein bb and ligand.
+    - rmsf_analysis: Compute per-residue RMSF for protein (all atoms and Cα only).
 Available Workflows:
- - molecular_dynamics: Perform molecular dynamics simulation using OpenMM.
+ - molecular_dynamics: Perform molecular dynamics simulation using specified backend.
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
