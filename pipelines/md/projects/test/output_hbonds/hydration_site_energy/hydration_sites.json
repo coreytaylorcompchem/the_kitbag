@@ -1,22 +1,72 @@
 [
   {
     "Site":-1,
-    "Occupancy":0.9415384615,
-    "DeltaG_kJmol":150.2508084772
-  },
-  {
-    "Site":1,
-    "Occupancy":0.0215384615,
-    "DeltaG_kJmol":9572.5276759931
-  },
-  {
-    "Site":2,
-    "Occupancy":0.0215384615,
-    "DeltaG_kJmol":9572.5276759931
+    "Occupancy":0.8701538462,
+    "DeltaG_kJmol":346.9064263281
   },
   {
     "Site":0,
-    "Occupancy":0.0153846154,
-    "DeltaG_kJmol":10411.7567285737
+    "Occupancy":0.0723076923,
+    "DeltaG_kJmol":6551.8263193342
+  },
+  {
+    "Site":5,
+    "Occupancy":0.0181538462,
+    "DeltaG_kJmol":9998.9306161229
+  },
+  {
+    "Site":3,
+    "Occupancy":0.0089230769,
+    "DeltaG_kJmol":11770.4152495603
+  },
+  {
+    "Site":2,
+    "Occupancy":0.0070769231,
+    "DeltaG_kJmol":12348.5748353421
+  },
+  {
+    "Site":1,
+    "Occupancy":0.0067692308,
+    "DeltaG_kJmol":12459.4464215463
+  },
+  {
+    "Site":9,
+    "Occupancy":0.0036923077,
+    "DeltaG_kJmol":13971.2703428113
+  },
+  {
+    "Site":4,
+    "Occupancy":0.0033846154,
+    "DeltaG_kJmol":14188.2941192989
+  },
+  {
+    "Site":10,
+    "Occupancy":0.0021538462,
+    "DeltaG_kJmol":15315.6354149388
+  },
+  {
+    "Site":6,
+    "Occupancy":0.0015384615,
+    "DeltaG_kJmol":16154.8644675194
+  },
+  {
+    "Site":8,
+    "Occupancy":0.0015384615,
+    "DeltaG_kJmol":16154.8644675194
+  },
+  {
+    "Site":11,
+    "Occupancy":0.0015384615,
+    "DeltaG_kJmol":16154.8644675194
+  },
+  {
+    "Site":12,
+    "Occupancy":0.0015384615,
+    "DeltaG_kJmol":16154.8644675194
+  },
+  {
+    "Site":7,
+    "Occupancy":0.0012307692,
+    "DeltaG_kJmol":16711.4291132073
   }
 ]
