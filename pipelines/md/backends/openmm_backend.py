@@ -375,3 +375,23 @@ class OpenMMBackend:
 
         logger.info(f"Saved prepared protein + ligand system topology to {topology_path}")
 
+        # Debug; check parameters
+        logger.debug("\n=== ForceField contents ===")
+        logger.debug("Files loaded:", protein_ff_files)
+        if ligand_ff_name:
+            logger.debug("Ligand FF:", ligand_ff_name)
+
+        logger.debug("\nRegistered template generators:")
+        for gen in forcefield._templateGenerators:
+            logger.debug(" ", gen)
+
+        logger.debug("\nForces included in ForceField:")
+        for force_name in forcefield._forces:
+            logger.debug(" ", force_name)
+
+        # --- Inspect created System ---
+        logger.debug("\n=== Created System Forces ===")
+        for force in self.system.getForces():
+            logger.debug(type(force))
+            if isinstance(force, openmm.NonbondedForce):
+                logger.debug("  Num particles:", force.getNumParticles())

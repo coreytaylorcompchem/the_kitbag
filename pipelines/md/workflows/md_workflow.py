@@ -8,7 +8,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 @register_workflow(
     "molecular_dynamics",
-    description="Perform molecular dynamics simulation using OpenMM."
+    description="Perform molecular dynamics simulation using specified backend."
 )
 def run_basic_md_workflow(config: dict):
     logger.info(f"Running workflow: {config.get('workflow_name', 'unknown')}")

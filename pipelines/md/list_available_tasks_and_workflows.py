@@ -37,7 +37,7 @@ def main():
             desc = meta.get('description', '')
             supported = ', '.join(meta.get('supported_backends', []))
             logger.info(f"    - {task_name}: {desc}")
-            logger.info(f"       ↳ Backends: {supported or 'None'}")
+            # logger.info(f"       ↳ Backends: {supported or 'None'}") # later when we support different backends
 
     logger.info("Available Workflows:")
     for wf in list_workflows():

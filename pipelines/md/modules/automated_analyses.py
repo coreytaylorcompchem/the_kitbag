@@ -35,7 +35,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 @register_task(
     "solvent_hbonds",
-    category="Analyses",
+    category="Post-proc; graph analyses",
     description="Compute direct and water-mediated hbonds with ligand."
 )
 class HydrogenBondAnalysisTask:
@@ -257,7 +257,7 @@ class HydrogenBondAnalysisTask:
 
 @register_task(
     "rmsd_analysis",
-    category="Analyses",
+    category="Post-proc; traj analyses",
     description="Compute RMSD of protein bb and ligand."
 )
 class RMSDAnalysisTask:
@@ -345,7 +345,7 @@ class RMSDAnalysisTask:
 
 @register_task(
     "rmsf_analysis",
-    category="Analyses",
+    category="Post-proc; traj analyses",
     description="Compute per-residue RMSF for protein (all atoms and Cα only)."
 )
 class RMSFAnalysisTask:
@@ -440,7 +440,7 @@ def _bit_to_color_value(series):
 
 @register_task(
     "interaction_fingerprint",
-    category="Analyses",
+    category="Post-proc; traj analyses",
     description="Compute IFP using ProLIF, generate barcode plot."
 )
 class InteractionFingerprintTask:
@@ -578,7 +578,7 @@ class InteractionFingerprintTask:
 
 @register_task(
     "protein_ligand_communities",
-    category="Analyses",
+    category="Post-proc; graph analyses",
     description="Detect cooperative residue clusters (communities) in the protein–ligand interaction network."
 )
 class ProteinLigandCommunityTask:
@@ -658,7 +658,7 @@ class ProteinLigandCommunityTask:
 
 @register_task(
     "hydration_site_energy",
-    category="Analyses",
+    category="Post-proc; graph analyses",
     description="Identify hydration sites and rank them by approximate free energy."
 )
 class HydrationSiteEnergyTask:
@@ -731,7 +731,7 @@ class HydrationSiteEnergyTask:
 
 @register_task(
     "temporal_motif_persistence",
-    category="Analyses",
+    category="Post-proc; graph analyses",
     description="Quantify persistence of small recurring motifs (e.g., ligand–water–residue triangles) in the solvent network."
 )
 class TemporalMotifPersistenceTask:
@@ -926,7 +926,7 @@ class TemporalMotifPersistenceTask:
 
 @register_task(
     "network_embedding_analysis",
-    category="GraphAnalyses",
+    category="Post-proc; graph analyses",
     description="Convert trajectory frames into residue–ligand contact graphs, then perform Node2Vec + t-SNE embedding to visualise network evolution."
 )
 class NetworkEmbeddingAnalysisTask:

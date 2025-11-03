@@ -2,20 +2,20 @@ task: workflow
 workflow_name: molecular_dynamics
 
 workflow:
-  # - prepare_system
-  # - setup_simulation
-  # - minimize
-  # - heat_and_equilibrate
-  # - production
-  - post_processing
+  - prepare_system
+  - setup_simulation
+  - minimize
+  - heat_and_equilibrate
+  - production
+  # - post_processing
 
 prepare_system:
   pdb_file: input/3BGP.pdb
   # ligand_file: input/ligand.sdf  # TODO: Optional
-  ligand_parameters: openff-2.0.0.offxml  # Optional
-  forcefield: ["amber19/protein.ff19SB.xml", "amber14/tip3p.xml"] # Optional
+  ligand_parameters: openff-2.0.0.offxml  # Optional but you should set it
+  forcefield: ["amber14/protein.ff14SB.xml", "amber14/tip3p.xml"] # Optional but you should set it
   ionic_strength: 0.15
-  box_padding: 1.1
+  box_padding: 1.0
   membrane: false
   # lipid_type: POPC
   output_trajectory: "output_hbonds"
@@ -28,10 +28,20 @@ setup_simulation:
   # friction: 1.0
 
 heat_and_equilibrate:
-  num_heating_steps: 6
-  target_temp: 300
-  steps_per_round: 100
-  restraint_strengths: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
+  heating:
+    num_steps: 6
+    steps_per_round: 5000
+    target_temp: 300
+    restraint_strengths: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
+  equilibration:
+    ensemble: NPT
+    steps: 100000
+    target_temp: 300
+    pressure: 1.0
+    barostat:
+      type: MonteCarlo          # Options: MonteCarlo, Anisotropic, Andersen
+      frequency: 25             # Attempt volume changes every N steps
+      anisotropic: false        # Only used if type=Anisotropic. For membrane sims
 
 production:
   length_ns: 5
