@@ -1257,3 +1257,196 @@ class NetworkEmbeddingAnalysisTask:
             "cluster_contact_csv": out_csv
         }
 
+@register_task(
+    "protein_protein_network_embedding",
+    category="Post-proc; graph analyses",
+    description="Convert trajectory frames into residue–residue contact graphs, then perform Node2Vec + t-SNE embedding to visualise protein-protein network evolution."
+)
+class ProteinProteinNetworkEmbeddingTask:
+    def __init__(self,
+                 topology: str,
+                 trajectory: str,
+                 distance_cutoff: float = 4.0,
+                 start: int = 0,
+                 stop: int = -1,
+                 step: int = 10,
+                 output_dir: str = "output_protein_protein_network",
+                 node2vec_dim: int = 64,
+                 node2vec_walk_length: int = 10,
+                 node2vec_num_walks: int = 50,
+                 node2vec_p: float = 1.0,
+                 node2vec_q: float = 1.0,
+                 perplexity: float = 30.0,
+                 random_state: int = 42,
+                 context: Optional[Dict[str, Any]] = None):
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+        self.topology = topology
+        self.trajectory = trajectory
+        self.distance_cutoff = distance_cutoff
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.output_dir = output_dir
+        self.node2vec_dim = node2vec_dim
+        self.node2vec_walk_length = node2vec_walk_length
+        self.node2vec_num_walks = node2vec_num_walks
+        self.node2vec_p = node2vec_p
+        self.node2vec_q = node2vec_q
+        self.perplexity = perplexity
+        self.random_state = random_state
+        self.context = context or {}
+        self.u = mda.Universe(topology, trajectory)
+
+    def _frame_to_graph_pp(self, ts):
+        protein = self.u.select_atoms("protein")
+
+        if len(protein) == 0:
+            logger.debug(f"Warning: No protein atoms found at frame {ts.frame}")
+            return nx.Graph()
+
+        logger.debug(f"Protein selection (frame {ts.frame}): {len(protein)} atoms")
+
+        G = nx.Graph(frame=ts.frame)
+
+        # Consider only residues, not waters/ions
+        residues = protein.residues
+
+        # Add nodes
+        for res in residues:
+            resid_label = f"{res.resname}{res.resid}"
+            G.add_node(resid_label, type="residue")
+
+        # Add edges based on distance cutoff between residues (using any atom in residue)
+        for i, res_i in enumerate(residues):
+            pos_i = res_i.atoms.positions  # N_i x 3
+            label_i = f"{res_i.resname}{res_i.resid}"
+            for j, res_j in enumerate(residues[i + 1:], start=i + 1):
+                pos_j = res_j.atoms.positions  # N_j x 3
+                label_j = f"{res_j.resname}{res_j.resid}"
+
+                # Compute all pairwise distances between atoms in the two residues
+                dists = np.linalg.norm(pos_i[:, None, :] - pos_j[None, :, :], axis=-1)
+                min_dist = np.min(dists)
+                if min_dist <= self.distance_cutoff:
+                    G.add_edge(label_i, label_j, weight=1.0)
+
+        logger.debug(f"Graph at frame {ts.frame} has {len(G.nodes)} nodes and {len(G.edges)} edges")
+        return G
+
+    def _generate_graphs_pp(self):
+        graphs = []
+        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Building protein-protein graphs"):
+            G = self._frame_to_graph_pp(ts)
+            graphs.append(G)
+        return graphs
+
+    # Node2Vec embeddings, PCA, t-SNE, clustering methods
+    # Can be copied from your existing NetworkEmbeddingAnalysisTask
+    # They work unchanged because graphs are still NetworkX objects
+
+    def run(self):
+        logger.info("Starting protein-protein network embedding analysis...")
+        graphs = self._generate_graphs_pp()
+
+        embeddings_file = self._compute_node2vec_embeddings(graphs)
+        frame_embeddings = self._load_node2vec_embeddings_in_chunks(embeddings_file, chunk_size=100)
+
+        reduced_embeddings = self._incremental_pca(frame_embeddings, chunk_size=100)
+        emb_2d = self._incremental_tsne(reduced_embeddings, chunk_size=100)
+
+        df_emb = pd.DataFrame({
+            "Frame": np.arange(len(emb_2d)),
+            "Dim1": emb_2d[:, 0],
+            "Dim2": emb_2d[:, 1],
+        })
+
+        # Plot t-SNE
+        sns.set(style="whitegrid", context="talk")
+        plt.figure(figsize=(7, 6))
+        sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
+                         c=df_emb["Frame"], cmap="viridis",
+                         s=60, alpha=0.9, edgecolors="k")
+        plt.colorbar(sc, label="Frame index / time progression")
+        plt.xlabel("t-SNE 1")
+        plt.ylabel("t-SNE 2")
+        plt.title("Protein-Protein Network Embedding Evolution")
+        plt.tight_layout()
+        out_plot = os.path.join(self.output_dir, "protein_protein_network_tsne.png")
+        plt.savefig(out_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved t-SNE embedding plot to {out_plot}")
+
+        # Clustering
+        cluster_labels = self._cluster_embeddings(emb_2d)
+        df_emb["Cluster"] = cluster_labels
+        out_json = os.path.join(self.output_dir, "protein_protein_network_tsne.json")
+        df_emb.to_json(out_json, orient="records", indent=2)
+        logger.info(f"Saved t-SNE embedding + cluster data to {out_json}")
+
+        # Cluster-colored t-SNE
+        sns.set(style="whitegrid", context="talk")
+        plt.figure(figsize=(7, 6))
+        sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
+                         c=df_emb["Cluster"], cmap="tab10",
+                         s=60, alpha=0.9, edgecolors="k")
+        plt.colorbar(sc, label="Cluster ID")
+        plt.xlabel("t-SNE 1")
+        plt.ylabel("t-SNE 2")
+        plt.title("Protein-Protein Network Embedding Clusters")
+        plt.tight_layout()
+        out_plot = os.path.join(self.output_dir, "protein_protein_network_tsne_clusters.png")
+        plt.savefig(out_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved cluster-colored t-SNE plot to {out_plot}")
+
+        # Optional: Compute cluster-specific residue contact frequencies
+        cluster_res_counts = self._compute_cluster_contact_frequencies_pp(graphs, cluster_labels)
+        df_heatmap = pd.DataFrame(cluster_res_counts).fillna(0)
+
+        plt.figure(figsize=(10, 6))
+        sns.heatmap(df_heatmap, annot=False, cmap="YlGnBu")
+        plt.xlabel("Cluster")
+        plt.ylabel("Residue")
+        plt.title("Residue-Residue Contact Frequency per Cluster")
+        plt.tight_layout()
+        heatmap_plot = os.path.join(self.output_dir, "protein_protein_cluster_contact_frequencies.png")
+        plt.savefig(heatmap_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved protein-protein cluster contact frequency heatmap to {heatmap_plot}")
+
+        out_csv = os.path.join(self.output_dir, "protein_protein_cluster_contact_frequencies.csv")
+        df_heatmap.to_csv(out_csv)
+        logger.info(f"Saved protein-protein cluster contact frequencies to {out_csv}")
+
+        return {
+            "embedding_data": out_json,
+            "embedding_plot": out_plot,
+            "cluster_contact_heatmap": heatmap_plot,
+            "cluster_contact_csv": out_csv
+        }
+
+    def _compute_cluster_contact_frequencies_pp(self, graphs, cluster_labels):
+        """
+        Count how often each residue appears in contacts within its cluster.
+        """
+        from collections import Counter
+        cluster_res_counts = {}
+        for i, G in enumerate(graphs):
+            cluster = cluster_labels[i]
+            if cluster not in cluster_res_counts:
+                cluster_res_counts[cluster] = Counter()
+            for node in G.nodes:
+                if G.nodes[node].get("type") == "residue":
+                    cluster_res_counts[cluster][node] += 1
+
+        # Convert to DataFrame
+        all_residues = sorted({res for c in cluster_res_counts for res in cluster_res_counts[c]},
+                              key=lambda x: int(''.join(filter(str.isdigit, x))))  # sort by residue number
+        df = pd.DataFrame(0, index=cluster_res_counts.keys(), columns=all_residues)
+
+        for cluster, counter in cluster_res_counts.items():
+            for res, count in counter.items():
+                df.loc[cluster, res] = count
+
+        return df

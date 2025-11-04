@@ -2,11 +2,11 @@ task: workflow
 workflow_name: molecular_dynamics
 
 workflow:
-  # - prepare_system
-  # - setup_simulation
-  # - minimize
-  # - heat_and_equilibrate
-  # - production
+  - prepare_system
+  - setup_simulation
+  - minimize
+  - heat_and_equilibrate
+  - production
   - post_processing
 
 prepare_system:
@@ -17,7 +17,7 @@ prepare_system:
   ionic_strength: 0.15
   box_padding: 1.0
   membrane: false
-  # lipid_type: POPC
+  # lipid_type: POPC # only for membrane sims
   output_trajectory: "output_hbonds"
 
 setup_simulation: 
@@ -31,12 +31,12 @@ heat_and_equilibrate:
   heating:
     num_steps: 6
     steps_per_round: 5000
-    target_temp: 300
+    target_temp: 298
     restraint_strengths: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
   equilibration:
     ensemble: NPT
     steps: 100000
-    target_temp: 300
+    target_temp: 298
     pressure: 1.0
     barostat:
       type: MonteCarlo          # Options: MonteCarlo, Anisotropic, Andersen
@@ -44,7 +44,7 @@ heat_and_equilibrate:
       anisotropic: false        # Only used if type=Anisotropic. For membrane sims
 
 production:
-  length_ns: 5
+  length_ns: 50
   output_trajectory: "output_hbonds/trajectory.dcd"
   output_logfile: "output_hbonds/log.txt"
 
@@ -59,10 +59,11 @@ post_processing:
   stop: -1
   step: 10 # stride length for the traj. For sims > 5 ns, you'd probably bump this to 100. This is for demonstration purposes.
   trajectory_analysis:
-    time_series: ["rmsd", "rmsf"]
-    # time_series: ["rmsd", "rmsf", "interactions"]
+    # time_series: ["interactions"]
+    time_series: ["rmsd", "rmsf", "interactions"]
     # structural: ["torsions", "ramachandran", "solvent_lifetimes"] WIP
     graph_analyses: ["protein_ligand_communities", "hydration_site_energy", "temporal_motif_persistence", "network_embedding_analysis"]
+    # graph_analyses: ["protein_ligand_communities", "hydration_site_energy", "temporal_motif_persistence", "network_embedding_analysis", "protein_protein_network_embedding"]
   solvent_analyses:
     enabled: true
     binding_site_cutoff: 5.0 # distance around the ligand (A) to find hbonds. 

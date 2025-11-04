@@ -98,5 +98,10 @@
     "Resid":154,
     "Resname":"ASP",
     "Community":0
+  },
+  {
+    "Resid":155,
+    "Resname":"PHE",
+    "Community":0
   }
 ]

@@ -309,7 +309,7 @@ class OpenMMBackend:
             forcefield.registerTemplateGenerator(smirnoff_generator.generator)
             logger.debug("Registered SMIRNOFFTemplateGenerator for ligand.")
         
-        # --- Step 7a: Orient protein for membrane
+        # Step 7a: Orient protein for membrane
         if cfg.get("membrane", False):
             oriented_pdb_path = os.path.join(input_pdb_dir, "protein_oriented.pdb")
             logger.info("Orienting GPCR for membrane embedding (may take some time)...")

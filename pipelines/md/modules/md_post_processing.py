@@ -4,10 +4,11 @@ from modules.automated_analyses import (
     RMSDAnalysisTask,
     RMSFAnalysisTask,
     InteractionFingerprintTask,
-    ProteinLigandCommunityTask,        # new
-    HydrationSiteEnergyTask,           # new
-    TemporalMotifPersistenceTask,      # new
-    NetworkEmbeddingAnalysisTask,      # new
+    ProteinLigandCommunityTask,        
+    HydrationSiteEnergyTask,        
+    TemporalMotifPersistenceTask,     
+    NetworkEmbeddingAnalysisTask,    
+    ProteinProteinNetworkEmbeddingTask,
 )
 from pipeline.logger import setup_logger
 
@@ -191,6 +192,20 @@ class MDPostProcessingWorkflow:
                 output_dir=os.path.join(output_dir, "network_embedding_analysis"),
             )
             results["network_embedding_analysis"] = ne_task.run()
+
+        # --- Protein-protein network Embedding Analysis ---
+        if "protein_protein_network_embedding" in graph_analyses:
+            logger.info("Running protein network embedding analysis...")
+            pp_task = ProteinProteinNetworkEmbeddingTask(
+                topology=topology,
+                trajectory=trajectory,
+                # ligand_resname=ligand_resname,
+                start=start,
+                stop=stop,
+                step=step,
+                output_dir=os.path.join(output_dir, "protein_protein_network_embedding_analysis"),
+            )
+            results["protein_protein_network_embedding_analysis"] = pp_task.run()
 
         # ==============================================================
         # 2️⃣  Solvent-mediated hydrogen bond analysis
