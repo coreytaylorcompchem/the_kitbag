@@ -73,7 +73,7 @@ def get_available_pbpk_models():
     return models
 
 # ----------------------------------------------------------
-# 1. Parameter Prediction (minimal PoC version)
+# 1. Parameter Prediction
 # ----------------------------------------------------------
 @register_task("pbpk_parameter_prediction", category="PBPK", description="Predict PBPK parameters from SMILES")
 def pbpk_parameter_prediction(config, df=None):

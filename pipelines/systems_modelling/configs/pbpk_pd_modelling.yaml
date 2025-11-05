@@ -1,0 +1,92 @@
+# Purpose: to run a two-compartment ODE-based model for predicting brain: plasma concentration for molecules provided.
+# Inputs: csv of SMILES + ID
+# Outputs: 
+# - CSVs of individual population and aggregated plasma concentration and various phyiological parameters.
+# - Per-molecule and per-subject concentration curves (individual and aggregated).    
+
+workflow_name: pbpk_workflow
+
+input_file: data/ligands.csv
+input_mode: smiles    # "logp" or "smiles" + ID (otherwise plots will be overwritten).
+
+workflow_serial:
+  - pbpk_parameter_prediction
+  - pbpk_model_assembly
+  - pbpk_simulation
+  - pbpk_analysis
+  - pd_parameter_prediction
+  - pbpk_pd_simulation
+  - pkpd_analysis
+  - pkpd_ranking
+
+pbpk_parameter_prediction:
+  predictors:
+    clint_model: true
+    fu_p_model: true
+    logbb_model: true
+  output_dir: outputs/pbpk/params
+
+pbpk_model_assembly:
+  physiology_file: data/human_physiology.yaml
+  output_dir: outputs/pbpk_pd/models
+
+pbpk_simulation:
+  solver: scipy
+  simulation_time: 480   # minutes
+  dose_mg: 10
+  exchange_model: hybrid  # flow_limited | permeability_limited | hybrid
+  n_subjects: 50    # number of virtual humans
+  variability:
+    Vp: 0.2         # 20% CV for plasma volume
+    Vb: 0.15        # 15% CV for brain volume
+    Q_brain: 0.25   # 25% CV for brain blood flow
+    PS_BBB: 0.3     # 30% CV for BBB permeability
+    fu_p: 0.4       # 40% CV for plasma free fraction
+  output_dir: outputs/pbpk_pd/simulations
+
+pbpk_analysis:
+  metrics: [auc_plasma, auc_brain, kp_brain, kp_uu, cmax, cmax_ratio]
+  output_dir: outputs/pbpk_pd/analysis
+
+pd_parameter_prediction:
+
+pbpk_pd_simulation:
+  # Baseline and max effect parameters
+  E0: 1.0                     # Baseline effect (100%)
+  Imax: 1.0                   # Maximum inhibition achievable
+  gamma: 1.0                  # Hill coefficient for steepness of inhibition curve
+
+  # Targets & dosing options
+  target_inhibitions: [80, 90, 95]    # % inhibition targets for prioritization
+  dosing_intervals: [8, 12, 24]       # Dosing intervals in hours
+
+  # Optional: specify concentration source if not using Cmax
+  concentration_field: "Cmax_plasma"  # Column name in your PK dataframe
+  fu_field: "fu_p"                     # Fraction unbound plasma
+
+  # Output options
+  output_dir: "outputs/pbpk/pd"       # Where CSVs and heatmaps will be saved
+  save_heatmaps: true                  # Generate heatmaps for predicted inhibition vs. dose/time
+  save_curves: true                    # Generate full % inhibition vs. time curves
+
+  # Optional advanced settings
+  dose_scan:                             # Only needed if you want automated dose prediction
+    enabled: true
+    step_uM: 0.1                        # Dose step for simulation scanning
+    max_uM: 50                          # Maximum dose to scan
+
+pkpd_analysis:
+
+pkpd_ranking:
+  output_dir: outputs/pbpk/pkpd_ranking
+  metric: Emax_mean
+  ascending: False
+  weights:
+    Emax_mean: 0.5
+    AUEC_mean: 0.3
+    T>50%_mean: 0.2
+
+output:
+  directory: outputs/pbpk_pd
+  filename: pbpk_pd_summary.csv
+  overwrite: true

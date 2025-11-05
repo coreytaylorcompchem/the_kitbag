@@ -28,17 +28,22 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 `python list_available_tasks_and_workflows.py`
 
 ```
-Available Backends:
 Available Tasks:
   [PBPK]:
     - pbpk_analysis: Analyse PBPK simulation results.
     - pbpk_model_assembly: Assemble PBPK model
     - pbpk_parameter_prediction: Predict PBPK parameters from SMILES
   [PBPK - brain:plasma]:
-    - pbpk_simulation: Run multi-compartment plasma–brain PBPK simulation with selectable exchange model.
+    - pbpk_simulation: Run 2-compartment plasma–brain PBPK simulation with selected exchange model.
+  [PBPK-PD]:
+    - pbpk_pd_simulation: Simulate receptor inhibition using predicted IC50 and PK profiles.
+    - pd_parameter_prediction: Predict target-level EC50 or Emax parameters
+    - pkpd_analysis: Analyse PK–PD simulation outputs to compute exposure–response metrics.
+    - pkpd_ranking: Rank compounds by predicted efficacy (e.g., Emax, AUEC, T>50%) and safety margins.
 
 Available Workflows:
  - pbpk_workflow: Predict PBPK parameters, assemble model, simulate, and analyse.
+
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
