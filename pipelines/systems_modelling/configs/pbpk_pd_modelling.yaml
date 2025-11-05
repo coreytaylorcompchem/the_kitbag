@@ -49,6 +49,8 @@ pbpk_analysis:
   output_dir: outputs/pbpk_pd/analysis
 
 pd_parameter_prediction:
+  target: AGTR2
+  inhibitor_type: antagonist
 
 pbpk_pd_simulation:
   # Baseline and max effect parameters
