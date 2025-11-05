@@ -7,13 +7,17 @@ import h5py
 import networkx as nx
 import tqdm as tqdm
 import numpy as np
+import pandas as pd
+
+from collections import Counter
 
 from typing import List, Optional, Dict, Any
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
-import pandas as pd
+
 
 from modules.utils.mda_utils import _bit_to_color_value, _get_inv_color_mapper, _get_color_mapper
 
@@ -320,7 +324,7 @@ class RMSDAnalysisTask:
                                 start=self.start, stop=self.stop, step=self.step).run()
 
         df_rmsd = pd.DataFrame({
-            "Time (ps)": rmsd_protein.rmsd[:, 1],
+            "Time (ns)": rmsd_protein.rmsd[:, 1] / 1000.0,  # convert ps → ns
             "RMSD (Å)": rmsd_protein.rmsd[:, 2],
             "Component": "Protein (backbone)"
         })
@@ -330,7 +334,7 @@ class RMSDAnalysisTask:
             rmsd_ligand = rms.RMSD(self.u, ref, select=f"resname {self.ligand_resname}",
                                    start=self.start, stop=self.stop, step=self.step).run()
             df_ligand = pd.DataFrame({
-                "Time (ps)": rmsd_ligand.rmsd[:, 1],
+                "Time (ns)": rmsd_ligand.rmsd[:, 1] / 1000.0,
                 "RMSD (Å)": rmsd_ligand.rmsd[:, 2],
                 "Component": f"Ligand ({self.ligand_resname})"
             })
@@ -344,9 +348,9 @@ class RMSDAnalysisTask:
         # Plot
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(8, 5))
-        sns.lineplot(data=df_rmsd, x="Time (ps)", y="RMSD (Å)", hue="Component", lw=2)
-        plt.title("RMSD Over Time")
-        plt.tight_layout()
+        sns.lineplot(data=df_rmsd, x="Time (ns)", y="RMSD (Å)", hue="Component", lw=2)
+        plt.title("RMSD over Time")
+        plt.xlabel("Simulation Time (ns)")
 
         out_plot = os.path.join(self.output_dir, "rmsd_plot.png")
         plt.savefig(out_plot, dpi=300, bbox_inches="tight")
@@ -520,9 +524,28 @@ class InteractionFingerprintTask:
         # Generate barcode plot
         logger.info("Generating interaction barcode plot...")
 
-        # Calculate time per frame in ns
-        times_ps = [ts.time for ts in self.u.trajectory[self.start:self.stop:self.step]]
-        times_ns = np.array(times_ps) / 1000  # convert ps to ns
+        # --- Reconstruct continuous time across multiple trajectory segments ---
+        logger.debug("Reconstructing continuous simulation time across trajectory segments...")
+
+        times_ns = []
+        offset_ns = 0.0
+
+        for traj_file in self.u.trajectory.filenames:
+            traj = mda.coordinates.DCD.DCDReader(traj_file)
+            n_frames = len(traj)
+            timestep_ps = traj.dt  # ps per frame (10 ps here)
+            
+            # Frame times for this segment (in ns)
+            frame_times_ns = np.arange(n_frames) * timestep_ps / 1000.0 + offset_ns
+
+            # Apply stride before concatenation
+            frame_times_ns = frame_times_ns[self.start:self.stop:self.step]
+            
+            times_ns.extend(frame_times_ns)
+            offset_ns += n_frames * timestep_ps / 1000.0  # advance offset for next file
+
+        traj.close()
+        times_ns = np.array(times_ns)
 
         fp_transposed = fp_df.astype(np.uint8).T.apply(_bit_to_color_value, axis=1)
 
@@ -1122,8 +1145,6 @@ class NetworkEmbeddingAnalysisTask:
         Count how often each protein residue appears in each cluster.
         Only residues (type="residue") are counted.
         """
-        from collections import Counter
-        import pandas as pd
 
         cluster_res_counts = {}
         for i, G in enumerate(graphs):

@@ -2,12 +2,12 @@ task: workflow
 workflow_name: molecular_dynamics
 
 workflow:
-  # - prepare_system
-  # - setup_simulation
-  # - minimize
-  # - heat_and_equilibrate
-  # - production
-  - post_processing
+  - prepare_system
+  - setup_simulation
+  - minimize
+  - heat_and_equilibrate
+  - production
+  # - post_processing
 
 prepare_system:
   pdb_file: input/3BGP.pdb
@@ -18,7 +18,7 @@ prepare_system:
   box_padding: 1.0
   membrane: false
   # lipid_type: POPC # only for membrane sims
-  output_trajectory: "output_hbonds"
+  output_trajectory: "output_short"
 
 setup_simulation: 
   platform: "OpenCL" # CPU, if you're crazy. CUDA if you're sane. OpenCL is slower (~ 20-50%) but usable.
@@ -44,15 +44,15 @@ heat_and_equilibrate:
       anisotropic: false        # Only used if type=Anisotropic. For membrane sims
 
 production:
-  length_ns: 50
-  output_trajectory: "output_hbonds/trajectory.dcd"
-  output_logfile: "output_hbonds/log.txt"
+  length_ns: 5
+  output_trajectory: "output_short/trajectory.dcd"
+  output_logfile: "output_short/log.txt"
 
 # These steps can optionally be run after simulations or on any sim that's already done. 
 # Just comment out previous steps above.
 
 post_processing:
-  output_dir: "output_hbonds"
+  output_dir: "output_short"
   ligand_resname: "UNK"
   water_resname: "HOH"
   start: 0

@@ -220,39 +220,65 @@ class MDWorkflow:
             self.simulation.context.setPeriodicBoxVectors(*box_vectors)
             logger.info(f"Added MonteCarloBarostat: {pressure} atm, {target_temp} K")
 
-        # Compute total steps
+                # Compute total steps
         timestep = self.integrator.getStepSize()
         timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0
         steps_per_ns = int(1.0 / timestep_ns)
         total_steps = int(ns * steps_per_ns)
 
-        # Setup outputs
-        output_trajectory = cfg.get("output_trajectory", "output.dcd")
-        output_logfile = cfg.get("output_logfile", "output.log")
-        output_dir = os.path.dirname(output_trajectory)
+        # --- Output control ---
+        split_ns = cfg.get("output_split_ns", ns)          # new trajectory every N ns
+        split_steps = int(split_ns * steps_per_ns)
+        n_segments = int(np.ceil(ns / split_ns))
+
+        output_freq = cfg.get("output_frequency", 1000)    # reporter write frequency (in steps)
+        output_trajectory_base = cfg.get("output_trajectory", "output.dcd")
+        output_log_base = cfg.get("output_logfile", "output.log")
+        output_dir = os.path.dirname(output_trajectory_base)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        step_chunk = 1000 #TODO add this to yaml
-        checkpoint_file = os.path.join(output_dir, "restart.chk")
+        logger.info(f"Running Production: {ns} ns total ({total_steps} steps), "
+                    f"split every {split_ns} ns into {n_segments} segments. "
+                    f"Writing frames every {output_freq} steps (~{output_freq * timestep.value_in_unit(femtoseconds)/1000:.1f} ps).")
 
-        self.simulation.reporters.append(DCDReporter(output_trajectory, step_chunk))
-        self.simulation.reporters.append(StateDataReporter(
-            output_logfile, step_chunk,
-            step=True, temperature=True, potentialEnergy=True, totalEnergy=True,
-            density=True, progress=True, remainingTime=True, speed=True,
-            totalSteps=total_steps, separator='\t'
-        ))
+        # --- Main segmented loop ---
+        for seg in range(1, n_segments + 1):
+            seg_start_step = self.simulation.currentStep
+            seg_end_step = min(seg_start_step + split_steps, total_steps)
+            seg_steps = seg_end_step - seg_start_step
 
-        # Run prod
-        logger.info(f"Running Production: {ns} ns ({total_steps} steps) in {ensemble} ensemble.")
+            traj_file = os.path.join(output_dir, f"trajectory_{seg:03d}.dcd")
+            log_file = os.path.join(output_dir, f"log_{seg:03d}.txt")
+            chk_file = os.path.join(output_dir, f"restart_{seg:03d}.chk")
 
-        with tqdm(total=total_steps, desc="Production", unit="steps") as pbar:
-            while self.simulation.currentStep < total_steps:
-                steps_to_run = min(step_chunk, total_steps - self.simulation.currentStep)
-                self.simulation.step(steps_to_run)
-                self.simulation.saveCheckpoint(checkpoint_file)
-                pbar.update(steps_to_run)
+            # Attach new reporters for this segment
+            self.simulation.reporters.clear()
+            self.simulation.reporters.append(DCDReporter(traj_file, output_freq))
+            self.simulation.reporters.append(StateDataReporter(
+                log_file, output_freq,
+                step=True, temperature=True, potentialEnergy=True, totalEnergy=True,
+                density=True, progress=True, remainingTime=True, speed=True,
+                totalSteps=seg_steps, separator='\t'
+            ))
+
+            logger.info(f"→ Segment {seg}/{n_segments}: running {seg_steps} steps "
+                        f"({seg_steps/steps_per_ns:.3f} ns) → {traj_file}")
+
+            with tqdm(total=seg_steps, desc=f"Production segment {seg}", unit="steps") as pbar:
+                current_step = 0
+                while current_step < seg_steps:
+                    n = min(output_freq, seg_steps - current_step)
+                    self.simulation.step(n)
+                    current_step += n
+                    pbar.update(n)
+
+            # Save checkpoint at end of segment
+            self.simulation.saveCheckpoint(chk_file)
+            logger.info(f"Checkpoint saved: {chk_file}")
+
+        logger.info("Production complete.")
+
 
                 # # Wrap atoms every 10k steps
                 # This doesn't work and may not be necessary anyway so commenting out for now.

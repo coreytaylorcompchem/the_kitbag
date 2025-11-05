@@ -1,0 +1,2732 @@
+[
+  {
+    "Residue":1,
+    "RMSF (\u00c5)":2.7601211959,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":2,
+    "RMSF (\u00c5)":1.5747243498,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":3,
+    "RMSF (\u00c5)":2.021266209,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":4,
+    "RMSF (\u00c5)":1.8246535565,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":5,
+    "RMSF (\u00c5)":1.7689323854,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":6,
+    "RMSF (\u00c5)":0.9722660062,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":7,
+    "RMSF (\u00c5)":1.8095478249,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":8,
+    "RMSF (\u00c5)":1.4356198725,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":9,
+    "RMSF (\u00c5)":1.0469152122,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":10,
+    "RMSF (\u00c5)":1.2270954572,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":11,
+    "RMSF (\u00c5)":1.4125625207,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":12,
+    "RMSF (\u00c5)":1.2607768614,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":13,
+    "RMSF (\u00c5)":1.2608182826,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":14,
+    "RMSF (\u00c5)":1.7290885755,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":15,
+    "RMSF (\u00c5)":1.6631395359,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":16,
+    "RMSF (\u00c5)":1.8628815733,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":17,
+    "RMSF (\u00c5)":3.3380704976,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":18,
+    "RMSF (\u00c5)":1.318055434,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":19,
+    "RMSF (\u00c5)":1.0808008522,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":20,
+    "RMSF (\u00c5)":1.1147750341,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":21,
+    "RMSF (\u00c5)":1.2339974359,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":22,
+    "RMSF (\u00c5)":0.8386525739,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":23,
+    "RMSF (\u00c5)":0.7631151468,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":24,
+    "RMSF (\u00c5)":1.5429108781,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":25,
+    "RMSF (\u00c5)":1.4802160689,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":26,
+    "RMSF (\u00c5)":1.7371993843,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":27,
+    "RMSF (\u00c5)":1.439999562,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":28,
+    "RMSF (\u00c5)":1.4856817649,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":29,
+    "RMSF (\u00c5)":1.5533194102,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":30,
+    "RMSF (\u00c5)":1.6793453987,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":31,
+    "RMSF (\u00c5)":0.9734327613,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":32,
+    "RMSF (\u00c5)":0.8406557546,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":33,
+    "RMSF (\u00c5)":0.731560852,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":34,
+    "RMSF (\u00c5)":0.900585658,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":35,
+    "RMSF (\u00c5)":1.0001669533,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":36,
+    "RMSF (\u00c5)":1.2119077065,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":37,
+    "RMSF (\u00c5)":1.2551828479,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":38,
+    "RMSF (\u00c5)":1.7073020778,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":39,
+    "RMSF (\u00c5)":1.5311419844,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":40,
+    "RMSF (\u00c5)":2.0281446595,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":41,
+    "RMSF (\u00c5)":2.5234718925,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":42,
+    "RMSF (\u00c5)":1.5626338292,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":43,
+    "RMSF (\u00c5)":2.4486379019,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":44,
+    "RMSF (\u00c5)":1.7650223633,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":45,
+    "RMSF (\u00c5)":1.4321366929,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":46,
+    "RMSF (\u00c5)":1.201129783,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":47,
+    "RMSF (\u00c5)":1.7272530772,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":48,
+    "RMSF (\u00c5)":1.3899656936,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":49,
+    "RMSF (\u00c5)":1.8229764525,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":50,
+    "RMSF (\u00c5)":2.4446571857,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":51,
+    "RMSF (\u00c5)":1.7815812851,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":52,
+    "RMSF (\u00c5)":1.5779209615,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":53,
+    "RMSF (\u00c5)":2.2709939629,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":54,
+    "RMSF (\u00c5)":1.1095566073,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":55,
+    "RMSF (\u00c5)":0.9987911701,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":56,
+    "RMSF (\u00c5)":1.3152580185,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":57,
+    "RMSF (\u00c5)":1.026099185,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":58,
+    "RMSF (\u00c5)":0.8667952945,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":59,
+    "RMSF (\u00c5)":0.9741145107,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":60,
+    "RMSF (\u00c5)":1.1535747698,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":61,
+    "RMSF (\u00c5)":0.8971931064,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":62,
+    "RMSF (\u00c5)":1.2885391021,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":63,
+    "RMSF (\u00c5)":1.331180985,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":64,
+    "RMSF (\u00c5)":1.0123417964,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":65,
+    "RMSF (\u00c5)":1.5332885278,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":66,
+    "RMSF (\u00c5)":1.1355057989,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":67,
+    "RMSF (\u00c5)":0.7611119498,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":68,
+    "RMSF (\u00c5)":0.729244003,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":69,
+    "RMSF (\u00c5)":0.985606492,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":70,
+    "RMSF (\u00c5)":0.5483757165,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":71,
+    "RMSF (\u00c5)":1.1322182469,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":72,
+    "RMSF (\u00c5)":0.8645134511,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":73,
+    "RMSF (\u00c5)":1.1649343112,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":74,
+    "RMSF (\u00c5)":0.8877107632,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":75,
+    "RMSF (\u00c5)":0.9821857964,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":76,
+    "RMSF (\u00c5)":0.7967044732,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":77,
+    "RMSF (\u00c5)":0.8057017194,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":78,
+    "RMSF (\u00c5)":0.8659429643,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":79,
+    "RMSF (\u00c5)":1.3014852091,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":80,
+    "RMSF (\u00c5)":1.7698033163,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":81,
+    "RMSF (\u00c5)":1.7992888992,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":82,
+    "RMSF (\u00c5)":1.8641830694,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":83,
+    "RMSF (\u00c5)":1.3150891335,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":84,
+    "RMSF (\u00c5)":0.9789232542,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":85,
+    "RMSF (\u00c5)":0.9796333775,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":86,
+    "RMSF (\u00c5)":1.1054920849,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":87,
+    "RMSF (\u00c5)":0.7333018799,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":88,
+    "RMSF (\u00c5)":0.853031622,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":89,
+    "RMSF (\u00c5)":0.7493789021,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":90,
+    "RMSF (\u00c5)":0.7187986595,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":91,
+    "RMSF (\u00c5)":0.7912603535,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":92,
+    "RMSF (\u00c5)":1.0382587184,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":93,
+    "RMSF (\u00c5)":1.039280252,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":94,
+    "RMSF (\u00c5)":0.9478131537,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":95,
+    "RMSF (\u00c5)":0.8919041462,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":96,
+    "RMSF (\u00c5)":0.8278114477,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":97,
+    "RMSF (\u00c5)":0.8364511927,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":98,
+    "RMSF (\u00c5)":1.0993645757,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":99,
+    "RMSF (\u00c5)":1.0964879606,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":100,
+    "RMSF (\u00c5)":0.7102447649,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":101,
+    "RMSF (\u00c5)":1.0236034494,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":102,
+    "RMSF (\u00c5)":1.1621788139,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":103,
+    "RMSF (\u00c5)":1.405149307,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":104,
+    "RMSF (\u00c5)":1.26822167,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":105,
+    "RMSF (\u00c5)":1.2321758721,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":106,
+    "RMSF (\u00c5)":1.1590590206,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":107,
+    "RMSF (\u00c5)":1.3580359579,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":108,
+    "RMSF (\u00c5)":1.2826900874,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":109,
+    "RMSF (\u00c5)":1.1960761078,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":110,
+    "RMSF (\u00c5)":0.9990842317,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":111,
+    "RMSF (\u00c5)":0.8295638122,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":112,
+    "RMSF (\u00c5)":0.7110814225,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":113,
+    "RMSF (\u00c5)":0.6224006195,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":114,
+    "RMSF (\u00c5)":0.637164236,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":115,
+    "RMSF (\u00c5)":0.5800336156,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":116,
+    "RMSF (\u00c5)":0.5724259935,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":117,
+    "RMSF (\u00c5)":0.959791002,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":118,
+    "RMSF (\u00c5)":0.5217071524,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":119,
+    "RMSF (\u00c5)":0.7767377523,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":120,
+    "RMSF (\u00c5)":1.2097312207,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":121,
+    "RMSF (\u00c5)":0.6718886294,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":122,
+    "RMSF (\u00c5)":0.6955790264,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":123,
+    "RMSF (\u00c5)":0.7774670767,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":124,
+    "RMSF (\u00c5)":0.7230026081,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":125,
+    "RMSF (\u00c5)":0.9482155072,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":126,
+    "RMSF (\u00c5)":0.5616778892,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":127,
+    "RMSF (\u00c5)":0.8030698037,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":128,
+    "RMSF (\u00c5)":1.1174870021,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":129,
+    "RMSF (\u00c5)":0.7055621944,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":130,
+    "RMSF (\u00c5)":0.6214615451,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":131,
+    "RMSF (\u00c5)":0.8556040768,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":132,
+    "RMSF (\u00c5)":0.9582653624,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":133,
+    "RMSF (\u00c5)":0.8525331452,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":134,
+    "RMSF (\u00c5)":1.1219887675,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":135,
+    "RMSF (\u00c5)":0.8882436173,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":136,
+    "RMSF (\u00c5)":1.3055584502,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":137,
+    "RMSF (\u00c5)":1.098737416,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":138,
+    "RMSF (\u00c5)":0.773057416,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":139,
+    "RMSF (\u00c5)":1.2424571177,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":140,
+    "RMSF (\u00c5)":1.0663402069,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":141,
+    "RMSF (\u00c5)":0.8101679879,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":142,
+    "RMSF (\u00c5)":0.7580203488,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":143,
+    "RMSF (\u00c5)":0.9937582427,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":144,
+    "RMSF (\u00c5)":0.8285262152,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":145,
+    "RMSF (\u00c5)":1.1285881741,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":146,
+    "RMSF (\u00c5)":1.4502335091,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":147,
+    "RMSF (\u00c5)":1.4939634848,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":148,
+    "RMSF (\u00c5)":0.6437145003,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":149,
+    "RMSF (\u00c5)":0.8102484748,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":150,
+    "RMSF (\u00c5)":1.0727914674,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":151,
+    "RMSF (\u00c5)":0.7855611637,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":152,
+    "RMSF (\u00c5)":1.124653962,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":153,
+    "RMSF (\u00c5)":0.7918219379,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":154,
+    "RMSF (\u00c5)":0.9214054114,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":155,
+    "RMSF (\u00c5)":1.1966705941,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":156,
+    "RMSF (\u00c5)":0.9172683648,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":157,
+    "RMSF (\u00c5)":0.9744961442,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":158,
+    "RMSF (\u00c5)":0.6977639514,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":159,
+    "RMSF (\u00c5)":0.8538087619,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":160,
+    "RMSF (\u00c5)":0.9796648595,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":161,
+    "RMSF (\u00c5)":0.8631251892,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":162,
+    "RMSF (\u00c5)":0.9978539665,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":163,
+    "RMSF (\u00c5)":0.9846723782,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":164,
+    "RMSF (\u00c5)":1.2325996037,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":165,
+    "RMSF (\u00c5)":1.1565805777,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":166,
+    "RMSF (\u00c5)":0.7564474305,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":167,
+    "RMSF (\u00c5)":1.0438386583,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":168,
+    "RMSF (\u00c5)":1.1402376709,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":169,
+    "RMSF (\u00c5)":0.9493583656,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":170,
+    "RMSF (\u00c5)":1.321353559,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":171,
+    "RMSF (\u00c5)":0.845614207,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":172,
+    "RMSF (\u00c5)":0.8559135476,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":173,
+    "RMSF (\u00c5)":1.0948063993,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":174,
+    "RMSF (\u00c5)":0.8939364237,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":175,
+    "RMSF (\u00c5)":0.7447455441,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":176,
+    "RMSF (\u00c5)":0.6536289548,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":177,
+    "RMSF (\u00c5)":0.7456257038,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":178,
+    "RMSF (\u00c5)":0.7365379021,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":179,
+    "RMSF (\u00c5)":0.6052879753,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":180,
+    "RMSF (\u00c5)":0.7725179771,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":181,
+    "RMSF (\u00c5)":1.1238265646,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":182,
+    "RMSF (\u00c5)":1.740468707,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":183,
+    "RMSF (\u00c5)":1.1190847855,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":184,
+    "RMSF (\u00c5)":1.3330477891,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":185,
+    "RMSF (\u00c5)":1.7242001949,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":186,
+    "RMSF (\u00c5)":0.6497245614,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":187,
+    "RMSF (\u00c5)":0.9527485778,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":188,
+    "RMSF (\u00c5)":0.5718041694,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":189,
+    "RMSF (\u00c5)":1.0200067687,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":190,
+    "RMSF (\u00c5)":0.7750977382,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":191,
+    "RMSF (\u00c5)":0.7101099077,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":192,
+    "RMSF (\u00c5)":0.6843667046,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":193,
+    "RMSF (\u00c5)":0.6633020854,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":194,
+    "RMSF (\u00c5)":0.5100942281,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":195,
+    "RMSF (\u00c5)":0.6898060409,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":196,
+    "RMSF (\u00c5)":0.7671281553,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":197,
+    "RMSF (\u00c5)":0.4326090223,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":198,
+    "RMSF (\u00c5)":0.6765260953,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":199,
+    "RMSF (\u00c5)":0.8167908925,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":200,
+    "RMSF (\u00c5)":0.8985291792,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":201,
+    "RMSF (\u00c5)":0.6007925581,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":202,
+    "RMSF (\u00c5)":0.6425988269,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":203,
+    "RMSF (\u00c5)":0.8721428234,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":204,
+    "RMSF (\u00c5)":0.8915094856,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":205,
+    "RMSF (\u00c5)":0.9754730361,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":206,
+    "RMSF (\u00c5)":0.9304262005,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":207,
+    "RMSF (\u00c5)":1.2439841634,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":208,
+    "RMSF (\u00c5)":1.0451036333,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":209,
+    "RMSF (\u00c5)":0.6621399699,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":210,
+    "RMSF (\u00c5)":0.8229040814,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":211,
+    "RMSF (\u00c5)":1.3959279811,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":212,
+    "RMSF (\u00c5)":1.5394105962,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":213,
+    "RMSF (\u00c5)":0.9254424082,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":214,
+    "RMSF (\u00c5)":1.2952112116,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":215,
+    "RMSF (\u00c5)":1.1482466588,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":216,
+    "RMSF (\u00c5)":0.8425038379,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":217,
+    "RMSF (\u00c5)":1.0615300283,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":218,
+    "RMSF (\u00c5)":1.9655810512,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":219,
+    "RMSF (\u00c5)":0.8286198407,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":220,
+    "RMSF (\u00c5)":1.6650056379,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":221,
+    "RMSF (\u00c5)":1.2267533586,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":222,
+    "RMSF (\u00c5)":2.050360692,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":223,
+    "RMSF (\u00c5)":0.9513247691,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":224,
+    "RMSF (\u00c5)":1.61928652,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":225,
+    "RMSF (\u00c5)":1.4968544373,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":226,
+    "RMSF (\u00c5)":2.31828845,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":227,
+    "RMSF (\u00c5)":1.2628725241,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":228,
+    "RMSF (\u00c5)":0.7865754156,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":229,
+    "RMSF (\u00c5)":0.9993215461,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":230,
+    "RMSF (\u00c5)":1.0418778211,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":231,
+    "RMSF (\u00c5)":0.6348768498,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":232,
+    "RMSF (\u00c5)":1.0970515966,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":233,
+    "RMSF (\u00c5)":1.3394517378,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":234,
+    "RMSF (\u00c5)":0.8329687367,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":235,
+    "RMSF (\u00c5)":0.7435617369,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":236,
+    "RMSF (\u00c5)":1.5294667858,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":237,
+    "RMSF (\u00c5)":1.3895151852,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":238,
+    "RMSF (\u00c5)":0.5426701481,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":239,
+    "RMSF (\u00c5)":0.7160957199,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":240,
+    "RMSF (\u00c5)":0.7801318711,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":241,
+    "RMSF (\u00c5)":1.3856836008,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":242,
+    "RMSF (\u00c5)":1.3724536209,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":243,
+    "RMSF (\u00c5)":0.8561166351,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":244,
+    "RMSF (\u00c5)":1.01441273,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":245,
+    "RMSF (\u00c5)":0.8764622123,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":246,
+    "RMSF (\u00c5)":0.600814219,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":247,
+    "RMSF (\u00c5)":0.6721713172,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":248,
+    "RMSF (\u00c5)":1.2126832556,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":249,
+    "RMSF (\u00c5)":0.8206245256,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":250,
+    "RMSF (\u00c5)":0.8681021912,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":251,
+    "RMSF (\u00c5)":1.0687180063,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":252,
+    "RMSF (\u00c5)":0.775389034,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":253,
+    "RMSF (\u00c5)":0.8852419907,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":254,
+    "RMSF (\u00c5)":1.1427630558,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":255,
+    "RMSF (\u00c5)":0.8808614559,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":256,
+    "RMSF (\u00c5)":0.7870946978,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":257,
+    "RMSF (\u00c5)":0.6137051129,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":258,
+    "RMSF (\u00c5)":0.9625781472,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":259,
+    "RMSF (\u00c5)":1.4105748265,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":260,
+    "RMSF (\u00c5)":1.211725569,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":261,
+    "RMSF (\u00c5)":1.1922500104,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":262,
+    "RMSF (\u00c5)":1.3663784051,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":263,
+    "RMSF (\u00c5)":1.389058779,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":264,
+    "RMSF (\u00c5)":0.7957082827,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":265,
+    "RMSF (\u00c5)":1.6324281193,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":266,
+    "RMSF (\u00c5)":1.3561410848,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":267,
+    "RMSF (\u00c5)":0.8285851413,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":268,
+    "RMSF (\u00c5)":0.9431107188,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":269,
+    "RMSF (\u00c5)":1.3568453221,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":270,
+    "RMSF (\u00c5)":1.4565594131,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":271,
+    "RMSF (\u00c5)":1.0507090221,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":272,
+    "RMSF (\u00c5)":1.2975034587,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":273,
+    "RMSF (\u00c5)":1.4447295736,
+    "Component":"Protein (all atoms)"
+  },
+  {
+    "Residue":1,
+    "RMSF (\u00c5)":2.0570106214,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":2,
+    "RMSF (\u00c5)":1.2355974913,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":3,
+    "RMSF (\u00c5)":1.4295820612,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":4,
+    "RMSF (\u00c5)":1.5706763445,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":5,
+    "RMSF (\u00c5)":1.1825847884,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":6,
+    "RMSF (\u00c5)":0.9704797683,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":7,
+    "RMSF (\u00c5)":1.057082816,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":8,
+    "RMSF (\u00c5)":0.9565826713,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":9,
+    "RMSF (\u00c5)":1.042178967,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":10,
+    "RMSF (\u00c5)":1.0780944564,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":11,
+    "RMSF (\u00c5)":1.0081195332,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":12,
+    "RMSF (\u00c5)":1.0754041488,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":13,
+    "RMSF (\u00c5)":1.2972961419,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":14,
+    "RMSF (\u00c5)":1.4628420644,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":15,
+    "RMSF (\u00c5)":1.5811865648,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":16,
+    "RMSF (\u00c5)":1.8145195656,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":17,
+    "RMSF (\u00c5)":1.9419622548,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":18,
+    "RMSF (\u00c5)":1.2402763014,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":19,
+    "RMSF (\u00c5)":0.9995103725,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":20,
+    "RMSF (\u00c5)":0.8236558349,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":21,
+    "RMSF (\u00c5)":0.7483565629,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":22,
+    "RMSF (\u00c5)":0.7408820861,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":23,
+    "RMSF (\u00c5)":0.7423527432,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":24,
+    "RMSF (\u00c5)":0.8140686587,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":25,
+    "RMSF (\u00c5)":0.9195938702,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":26,
+    "RMSF (\u00c5)":1.2534116075,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":27,
+    "RMSF (\u00c5)":1.3224815509,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":28,
+    "RMSF (\u00c5)":1.3175664743,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":29,
+    "RMSF (\u00c5)":1.2159357593,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":30,
+    "RMSF (\u00c5)":1.0814515549,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":31,
+    "RMSF (\u00c5)":0.7996836089,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":32,
+    "RMSF (\u00c5)":0.569808267,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":33,
+    "RMSF (\u00c5)":0.5140998662,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":34,
+    "RMSF (\u00c5)":0.5570230356,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":35,
+    "RMSF (\u00c5)":0.6436239942,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":36,
+    "RMSF (\u00c5)":0.7958140123,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":37,
+    "RMSF (\u00c5)":1.0193859805,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":38,
+    "RMSF (\u00c5)":1.3491791001,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":39,
+    "RMSF (\u00c5)":1.4068177141,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":40,
+    "RMSF (\u00c5)":1.6563713818,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":41,
+    "RMSF (\u00c5)":1.6309640296,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":42,
+    "RMSF (\u00c5)":1.5270993336,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":43,
+    "RMSF (\u00c5)":2.1766757622,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":44,
+    "RMSF (\u00c5)":1.4126711765,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":45,
+    "RMSF (\u00c5)":1.2488646714,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":46,
+    "RMSF (\u00c5)":1.1901658075,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":47,
+    "RMSF (\u00c5)":1.2065701085,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":48,
+    "RMSF (\u00c5)":1.2560337006,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":49,
+    "RMSF (\u00c5)":1.7721569653,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":50,
+    "RMSF (\u00c5)":2.0026421219,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":51,
+    "RMSF (\u00c5)":1.7941439315,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":52,
+    "RMSF (\u00c5)":1.3834878757,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":53,
+    "RMSF (\u00c5)":1.2392287948,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":54,
+    "RMSF (\u00c5)":0.944778232,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":55,
+    "RMSF (\u00c5)":0.9203318669,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":56,
+    "RMSF (\u00c5)":0.8739640554,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":57,
+    "RMSF (\u00c5)":0.7283912893,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":58,
+    "RMSF (\u00c5)":0.5686449567,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":59,
+    "RMSF (\u00c5)":0.6412662855,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":60,
+    "RMSF (\u00c5)":0.5878991846,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":61,
+    "RMSF (\u00c5)":0.6129622984,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":62,
+    "RMSF (\u00c5)":0.6849827802,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":63,
+    "RMSF (\u00c5)":0.7144273043,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":64,
+    "RMSF (\u00c5)":0.7636820551,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":65,
+    "RMSF (\u00c5)":1.094379297,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":66,
+    "RMSF (\u00c5)":0.8675061863,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":67,
+    "RMSF (\u00c5)":0.7027641048,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":68,
+    "RMSF (\u00c5)":0.5802271116,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":69,
+    "RMSF (\u00c5)":0.65230121,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":70,
+    "RMSF (\u00c5)":0.5233995635,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":71,
+    "RMSF (\u00c5)":0.5376177756,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":72,
+    "RMSF (\u00c5)":0.5549598319,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":73,
+    "RMSF (\u00c5)":0.5992343726,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":74,
+    "RMSF (\u00c5)":0.4571107766,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":75,
+    "RMSF (\u00c5)":0.5503582051,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":76,
+    "RMSF (\u00c5)":0.5639889197,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":77,
+    "RMSF (\u00c5)":0.5966057598,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":78,
+    "RMSF (\u00c5)":0.7535487085,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":79,
+    "RMSF (\u00c5)":1.0255257132,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":80,
+    "RMSF (\u00c5)":1.3266887148,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":81,
+    "RMSF (\u00c5)":1.6658018719,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":82,
+    "RMSF (\u00c5)":1.6174642931,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":83,
+    "RMSF (\u00c5)":1.1541387035,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":84,
+    "RMSF (\u00c5)":0.8172228491,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":85,
+    "RMSF (\u00c5)":0.6563319498,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":86,
+    "RMSF (\u00c5)":0.4742303115,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":87,
+    "RMSF (\u00c5)":0.4167821949,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":88,
+    "RMSF (\u00c5)":0.4559601398,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":89,
+    "RMSF (\u00c5)":0.5535041131,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":90,
+    "RMSF (\u00c5)":0.5863746505,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":91,
+    "RMSF (\u00c5)":0.6590213057,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":92,
+    "RMSF (\u00c5)":0.7640408155,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":93,
+    "RMSF (\u00c5)":0.8235951758,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":94,
+    "RMSF (\u00c5)":0.6842993706,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":95,
+    "RMSF (\u00c5)":0.6914425181,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":96,
+    "RMSF (\u00c5)":0.6583035369,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":97,
+    "RMSF (\u00c5)":0.601994555,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":98,
+    "RMSF (\u00c5)":0.7474158221,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":99,
+    "RMSF (\u00c5)":0.7450607743,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":100,
+    "RMSF (\u00c5)":0.6282691965,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":101,
+    "RMSF (\u00c5)":0.7402978173,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":102,
+    "RMSF (\u00c5)":0.9808800833,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":103,
+    "RMSF (\u00c5)":0.9731590357,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":104,
+    "RMSF (\u00c5)":1.0473346119,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":105,
+    "RMSF (\u00c5)":1.1451933074,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":106,
+    "RMSF (\u00c5)":0.966459427,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":107,
+    "RMSF (\u00c5)":0.8159565651,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":108,
+    "RMSF (\u00c5)":0.8327333806,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":109,
+    "RMSF (\u00c5)":0.8510457395,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":110,
+    "RMSF (\u00c5)":0.739081964,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":111,
+    "RMSF (\u00c5)":0.5260006487,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":112,
+    "RMSF (\u00c5)":0.4915307284,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":113,
+    "RMSF (\u00c5)":0.4678273733,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":114,
+    "RMSF (\u00c5)":0.5217541504,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":115,
+    "RMSF (\u00c5)":0.4297284592,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":116,
+    "RMSF (\u00c5)":0.4138738714,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":117,
+    "RMSF (\u00c5)":0.425298548,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":118,
+    "RMSF (\u00c5)":0.4230532159,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":119,
+    "RMSF (\u00c5)":0.4318837444,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":120,
+    "RMSF (\u00c5)":0.449127497,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":121,
+    "RMSF (\u00c5)":0.4687172585,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":122,
+    "RMSF (\u00c5)":0.472229966,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":123,
+    "RMSF (\u00c5)":0.4526689476,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":124,
+    "RMSF (\u00c5)":0.45375418,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":125,
+    "RMSF (\u00c5)":0.5124644937,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":126,
+    "RMSF (\u00c5)":0.5066341525,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":127,
+    "RMSF (\u00c5)":0.5091795203,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":128,
+    "RMSF (\u00c5)":0.6184472827,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":129,
+    "RMSF (\u00c5)":0.624273097,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":130,
+    "RMSF (\u00c5)":0.6065725338,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":131,
+    "RMSF (\u00c5)":0.5537415986,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":132,
+    "RMSF (\u00c5)":0.6386584483,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":133,
+    "RMSF (\u00c5)":0.6051494052,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":134,
+    "RMSF (\u00c5)":0.8492345092,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":135,
+    "RMSF (\u00c5)":0.7786298257,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":136,
+    "RMSF (\u00c5)":0.7420285185,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":137,
+    "RMSF (\u00c5)":0.6497236019,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":138,
+    "RMSF (\u00c5)":0.6481713761,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":139,
+    "RMSF (\u00c5)":0.8188841628,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":140,
+    "RMSF (\u00c5)":0.7691758504,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":141,
+    "RMSF (\u00c5)":0.4831180764,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":142,
+    "RMSF (\u00c5)":0.4616019904,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":143,
+    "RMSF (\u00c5)":0.5155977011,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":144,
+    "RMSF (\u00c5)":0.6838110478,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":145,
+    "RMSF (\u00c5)":0.868645881,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":146,
+    "RMSF (\u00c5)":0.9671582699,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":147,
+    "RMSF (\u00c5)":0.7864156365,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":148,
+    "RMSF (\u00c5)":0.6095014812,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":149,
+    "RMSF (\u00c5)":0.5205972216,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":150,
+    "RMSF (\u00c5)":0.4403960326,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":151,
+    "RMSF (\u00c5)":0.461854094,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":152,
+    "RMSF (\u00c5)":0.5191970491,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":153,
+    "RMSF (\u00c5)":0.5335785468,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":154,
+    "RMSF (\u00c5)":0.7402884082,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":155,
+    "RMSF (\u00c5)":0.6695680692,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":156,
+    "RMSF (\u00c5)":0.894005216,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":157,
+    "RMSF (\u00c5)":0.7165778562,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":158,
+    "RMSF (\u00c5)":0.6478803526,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":159,
+    "RMSF (\u00c5)":0.6538704099,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":160,
+    "RMSF (\u00c5)":0.6307101347,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":161,
+    "RMSF (\u00c5)":0.5985744885,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":162,
+    "RMSF (\u00c5)":0.7118342678,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":163,
+    "RMSF (\u00c5)":0.7901798182,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":164,
+    "RMSF (\u00c5)":0.8707032668,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":165,
+    "RMSF (\u00c5)":0.7714385897,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":166,
+    "RMSF (\u00c5)":0.7128340063,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":167,
+    "RMSF (\u00c5)":0.8163631022,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":168,
+    "RMSF (\u00c5)":0.848140349,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":169,
+    "RMSF (\u00c5)":0.775199996,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":170,
+    "RMSF (\u00c5)":0.9180099754,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":171,
+    "RMSF (\u00c5)":0.8089914007,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":172,
+    "RMSF (\u00c5)":0.6287389467,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":173,
+    "RMSF (\u00c5)":0.6850156371,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":174,
+    "RMSF (\u00c5)":0.6158313557,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":175,
+    "RMSF (\u00c5)":0.5334823053,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":176,
+    "RMSF (\u00c5)":0.6081924751,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":177,
+    "RMSF (\u00c5)":0.6037042634,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":178,
+    "RMSF (\u00c5)":0.5931943161,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":179,
+    "RMSF (\u00c5)":0.5881387426,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":180,
+    "RMSF (\u00c5)":0.648268093,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":181,
+    "RMSF (\u00c5)":0.7804312914,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":182,
+    "RMSF (\u00c5)":0.8317208472,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":183,
+    "RMSF (\u00c5)":0.9232219808,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":184,
+    "RMSF (\u00c5)":0.8768705631,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":185,
+    "RMSF (\u00c5)":0.766000754,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":186,
+    "RMSF (\u00c5)":0.6151308905,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":187,
+    "RMSF (\u00c5)":0.6129204174,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":188,
+    "RMSF (\u00c5)":0.5572190909,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":189,
+    "RMSF (\u00c5)":0.4899950962,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":190,
+    "RMSF (\u00c5)":0.5047512879,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":191,
+    "RMSF (\u00c5)":0.4925678252,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":192,
+    "RMSF (\u00c5)":0.4624245036,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":193,
+    "RMSF (\u00c5)":0.3869515208,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":194,
+    "RMSF (\u00c5)":0.3925035128,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":195,
+    "RMSF (\u00c5)":0.4415642137,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":196,
+    "RMSF (\u00c5)":0.4223083357,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":197,
+    "RMSF (\u00c5)":0.4069550925,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":198,
+    "RMSF (\u00c5)":0.4070548732,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":199,
+    "RMSF (\u00c5)":0.4204327528,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":200,
+    "RMSF (\u00c5)":0.4196764605,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":201,
+    "RMSF (\u00c5)":0.4815065593,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":202,
+    "RMSF (\u00c5)":0.5697398208,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":203,
+    "RMSF (\u00c5)":0.5935178915,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":204,
+    "RMSF (\u00c5)":0.6560855592,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":205,
+    "RMSF (\u00c5)":0.7658231454,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":206,
+    "RMSF (\u00c5)":0.8987335059,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":207,
+    "RMSF (\u00c5)":0.8136108536,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":208,
+    "RMSF (\u00c5)":0.658940704,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":209,
+    "RMSF (\u00c5)":0.6275388308,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":210,
+    "RMSF (\u00c5)":0.7107359444,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":211,
+    "RMSF (\u00c5)":0.8871578262,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":212,
+    "RMSF (\u00c5)":0.8227617378,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":213,
+    "RMSF (\u00c5)":0.7861699556,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":214,
+    "RMSF (\u00c5)":0.9015606296,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":215,
+    "RMSF (\u00c5)":0.7973136062,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":216,
+    "RMSF (\u00c5)":0.6078261331,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":217,
+    "RMSF (\u00c5)":0.7043346703,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":218,
+    "RMSF (\u00c5)":0.8231800528,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":219,
+    "RMSF (\u00c5)":0.7903303035,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":220,
+    "RMSF (\u00c5)":0.8742659538,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":221,
+    "RMSF (\u00c5)":0.8505689196,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":222,
+    "RMSF (\u00c5)":0.9158769256,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":223,
+    "RMSF (\u00c5)":0.8307266384,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":224,
+    "RMSF (\u00c5)":1.0288367778,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":225,
+    "RMSF (\u00c5)":0.9431311149,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":226,
+    "RMSF (\u00c5)":0.9733524619,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":227,
+    "RMSF (\u00c5)":0.7482535226,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":228,
+    "RMSF (\u00c5)":0.6936970178,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":229,
+    "RMSF (\u00c5)":0.725340571,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":230,
+    "RMSF (\u00c5)":0.6561103587,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":231,
+    "RMSF (\u00c5)":0.5459656554,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":232,
+    "RMSF (\u00c5)":0.5767949695,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":233,
+    "RMSF (\u00c5)":0.5884746936,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":234,
+    "RMSF (\u00c5)":0.5242973216,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":235,
+    "RMSF (\u00c5)":0.4700087478,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":236,
+    "RMSF (\u00c5)":0.5775585347,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":237,
+    "RMSF (\u00c5)":0.6914688156,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":238,
+    "RMSF (\u00c5)":0.4806506627,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":239,
+    "RMSF (\u00c5)":0.4893773284,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":240,
+    "RMSF (\u00c5)":0.5801705113,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":241,
+    "RMSF (\u00c5)":0.6029408793,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":242,
+    "RMSF (\u00c5)":0.6862727335,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":243,
+    "RMSF (\u00c5)":0.6910991336,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":244,
+    "RMSF (\u00c5)":0.8261884039,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":245,
+    "RMSF (\u00c5)":0.7207193949,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":246,
+    "RMSF (\u00c5)":0.6212985618,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":247,
+    "RMSF (\u00c5)":0.6269451879,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":248,
+    "RMSF (\u00c5)":0.6492978272,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":249,
+    "RMSF (\u00c5)":0.5250026704,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":250,
+    "RMSF (\u00c5)":0.6448032061,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":251,
+    "RMSF (\u00c5)":0.599444617,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":252,
+    "RMSF (\u00c5)":0.490872275,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":253,
+    "RMSF (\u00c5)":0.5746684601,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":254,
+    "RMSF (\u00c5)":0.6776075543,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":255,
+    "RMSF (\u00c5)":0.6136096297,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":256,
+    "RMSF (\u00c5)":0.6625776777,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":257,
+    "RMSF (\u00c5)":0.5523711175,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":258,
+    "RMSF (\u00c5)":0.5834164312,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":259,
+    "RMSF (\u00c5)":0.7729040221,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":260,
+    "RMSF (\u00c5)":0.8461188475,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":261,
+    "RMSF (\u00c5)":0.6562791302,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":262,
+    "RMSF (\u00c5)":0.7621572725,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":263,
+    "RMSF (\u00c5)":0.8017815752,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":264,
+    "RMSF (\u00c5)":0.6517968721,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":265,
+    "RMSF (\u00c5)":0.8175296858,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":266,
+    "RMSF (\u00c5)":0.8042672486,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":267,
+    "RMSF (\u00c5)":0.6736505281,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":268,
+    "RMSF (\u00c5)":0.7465067452,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":269,
+    "RMSF (\u00c5)":0.8898493172,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":270,
+    "RMSF (\u00c5)":1.0257479115,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":271,
+    "RMSF (\u00c5)":0.9855781152,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":272,
+    "RMSF (\u00c5)":1.0871019265,
+    "Component":"C\u03b1 only"
+  },
+  {
+    "Residue":273,
+    "RMSF (\u00c5)":1.3217068429,
+    "Component":"C\u03b1 only"
+  }
+]

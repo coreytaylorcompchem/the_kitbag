@@ -1,4 +1,6 @@
 import os
+import re
+from natsort import natsorted  # pip install natsort
 from modules.automated_analyses import (
     HydrogenBondAnalysisTask,
     RMSDAnalysisTask,
@@ -21,6 +23,40 @@ class MDPostProcessingWorkflow:
     def __init__(self, config, context=None):
         self.config = config
         self.context = context or {}
+
+    def _collect_trajectories(self, traj_path):
+        """Detect and return trajectory files in correct order."""
+        if os.path.isdir(traj_path):
+            # Handle case where user gives a directory
+            traj_dir = traj_path
+        else:
+            traj_dir = os.path.dirname(traj_path)
+            if traj_dir == "":
+                traj_dir = "."
+
+        traj_base = os.path.splitext(os.path.basename(traj_path))[0]  # e.g. trajectory
+        traj_ext = os.path.splitext(traj_path)[1]                     # e.g. .dcd
+
+        # Collect all matching files: trajectory_###.dcd, trajectory###.dcd, etc.
+        pattern = re.compile(rf"{re.escape(traj_base)}[_-]?(\d+){re.escape(traj_ext)}$")
+        all_files = [
+            os.path.join(traj_dir, f)
+            for f in os.listdir(traj_dir)
+            if f.endswith(traj_ext) and pattern.match(f)
+        ]
+
+        if not all_files:
+            # Fallback: maybe a single file named exactly trajectory.dcd
+            if os.path.exists(traj_path):
+                return [traj_path]
+            raise FileNotFoundError(f"No trajectory files found matching pattern {traj_base}*.{traj_ext}")
+
+        # Sort numerically by index
+        traj_files = natsorted(all_files)
+        logger.info(f"Detected {len(traj_files)} trajectory files.")
+        for f in traj_files:
+            logger.debug(f"  {f}")
+        return traj_files
 
     def post_processing(self):
         post_cfg = self.config.get("post_processing", {})
@@ -54,11 +90,16 @@ class MDPostProcessingWorkflow:
         # Sanity checks
         if not os.path.exists(topology):
             raise FileNotFoundError(f"Topology file not found: {topology}")
-        if not os.path.exists(trajectory):
-            raise FileNotFoundError(f"Trajectory file not found: {trajectory}")
+
+        # 🆕 Collect all trajectory files (single or multiple)
+        trajectories = self._collect_trajectories(trajectory)
 
         logger.info(f"Topology: {topology}")
-        logger.info(f"Trajectory: {trajectory}")
+        logger.info(f"Trajectories: {len(trajectories)} file(s)")
+        if len(trajectories) == 1:
+            logger.info(f"Using trajectory: {trajectories[0]}")
+        else:
+            logger.info("Using multiple trajectories in sorted order.")
 
         results = {}
 
@@ -68,14 +109,13 @@ class MDPostProcessingWorkflow:
         traj_analysis_cfg = post_cfg.get("trajectory_analysis", {})
         time_series = traj_analysis_cfg.get("time_series", [])
 
-        # --- RMSD ---
         if "rmsd" in time_series:
             logger.info("Running RMSD analysis...")
             rmsd_outdir = os.path.join(output_dir, "rmsd")
             os.makedirs(rmsd_outdir, exist_ok=True)
             rmsd_task = RMSDAnalysisTask(
                 topology=topology,
-                trajectory=trajectory,
+                trajectory=trajectories,  # <-- pass list
                 start=start,
                 stop=stop,
                 step=step,
@@ -84,131 +124,108 @@ class MDPostProcessingWorkflow:
             )
             results["rmsd"] = rmsd_task.run()
 
-        # --- RMSF ---
         if "rmsf" in time_series:
             logger.info("Running RMSF analysis...")
             rmsf_outdir = os.path.join(output_dir, "rmsf")
             os.makedirs(rmsf_outdir, exist_ok=True)
             rmsf_task = RMSFAnalysisTask(
                 topology=topology,
-                trajectory=trajectory,
+                trajectory=trajectories,
                 start=start,
                 stop=stop,
                 step=step,
                 output_dir=rmsf_outdir,
             )
             results["rmsf"] = rmsf_task.run()
-        
-        # Prolif
+
         if "interactions" in time_series:
-            logger.info("Running interactions analysis...")
+            logger.info("Running interaction analysis (ProLIF)...")
             interactions_outdir = os.path.join(output_dir, "interactions")
             os.makedirs(interactions_outdir, exist_ok=True)
             interactions_task = InteractionFingerprintTask(
                 topology=topology,
-                trajectory=trajectory,
-                ligand_selection=f"resname {ligand_resname}",  # respect YAML
+                trajectory=trajectories,
+                ligand_selection=f"resname {ligand_resname}",
                 protein_selection="(protein or resname WAT) and byres around 20.0 group ligand",
                 start=start,
                 stop=stop,
                 step=step,
                 output_dir=interactions_outdir,
             )
-
-            # Select ligand from YAML
-            ligand = interactions_task.u.select_atoms(interactions_task.ligand_selection)
-            if len(ligand) == 0:
-                raise ValueError(f"No atoms found for ligand selection: {interactions_task.ligand_selection}")
-
-            # Now select protein around the ligand AtomGroup
-            protein = interactions_task.u.select_atoms(
-                f"(protein or resname WAT) and byres around 20.0 group atomgroup",
-                atomgroup=ligand  # pass the AtomGroup explicitly
-            )
-            if len(protein) == 0:
-                raise ValueError("No protein atoms found around the ligand")
-
             results["interactions"] = interactions_task.run()
 
         # ==============================================================
-        # 2️⃣  Graph / Network Analyses (advanced)
+        # 2️⃣  Graph / Network Analyses
         # ==============================================================
         graph_analyses = traj_analysis_cfg.get("graph_analyses", [])
 
-        # --- Protein–Ligand Community Detection ---
         if "protein_ligand_communities" in graph_analyses:
             logger.info("Running protein–ligand community analysis...")
-            plin_task = ProteinLigandCommunityTask(
+            task = ProteinLigandCommunityTask(
                 topology=topology,
-                trajectory=trajectory,
+                trajectory=trajectories,
                 ligand_resname=ligand_resname,
                 start=start,
                 stop=stop,
                 step=step,
                 output_dir=os.path.join(output_dir, "protein_ligand_communities"),
             )
-            results["protein_ligand_communities"] = plin_task.run()
+            results["protein_ligand_communities"] = task.run()
 
-        # --- Hydration Site Energetics ---
         if "hydration_site_energy" in graph_analyses:
             logger.info("Running hydration site energy analysis...")
-            hse_task = HydrationSiteEnergyTask(
+            task = HydrationSiteEnergyTask(
                 topology=topology,
-                trajectory=trajectory,
+                trajectory=trajectories,
                 ligand_resname=ligand_resname,
                 water_resname=water_resname,
                 start=start,
                 stop=stop,
                 step=step,
-                # binding_site_cutoff=post_cfg.get("solvent_analyses", {}).get("binding_site_cutoff", 5.0),
                 output_dir=os.path.join(output_dir, "hydration_site_energy"),
             )
-            results["hydration_site_energy"] = hse_task.run()
+            results["hydration_site_energy"] = task.run()
 
-        # --- Temporal Motif Persistence ---
         if "temporal_motif_persistence" in graph_analyses:
             logger.info("Running temporal motif persistence analysis...")
-            tmp_task = TemporalMotifPersistenceTask(
+            task = TemporalMotifPersistenceTask(
                 topology=topology,
-                trajectory=trajectory,
+                trajectory=trajectories,
                 ligand_resname=ligand_resname,
                 start=start,
                 stop=stop,
                 step=step,
                 output_dir=os.path.join(output_dir, "temporal_motif_persistence"),
             )
-            results["temporal_motif_persistence"] = tmp_task.run()
+            results["temporal_motif_persistence"] = task.run()
 
-        # --- Network Embedding Analysis ---
         if "network_embedding_analysis" in graph_analyses:
             logger.info("Running network embedding analysis...")
-            ne_task = NetworkEmbeddingAnalysisTask(
+            task = NetworkEmbeddingAnalysisTask(
                 topology=topology,
-                trajectory=trajectory,
+                trajectory=trajectories,
                 ligand_resname=ligand_resname,
                 start=start,
                 stop=stop,
                 step=step,
                 output_dir=os.path.join(output_dir, "network_embedding_analysis"),
             )
-            results["network_embedding_analysis"] = ne_task.run()
+            results["network_embedding_analysis"] = task.run()
 
-        # --- Protein-protein network Embedding Analysis ---
         if "protein_protein_network_embedding" in graph_analyses:
-            logger.info("Running protein network embedding analysis...")
-            pp_task = ProteinProteinNetworkEmbeddingTask(
+            logger.info("Running protein-protein network embedding analysis...")
+            task = ProteinProteinNetworkEmbeddingTask(
                 topology=topology,
-                trajectory=trajectory,
-                # ligand_resname=ligand_resname,
+                trajectory=trajectories,
                 start=start,
                 stop=stop,
                 step=step,
                 output_dir=os.path.join(output_dir, "protein_protein_network_embedding_analysis"),
             )
-            results["protein_protein_network_embedding_analysis"] = pp_task.run()
+            results["protein_protein_network_embedding_analysis"] = task.run()
 
         # ==============================================================
-        # 2️⃣  Solvent-mediated hydrogen bond analysis
+        # 3️⃣  Solvent-mediated hydrogen bond analysis
         # ==============================================================
         solvent_cfg = post_cfg.get("solvent_analyses", {})
         if isinstance(solvent_cfg, bool):
@@ -216,13 +233,12 @@ class MDPostProcessingWorkflow:
 
         if solvent_cfg.get("enabled", False):
             logger.info("Running solvent hydrogen bond analysis...")
-
             solvent_outdir = os.path.join(output_dir, "solvent_hbonds")
             os.makedirs(solvent_outdir, exist_ok=True)
 
             task = HydrogenBondAnalysisTask(
                 topology=topology,
-                trajectory=trajectory,
+                trajectory=trajectories,
                 ligand_resname=ligand_resname,
                 water_resname=water_resname,
                 start=start,
