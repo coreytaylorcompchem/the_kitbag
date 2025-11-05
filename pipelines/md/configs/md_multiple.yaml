@@ -2,11 +2,11 @@ task: workflow
 workflow_name: molecular_dynamics
 
 workflow:
-  # - prepare_system
-  # - setup_simulation
-  # - minimize
-  # - heat_and_equilibrate
-  # - production
+  - prepare_system
+  - setup_simulation
+  - minimize
+  - heat_and_equilibrate
+  - production
   - post_processing
 
 prepare_system:
@@ -32,7 +32,7 @@ heat_and_equilibrate:
     num_steps: 6
     steps_per_round: 5000
     target_temp: 298
-    restraint_strengths: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0]
+    restraint_strengths: [10.0, 5.0, 2.0, 1.0, 0.5, 0.0] # number os values here should match num_steps
   equilibration:
     ensemble: NPT
     steps: 100000

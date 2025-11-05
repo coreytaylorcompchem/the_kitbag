@@ -124,7 +124,6 @@ class MDWorkflow:
             self.simulation.context.setPositions(positions)
             logger.info(f"Added MonteCarloBarostat: {pressure} atm, {equil_temp} K")
 
-        # Ensure integrator temperature
         self.integrator.setTemperature(equil_temp * kelvin)
 
         # Run equilibration
@@ -159,7 +158,7 @@ class MDWorkflow:
         ns = cfg.get("length_ns", 1)
         ensemble = cfg.get("ensemble", "NPT").upper()
         target_temp = cfg.get("target_temp", self.integrator.getTemperature().value_in_unit(kelvin))
-        pressure = cfg.get("pressure", 1.0)  # atm
+        pressure = cfg.get("pressure", 1.0) 
 
         # Get current positions, velocities, and box vectors
         state = self.simulation.context.getState(getPositions=True, getVelocities=True, enforcePeriodicBox=True)
@@ -184,14 +183,14 @@ class MDWorkflow:
         # Compute Center of Mass
         com = np.mean(coords[backbone_atoms], axis=0)
 
-        # Box lengths
+        # Compute solvent box lengths
         box_lengths = np.array([
             box_vectors[0][0].value_in_unit(nanometer) if hasattr(box_vectors[0][0], "value_in_unit") else float(box_vectors[0][0]),
             box_vectors[1][1].value_in_unit(nanometer) if hasattr(box_vectors[1][1], "value_in_unit") else float(box_vectors[1][1]),
             box_vectors[2][2].value_in_unit(nanometer) if hasattr(box_vectors[2][2], "value_in_unit") else float(box_vectors[2][2])
         ], dtype=float)
 
-        # Compute shift
+        # Compute shift vs COM
         shift = box_lengths / 2 - com
 
         # Apply shift to positions
@@ -220,18 +219,18 @@ class MDWorkflow:
             self.simulation.context.setPeriodicBoxVectors(*box_vectors)
             logger.info(f"Added MonteCarloBarostat: {pressure} atm, {target_temp} K")
 
-                # Compute total steps
+        # Compute total steps
         timestep = self.integrator.getStepSize()
         timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0
         steps_per_ns = int(1.0 / timestep_ns)
         total_steps = int(ns * steps_per_ns)
 
-        # --- Output control ---
+        # Output control
         split_ns = cfg.get("output_split_ns", ns)          # new trajectory every N ns
         split_steps = int(split_ns * steps_per_ns)
         n_segments = int(np.ceil(ns / split_ns))
 
-        output_freq = cfg.get("output_frequency", 1000)    # reporter write frequency (in steps)
+        output_freq = cfg.get("output_frequency", 1000)
         output_trajectory_base = cfg.get("output_trajectory", "output.dcd")
         output_log_base = cfg.get("output_logfile", "output.log")
         output_dir = os.path.dirname(output_trajectory_base)
@@ -242,7 +241,7 @@ class MDWorkflow:
                     f"split every {split_ns} ns into {n_segments} segments. "
                     f"Writing frames every {output_freq} steps (~{output_freq * timestep.value_in_unit(femtoseconds)/1000:.1f} ps).")
 
-        # --- Main segmented loop ---
+        # Loop over N splits specified in the yaml
         for seg in range(1, n_segments + 1):
             seg_start_step = self.simulation.currentStep
             seg_end_step = min(seg_start_step + split_steps, total_steps)
@@ -273,7 +272,7 @@ class MDWorkflow:
                     current_step += n
                     pbar.update(n)
 
-            # Save checkpoint at end of segment
+            # Save restart at end of segment
             self.simulation.saveCheckpoint(chk_file)
             logger.info(f"Checkpoint saved: {chk_file}")
 

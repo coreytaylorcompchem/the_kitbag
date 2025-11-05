@@ -84,7 +84,6 @@ class HydrogenBondAnalysisTask:
         self.context = context or {}
         self.top_n = top_n
 
-        # Load MDAnalysis Universe
         self.u = mda.Universe(self.topology, self.trajectory)
 
         # Automatically detect binding site if not provided
@@ -319,7 +318,7 @@ class RMSDAnalysisTask:
         ref_protein = ref.select_atoms("protein and backbone")
         ref_ligand = ref.select_atoms(f"resname {self.ligand_resname}") if len(ligand) > 0 else None
 
-        # Compute RMSD for protein backbone
+        # Compute protein BB RMSD
         rmsd_protein = rms.RMSD(self.u, ref, select="protein and backbone",
                                 start=self.start, stop=self.stop, step=self.step).run()
 
@@ -329,7 +328,7 @@ class RMSDAnalysisTask:
             "Component": "Protein (backbone)"
         })
 
-        # Compute RMSD for ligand (optional)
+        # Compute ligand RMSD 
         if len(ligand) > 0 and ref_ligand is not None:
             rmsd_ligand = rms.RMSD(self.u, ref, select=f"resname {self.ligand_resname}",
                                    start=self.start, stop=self.stop, step=self.step).run()
@@ -340,12 +339,11 @@ class RMSDAnalysisTask:
             })
             df_rmsd = pd.concat([df_rmsd, df_ligand], ignore_index=True)
 
-        # Save JSON data
+        # Dump plot data to JSON
         out_json = os.path.join(self.output_dir, "rmsd_data.json")
         df_rmsd.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved RMSD data to {out_json}")
 
-        # Plot
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(8, 5))
         sns.lineplot(data=df_rmsd, x="Time (ns)", y="RMSD (Å)", hue="Component", lw=2)
@@ -402,14 +400,12 @@ class RMSFAnalysisTask:
         if len(protein) == 0:
             raise ValueError("No protein atoms found for RMSF calculation.")
 
-        # Align trajectory to backbone reference
+        # Align trajectory to bb reference
         logger.debug("Aligning trajectory to protein backbone reference...")
         align.AlignTraj(self.u, self.u, select="protein and backbone",
                         in_memory=True).run()
 
-        # ------------------------------------------------------------------
         # Per-residue RMSF
-        # ------------------------------------------------------------------
         rmsf_all = rms.RMSF(protein).run()
         df_all_atoms = pd.DataFrame({
             "Residue": [atom.resid for atom in protein.atoms],
@@ -419,9 +415,7 @@ class RMSFAnalysisTask:
         df_all = df_all_atoms.groupby("Residue", as_index=False).mean()
         df_all["Component"] = "Protein (all atoms)"
 
-        # ------------------------------------------------------------------
         # Cα RMSF
-        # ------------------------------------------------------------------
         rmsf_ca = rms.RMSF(calphas).run()
         df_ca = pd.DataFrame({
             "Residue": [atom.resid for atom in calphas.atoms],
@@ -437,7 +431,6 @@ class RMSFAnalysisTask:
         df_rmsf.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved RMSF data to {out_json}")
 
-        # Plot
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(10, 5))
         sns.lineplot(data=df_rmsf, x="Residue", y="RMSF (Å)", hue="Component", lw=2)
@@ -500,12 +493,10 @@ class InteractionFingerprintTask:
     def run(self):
         logger.debug("Starting ProLIF interaction fingerprint analysis...")
 
-        # Select lig
         ligand = self.u.select_atoms(self.ligand_selection)
         if len(ligand) == 0:
             raise ValueError(f"No atoms found for ligand selection: {self.ligand_selection}")
 
-        # Select prot
         protein = self.u.select_atoms(self.protein_selection, ligand=ligand)
         if len(protein) == 0:
             raise ValueError(f"No atoms found for protein selection: {self.protein_selection}")
@@ -524,7 +515,8 @@ class InteractionFingerprintTask:
         # Generate barcode plot
         logger.info("Generating interaction barcode plot...")
 
-        # --- Reconstruct continuous time across multiple trajectory segments ---
+        # As Prolif output doesn't return time in ps, we need to reconstruct it from the trajectories
+        # And then convert to ns for plotting.
         logger.debug("Reconstructing continuous simulation time across trajectory segments...")
 
         times_ns = []
@@ -533,9 +525,8 @@ class InteractionFingerprintTask:
         for traj_file in self.u.trajectory.filenames:
             traj = mda.coordinates.DCD.DCDReader(traj_file)
             n_frames = len(traj)
-            timestep_ps = traj.dt  # ps per frame (10 ps here)
-            
-            # Frame times for this segment (in ns)
+            timestep_ps = traj.dt  # ps per frame
+
             frame_times_ns = np.arange(n_frames) * timestep_ps / 1000.0 + offset_ns
 
             # Apply stride before concatenation
@@ -590,7 +581,7 @@ class InteractionFingerprintTask:
 
         # Legend
         unique_values = np.unique(plot_data_array)
-        unique_values = [v for v in unique_values if v != 0]  # remove 0 (white)
+        unique_values = [v for v in unique_values if v != 0]
         legend_colors = {inv_color_mapper[v]: im.cmap(v) for v in unique_values}
         patches = [Patch(color=color, label=interaction) for interaction, color in legend_colors.items()]
         ax.legend(handles=patches, loc='upper center', bbox_to_anchor=(0.5, -0.15),
@@ -656,14 +647,12 @@ class ProteinLigandCommunityTask:
                     key = res.resid
                     contact_counts[key] = contact_counts.get(key, 0) + 1
 
-        # Build weighted graph
         G = nx.Graph()
         for res in protein.residues:
             G.add_node(res.resid, name=res.resname)
         for i, j in itertools.combinations(contact_counts.keys(), 2):
             G.add_edge(i, j, weight=(contact_counts[i] + contact_counts[j]) / 2)
 
-        # Community detection (Louvain)
         logger.info("Detecting residue communities...")
         
         partition = community_louvain.best_partition(G, weight='weight')
@@ -677,7 +666,6 @@ class ProteinLigandCommunityTask:
         df_nodes.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved community assignments to {out_json}")
 
-        # Plot network
         sns.set(style="white", context="talk")
         plt.figure(figsize=(8, 6))
         pos = nx.spring_layout(G, seed=42, weight='weight')
@@ -767,7 +755,7 @@ class HydrationSiteEnergyTask:
 @register_task(
     "temporal_motif_persistence",
     category="Post-proc; graph analyses",
-    description="Quantify persistence of small recurring motifs (e.g., ligand–water–residue triangles) in the solvent network."
+    description="Quantify persistence of small recurring motifs (e.g., water-mediated interactions) in the solvent network."
 )
 class TemporalMotifPersistenceTask:
     def __init__(self,
@@ -849,12 +837,10 @@ class TemporalMotifPersistenceTask:
             key = (ligand_res, water_index, prot_resnum, prot_resname)
             frames = filtered_motifs[motif]
 
-            # Append all frames for this core motif key
             if key not in grouped_motifs:
                 grouped_motifs[key] = set()
             grouped_motifs[key].update(frames)
 
-        # Convert frames sets to sorted lists
         for key in grouped_motifs:
             grouped_motifs[key] = sorted(grouped_motifs[key])
 
@@ -865,7 +851,6 @@ class TemporalMotifPersistenceTask:
             reverse=True
         )[:self.top_n_motifs]
 
-        # Prepare DataFrame rows with combined start, end, lifetime
         top_motifs_data = []
         for key in top_grouped_keys:
             ligand_res, water_index, prot_resnum, prot_resname = key
@@ -940,7 +925,6 @@ class TemporalMotifPersistenceTask:
         plt.close()
         logger.info(f"Saved grouped motif persistence heatmap to {out_plot}")
 
-        # Plot histogram of lifetimes (from original motifs, optional)
         plt.figure(figsize=(6, 4))
         sns.histplot(pd.Series(lifetimes), bins=20, color="#58D68D", kde=True)
         plt.xlabel("Lifetime (frames)")
@@ -974,7 +958,7 @@ class NetworkEmbeddingAnalysisTask:
                  stop: int = -1,
                  step: int = 10,
                  output_dir: str = "output_network_embedding",
-                 node2vec_dim: int = 64,
+                 node2vec_dim: int = 64, # reasonable default - add to YAML?
                  node2vec_walk_length: int = 10,
                  node2vec_num_walks: int = 50,
                  node2vec_p: float = 1.0,
@@ -1135,7 +1119,7 @@ class NetworkEmbeddingAnalysisTask:
         return np.concatenate(tsne_embeddings, axis=0)
 
     def _cluster_embeddings(self, emb_2d):
-        # DBSCAN can be tuned; eps may need adjustment depending on t-SNE scale
+        # TODO: DBSCAN can be tuned; eps may need adjustment depending on t-SNE scale
         db = DBSCAN(eps=2.0, min_samples=5)
         cluster_labels = db.fit_predict(emb_2d)
         return cluster_labels
@@ -1160,7 +1144,6 @@ class NetworkEmbeddingAnalysisTask:
                 if G.nodes[neighbor].get("type") == "residue":
                     cluster_res_counts[cluster][neighbor] += 1
 
-        # Convert to DataFrame
         all_residues = sorted({res for c in cluster_res_counts for res in cluster_res_counts[c]})
         df = pd.DataFrame(0, index=sorted(cluster_res_counts.keys()), columns=all_residues)
 
@@ -1178,10 +1161,10 @@ class NetworkEmbeddingAnalysisTask:
         embeddings_file = self._compute_node2vec_embeddings(graphs)
         frame_embeddings = self._load_node2vec_embeddings_in_chunks(embeddings_file, chunk_size=100)
 
-        # Step 1: Apply Incremental PCA
+        # Apply Incremental PCA
         reduced_embeddings = self._incremental_pca(frame_embeddings, chunk_size=100)
 
-        # Step 2: Apply Incremental t-SNE
+        # Apply Incremental t-SNE
         emb_2d = self._incremental_tsne(reduced_embeddings, chunk_size=100)
 
         df_emb = pd.DataFrame({
@@ -1207,7 +1190,7 @@ class NetworkEmbeddingAnalysisTask:
         plt.close()
         logger.info(f"Saved t-SNE embedding plot to {out_plot}")
 
-        # ----- Step 3: Clustering -----
+        #  Step 3: Clustering 
         cluster_labels = self._cluster_embeddings(emb_2d)
         df_emb["Cluster"] = cluster_labels
 
@@ -1215,7 +1198,7 @@ class NetworkEmbeddingAnalysisTask:
         df_emb.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved t-SNE embedding + cluster data to {out_json}")
 
-        # ----- Plot: t-SNE colored by cluster -----
+        #  Plot  t-SNE colored by cluster 
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(7, 6))
         sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
@@ -1231,9 +1214,11 @@ class NetworkEmbeddingAnalysisTask:
         plt.close()
         logger.info(f"Saved cluster-colored t-SNE plot to {out_plot}")
 
-        # ----- Step 4–5: Compute cluster-specific residue contact frequencies -----
+        # Compute cluster-specific residue contact frequencies
         cluster_contact_freq = self._compute_cluster_contact_frequencies(graphs, cluster_labels)
         df_heatmap = pd.DataFrame(cluster_contact_freq).fillna(0).T
+
+        # Helper - sort by residue number for plotting.
 
         import re
         def resid_sort_key(res_label):
@@ -1247,7 +1232,6 @@ class NetworkEmbeddingAnalysisTask:
             else:
                 return float('inf')  # in case label has no number, push to end
 
-        # Sort residues by numeric order
         df_heatmap = df_heatmap.loc[sorted(df_heatmap.index, key=resid_sort_key)]
 
         plt.figure(figsize=(10, 8))
@@ -1266,7 +1250,7 @@ class NetworkEmbeddingAnalysisTask:
         plt.savefig(heatmap_plot, dpi=300, bbox_inches="tight")
         plt.close()
         logger.info(f"Saved cluster contact frequency heatmap to {heatmap_plot}")
-        # Also save numeric data
+        # Also save numeric data to disk
         out_csv = os.path.join(self.output_dir, "cluster_contact_frequencies.csv")
         df_heatmap.to_csv(out_csv)
         logger.info(f"Saved cluster contact frequencies to {out_csv}")
@@ -1362,10 +1346,6 @@ class ProteinProteinNetworkEmbeddingTask:
             graphs.append(G)
         return graphs
 
-    # Node2Vec embeddings, PCA, t-SNE, clustering methods
-    # Can be copied from your existing NetworkEmbeddingAnalysisTask
-    # They work unchanged because graphs are still NetworkX objects
-
     def run(self):
         logger.info("Starting protein-protein network embedding analysis...")
         graphs = self._generate_graphs_pp()
@@ -1405,7 +1385,7 @@ class ProteinProteinNetworkEmbeddingTask:
         df_emb.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved t-SNE embedding + cluster data to {out_json}")
 
-        # Cluster-colored t-SNE
+        # Cluster-coloyred t-SNE
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(7, 6))
         sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
@@ -1421,7 +1401,7 @@ class ProteinProteinNetworkEmbeddingTask:
         plt.close()
         logger.info(f"Saved cluster-colored t-SNE plot to {out_plot}")
 
-        # Optional: Compute cluster-specific residue contact frequencies
+        # Compute cluster-specific residue contact frequencies
         cluster_res_counts = self._compute_cluster_contact_frequencies_pp(graphs, cluster_labels)
         df_heatmap = pd.DataFrame(cluster_res_counts).fillna(0)
 
@@ -1461,7 +1441,6 @@ class ProteinProteinNetworkEmbeddingTask:
                 if G.nodes[node].get("type") == "residue":
                     cluster_res_counts[cluster][node] += 1
 
-        # Convert to DataFrame
         all_residues = sorted({res for c in cluster_res_counts for res in cluster_res_counts[c]},
                               key=lambda x: int(''.join(filter(str.isdigit, x))))  # sort by residue number
         df = pd.DataFrame(0, index=cluster_res_counts.keys(), columns=all_residues)

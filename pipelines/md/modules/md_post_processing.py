@@ -25,19 +25,18 @@ class MDPostProcessingWorkflow:
         self.context = context or {}
 
     def _collect_trajectories(self, traj_path):
-        """Detect and return trajectory files in correct order."""
+        """Detect and return trajectory files in numerical order."""
         if os.path.isdir(traj_path):
-            # Handle case where user gives a directory
             traj_dir = traj_path
         else:
             traj_dir = os.path.dirname(traj_path)
             if traj_dir == "":
                 traj_dir = "."
 
-        traj_base = os.path.splitext(os.path.basename(traj_path))[0]  # e.g. trajectory
-        traj_ext = os.path.splitext(traj_path)[1]                     # e.g. .dcd
+        traj_base = os.path.splitext(os.path.basename(traj_path))[0]
+        traj_ext = os.path.splitext(traj_path)[1]                   
 
-        # Collect all matching files: trajectory_###.dcd, trajectory###.dcd, etc.
+        # Collect all trajs files
         pattern = re.compile(rf"{re.escape(traj_base)}[_-]?(\d+){re.escape(traj_ext)}$")
         all_files = [
             os.path.join(traj_dir, f)
@@ -46,12 +45,12 @@ class MDPostProcessingWorkflow:
         ]
 
         if not all_files:
-            # Fallback: maybe a single file named exactly trajectory.dcd
+            # Fallback for single traj.dcd
             if os.path.exists(traj_path):
                 return [traj_path]
             raise FileNotFoundError(f"No trajectory files found matching pattern {traj_base}*.{traj_ext}")
 
-        # Sort numerically by index
+        # Numerical sort
         traj_files = natsorted(all_files)
         logger.info(f"Detected {len(traj_files)} trajectory files.")
         for f in traj_files:
@@ -77,7 +76,6 @@ class MDPostProcessingWorkflow:
         topology = post_cfg.get("topology")
         trajectory = post_cfg.get("trajectory")
 
-        # Fallback to earlier workflow outputs
         if not topology:
             prep_cfg = self.config.get("prepare_system", {})
             prep_out = prep_cfg.get("output_trajectory", "output")
@@ -91,7 +89,7 @@ class MDPostProcessingWorkflow:
         if not os.path.exists(topology):
             raise FileNotFoundError(f"Topology file not found: {topology}")
 
-        # 🆕 Collect all trajectory files (single or multiple)
+        # Collect all traj files
         trajectories = self._collect_trajectories(trajectory)
 
         logger.info(f"Topology: {topology}")
@@ -104,7 +102,7 @@ class MDPostProcessingWorkflow:
         results = {}
 
         # ==============================================================
-        # 1️⃣  Time-series analyses (RMSD, RMSF, interactions, etc.)
+        # Time-series analyses (RMSD, RMSF, interactions, etc.)
         # ==============================================================
         traj_analysis_cfg = post_cfg.get("trajectory_analysis", {})
         time_series = traj_analysis_cfg.get("time_series", [])
@@ -115,7 +113,7 @@ class MDPostProcessingWorkflow:
             os.makedirs(rmsd_outdir, exist_ok=True)
             rmsd_task = RMSDAnalysisTask(
                 topology=topology,
-                trajectory=trajectories,  # <-- pass list
+                trajectory=trajectories,
                 start=start,
                 stop=stop,
                 step=step,
@@ -155,7 +153,7 @@ class MDPostProcessingWorkflow:
             results["interactions"] = interactions_task.run()
 
         # ==============================================================
-        # 2️⃣  Graph / Network Analyses
+        # Graph / Network Analyses
         # ==============================================================
         graph_analyses = traj_analysis_cfg.get("graph_analyses", [])
 
@@ -225,7 +223,7 @@ class MDPostProcessingWorkflow:
             results["protein_protein_network_embedding_analysis"] = task.run()
 
         # ==============================================================
-        # 3️⃣  Solvent-mediated hydrogen bond analysis
+        # Solvent-mediated hydrogen bond analysis
         # ==============================================================
         solvent_cfg = post_cfg.get("solvent_analyses", {})
         if isinstance(solvent_cfg, bool):
