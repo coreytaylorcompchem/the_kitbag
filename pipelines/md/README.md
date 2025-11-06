@@ -7,9 +7,10 @@ Perform different types of MD in automated, end-to-end fashion.
 ## Setup and dependencies
 
 * Mainly Python libs
+* [OpenMM](https://docs.openmm.org/latest/userguide/application/01_getting_started.html)
+* [MDAnalysis](https://www.mdanalysis.org/pages/installation_quick_start/)
 * [Cuda](https://developer.nvidia.com/cuda-toolkit)
 * [Rdkit](https://www.rdkit.org/docs/Install.html)
-* [OpenMM](https://docs.openmm.org/latest/userguide/application/01_getting_started.html)
 * [PDBFixer](https://github.com/openmm/pdbfixer)
 * [Biopython](https://biopython.org/) (may remove this)
 
@@ -39,8 +40,9 @@ Available Tasks:
     - hydration_site_energy: Identify hydration sites and rank them by approximate free energy.
     - network_embedding_analysis: Convert trajectory frames into residue–ligand contact graphs, then perform Node2Vec + t-SNE embedding to visualise network evolution.
     - protein_ligand_communities: Detect cooperative residue clusters (communities) in the protein–ligand interaction network.
+    - protein_protein_network_embedding: Convert trajectory frames into residue–residue contact graphs, then perform Node2Vec + t-SNE embedding to visualise protein-protein network evolution.
     - solvent_hbonds: Compute direct and water-mediated hbonds with ligand.
-    - temporal_motif_persistence: Quantify persistence of small recurring motifs (e.g., ligand–water–residue triangles) in the solvent network.
+    - temporal_motif_persistence: Quantify persistence of small recurring motifs (e.g., water-mediated interactions) in the solvent network.
   [Post-proc; traj analyses]:
     - interaction_fingerprint: Compute IFP using ProLIF, generate barcode plot.
     - rmsd_analysis: Compute RMSD of protein bb and ligand.
