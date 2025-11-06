@@ -32,10 +32,10 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 `python list_available_tasks_and_workflows.py`
 
 ```
-Available Tasks:
+  [Active Learning]:
+    - active_learn_docking: Active learning loop over docking.
+       ↳ Backends: gnina
   [Docking]:
-    - active_learn_docking: Active learning loop + docking.
-       ↳ Backends: None
     - dock: Dock with backend specified.
        ↳ Backends: gnina, unidock
   [Ligand preparation]:
@@ -54,7 +54,7 @@ Available Tasks:
        ↳ Backends: gnina, unidock
 Available Workflows:
  - active_learning_docking: prepare, dock and score with Active Learning loop.
- - constrained_docking: Prepare, dock and score with core constraints.
+ - constrained_docking: Prepare, dock and score with core constraints (WIP).
  - multi_pocket_docking: Dock ligands into top N pockets detected by fpocket.
  - multi_structure_docking: Dock ligands into multiple PDB structures.
  - vanilla_docking: Prepare, dock and score with no constraints.
