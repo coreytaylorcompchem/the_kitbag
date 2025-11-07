@@ -1,0 +1,17 @@
+task: workflow
+workflow_name: kindel_del
+
+datasets:
+  - name: DDR
+    file: ddr1.parquet
+  - name: MAPK14
+    file: mapk14.parquet
+
+s3_prefix: s3://kin-del-2024/data
+
+output:
+  directory: outputs/kindel
+  overwrite: false
+
+workflow:
+  - download_kindel_datasets
