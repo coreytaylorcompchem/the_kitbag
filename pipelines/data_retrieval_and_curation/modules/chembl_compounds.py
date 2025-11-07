@@ -14,7 +14,7 @@ logger = setup_logger(
 )
 
 @register_task("retrieve_compound_metadata_batched",
-               category="Compound",
+               category="Compounds",
                description="Retrieve metadata for a batch of ChEMBL molecule IDs.")
 def retrieve_compound_metadata_batch(config, data=None):
     molecule_ids = config.get("molecule_chembl_ids", [])

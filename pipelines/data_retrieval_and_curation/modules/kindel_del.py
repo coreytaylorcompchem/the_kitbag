@@ -10,11 +10,11 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 @register_task(
-    "download_kindel_datasets",
+    "retrieve_kindel_datasets",
     category="DNA-Encoded Libraries",
     description="Download multiple KinDel datasets from public S3."
 )
-def download_kindel_datasets(config, data=None):
+def retrieve_kindel_datasets(config, data=None):
     """
     Downloads multiple datasets from S3 with resumable support.
 

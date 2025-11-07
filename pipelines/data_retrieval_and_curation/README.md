@@ -8,7 +8,8 @@ Here's where we can curate and combine affinity, ADME, etc, data from multiple s
 
 * Mainly Python libs
 * [Rdkit](https://www.rdkit.org/docs/Install.html)
-* [Chembl webresource_client](https://github.com/chembl/chembl_webresource_client).
+* [Chembl webresource_client](https://github.com/chembl/chembl_webresource_client)
+* [s3fs](https://pypi.org/project/s3fs/)
 
 See `environment.yml` for the rest. The list is indicative only, as this repo is under development.
 
@@ -32,13 +33,18 @@ Available Tasks:
     - clean_adme_data: Check and standardise ADME data.
     - retrieve_chembl_adme_data: Retrieve CHEMBL ADME data.
   [Bioactivity]:
-    - annotate_bioactivity_pactivity: Compute p(readout) and add to retrieval results.
-    - clean_bioactivities: Check and standardise bioactivities.
+    - annotate_bioactivity_pactivity: Compute p(readout)) and add to retrieval results.
+    - clean_bioactivities: Check and standardise bioactivities, and attach publication dates via CrossRef.
     - retrieve_chembl_bioactivities: Retrieve bioactivity data from CHEMBL.
     - retrieve_compound_smiles: Retrieve SMILES from downloaded compound data.
     - retrieve_protein_class_target_list: Retrieve UniProt IDs for protein target class.
+  [Compounds]:
+    - retrieve_compound_metadata_batched: Retrieve metadata for a batch of ChEMBL molecule IDs.
+  [DNA-Encoded Libraries]:
+    - retrieve_kindel_datasets: Download multiple KinDel datasets from public S3.
   [PDB]:
     - align_structures: Align all PDBs to the first retrieved structure.
+    - analyse_pdbs_by_interpro_accession: Check how many PDBs are available for a given InterPro ID.
     - retrieve_pdbs: Retrieve all PDBs for a UniProt ID.
     - standardise_pdbs: Standardise PDBs (Chain A + ligand, remove solvent).
   [Post-processing]:
@@ -46,9 +52,11 @@ Available Tasks:
 
 Available Workflows:
  - chembl_adme_data: Retrieve, standardise and collate ADME data - ChEMBL.
+ - chembl_all_molecules: Download ChEMBL molecule metadata.
  - chembl_multi_target: Retrieve, standardise and collate bioactivities for multiple targets - CHEMBL.
  - chembl_bioactivity_single_target: Retrieve, standardise and collate bioactivities for a single target - CHEMBL.
  - chembl_tox_targets: Retrieve, standardise and collate bioactivities for tox-relevant targets - CHEMBL.
+ - kindel_del: Retrieve DNA-Encoded_Library data from Kindel (DDR and MAPK14).
  - pdb_multi_target: Process PDB structures for multiple UniProt targets.
  - pdb_single_target: Process PDBs for a single UniProt target.
 ```

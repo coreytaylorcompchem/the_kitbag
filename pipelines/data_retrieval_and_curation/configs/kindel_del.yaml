@@ -7,11 +7,12 @@ datasets:
   - name: MAPK14
     file: mapk14.parquet
 
+
+workflow:
+  - retrieve_kindel_datasets
+
 s3_prefix: s3://kin-del-2024/data
 
 output:
   directory: outputs/kindel
   overwrite: false
-
-workflow:
-  - download_kindel_datasets
