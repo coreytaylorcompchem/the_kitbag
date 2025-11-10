@@ -26,7 +26,14 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 `python list_available_tasks_and_workflows.py`
 
 ```
+
 Available Tasks:
+  [DEL Analysis]:
+    - compute_fingerprints: Compute fps for iPCA.
+    - dimensionality_reduction_analyses: Run PCA, t-SNE, and UMAP on DEL fingerprints and plot enrichment maps.
+    - incremental_pca: Initial dimensionality reduction to produce reduced dataset.
+    - medoid_analysis: Compute cluster medoids based on molecular scaffolds.
+    - report_generation: Generate descriptive plots and clustering reports for DEL results.
   [Filtering]:
     - activity_filtering: Filter molecules based on activity cutoff
     - basic_lipinski_filtering: Basic Lipinski Rule of 5 filtering
@@ -55,6 +62,7 @@ Available Tasks:
 
 Available Workflows:
  - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI
+ - streamed_feature_runner: Stream large datasets (e.g. parquet), generate features per chunk, and save feature matrices.
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.

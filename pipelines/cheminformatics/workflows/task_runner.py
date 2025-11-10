@@ -3,14 +3,62 @@ import pandas as pd
 import csv
 import shutil
 import inspect
+
+from tqdm import tqdm
+import numpy as np
 from pathlib import Path
 from rdkit import Chem
+import pyarrow.parquet as pq
+from sklearn.decomposition import IncrementalPCA
+
 from pipeline.task_registry import get_task
 from pipeline.parallel_runner import ParallelWorkflowRunner
 from pipeline.logger import setup_logger
 from workflows import register_workflow
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+def stream_parquet_rowgroups(parquet_path):
+    """Yield (row_group_index, pandas.DataFrame) from a Parquet file."""
+    pf = pq.ParquetFile(parquet_path)
+    for i in range(pf.num_row_groups):
+        df_chunk = pf.read_row_group(i).to_pandas()
+        yield i, df_chunk
+
+def load_input_file(input_path, max_rows=None):
+    """
+    Loads CSV, TSV, or Parquet depending on file extension.
+    Optionally limits to `max_rows` for testing or memory control.
+    """
+    input_path = Path(input_path)
+    suffix = input_path.suffix.lower()
+
+    logger.info(f"[dynamic_task_runner] Loading input file: {input_path}")
+
+    if suffix == ".csv":
+        df = pd.read_csv(input_path, nrows=max_rows)
+    elif suffix == ".tsv":
+        df = pd.read_csv(input_path, sep="\t", nrows=max_rows)
+    elif suffix == ".parquet":
+        try:
+            pf = pq.ParquetFile(input_path)
+
+            if max_rows:
+                df = pf.read_row_groups([0], columns=None).to_pandas()
+                df = df.head(max_rows)
+            else:
+                row_groups = []
+                for rg in pf.iter_batches():
+                    row_groups.append(rg.to_pandas())
+                df = pd.concat(row_groups, ignore_index=True)
+        except ImportError:
+            df = pd.read_parquet(input_path)
+    else:
+        raise ValueError(f"Unsupported input format: {suffix}")
+
+    logger.info(f"[dynamic_task_runner] Loaded dataframe shape: {df.shape}")
+    return df
+
 
 class ChunkWrapper:
     def __init__(self, task_list, config):
@@ -135,7 +183,7 @@ def dynamic_task_runner(config):
 
         logger.info("No chunk_size specified or <= 0: Running all tasks sequentially on full dataset")
 
-        df = pd.read_csv(input_file, sep=",", quotechar='"', escapechar='\\', engine="python")
+        df = load_input_file(input_file)
         if "smiles" not in df.columns:
             raise ValueError("Input file must contain 'smiles' column")
         df["smiles"] = clean_smiles(df["smiles"])
@@ -212,7 +260,7 @@ def dynamic_task_runner(config):
 
     # === ELSE do chunking + parallelism ===
 
-    df = pd.read_csv(input_file, sep=",", quotechar='"', escapechar='\\', engine="python")
+    df = load_input_file(input_file)
     if "smiles" not in df.columns:
         raise ValueError("Input file must contain 'smiles' column")
 
@@ -335,3 +383,54 @@ def dynamic_task_runner(config):
             logger.warning(f"Failed to cleanup chunk directory {chunk_dir}: {e}")
 
     return {"df": combined_df}
+
+@register_workflow(
+    "streamed_feature_runner",
+    description="Stream large datasets (e.g. parquet), generate features per chunk, and save feature matrices."
+)
+def streamed_feature_runner(config):
+    input_file = config.get("input_file")
+    if not input_file:
+        raise ValueError("Missing 'input_file' in config")
+
+    output_dir = Path(config.get("output", {}).get("directory", "outputs/streamed_features"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    task_list = config.get("workflow", [])
+    if not task_list:
+        raise ValueError("No 'workflow' list of tasks specified in config")
+
+    feature_files = []
+    total_rows = 0
+
+    # Stream row groups (parquet weirdness)
+    for row_group in tqdm(stream_parquet_rowgroups(input_file), desc="Row groups"):
+        i, df_chunk = row_group  # unpack the tuple correctly
+        logger.info(f"[streamed_feature_runner] Processing row group {i}")
+
+        if df_chunk is None or df_chunk.empty:
+            logger.warning(f"Row group {i} is empty, skipping.")
+            continue
+
+        current_data = {"df": df_chunk}
+
+        for task_name in task_list:
+            task_func = get_task(task_name)
+            result = task_func(config, data=current_data)
+            current_data = result if isinstance(result, dict) else {"df": result}
+
+        df_features = current_data.get("df")
+        if df_features is None or df_features.empty:
+            logger.warning(f"Row group {i} produced no features, skipping.")
+            continue
+
+        total_rows += len(df_features)
+        feature_file = output_dir / f"features_chunk_{i}.feather"
+        df_features.to_feather(feature_file)
+        feature_files.append(feature_file)
+        del df_chunk, current_data, df_features
+        gc.collect()
+
+    logger.info(f"[streamed_feature_runner] Processed {total_rows:,} rows total across {len(feature_files)} chunks.")
+    return {"feature_files": feature_files}
+
