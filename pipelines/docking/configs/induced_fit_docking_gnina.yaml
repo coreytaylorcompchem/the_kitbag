@@ -1,0 +1,47 @@
+task: workflow
+workflow_name: induced_fit_docking
+
+workflow:
+  - prepare_receptor_pdbqt
+  - standardise_ligand
+  - convert_to_pdbqt
+  - dock
+  - induced_fit_docking
+
+options:
+  use_conformer_generation: false
+
+backend:
+  name: gnina
+  executable_path: "/home/corey/local_software/gnina.1.3.2.cuda12.8"
+  use_gpu: true
+
+protein:
+  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
+  pH: 7.4
+
+generate_ligands_from_list: true
+ligands_txt: "ligs.txt"    
+# ligands_csv: "ligands.csv" 
+
+docking:
+  output_dir: "output_ifd_gnina"
+  docking_mode: ensemble # or 'lowest_energy'
+  final_n_conformers: 2
+  rmsd_threshold: 0.75
+  min_energy_gap: 0.5   # in kcal/mol higher = more permissive
+  n_output_binding_modes: 2
+  exhaustiveness: 8
+  use_crystal_ligand: true
+  size: [15.0, 15.0, 15.0]
+
+induced_fit_docking:
+  residue_distance_cutoff: 5
+  residue_select: ["LYS", "ASP"]
+  backbone_refinement: false
+  minimisation:
+    protein_forcefield: amber14-all.xml
+    ligand_fixed: true
+    max_steps: 500
+    tolerance: 1e-4
+    num_minimisation_steps: 5000

@@ -14,7 +14,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_task("active_learn_docking", category="Active Learning", description="Active learning loop over docking.")
+@register_task("active_learn_docking", category="Docking", description="Active learning loop over docking.")
 def active_learn_docking(backend, ligands, config, **kwargs):
     al_config = config['active_learning']
     n_initial = al_config['n_initial']

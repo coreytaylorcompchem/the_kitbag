@@ -1,4 +1,4 @@
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
 HEADER    SIGNALING PROTEIN/IMMUNE SYSTEM         28-SEP-17   5YHL              
 TITLE     CRYSTAL STRUCTURE OF THE HUMAN PROSTAGLANDIN E RECEPTOR EP4 IN COMPLEX
 TITLE    2 WITH FAB AND AN ANTAGONIST BR-DERIVATIVE                             
@@ -6247,7 +6247,7 @@ ENDBRANCH18461847
 ENDBRANCH18401841
 ENDBRANCH  111840
 TORSDOF 588
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
 HEADER    SIGNALING PROTEIN/IMMUNE SYSTEM         28-SEP-17   5YHL              
 TITLE     CRYSTAL STRUCTURE OF THE HUMAN PROSTAGLANDIN E RECEPTOR EP4 IN COMPLEX
 TITLE    2 WITH FAB AND AN ANTAGONIST BR-DERIVATIVE                             
@@ -10919,7 +10919,7 @@ ATOM    793  CG2 VAL A 306     -42.662 -51.245  -6.764  0.00  0.00    +0.009 C
 ENDBRANCH 398 791
 ENDBRANCH   1 398
 TORSDOF 327
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
 HEADER    SIGNALING PROTEIN/IMMUNE SYSTEM         28-SEP-17   5YHL              
 TITLE     CRYSTAL STRUCTURE OF THE HUMAN PROSTAGLANDIN E RECEPTOR EP4 IN COMPLEX
 TITLE    2 WITH FAB AND AN ANTAGONIST BR-DERIVATIVE                             
@@ -16062,7 +16062,7 @@ ENDBRANCH12181219
 ENDBRANCH12171218
 ENDBRANCH 1821217
 TORSDOF 345
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
 HEADER    SIGNALING PROTEIN/IMMUNE SYSTEM         28-SEP-17   5YHL              
 TITLE     CRYSTAL STRUCTURE OF THE HUMAN PROSTAGLANDIN E RECEPTOR EP4 IN COMPLEX
 TITLE    2 WITH FAB AND AN ANTAGONIST BR-DERIVATIVE                             
@@ -19303,7 +19303,7 @@ ATOM     15  H   SER H 147     -42.997-104.588  13.151  0.00  0.00    +0.218 HD
 ATOM     16  H   SER H 147     -44.207-105.216  12.990  0.00  0.00    +0.218 HD
 ENDROOT
 TORSDOF 0
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
 HEADER    SIGNALING PROTEIN/IMMUNE SYSTEM         28-SEP-17   5YHL              
 TITLE     CRYSTAL STRUCTURE OF THE HUMAN PROSTAGLANDIN E RECEPTOR EP4 IN COMPLEX
 TITLE    2 WITH FAB AND AN ANTAGONIST BR-DERIVATIVE                             
@@ -27163,7 +27163,7 @@ ATOM   2931  OD2 ASP L 173     -27.459-125.436   2.276  0.00  0.00    -0.550 OA
 ENDBRANCH29282929
 ENDBRANCH  742928
 TORSDOF 852
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/protonated_openbabel.pdb
 HEADER    SIGNALING PROTEIN/IMMUNE SYSTEM         28-SEP-17   5YHL              
 TITLE     CRYSTAL STRUCTURE OF THE HUMAN PROSTAGLANDIN E RECEPTOR EP4 IN COMPLEX
 TITLE    2 WITH FAB AND AN ANTAGONIST BR-DERIVATIVE                             

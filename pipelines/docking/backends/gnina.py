@@ -21,7 +21,8 @@ class GninaBackend(BaseBackend):
         "convert_to_pdbqt", 
         "prepare_receptor_pdbqt",
         "dock", 
-        "active_learn_docking"]
+        "active_learn_docking",
+        "induced_fit_docking"]
     def __init__(self, executable_path: str = "gnina", use_gpu: bool = True):
         """
         Initialize Gnina backend.
