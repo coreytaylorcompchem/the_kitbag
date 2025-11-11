@@ -24,9 +24,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# -----------------------------
-# Helper functions
-# -----------------------------
+# helpers
 
 def compute_fingerprint(smiles, radius=2, n_bits=1024):
     mol = Chem.MolFromSmiles(smiles)

@@ -8,10 +8,13 @@ from tqdm import tqdm
 import numpy as np
 from pathlib import Path
 from rdkit import Chem
+from rdkit import RDLogger
+RDLogger.DisableLog('rdApp.*')
 import pyarrow.parquet as pq
 from sklearn.decomposition import IncrementalPCA
 
-from pipeline.task_registry import get_task
+
+from pipeline.task_registry import get_task, list_tasks
 from pipeline.parallel_runner import ParallelWorkflowRunner
 from pipeline.logger import setup_logger
 from workflows import register_workflow
@@ -144,7 +147,6 @@ def dynamic_task_runner(config):
 
     input_file = config.get("input_file")
     if not input_file:
-        # Handle workflows with no input_file (same as your existing code)
         def task_requires_input_file(task_name):
             task_func = get_task(task_name)
             if not task_func:
@@ -213,7 +215,6 @@ def dynamic_task_runner(config):
         combined_df = current_data.get("df", pd.DataFrame())
         all_mols = current_data.get("mols", [])
 
-        # Save outputs
         output_dir = Path(config.get("output", {}).get("directory", "outputs/flexible_parallel"))
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -404,28 +405,42 @@ def streamed_feature_runner(config):
     total_rows = 0
 
     # Stream row groups (parquet weirdness)
-    for row_group in tqdm(stream_parquet_rowgroups(input_file), desc="Row groups"):
-        i, df_chunk = row_group  # unpack the tuple correctly
-        logger.info(f"[streamed_feature_runner] Processing row group {i}")
+    max_row_groups = config.get("row_groups", None)
 
+    for i, (rg_index, df_chunk) in enumerate(tqdm(stream_parquet_rowgroups(input_file), desc="Row groups")):
+        if max_row_groups is not None and i >= max_row_groups:
+            logger.info(f"[streamed_feature_runner] Stopping after {max_row_groups} row group(s) (prototype mode).")
+            break
+
+        logger.info(f"[streamed_feature_runner] Processing row group {rg_index}")
         if df_chunk is None or df_chunk.empty:
-            logger.warning(f"Row group {i} is empty, skipping.")
+            logger.warning(f"Row group {rg_index} is empty, skipping.")
             continue
 
         current_data = {"df": df_chunk}
 
         for task_name in task_list:
             task_func = get_task(task_name)
+            if task_func is None:
+                registered = list_tasks()  # <-- helper shown below
+                msg = (
+                    f"[workflow] Task '{task_name}' not found.\n"
+                    f"  → Did you mean one of these?\n"
+                    f"    {registered}\n"
+                    f"  Check your YAML 'workflow:' section or @register_task names."
+                )
+                logger.error(msg)
+                raise ValueError(msg)
             result = task_func(config, data=current_data)
             current_data = result if isinstance(result, dict) else {"df": result}
 
         df_features = current_data.get("df")
         if df_features is None or df_features.empty:
-            logger.warning(f"Row group {i} produced no features, skipping.")
+            logger.warning(f"Row group {rg_index} produced no features, skipping.")
             continue
 
         total_rows += len(df_features)
-        feature_file = output_dir / f"features_chunk_{i}.feather"
+        feature_file = output_dir / f"features_chunk_{rg_index}.feather"
         df_features.to_feather(feature_file)
         feature_files.append(feature_file)
         del df_chunk, current_data, df_features

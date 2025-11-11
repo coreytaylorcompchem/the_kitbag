@@ -5,11 +5,24 @@
 workflow_name: streamed_feature_runner
 
 input_file: data/ddr1.parquet
+row_groups: 1   # <-- Only read this many row groups (for prototyping)
 
 workflow:
-  - compute_fingerprints_task
-  - incremental_pca_task
+  - compute_fingerprints
+  - incremental_pca
   # - dimensionality_reduction_analyses_task
+
+compute_fingerprints:
+  n_bits: 1024
+  radius: 2
+  smiles_columns: #give names of the smiles columns in your file and the naming after computing fp's.
+    smiles_a: fp_a
+    smiles_b: fp_b
+    smiles_c: fp_c
+    smiles: fp_final
+  prototyping: # use reduced dataframe for prototyping
+    n_rows: 1000        # Only use the first 1000 rows
+    random_sample: true # Optionally sample randomly instead of taking first rows
 
 incremental_pca:
   enabled: true
