@@ -82,7 +82,3 @@ See [issues](https://github.com/coreytaylorcompchem/the_kitbag/issues) for a mor
   * Scaffold analyses and scaffold hops
   * Use of ML models for ADME prediction
   * Free-Wilson analysis
-* Structural
-  * Protein and ligand conformational analyses
-  * Loop modelling
-  * Pocket characterisation
