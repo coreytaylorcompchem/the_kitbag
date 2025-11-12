@@ -26,8 +26,8 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
                description="Compute Morgan fingerprints for iPCA.")
 def compute_fingerprints_task(config, data):
     """
-    Compute Morgan fingerprints for molecules and synthons with tqdm progress.
-    Handles trailing commas and silences RDKit SMILES parse errors.
+    Compute Morgan fingerprints for molecules and synthons.
+    Handles trailing commas, silences RDKit SMILES parse errors.
     """
 
     df = data.get("df")

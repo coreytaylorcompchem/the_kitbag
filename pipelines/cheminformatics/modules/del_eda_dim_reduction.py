@@ -25,9 +25,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# -----------------------------
 # Helpers
-# -----------------------------
 
 def clean_smiles(smiles: str) -> str | None:
     """
@@ -87,10 +85,6 @@ def plot_2d_projection(X, color=None, title="Dimensionality Reduction",
     else:
         plt.show()
 
-# -----------------------------
-# Main Task: Dimensionality Reduction
-# -----------------------------
-
 @register_task("dimensionality_reduction_analyses",
                category="DEL Analysis",
                description="Run PCA, t-SNE, and UMAP on DEL fingerprints and plot enrichment maps.")
@@ -102,7 +96,6 @@ def dimensionality_reduction_analyses(config, data=None):
     logger.info(f"[DEL] Reading Parquet file: {input_file}")
     df = pd.read_parquet(input_file)
 
-    # Compute fingerprints robustly
     df = get_fingerprints(df)
 
     # Concatenate bit vectors for combined feature representation
@@ -111,7 +104,7 @@ def dimensionality_reduction_analyses(config, data=None):
         for _, row in df.iterrows()
     ])
 
-    # Normalize features
+    # Normalise features
     scaler = StandardScaler()
     fingerprints_scaled = scaler.fit_transform(fingerprints)
 
@@ -120,7 +113,7 @@ def dimensionality_reduction_analyses(config, data=None):
     df['matrix_mean'] = df[['seq_matrix_1', 'seq_matrix_2', 'seq_matrix_3']].mean(axis=1)
     df['log_enrichment'] = np.log10((df['target_mean'] + 1) / (df['matrix_mean'] + 1))
 
-    # --- PCA ---
+    #  PCA 
     pca_params = config["dimensionality_reduction_analyses"].get("pca", {})
     n_pca = pca_params.get("n_components", 2)
     pca = PCA(n_components=n_pca)
@@ -131,7 +124,7 @@ def dimensionality_reduction_analyses(config, data=None):
         output_file=output_dir / "pca_projection.png"
     )
 
-    # --- t-SNE ---
+    # t-SNE
     tsne_params = config["dimensionality_reduction_analyses"].get("tsne", {})
     tsne = TSNE(
         n_components=tsne_params.get("n_components", 2),
@@ -145,7 +138,7 @@ def dimensionality_reduction_analyses(config, data=None):
         output_file=output_dir / "tsne_projection.png"
     )
 
-    # --- UMAP ---
+    #  UMAP 
     umap_params = config["dimensionality_reduction_analyses"].get("umap", {})
     umap_model = umap.UMAP(
         n_components=umap_params.get("n_components", 2),
