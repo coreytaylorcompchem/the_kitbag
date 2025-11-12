@@ -13,9 +13,9 @@ RDLogger.DisableLog('rdApp.*')
 import pyarrow.parquet as pq
 from sklearn.decomposition import IncrementalPCA
 
-
 from pipeline.task_registry import get_task, list_tasks
 from pipeline.parallel_runner import ParallelWorkflowRunner
+from pipeline.utils.config_helpers import update_config_input_file
 from pipeline.logger import setup_logger
 from workflows import register_workflow
 
@@ -387,27 +387,32 @@ def dynamic_task_runner(config):
 
 @register_workflow(
     "streamed_feature_runner",
-    description="Stream large datasets (e.g. parquet), generate features per chunk, and save feature matrices."
+    description="Stream large datasets (e.g. parquet), generate features per chunk, combine results, and run postprocessing analyses."
 )
 def streamed_feature_runner(config):
     input_file = config.get("input_file")
     if not input_file:
         raise ValueError("Missing 'input_file' in config")
 
-    output_dir = Path(config.get("output", {}).get("directory", "outputs/streamed_features"))
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # === Load preprocess task list ===
+    preprocess_tasks = config.get("workflow_preprocess", [])
+    if not preprocess_tasks:
+        raise ValueError("No 'workflow_preprocess' task list specified in config")
 
-    task_list = config.get("workflow", [])
-    if not task_list:
-        raise ValueError("No 'workflow' list of tasks specified in config")
+    # === Prepare output directories ===
+    # Default chunk directory if nothing else is specified
+    default_output_dir = Path("outputs/streamed_features")
+    output_dir = default_output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     feature_files = []
     total_rows = 0
-
-    # Stream row groups (parquet weirdness)
     max_row_groups = config.get("row_groups", None)
 
-    for i, (rg_index, df_chunk) in enumerate(tqdm(stream_parquet_rowgroups(input_file), desc="Row groups")):
+    # === Stream parquet row groups ===
+    for i, (rg_index, df_chunk) in enumerate(
+        tqdm(stream_parquet_rowgroups(input_file), desc="Row groups")
+    ):
         if max_row_groups is not None and i >= max_row_groups:
             logger.info(f"[streamed_feature_runner] Stopping after {max_row_groups} row group(s) (prototype mode).")
             break
@@ -419,18 +424,21 @@ def streamed_feature_runner(config):
 
         current_data = {"df": df_chunk}
 
-        for task_name in task_list:
+        # === Run all preprocessing tasks sequentially ===
+        for task_name in preprocess_tasks:
             task_func = get_task(task_name)
             if task_func is None:
-                registered = list_tasks()  # <-- helper shown below
+                registered = list_tasks()
                 msg = (
-                    f"[workflow] Task '{task_name}' not found.\n"
+                    f"[streamed_feature_runner] Task '{task_name}' not found.\n"
                     f"  → Did you mean one of these?\n"
                     f"    {registered}\n"
-                    f"  Check your YAML 'workflow:' section or @register_task names."
+                    f"  Check your YAML 'workflow_preprocess:' section or @register_task names."
                 )
                 logger.error(msg)
                 raise ValueError(msg)
+
+            logger.info(f"[streamed_feature_runner] Running preprocess task '{task_name}'...")
             result = task_func(config, data=current_data)
             current_data = result if isinstance(result, dict) else {"df": result}
 
@@ -440,12 +448,85 @@ def streamed_feature_runner(config):
             continue
 
         total_rows += len(df_features)
-        feature_file = output_dir / f"features_chunk_{rg_index}.feather"
+
+        # === Save per-chunk feature file ===
+        # Store in generic streamed_features dir (fast local cache)
+        chunk_dir = output_dir / "chunks"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+
+        feature_file = chunk_dir / f"features_chunk_{rg_index}.feather"
         df_features.to_feather(feature_file)
         feature_files.append(feature_file)
+
         del df_chunk, current_data, df_features
         gc.collect()
 
     logger.info(f"[streamed_feature_runner] Processed {total_rows:,} rows total across {len(feature_files)} chunks.")
-    return {"feature_files": feature_files}
+
+    # === Combine chunked feather files into a single Parquet ===
+    if feature_files:
+        logger.info(f"[streamed_feature_runner] Combining {len(feature_files)} feature chunks into one Parquet file...")
+
+        combined_df = pd.concat(
+            [pd.read_feather(f) for f in feature_files],
+            ignore_index=True
+        )
+
+        # Pull output config from the *last preprocessing task* (e.g. incremental_pca)
+        last_task_name = preprocess_tasks[-1]
+        last_task_cfg = config.get(last_task_name, {})
+        output_cfg = last_task_cfg.get("output", {})
+
+        combined_output_dir = Path(output_cfg.get("directory", "outputs/streamed_combined"))
+        combined_output_dir.mkdir(parents=True, exist_ok=True)
+        combined_output_filename = output_cfg.get("filename", "combined_output.parquet")
+        combined_output_path = combined_output_dir / combined_output_filename
+
+        combined_df.to_parquet(combined_output_path, index=False)
+        logger.info(f"[streamed_feature_runner] Combined output written to: {combined_output_path}")
+    else:
+        logger.warning("[streamed_feature_runner] No feature chunks were generated; skipping combination step.")
+        combined_output_path = None
+
+    # === Run postprocessing tasks if defined ===
+    post_tasks = config.get("workflow_postprocess", [])
+    if post_tasks:
+        logger.info(f"[streamed_feature_runner] Running postprocessing tasks: {post_tasks}")
+
+        # Update config so downstream tasks see correct input file
+        config = update_config_input_file(config, combined_output_path)
+
+        current_data = {
+            "input_file": str(combined_output_path),
+            "feature_files": feature_files,
+        }
+
+        for task_name in post_tasks:
+            task_func = get_task(task_name)
+            if task_func is None:
+                registered = list_tasks()
+                msg = (
+                    f"[streamed_feature_runner] Postprocessing task '{task_name}' not found.\n"
+                    f"  → Did you mean one of these?\n"
+                    f"    {registered}"
+                )
+                logger.error(msg)
+                raise ValueError(msg)
+
+            logger.info(f"[streamed_feature_runner] Running postprocess task '{task_name}'...")
+            result = task_func(config, data=current_data)
+            current_data = result if isinstance(result, dict) else {"df": result}
+
+        logger.info("[streamed_feature_runner] All postprocessing tasks completed successfully.")
+        return current_data
+
+    # === Return summary if no postprocessing ===
+    return {
+        "feature_files": feature_files,
+        "combined_output": str(combined_output_path) if combined_output_path else None
+    }
+
+
+
+
 

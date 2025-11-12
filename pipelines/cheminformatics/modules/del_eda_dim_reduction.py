@@ -1,5 +1,3 @@
-# modules/project_analyses_del.py
-
 import logging
 from pathlib import Path
 import numpy as np
@@ -8,8 +6,11 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+import re
+import contextlib
+import io
 
-from rdkit import Chem
+from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
@@ -24,23 +25,47 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# helpers
+# -----------------------------
+# Helpers
+# -----------------------------
+
+def clean_smiles(smiles: str) -> str | None:
+    """
+    Robust SMILES cleaning:
+    - Strip whitespace and quotes
+    - Remove trailing commas/spaces
+    - Extract first contiguous valid SMILES substring
+    """
+    if not isinstance(smiles, str):
+        return None
+    smiles = smiles.strip().strip('"').strip("'")
+    smiles = re.sub(r'[,\s]+$', '', smiles)
+    match = re.match(r'^[A-Za-z0-9@=\#\-/\\\(\)\[\]\+\-\.\:%]+', smiles)
+    if match:
+        return match.group(0)
+    return None
 
 def compute_fingerprint(smiles, radius=2, n_bits=1024):
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
+    smiles_clean = clean_smiles(smiles)
+    if not smiles_clean:
         return None
-    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=n_bits)
-    arr = np.zeros((1,), dtype=np.int8)
-    DataStructs.ConvertToNumpyArray(fp, arr)
-    return arr
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):  # silence RDKit warnings
+            mol = Chem.MolFromSmiles(smiles_clean, sanitize=True)
+        if mol is None:
+            return None
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=n_bits)
+        arr = np.zeros((n_bits,), dtype=np.int8)
+        DataStructs.ConvertToNumpyArray(fp, arr)
+        return arr
+    except Exception:
+        return None
 
 def get_fingerprints(df):
     df['fp_a'] = df['smiles_a'].apply(compute_fingerprint)
     df['fp_b'] = df['smiles_b'].apply(compute_fingerprint)
     df['fp_c'] = df['smiles_c'].apply(compute_fingerprint)
     df['fp_final'] = df['smiles'].apply(compute_fingerprint)
-
     df = df.dropna(subset=['fp_a', 'fp_b', 'fp_c', 'fp_final']).reset_index(drop=True)
     return df
 
@@ -55,11 +80,10 @@ def plot_2d_projection(X, color=None, title="Dimensionality Reduction",
     plt.ylabel(y_label)
     if color is not None:
         plt.colorbar(scatter, label='Color scale')
-
     if output_file:
         plt.savefig(output_file, bbox_inches='tight', dpi=300)
         plt.close()
-        logger.info(f"[✔] Saved plot: {output_file}")
+        logger.info(f"Saved plot: {output_file}")
     else:
         plt.show()
 
@@ -78,7 +102,7 @@ def dimensionality_reduction_analyses(config, data=None):
     logger.info(f"[DEL] Reading Parquet file: {input_file}")
     df = pd.read_parquet(input_file)
 
-    # Compute fingerprints
+    # Compute fingerprints robustly
     df = get_fingerprints(df)
 
     # Concatenate bit vectors for combined feature representation
@@ -145,7 +169,7 @@ def dimensionality_reduction_analyses(config, data=None):
 
     output_file = output_dir / "dimensionality_reduction_results.parquet"
     reduced_df.to_parquet(output_file)
-    logger.info(f"[✔] Saved dimensionality reduction data: {output_file}")
+    logger.info(f"Saved dimensionality reduction data: {output_file}")
 
     return {
         "pca": str(output_dir / "pca_projection.png"),
@@ -153,27 +177,3 @@ def dimensionality_reduction_analyses(config, data=None):
         "umap": str(output_dir / "umap_projection.png"),
         "reduced_data": str(output_file)
     }
-
-# -----------------------------
-# Stub: Medoid Analysis
-# -----------------------------
-@register_task("medoid_analysis",
-               category="DEL Analysis",
-               description="Compute cluster medoids based on molecular scaffolds.")
-def medoid_analysis(config, data=None):
-    output_dir = Path(config.get("medoid_analysis", {}).get("output_dir", "outputs/medoid_analysis"))
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("[DEL] Medoid analysis placeholder — implement clustering/scaffold medoid selection here.")
-    return {"status": "placeholder"}
-
-# -----------------------------
-# Stub: Report Generation
-# -----------------------------
-@register_task("report_generation",
-               category="DEL Analysis",
-               description="Generate descriptive plots and clustering reports for DEL results.")
-def report_generation(config, data=None):
-    output_dir = Path(config.get("report_generation", {}).get("output_dir", "outputs/descriptive_report"))
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("[DEL] Report generation placeholder — implement DBSCAN clustering and report synthesis here.")
-    return {"status": "placeholder"}

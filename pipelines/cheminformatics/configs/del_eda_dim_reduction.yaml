@@ -5,12 +5,11 @@
 workflow_name: streamed_feature_runner
 
 input_file: data/ddr1.parquet
-row_groups: 1   # <-- Only read this many row groups (for prototyping)
+row_groups: 1   # Only read this many row groups (for prototyping)
 
-workflow:
+workflow_preprocess:
   - compute_fingerprints
   - incremental_pca
-  # - dimensionality_reduction_analyses_task
 
 compute_fingerprints:
   n_bits: 1024
@@ -28,31 +27,30 @@ incremental_pca:
   enabled: true
   n_components: 50
   batch_size: 50000
+  output:
+    directory: outputs/streamed_ddr1       # Where chunks + PCA results go
+    filename: reduced_ddr1.parquet         # Combined PCA-reduced dataset
 
-output:
-  directory: outputs/streamed_ddr1       # Where chunks + PCA results go
-  filename: reduced_ddr1.parquet         # Combined PCA-reduced dataset
+workflow_postprocess:
+  - dimensionality_reduction_analyses
+  # - medoid_analysis
+  # - report_generation
 
-# workflow_serial:
-#   - dimensionality_reduction_analyses
-#   # - medoid_analysis
-#   # - report_generation
-
-# dimensionality_reduction_analyses:
-#   input_file: outputs/streamed_ddr1/reduced_ddr1.parquet
-#   pca:
-#     n_components: 2
-#   tsne:
-#     n_components: 2
-#     perplexity: 3
-#     max_iter: 300
-#   umap:
-#     n_components: 2
-#     metric: jaccard
-#     n_neighbors: 30
-#     min_dist: 0.1
-#     random_state: 42
-#   output_dir: outputs/dimensionality_reduction
+dimensionality_reduction_analyses:
+  input_file: outputs/streamed_ddr1/reduced_ddr1.parquet
+  pca:
+    n_components: 2
+  tsne:
+    n_components: 2
+    perplexity: 3
+    max_iter: 300
+  umap:
+    n_components: 2
+    metric: jaccard
+    n_neighbors: 30
+    min_dist: 0.1
+    random_state: 42
+  output_dir: outputs/streamed_ddr1/dimensionality_reduction
 
 # medoid_analysis:
 #   input_file: outputs/streamed_ddr1/reduced_ddr1.parquet
