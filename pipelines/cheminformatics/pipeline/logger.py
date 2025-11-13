@@ -15,9 +15,9 @@ WHITE = "\x1b[37m"
 BOLD = "\x1b[1m"
 
 LEVEL_COLORS = {
-    logging.DEBUG: CYAN,
-    logging.INFO: GREEN,
-    logging.WARNING: YELLOW,
+    logging.DEBUG: BOLD + CYAN,
+    logging.INFO: BOLD + GREEN,
+    logging.WARNING: BOLD + YELLOW,
     logging.ERROR: RED,
     logging.CRITICAL: BOLD + RED
 }

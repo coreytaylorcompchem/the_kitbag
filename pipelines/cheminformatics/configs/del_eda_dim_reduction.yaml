@@ -50,6 +50,19 @@ dimensionality_reduction_analyses:
     n_neighbors: 30
     min_dist: 0.1
     random_state: 42
+  fp_weights: [1.0, 1.0, 1.0, 1.0]          # Weight final product higher
+  per_synthon_analysis: true                # Run UMAP per synthon
+  plot_properties: [MolWt, LogP, TPSA]      # Color by physicochemical props
+  clustering:
+    enabled: true
+    eps: 0.6
+    min_samples: 15
+    visualize: true
+    centroid_images: true
+    boxplot: true
+    similarity_heatmap: true
+  pca_correlation: true                     # Compute PC–enrichment correlation
+  synthon_enrichment: true                  # Export per-synthon enrichment
   output_dir: outputs/streamed_ddr1/dimensionality_reduction
 
 # medoid_analysis:
