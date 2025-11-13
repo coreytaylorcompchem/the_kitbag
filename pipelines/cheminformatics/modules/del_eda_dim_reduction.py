@@ -10,17 +10,23 @@ import re
 import contextlib
 import io
 
+from PIL import Image, ImageDraw, ImageFont
+
 from rdkit import Chem, DataStructs
 from rdkit.Chem import Descriptors
 from rdkit.Chem import AllChem
+from rdkit.Chem import Draw
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
+from rdkit.DataStructs.cDataStructs import CreateFromBitString
+from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.cluster import DBSCAN
 import umap
+
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
@@ -108,7 +114,7 @@ def dimensionality_reduction_analyses(config, data=None):
 
     df = get_fingerprints(df)
 
-    # --- Fingerprint weighting --------------------------------------------------
+    # Fingerprint weighting (default is 1.0 for all - can be tuned in yaml)
     weights = config["dimensionality_reduction_analyses"].get("fp_weights", [1, 1, 1, 1])
     if len(weights) != 4:
         logger.warning("fp_weights must have 4 elements (a,b,c,final). Using equal weights.")
@@ -124,16 +130,16 @@ def dimensionality_reduction_analyses(config, data=None):
         for _, row in df.iterrows()
     ])
 
-    # --- Normalise features -----------------------------------------------------
+    #  Normalise features 
     scaler = StandardScaler()
     fingerprints_scaled = scaler.fit_transform(fingerprints)
 
-    # --- Compute enrichment -----------------------------------------------------
+    #  Compute enrichment 
     df['target_mean'] = df[['seq_target_1', 'seq_target_2', 'seq_target_3']].mean(axis=1)
     df['matrix_mean'] = df[['seq_matrix_1', 'seq_matrix_2', 'seq_matrix_3']].mean(axis=1)
     df['log_enrichment'] = np.log10((df['target_mean'] + 1) / (df['matrix_mean'] + 1))
 
-    # --- PCA --------------------------------------------------------------------
+    #  PCA 
     pca_params = config["dimensionality_reduction_analyses"].get("pca", {})
     n_pca = pca_params.get("n_components", 2)
     pca = PCA(n_components=n_pca)
@@ -146,7 +152,7 @@ def dimensionality_reduction_analyses(config, data=None):
         output_file=output_dir / "pca_projection.png"
     )
 
-    # --- PCA–Enrichment correlation ---------------------------------------------
+    #  PCA–Enrichment correlation 
     if config["dimensionality_reduction_analyses"].get("pca_correlation", False):
         corrs = [
             np.corrcoef(pca_result[:, i], df["log_enrichment"])[0, 1]
@@ -157,7 +163,7 @@ def dimensionality_reduction_analyses(config, data=None):
         corr_df.to_csv(output_dir / "pca_enrichment_correlation.csv", index=False)
         logger.info("Saved PCA–enrichment correlation file.")
 
-    # --- t-SNE ------------------------------------------------------------------
+    #  t-SNE 
     tsne_params = config["dimensionality_reduction_analyses"].get("tsne", {})
     tsne = TSNE(
         n_components=tsne_params.get("n_components", 2),
@@ -174,7 +180,7 @@ def dimensionality_reduction_analyses(config, data=None):
         output_file=output_dir / "tsne_projection.png"
     )
 
-    # --- UMAP -------------------------------------------------------------------
+    #  UMAP 
     umap_params = config["dimensionality_reduction_analyses"].get("umap", {})
     umap_model = umap.UMAP(
         n_components=umap_params.get("n_components", 2),
@@ -191,7 +197,7 @@ def dimensionality_reduction_analyses(config, data=None):
         output_file=output_dir / "umap_projection.png"
     )
 
-    # --- Property-based coloring ------------------------------------------------
+    #  Property-based coloring 
     plot_props = config["dimensionality_reduction_analyses"].get("plot_properties", [])
     if plot_props:
         for prop in plot_props:
@@ -215,10 +221,6 @@ def dimensionality_reduction_analyses(config, data=None):
     # ==============================
     #  DBSCAN / Cluster analysis
     # ==============================
-    from sklearn.cluster import DBSCAN
-    from rdkit import DataStructs
-    from rdkit.Chem import Draw
-    from rdkit.DataStructs.cDataStructs import CreateFromBitString
 
     def numpy_to_bitvect(arr: np.ndarray):
         """Convert 0/1 numpy array to RDKit ExplicitBitVect."""
@@ -267,7 +269,7 @@ def dimensionality_reduction_analyses(config, data=None):
         # Visualizations
         # -----------------------------
         if cluster_params.get("visualize", False):
-            # (1) UMAP colored by cluster
+            # UMAP colored by cluster
             cmap = plt.cm.get_cmap("tab20", len(set(cluster_labels)))
             plot_2d_projection(
                 umap_result,
@@ -278,7 +280,7 @@ def dimensionality_reduction_analyses(config, data=None):
                 output_file=cluster_output_dir / "umap_clusters.png"
             )
 
-            # (2) Enrichment overlay with cluster IDs
+            # Enrichment overlay with cluster IDs
             plt.figure(figsize=(8, 6))
             scatter = plt.scatter(
                 umap_result[:, 0], umap_result[:, 1],
@@ -301,7 +303,7 @@ def dimensionality_reduction_analyses(config, data=None):
             )
             plt.close()
 
-            # (3) Enrichment boxplot per cluster
+            # Enrichment boxplot per cluster
             if cluster_params.get("boxplot", False):
                 plt.figure(figsize=(10, 6))
                 sns.boxplot(
@@ -323,9 +325,8 @@ def dimensionality_reduction_analyses(config, data=None):
                 )
                 plt.close()
 
-        # -----------------------------
         # Representative molecule per cluster
-        # -----------------------------
+
         if cluster_params.get("centroid_images", False):
             centroid_dir = cluster_output_dir / "centroid_molecules"
             centroid_dir.mkdir(exist_ok=True)
@@ -368,9 +369,44 @@ def dimensionality_reduction_analyses(config, data=None):
             centroid_df.to_csv(centroid_summary_path, index=False)
             logger.info(f"Saved cluster centroid summary: {centroid_summary_path}")
 
-        # -----------------------------
+            # Only run if we have centroids
+            if centroid_records:
+                centroid_mols = []
+                centroid_labels = []
+                for rec in centroid_records:
+                    mol = Chem.MolFromSmiles(rec["centroid_smiles"])
+                    if mol:
+                        centroid_mols.append(mol)
+                        label = f"Cluster {rec['cluster_id']}\nMean log_enr: {rec['mean_log_enrichment']:.2f}"
+                        centroid_labels.append(label)
+
+                mol_images = [Draw.MolToImage(mol, size=(200, 200)) for mol in centroid_mols]
+                n_cols = min(5, len(mol_images))
+                n_rows = (len(mol_images) + n_cols - 1) // n_cols
+
+                grid_width = n_cols * 200
+                grid_height = n_rows * 240  # extra space for labels
+                grid_img = Image.new("RGB", (grid_width, grid_height), color="white")
+                draw = ImageDraw.Draw(grid_img)
+
+                try:
+                    font = ImageFont.truetype("arial.ttf", 14)
+                except:
+                    font = ImageFont.load_default()
+
+                for idx, (img, label) in enumerate(zip(mol_images, centroid_labels)):
+                    row, col = divmod(idx, n_cols)
+                    x = col * 200
+                    y = row * 240
+                    grid_img.paste(img, (x, y))
+                    draw.text((x + 5, y + 200), label, fill="black", font=font)
+
+                grid_output = cluster_output_dir / "cluster_centroids_grid.png"
+                grid_img.save(grid_output)
+                logger.info(f"Saved centroid molecule grid with enrichment: {grid_output}")
+
         # Inter-cluster similarity heatmap
-        # -----------------------------
+
         if cluster_params.get("similarity_heatmap", False):
             centroid_fps = []
             centroid_ids = []
@@ -405,9 +441,131 @@ def dimensionality_reduction_analyses(config, data=None):
                 )
                 plt.close()
 
+    # ==============================
+    # Medoid / chemotype reporting
+    # ==============================
+    
+    medoid_params = config["dimensionality_reduction_analyses"].get("medoid_analysis", {})
+    top_n = medoid_params.get("top_n_clusters", 5)
+
+    # -----------------------------
+    # Identify top clusters
+    # -----------------------------
+    cluster_summary = (
+        df.groupby("umap_cluster")
+        .agg(mean_enrichment=("log_enrichment", "mean"), n_molecules=("log_enrichment", "count"))
+        .sort_values("mean_enrichment", ascending=False)
+    )
+    cluster_summary_path = cluster_output_dir / "medoid_cluster_summary.csv"
+    cluster_summary.to_csv(cluster_summary_path)
+    logger.info(f"Saved cluster summary: {cluster_summary_path}")
+
+    top_clusters = cluster_summary.head(top_n).index
+    top_chemotypes = df[df["umap_cluster"].isin(top_clusters)].copy()
+
+    # -----------------------------
+    # Compute scaffolds and medoids
+    # -----------------------------
+    def get_scaffold(smiles):
+        mol = Chem.MolFromSmiles(smiles)
+        if mol:
+            core = MurckoScaffold.GetScaffoldForMol(mol)
+            return Chem.MolToSmiles(core)
+        return None
+
+    medoid_records = []
+
+    for cid in top_clusters:
+        group = top_chemotypes[top_chemotypes["umap_cluster"] == cid].copy()
+        if len(group) < 2:
+            continue
+        
+        # Convert fingerprints
+        fps = [numpy_to_bitvect(fp) for fp in group["fp_final"]]
+        
+        # Tanimoto similarity matrix
+        n = len(fps)
+        sim_matrix = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i+1, n):
+                sim = DataStructs.TanimotoSimilarity(fps[i], fps[j])
+                sim_matrix[i, j] = sim_matrix[j, i] = sim
+        
+        medoid_idx = np.argmax(sim_matrix.mean(axis=1))
+        smiles_medoid = group.iloc[medoid_idx]["smiles"]
+        scaffold_medoid = get_scaffold(smiles_medoid)
+        
+        # Save medoid image
+        mol_medoid = Chem.MolFromSmiles(smiles_medoid)
+        mol_scaffold = Chem.MolFromSmiles(scaffold_medoid) if scaffold_medoid else None
+        if mol_medoid and mol_scaffold:
+            img_path = cluster_output_dir / f"cluster_{cid}_medoid_vs_scaffold.png"
+            img = Draw.MolsToGridImage(
+                [mol_medoid, mol_scaffold],
+                legends=[f"Cluster {cid} Medoid", "Scaffold"],
+                molsPerRow=2,
+                subImgSize=(250, 250)
+            )
+            img.save(img_path)
+        else:
+            img_path = None
+        
+        medoid_records.append({
+            "cluster": cid,
+            "medoid_smiles": smiles_medoid,
+            "scaffold_smiles": scaffold_medoid,
+            "cluster_size": len(group),
+            "mean_log_enrichment": group["log_enrichment"].mean(),
+            "medoid_image": str(img_path) if img_path else None
+        })
+
+    medoid_df = pd.DataFrame(medoid_records)
+    medoid_df.sort_values("mean_log_enrichment", ascending=False, inplace=True)
+    medoid_summary_path = cluster_output_dir / "medoid_summary.csv"
+    medoid_df.to_csv(medoid_summary_path, index=False)
+    logger.info(f"Saved medoid summary CSV: {medoid_summary_path}")
+
+    # -----------------------------
+    # Compute Tanimoto similarity per cluster
+    # -----------------------------
+    def compute_fp(smiles, radius=2, n_bits=1024):
+        mol = Chem.MolFromSmiles(smiles)
+        return AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=n_bits) if mol else None
+
+    # Map medoids to clusters
+    medoid_map = dict(zip(medoid_df["cluster"], medoid_df["medoid_smiles"]))
+    df["cluster_medoid"] = df["umap_cluster"].map(medoid_map)
+
+    def tanimoto_to_medoid(row):
+        fp_mol = compute_fp(row["smiles"])
+        fp_medoid = compute_fp(row["cluster_medoid"])
+        return DataStructs.TanimotoSimilarity(fp_mol, fp_medoid) if fp_mol and fp_medoid else np.nan
+
+    df["tanimoto_to_medoid"] = df.apply(tanimoto_to_medoid, axis=1)
+
+    # -----------------------------
+    # Violin plot of Tanimoto similarity
+    # -----------------------------
+    plt.figure(figsize=(10, 6))
+    sns.violinplot(
+        x="umap_cluster",
+        y="tanimoto_to_medoid",
+        data=df,
+        inner="quartile",
+        palette="tab10"
+    )
+    plt.xticks(rotation=45)
+    plt.ylabel("Tanimoto similarity to medoid")
+    plt.xlabel("Cluster")
+    plt.title("Chemical coherence of each cluster")
+    plt.tight_layout()
+    tanimoto_plot_path = cluster_output_dir / "medoid_tanimoto_violin.png"
+    plt.savefig(tanimoto_plot_path, dpi=300)
+    plt.close()
+    logger.info(f"Saved Tanimoto similarity violin plot: {tanimoto_plot_path}")
 
 
-    # --- Synthon-level enrichment ----------------------------------------------
+    # Synthon-level enrichment 
     if config["dimensionality_reduction_analyses"].get("synthon_enrichment", False):
         for col in ["smiles_a", "smiles_b", "smiles_c"]:
             syn_enr = (
@@ -418,11 +576,13 @@ def dimensionality_reduction_analyses(config, data=None):
             syn_enr.to_csv(output_dir / f"synthon_enrichment_{col}.csv")
         logger.info("Saved synthon enrichment summaries.")
 
-    # --- Per-synthon analysis ---------------------------------------------------
+    # Per-synthon analysis 
     if config["dimensionality_reduction_analyses"].get("per_synthon_analysis", False):
         synthon_cols = ["fp_a", "fp_b", "fp_c", "fp_final"]
         for i, synthon_col in enumerate(synthon_cols, start=1):
-            logger.info(f"Running per-synthon UMAP: {synthon_col}")
+            logger.info(f"Running per-synthon UMAP and medoid analysis: {synthon_col}")
+
+            # UMAP embedding
             fp_matrix = np.vstack(df[synthon_col].to_numpy()).astype(float)
             fp_scaled = scaler.fit_transform(fp_matrix)
 
@@ -443,7 +603,118 @@ def dimensionality_reduction_analyses(config, data=None):
                 output_file=output_dir / f"umap_{synthon_col}.png"
             )
 
-    # --- Save reduced coordinates ----------------------------------------------
+            # -----------------------------
+            # Clustering per synthon
+            # -----------------------------
+            # DBSCAN clustering
+            db = DBSCAN(eps=0.3, min_samples=5, metric="euclidean")  # adjust eps/min_samples if needed
+            cluster_labels = db.fit_predict(umap_syn)
+            df[f"{synthon_col}_cluster"] = cluster_labels
+
+            # -----------------------------
+            # Medoid analysis per synthon
+            # -----------------------------
+            # Top clusters based on log_enrichment
+            syn_summary = (
+                df.groupby(f"{synthon_col}_cluster")["log_enrichment"]
+                .mean()
+                .sort_values(ascending=False)
+            )
+            top_clusters = syn_summary.head(top_n).index
+            top_syn = df[df[f"{synthon_col}_cluster"].isin(top_clusters)].copy()
+
+            medoid_records = []
+            sim_records = []
+
+            for cid in top_clusters:
+                group = top_syn[top_syn[f"{synthon_col}_cluster"] == cid].copy()
+                if len(group) < 2:
+                    continue
+
+                # Convert fingerprints
+                fps = [numpy_to_bitvect(fp) for fp in group[synthon_col]]
+                n = len(fps)
+                sim_matrix = np.zeros((n, n))
+                for m in range(n):
+                    for n_ in range(m+1, n):
+                        sim = DataStructs.TanimotoSimilarity(fps[m], fps[n_])
+                        sim_matrix[m, n_] = sim_matrix[n_, m] = sim
+
+                medoid_idx = np.argmax(sim_matrix.mean(axis=1))
+                smiles_medoid = group.iloc[medoid_idx]["smiles"]
+                mol_medoid = Chem.MolFromSmiles(smiles_medoid)
+
+                # Scaffold
+                scaffold_medoid = get_scaffold(smiles_medoid)
+                mol_scaffold = Chem.MolFromSmiles(scaffold_medoid) if scaffold_medoid else None
+
+                # Save medoid + scaffold image
+                img_dir = output_dir / f"synthon_{synthon_col}_medoids"
+                img_dir.mkdir(exist_ok=True)
+                img_path = img_dir / f"cluster_{cid}_medoid_vs_scaffold.png"
+                if mol_medoid and mol_scaffold:
+                    img = Draw.MolsToGridImage(
+                        [mol_medoid, mol_scaffold],
+                        legends=[f"Cluster {cid} Medoid", "Scaffold"],
+                        molsPerRow=2,
+                        subImgSize=(250, 250)
+                    )
+                    img.save(img_path)
+                else:
+                    img_path = None
+
+                medoid_records.append({
+                    "cluster": cid,
+                    "medoid_smiles": smiles_medoid,
+                    "scaffold_smiles": scaffold_medoid,
+                    "cluster_size": len(group),
+                    "mean_log_enrichment": group["log_enrichment"].mean(),
+                    "medoid_image": str(img_path) if img_path else None
+                })
+
+                # Compute similarity of all molecules to medoid
+                for _, row in group.iterrows():
+                    sim = DataStructs.TanimotoSimilarity(
+                        numpy_to_bitvect(row[synthon_col]),
+                        numpy_to_bitvect(group.iloc[medoid_idx][synthon_col])
+                    )
+                    sim_records.append({
+                        "cluster": cid,
+                        "smiles": row["smiles"],
+                        "tanimoto_to_medoid": sim
+                    })
+
+            # Save medoid summary CSV
+            medoid_df = pd.DataFrame(medoid_records)
+            medoid_df.sort_values("mean_log_enrichment", ascending=False, inplace=True)
+            medoid_df.to_csv(img_dir / f"medoid_summary_{synthon_col}.csv", index=False)
+            logger.info(f"Saved medoid summary for {synthon_col}")
+
+            # Save Tanimoto similarity CSV
+            sim_df = pd.DataFrame(sim_records)
+            sim_df.to_csv(img_dir / f"medoid_tanimoto_{synthon_col}.csv", index=False)
+
+            # Violin plot
+            plt.figure(figsize=(10, 6))
+            sns.violinplot(
+                x="cluster",
+                y="tanimoto_to_medoid",
+                data=sim_df,
+                inner="quartile",
+                palette="tab10"
+            )
+            plt.xticks(rotation=45)
+            plt.xlabel("Cluster")
+            plt.ylabel("Tanimoto similarity to medoid")
+            plt.title(f"Chemical coherence per synthon cluster ({synthon_col})")
+            plt.tight_layout()
+            violin_path = img_dir / f"medoid_tanimoto_violin_{synthon_col}.png"
+            plt.savefig(violin_path, dpi=300)
+            plt.close()
+            logger.info(f"Saved Tanimoto similarity violin plot: {violin_path}")
+
+
+    # Save reduced coordinates
     reduced_df = df.copy()
     reduced_df[['pca_1', 'pca_2']] = pca_result
     reduced_df[['tsne_1', 'tsne_2']] = tsne_result
@@ -459,3 +730,5 @@ def dimensionality_reduction_analyses(config, data=None):
         "umap": str(output_dir / "umap_projection.png"),
         "reduced_data": str(output_file)
     }
+
+

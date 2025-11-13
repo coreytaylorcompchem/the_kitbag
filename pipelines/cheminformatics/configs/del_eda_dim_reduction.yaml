@@ -33,8 +33,6 @@ incremental_pca:
 
 workflow_postprocess:
   - dimensionality_reduction_analyses
-  # - medoid_analysis
-  # - report_generation
 
 dimensionality_reduction_analyses:
   input_file: outputs/streamed_ddr1/reduced_ddr1.parquet
@@ -50,9 +48,6 @@ dimensionality_reduction_analyses:
     n_neighbors: 30
     min_dist: 0.1
     random_state: 42
-  fp_weights: [1.0, 1.0, 1.0, 1.0]          # Weight final product higher
-  per_synthon_analysis: true                # Run UMAP per synthon
-  plot_properties: [MolWt, LogP, TPSA]      # Color by physicochemical props
   clustering:
     enabled: true
     eps: 0.6
@@ -61,21 +56,14 @@ dimensionality_reduction_analyses:
     centroid_images: true
     boxplot: true
     similarity_heatmap: true
+  medoid_analysis:
+    scaffold: Murcko
+    top_n_clusters: 10
+  fp_weights: [1.0, 1.0, 1.0, 1.0]          # Weight final product higher
+  per_synthon_analysis: true                # Run UMAP per synthon
+  plot_properties: [MolWt, LogP, TPSA]      # Color by physicochemical props
   pca_correlation: true                     # Compute PC–enrichment correlation
   synthon_enrichment: true                  # Export per-synthon enrichment
   output_dir: outputs/streamed_ddr1/dimensionality_reduction
-
-# medoid_analysis:
-#   input_file: outputs/streamed_ddr1/reduced_ddr1.parquet
-#   scaffold: Murcko
-#   output_dir: outputs/medoid_analysis
-
-# report_generation:
-#   input_file: outputs/streamed_ddr1/reduced_ddr1.parquet
-#   clustering: 
-#     type: DBSCAN
-#     eps: 0.5
-#     min_samples: 10
-#   output_dir: outputs/descriptive_report
 
 cleanup: true  # deletes intermediate steps after success
