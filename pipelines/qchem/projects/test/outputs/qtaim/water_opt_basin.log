@@ -4,7 +4,7 @@
  Multiwfn official website: http://sobereva.com/multiwfn
  Multiwfn English forum: http://sobereva.com/wfnbbs
  Multiwfn Chinese forum: http://bbs.keinsci.com/wfn
- ( Number of parallel threads:  16  Current date: 2025-10-01  Time: 16:12:11 )
+ ( Number of parallel threads:  16  Current date: 2025-11-17  Time: 13:49:02 )
  
  Both following papers ***MUST BE CITED IN MAIN TEXT*** if Multiwfn is used:
   Tian Lu, Feiwu Chen, J. Comput. Chem., 33, 580 (2012) DOI: 10.1002/jcc.22885
@@ -215,14 +215,14 @@
    Attractor       X,Y,Z coordinate (Angstrom)                Value
        1   -0.01587532   -0.01587532   -0.05275602        138.50029720
        2   -0.01587532   -0.71438923    0.48700474          0.37119484
-       3    0.01587532    0.71438923    0.48700474          0.37119484
+       3   -0.01587532    0.71438923    0.48700474          0.37119484
  Detecting boundary grids...
- There are      111772 grids at basin boundary
+ There are      111522 grids at basin boundary
  Refining basin boundary...
  Generating basins took up wall clock time         1 s
  The number of unassigned grids:           0
  The number of grids travelled to box boundary:           0
- The number of interbasin grids:      107041
+ The number of interbasin grids:      107033
  
                   ============= Basin analysis =============
  -10 Return to main menu
@@ -483,13 +483,13 @@
  Progress: [##################################################]   100.0 %     \
  
  Basin boundary has been updated
- The number of interbasin grids:      106993
+ The number of interbasin grids:      107007
  
  Total result:
    #Basin        Integral(a.u.)      Vol(Bohr^3)    Vol(rho>0.001)
-       1          9.1898739457         889.714         129.903
-       2          0.4050543003         327.892          21.950
-       3          0.4050580478         327.935          21.950
+       1          9.1898742645         889.677         129.903
+       2          0.4050540663         327.893          21.950
+       3          0.4050579631         327.971          21.950
  Sum of above integrals:          9.99998629
  Sum of basin volumes (rho>0.001):     173.804 Bohr^3
  
@@ -500,7 +500,7 @@
       3 (H )    Charge:    0.594945     Volume:    21.950 Bohr^3
  
 
- Integrating basins took up wall clock time         1 s
+ Integrating basins took up wall clock time         0 s
  
                   ============= Basin analysis =============
  -10 Return to main menu
@@ -544,7 +544,7 @@
  Progress: [#################################-----------------]    66.7 %     -
  Progress: [##################################################]   100.0 %     \
  
- Generating BOM took up wall clock time         0 s
+ Generating BOM took up wall clock time         1 s
  
  Error of BOM is    0.00000507
  Calculating LI and DI...
@@ -553,9 +553,9 @@
  
  ************** Total delocalization index matrix (basin index) **************
                1             2             3    
-     1    1.30947555    0.65473522    0.65474033
-     2    0.65473522    0.66179036    0.00705514
-     3    0.65474033    0.00705514    0.66179547
+     1    1.30947509    0.65473489    0.65474020
+     2    0.65473489    0.66179003    0.00705515
+     3    0.65474020    0.00705515    0.66179535
  
  Total localization index (basin index):
     1:  8.53512    2:  0.07416    3:  0.07416
@@ -567,9 +567,9 @@
  
  ************** Total delocalization index matrix (atom index) **************
                1             2             3    
-     1    1.30947555    0.65474033    0.65473522
-     2    0.65474033    0.66179547    0.00705514
-     3    0.65473522    0.00705514    0.66179036
+     1    1.30947509    0.65474020    0.65473489
+     2    0.65474020    0.66179535    0.00705515
+     3    0.65473489    0.00705515    0.66179003
  
  Total localization index (atom index):
     1:  8.53512    2:  0.07416    3:  0.07416

@@ -31,6 +31,7 @@ optimise:
     log: water_opt.log
     energy: water_opt_energy.txt
     geometry: water_opt.xyz
+    wfn: water_opt.wfn
 
 # mesp:
 #   backend: psi4

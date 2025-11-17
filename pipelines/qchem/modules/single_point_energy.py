@@ -50,7 +50,7 @@ def run(backend, xyz_file, step_config, global_config=None):
 
     log_output = stdout_capture.getvalue()
 
-    # 5. Save full Psi4 stdout log (complementary to Psi4's own log file)
+    # 5. Save full Psi4 stdout log
     with open(log_path, "a") as f:
         f.write("\n[Stdout Capture]\n")
         f.write(log_output)

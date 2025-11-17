@@ -68,4 +68,7 @@ def run(backend, xyz_file_or_wfn, step_config, global_config=None):
         script_input=script
     )
 
-    return log_path
+    return {
+        "wfn_file": wfn_path,
+        "log": log_path
+    }
