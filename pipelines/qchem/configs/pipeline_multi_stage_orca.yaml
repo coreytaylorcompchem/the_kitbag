@@ -1,0 +1,61 @@
+task: workflow
+workflow_name: staged_workflow
+input_file: inputs/water.xyz
+
+workflow:
+  - optimise
+  - single_point
+  # - mesp
+
+single_point:
+  backend: orca
+  method: pbe0
+  basis: def2-tzvpp
+  dispersion: d3bj          # optional: d3, d3bj, d4, none
+  grid: grid5               # e.g., grid4, grid5, gridx5, nofinalgrid
+  ri: rijcosx               # options: rijcosx, ri, none
+  solvent:
+    model: cpcm             # cpcm | smd | cosmo
+    epsilon: 80.0           # dielectric constant (optional)
+  ram: 4000
+  ncpu: 4
+  output:
+    log: water_spe.log
+    energy: water_energy.txt
+    geometry: water_spe.xyz
+
+optimise:
+  backend: orca
+  method: bp86
+  basis: def2-svp
+  dispersion: d3bj
+  grid: grid5
+  ri: rijcosx
+  solvent:
+    model: cosmo             # cpcm | smd | cosmo
+    epsilon: 80.0           # dielectric constant (optional)
+  ram: 8000
+  ncpu: 8
+  scf_type: pk          # pk, rik, gto, gdm
+  reference: rhf        # RHF, UHF, ROHF
+  maxiter: 50
+  output:
+    log: water_opt.log
+    energy: water_opt_energy.txt
+    geometry: water_opt.xyz
+    wfn: water_opt.wfn
+
+# mesp:
+#   backend: psi4
+# #   method: pbe0
+# #   basis: def2-tzvpp
+# #   ram: 8000
+# #   ncpu: 8
+#   output:
+#     log: water_mesp.log
+#     mesp_cube: water_mesp.cube
+#     density_cube: water_density.cube
+
+output:
+  directory: outputs/multi_stage
+  overwrite: true
