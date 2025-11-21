@@ -9,40 +9,9 @@ from opi.core import Calculator
 from opi.input.structures.structure import Structure
 from opi.input.simple_keywords import Task, Dft
 
-# Manual mappings
-DISPERSION_MAP = {
-    "d3": "D3ZERO",
-    "d3bj": "D3BJ",
-    "d4": "D4",
-}
+# SCF block imports
+from opi.input.blocks.block_scf import BlockScf, DIIS, Shift
 
-RI_MAP = {
-    "ri": "RI",
-    "rijcosx": "RIJCOSX",
-}
-
-GRID_MAP = {
-    "grid2": "Grid2",
-    "grid3": "Grid3",
-    "grid4": "Grid4",
-    "grid5": "Grid5",
-    "gridx5": "GridX5",
-    "nofinalgrid": "NoFinalGrid",
-}
-
-REFERENCE_MAP = {
-    "rhf": "RHF",
-    "uhf": "UHF",
-    "rohf": "ROHF",
-}
-
-# Map YAML scf_type to BlockScf scfmode
-SCF_TYPES = {
-    "pk": "direct",
-    "rik": "rik",
-    "gto": "gto",
-    "gdm": "gdm",
-}
 
 class OrcaBackend:
 
@@ -62,9 +31,17 @@ class OrcaBackend:
         calc.input.memory = int(ram)
         return calc
 
+    # ---------------------------------------------------------
+    # Normalization helper: ensures strings are clean and safe
+    def _norm(self, kw):
+        if kw is None:
+            return None
+        return str(kw).strip()
+
+    # ---------------------------------------------------------
     def _apply_keywords(self, calc, step):
         # -------------------
-        # DFT functional
+        # DFT functional (only part still handled by OPI)
         method = step.get("method", "").upper()
         if hasattr(Dft, method):
             func_keyword = getattr(Dft, method)
@@ -72,28 +49,25 @@ class OrcaBackend:
             raise ValueError(f"Unknown DFT functional '{method}'")
 
         # -------------------
-        # Basis, Dispersion, Grid, RI
-        basis = step.get("basis")
-        disp_kw = DISPERSION_MAP.get(step.get("dispersion", "").lower())
-        grid_kw = GRID_MAP.get(step.get("grid", "").lower())
-        ri_kw = RI_MAP.get(step.get("ri", "").lower())
+        # ORCA keywords come directly from YAML as valid ORCA keywords
+        basis   = self._norm(step.get("basis"))
+        disp_kw = self._norm(step.get("dispersion"))
+        grid_kw = self._norm(step.get("grid"))      # use DEFGRID1/2/3
+        ri_kw   = self._norm(step.get("ri"))
 
         # -------------------
-        # Task: optimise / single point
+        # Task keyword
         task = Task.OPT if step.get("task", "optimise") == "optimise" else Task.SP
 
         # -------------------
-        # Build a single ORCA ! line
-        # Only add each keyword once
-        keywords_list = [func_keyword, basis, disp_kw, grid_kw, ri_kw, task]
-        keywords_list = [kw for kw in keywords_list if kw]  # remove None
-        def _keyword_to_str(kw):
-            # If it's a SimpleKeyword, use its .keyword attribute
-            if hasattr(kw, "keyword"):
-                return kw.keyword
-            return str(kw)
-        
-        calc.input.add_simple_keywords(" ".join(_keyword_to_str(kw) for kw in keywords_list))
+        # Build ORCA "! ..." line
+        keyword_pieces = [func_keyword.keyword]
+        for raw in (basis, disp_kw, grid_kw, ri_kw):
+            if raw:
+                keyword_pieces.append(raw)
+        keyword_pieces.append(task.keyword)
+
+        calc.input.add_simple_keywords(" ".join(keyword_pieces))
 
         # -------------------
         # Maxcore / parallelization
@@ -104,18 +78,39 @@ class OrcaBackend:
 
         # -------------------
         # SCF block
-        from opi.input.blocks.block_scf import BlockScf
         scf_kwargs = {}
+
+        # reference
         ref = step.get("reference")
         if ref:
-            scf_kwargs["reference"] = REFERENCE_MAP[ref.lower()]
-        if "maxiter" in step:
-            scf_kwargs["maxiter"] = int(step["maxiter"])
-        scf_type = step.get("scf_type")
-        if scf_type:
-            scf_kwargs["scfmode"] = SCF_TYPES.get(scf_type.lower())
-            if scf_kwargs["scfmode"] is None:
-                raise ValueError(f"Unknown SCF type '{scf_type}'")
+            scf_kwargs["reference"] = self._norm(ref)
+
+        # SCF options
+        scf_opts = step.get("scf", {})
+        for k, v in scf_opts.items():
+            key = k.lower()
+            if key == "diis":
+                if isinstance(v, bool):
+                    scf_kwargs["diis"] = DIIS(enabled=v)
+                elif isinstance(v, dict):
+                    scf_kwargs["diis"] = DIIS(**v)
+                else:
+                    raise ValueError(f"Invalid diis value: {v}")
+            elif key == "shift":
+                if isinstance(v, (float, int)):
+                    scf_kwargs["shift"] = Shift(scf=v)
+                elif isinstance(v, dict):
+                    scf_kwargs["shift"] = Shift(**v)
+                else:
+                    raise ValueError(f"Invalid shift value: {v}")
+            elif key == "scfmode":
+                scf_kwargs["scfmode"] = v
+            elif key == "maxiter":
+                scf_kwargs["maxiter"] = int(v)
+            else:
+                # Pass other SCF keys as-is
+                scf_kwargs[key] = v
+
         if scf_kwargs:
             calc.input.add_blocks(BlockScf(**scf_kwargs))
 
@@ -124,15 +119,16 @@ class OrcaBackend:
         solv = step.get("solvent")
         if isinstance(solv, dict):
             model = solv.get("model", "").lower()
-            eps = solv.get("epsilon", 80.0)
+            eps = float(solv.get("epsilon", 80.0))
+
             if model == "cpcm":
                 from opi.input.blocks.block_cpcm import BlockCpcm
-                calc.input.add_blocks(BlockCpcm(epsilon=float(eps)))
+                calc.input.add_blocks(BlockCpcm(epsilon=eps))
             elif model == "cosmo":
                 from opi.input.blocks.block_cosmors import BlockCosmors
-                calc.input.add_blocks(BlockCosmors(epsilon=float(eps)))
+                calc.input.add_blocks(BlockCosmors(epsilon=eps))
             elif model == "smd":
-                calc.input.add_simple_keywords("smd")
+                calc.input.add_simple_keywords("SMD")
 
     # ---------------------------------------------------------
     def optimise(self, xyz_file, step, log_path=None):
@@ -142,10 +138,7 @@ class OrcaBackend:
             ncpu=step.get("ncpu", 4),
             ram=step.get("ram", 4000),
         )
-
-        # DO NOT add Task.OPT here, handled inside _apply_keywords
         self._apply_keywords(calc, step)
-
         calc.write_input()
         return calc.run()
 
@@ -157,10 +150,6 @@ class OrcaBackend:
             ncpu=step.get("ncpu", 4),
             ram=step.get("ram", 4000),
         )
-
-        # DO NOT add Task.SP here, handled inside _apply_keywords
         self._apply_keywords(calc, step)
-
         calc.write_input()
         return calc.run()
-

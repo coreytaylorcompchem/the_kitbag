@@ -7,18 +7,27 @@ workflow:
   - single_point
   # - mesp
 
+# Most of the scf, grid, etc. parameters are optional. Here for demonstration purposes. 
+
 single_point:
   backend: orca
   method: pbe0
-  basis: def2-tzvpp
-  dispersion: d3bj          # optional: d3, d3bj, d4, none
-  grid: grid5               # e.g., grid4, grid5, gridx5, nofinalgrid
-  ri: rijcosx               # options: rijcosx, ri, none
+  basis: def2-TZVP
+  dispersion: D3BJ          # optional: D3, D3BJ, D4, none
+  grid: DEFGRID2            # e.g., DEFGRID1/2/3
+  ri: RIJCOSX               # options: RIJCOSX, RI, none
   solvent:
     model: cpcm             # cpcm | smd | cosmo
     epsilon: 80.0           # dielectric constant (optional)
   ram: 4000
   ncpu: 4
+  scf:
+    scf_type: PK        # direct, semidirect, conventional
+    maxiter: 50
+    shift: 0.2
+    convergence: tight 
+    damping: true
+    diis: true
   output:
     log: water_spe.log
     energy: water_energy.txt
@@ -27,17 +36,23 @@ single_point:
 optimise:
   backend: orca
   method: bp86
-  basis: def2-svp
-  dispersion: d3bj
-  grid: grid5
-  ri: rijcosx
+  basis: def2-SVP
+  dispersion: D3BJ
+  grid: DEFGRID2            # e.g., DEFGRID1/2/3
+  ri: RIJCOSX
   solvent:
-    model: cosmo             # cpcm | smd | cosmo
+    model: cpcm             # cpcm | smd | cosmo
     epsilon: 80.0           # dielectric constant (optional)
   ram: 8000
   ncpu: 8
-  scf_type: pk          # pk, rik, gto, gdm
-  reference: rhf        # RHF, UHF, ROHF
+  scf:
+    scf_type: PK        # direct, semidirect, conventional
+    maxiter: 50
+    shift: 0.2
+    convergence: tight 
+    damping: true
+    diis: true
+  reference: RHF        # RHF, UHF, ROHF
   maxiter: 50
   output:
     log: water_opt.log
