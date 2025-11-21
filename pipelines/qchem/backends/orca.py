@@ -120,13 +120,20 @@ class OrcaBackend:
         if isinstance(solv, dict):
             model = solv.get("model", "").lower()
             eps = float(solv.get("epsilon", 80.0))
+            solv_name = solv.get("name", "").upper() if solv.get("name") else None
+            use_draco = bool(solv.get("draco", False))
 
             if model == "cpcm":
                 from opi.input.blocks.block_cpcm import BlockCpcm
-                calc.input.add_blocks(BlockCpcm(epsilon=eps))
-            elif model == "cosmo":
-                from opi.input.blocks.block_cosmors import BlockCosmors
-                calc.input.add_blocks(BlockCosmors(epsilon=eps))
+
+                kwargs = {"epsilon": eps}
+                if solv_name:
+                    kwargs["solvent"] = solv_name  # specify solvent by name
+                if use_draco:
+                    kwargs["draco"] = True  # enable DRACO
+
+                calc.input.add_blocks(BlockCpcm(**kwargs))
+
             elif model == "smd":
                 calc.input.add_simple_keywords("SMD")
 

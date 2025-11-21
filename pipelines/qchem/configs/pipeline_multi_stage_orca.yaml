@@ -4,34 +4,10 @@ input_file: inputs/water.xyz
 
 workflow:
   - optimise
-  - single_point
+  # - single_point
   # - mesp
 
 # Most of the scf, grid, etc. parameters are optional. Here for demonstration purposes. 
-
-single_point:
-  backend: orca
-  method: pbe0
-  basis: def2-TZVP
-  dispersion: D3BJ          # optional: D3, D3BJ, D4, none
-  grid: DEFGRID2            # e.g., DEFGRID1/2/3
-  ri: RIJCOSX               # options: RIJCOSX, RI, none
-  solvent:
-    model: cpcm             # cpcm | smd | cosmo
-    epsilon: 80.0           # dielectric constant (optional)
-  ram: 4000
-  ncpu: 4
-  scf:
-    scf_type: PK        # direct, semidirect, conventional
-    maxiter: 50
-    shift: 0.2
-    convergence: tight 
-    damping: true
-    diis: true
-  output:
-    log: water_spe.log
-    energy: water_energy.txt
-    geometry: water_spe.xyz
 
 optimise:
   backend: orca
@@ -41,8 +17,10 @@ optimise:
   grid: DEFGRID2            # e.g., DEFGRID1/2/3
   ri: RIJCOSX
   solvent:
-    model: cpcm             # cpcm | smd | cosmo
+    model: cpcm             # only support cpcm for now
+    name: water             # See all solvents here: https://www.faccts.de/docs/orca/6.0/manual/contents/detailed/solvationmodels.html#table-list-solvents
     epsilon: 80.0           # dielectric constant (optional)
+    draco: false             # Dynamic Radii Adjustment for Continuum Solvation (DRACO) - adds quite a bit of cost, though.
   ram: 8000
   ncpu: 8
   scf:
@@ -59,6 +37,32 @@ optimise:
     energy: water_opt_energy.txt
     geometry: water_opt.xyz
     wfn: water_opt.wfn
+
+single_point:
+  backend: orca
+  method: pbe0
+  basis: def2-TZVP
+  dispersion: D3BJ          # optional: D3, D3BJ, D4, none
+  grid: DEFGRID2            # e.g., DEFGRID1/2/3
+  ri: RIJCOSX               # options: RIJCOSX, RI, none
+  solvent:
+    model: cpcm             # only support cpcm for now
+    name: water             # See all solvents here: https://www.faccts.de/docs/orca/6.0/manual/contents/detailed/solvationmodels.html#table-list-solvents
+    epsilon: 80.0           # dielectric constant (optional)
+    draco: false            # Dynamic Radii Adjustment for Continuum Solvation (DRACO) - adds quite a bit of cost, though.
+  ram: 4000
+  ncpu: 4
+  scf:
+    scf_type: PK        # direct, semidirect, conventional
+    maxiter: 50
+    shift: 0.2
+    convergence: tight 
+    damping: true
+    diis: true
+  output:
+    log: water_spe.log
+    energy: water_energy.txt
+    geometry: water_spe.xyz
 
 # mesp:
 #   backend: psi4
