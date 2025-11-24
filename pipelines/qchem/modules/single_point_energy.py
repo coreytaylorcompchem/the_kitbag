@@ -14,13 +14,13 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
     category='Energy'
 )
 def run(backend, xyz_file, step_config, global_config=None):
-    # 1. Load global output settings
+    # Load global output settings
     global_output_cfg = global_config.get("output", {}) if global_config else {}
     output_dir = global_output_cfg.get("directory", "results")
     overwrite = global_output_cfg.get("overwrite", False)
     os.makedirs(output_dir, exist_ok=True)
 
-    # 2. Get base name for fallback filenames
+    # Get base name for fallback filenames
     base_name = os.path.splitext(os.path.basename(xyz_file))[0]
     output_cfg = step_config.get("output", {})
 
@@ -32,12 +32,12 @@ def run(backend, xyz_file, step_config, global_config=None):
     energy_path = os.path.join(output_dir, energy_filename)
     geometry_path = os.path.join(output_dir, geometry_filename)
 
-    # 3. Checkpoint: skip if log exists and overwrite is false
+    # Checkpoint: skip if log exists and overwrite is false
     if os.path.exists(log_path) and not overwrite:
         logger.warning(f"Skipping – {log_path} already exists.")
         return log_path
 
-    # 4. Capture Psi4 output printed to stdout
+    # Capture output printed to stdout
     stdout_capture = io.StringIO()
     sys_stdout_backup = sys.stdout
     sys.stdout = stdout_capture
@@ -50,13 +50,13 @@ def run(backend, xyz_file, step_config, global_config=None):
 
     log_output = stdout_capture.getvalue()
 
-    # 5. Save full Psi4 stdout log
+    # Save full stdout log
     with open(log_path, "a") as f:
         f.write("\n[Stdout Capture]\n")
         f.write(log_output)
     logger.info(f"Saved log output to: {log_path}")
 
-    # 6. Save energy and geometry if returned
+    # Save energy and geometry if returned
     if isinstance(result, tuple):
         energy, final_geom = result
     else:

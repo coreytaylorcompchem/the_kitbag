@@ -13,13 +13,13 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
     category='Optimization'
 )
 def run(backend, xyz_file, step_config, global_config=None):
-    # 1. Load global output settings
+    # Load global output settings
     global_output_cfg = global_config.get("output", {}) if global_config else {}
     output_dir = global_output_cfg.get("directory", "results")
     overwrite = global_output_cfg.get("overwrite", False)
     os.makedirs(output_dir, exist_ok=True)
 
-    # 2. Get base name for fallback filenames
+    # Get base name for fallback filenames
     base_name = os.path.splitext(os.path.basename(xyz_file))[0]
     output_cfg = step_config.get("output", {})
 
@@ -33,32 +33,31 @@ def run(backend, xyz_file, step_config, global_config=None):
     geometry_path = os.path.join(output_dir, geometry_filename)
     wfn_path = os.path.join(output_dir, wfn_filename)
 
-    # 3. Checkpoint: skip if log exists and overwrite is false
+    # Checkpoint: skip if log exists and overwrite is false
     if os.path.exists(log_path) and not overwrite:
         logger.warning(f"Skipping - {log_path} already exists.")
-        # Try to return a dict with available info
         result_dict = {"wfn_file": wfn_path if os.path.exists(wfn_path) else None,
                        "geometry": None,
                        "energy": None,
                        "wfn": None}
-        # We could try to read geometry and energy if desired here
         return result_dict
 
-    # 4. Capture stdout from Psi4 or backend output
+    # Capture stdout from Psi4 or backend output
     stdout_capture = io.StringIO()
     sys_stdout_backup = sys.stdout
     sys.stdout = stdout_capture
 
     try:
         # Pass the full log_path to backend optimise call if supported
-        # Adjust this call if your backend.optimise() accepts log_path parameter
+        # Adjust this call if backend.optimise() accepts log_path parameter
+        # At present, Orca and Psi4 does.
         result = backend.optimise(xyz_file, step_config, log_path=log_path)
     finally:
         sys.stdout = sys_stdout_backup
 
     log_output = stdout_capture.getvalue()
 
-    # 5. Save the stdout capture (complementary to backend log file)
+    # Save the stdout capture (complementary to backend log file)
     with open(log_path, "a") as f:
         f.write("\n[Stdout Capture]\n")
         f.write(log_output)
@@ -81,7 +80,6 @@ def run(backend, xyz_file, step_config, global_config=None):
         if wfn:
             final_geom = wfn.molecule().save_string_xyz()
     else:
-        # If backend.optimise returns energy float or something else
         energy = result
 
     if energy is not None:
@@ -95,7 +93,7 @@ def run(backend, xyz_file, step_config, global_config=None):
             f.write(final_geom)
         logger.info(f"Saved geometry to: {geometry_path}")
 
-    # Return dict with relevant info for downstream tasks
+    # Return dict for downstream tasks
     return {
         "energy": energy,
         "method": step_config.get("method"),

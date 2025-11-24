@@ -4,7 +4,7 @@ input_file: inputs/water.xyz
 
 workflow:
   - optimise
-  # - single_point
+  - single_point
   # - mesp
 
 # Most of the scf, grid, etc. parameters are optional. Here for demonstration purposes. 
@@ -20,7 +20,7 @@ optimise:
     model: cpcm             # only support cpcm for now
     name: water             # See all solvents here: https://www.faccts.de/docs/orca/6.0/manual/contents/detailed/solvationmodels.html#table-list-solvents
     epsilon: 80.0           # dielectric constant (optional)
-    draco: false             # Dynamic Radii Adjustment for Continuum Solvation (DRACO) - adds quite a bit of cost, though.
+    draco: false             # Dynamic Radii Adjustment for Continuum Solvation (DRACO) - adds quite a bit of cost.
   ram: 8000
   ncpu: 8
   scf:
@@ -48,8 +48,8 @@ single_point:
   solvent:
     model: cpcm             # only support cpcm for now
     name: water             # See all solvents here: https://www.faccts.de/docs/orca/6.0/manual/contents/detailed/solvationmodels.html#table-list-solvents
-    epsilon: 80.0           # dielectric constant (optional)
-    draco: false            # Dynamic Radii Adjustment for Continuum Solvation (DRACO) - adds quite a bit of cost, though.
+    epsilon: 80.0           # dielectric constant (optional - just choosing the solvent will adjust this)
+    draco: false            # Dynamic Radii Adjustment for Continuum Solvation (DRACO) - adds quite a bit of cost.
   ram: 4000
   ncpu: 4
   scf:

@@ -96,7 +96,7 @@ def find_acidic_sites(mol):
         "phenol": "[OX2H]c",
         "alcohol": "[CX4][OX2H]",  
         "thiol": "[#16X2H]",
-    }
+    } # feed this in as a file?
 
     acidic_sites = set()
     mol = Chem.AddHs(mol)  # Ensure explicit Hs
@@ -133,7 +133,7 @@ def protonate_site(mol, atom_idx):
     # Check if atom already has H neighbor
     has_H = any(nbr.GetAtomicNum() == 1 for nbr in atom.GetNeighbors())
     if has_H:
-        # Already protonated, just return mol_copy as is
+        # Already protonated, just return as-is
         return mol_copy
 
     # Add new H bonded to this atom
@@ -144,7 +144,7 @@ def protonate_site(mol, atom_idx):
 
     mol_copy = rw_mol.GetMol()
 
-    # Sanitize and optimize
+    # Sanitise and optimise
     Chem.SanitizeMol(mol_copy)
     AllChem.EmbedMolecule(mol_copy)
     AllChem.UFFOptimizeMolecule(mol_copy)
@@ -172,7 +172,7 @@ def deprotonate_site(mol, atom_idx):
     else:
         logger.warning(f"No proton found on acidic site atom idx {atom_idx} for deprotonation.")
 
-    # Adjust formal charge to -1 (assumed)
+    # Adjust formal charge to -1 (TODO: make more better)
     atom = mol_copy.GetAtomWithIdx(atom_idx)
     atom.SetFormalCharge(atom.GetFormalCharge() - 1)
 

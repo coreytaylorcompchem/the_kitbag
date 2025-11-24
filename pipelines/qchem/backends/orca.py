@@ -4,17 +4,17 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# OPI imports
+# Core OPI imports
 from opi.core import Calculator
 from opi.input.structures.structure import Structure
 from opi.input.simple_keywords import Task, Dft
 
-# SCF block imports
+# Block imports used to build the import file
 from opi.input.blocks.block_scf import BlockScf, DIIS, Shift
+from opi.input.blocks.block_cpcm import BlockCpcm
 
 
 class OrcaBackend:
-
     def __init__(self, global_config=None):
         self.global_config = global_config or {}
         self.working_dir = Path(
@@ -31,35 +31,29 @@ class OrcaBackend:
         calc.input.memory = int(ram)
         return calc
 
-    # ---------------------------------------------------------
     # Normalization helper: ensures strings are clean and safe
     def _norm(self, kw):
         if kw is None:
             return None
         return str(kw).strip()
 
-    # ---------------------------------------------------------
     def _apply_keywords(self, calc, step):
-        # -------------------
-        # DFT functional (only part still handled by OPI)
+        # DFT functional (the only part still handled by OPI directly)
         method = step.get("method", "").upper()
         if hasattr(Dft, method):
             func_keyword = getattr(Dft, method)
         else:
             raise ValueError(f"Unknown DFT functional '{method}'")
 
-        # -------------------
-        # ORCA keywords come directly from YAML as valid ORCA keywords
+        # ORCA keywords that come directly from YAML as valid ORCA keywords
         basis   = self._norm(step.get("basis"))
         disp_kw = self._norm(step.get("dispersion"))
-        grid_kw = self._norm(step.get("grid"))      # use DEFGRID1/2/3
+        grid_kw = self._norm(step.get("grid"))      # use DEFGRID1/2/3, not the old Grid4, GridX5, etc.
         ri_kw   = self._norm(step.get("ri"))
 
-        # -------------------
         # Task keyword
         task = Task.OPT if step.get("task", "optimise") == "optimise" else Task.SP
 
-        # -------------------
         # Build ORCA "! ..." line
         keyword_pieces = [func_keyword.keyword]
         for raw in (basis, disp_kw, grid_kw, ri_kw):
@@ -69,18 +63,15 @@ class OrcaBackend:
 
         calc.input.add_simple_keywords(" ".join(keyword_pieces))
 
-        # -------------------
-        # Maxcore / parallelization
         if "ram" in step:
             calc.input.maxcore = int(step["ram"])
         if "ncpu" in step:
             calc.input.nprocs = int(step["ncpu"])
 
-        # -------------------
         # SCF block
         scf_kwargs = {}
 
-        # reference
+        # reference wave function
         ref = step.get("reference")
         if ref:
             scf_kwargs["reference"] = self._norm(ref)
@@ -114,8 +105,7 @@ class OrcaBackend:
         if scf_kwargs:
             calc.input.add_blocks(BlockScf(**scf_kwargs))
 
-        # -------------------
-        # Solvent block
+        # Solvent block (still haven't got COSMO working but PCM covers a lot of bases)
         solv = step.get("solvent")
         if isinstance(solv, dict):
             model = solv.get("model", "").lower()
@@ -124,20 +114,18 @@ class OrcaBackend:
             use_draco = bool(solv.get("draco", False))
 
             if model == "cpcm":
-                from opi.input.blocks.block_cpcm import BlockCpcm
 
                 kwargs = {"epsilon": eps}
                 if solv_name:
                     kwargs["solvent"] = solv_name  # specify solvent by name
                 if use_draco:
-                    kwargs["draco"] = True  # enable DRACO
+                    kwargs["draco"] = True  # enable DRACO - adds a lot of cost and not sure if it's worth it
 
                 calc.input.add_blocks(BlockCpcm(**kwargs))
 
             elif model == "smd":
                 calc.input.add_simple_keywords("SMD")
 
-    # ---------------------------------------------------------
     def optimise(self, xyz_file, step, log_path=None):
         calc = self._make_calculator(
             xyz_file,
@@ -149,7 +137,6 @@ class OrcaBackend:
         calc.write_input()
         return calc.run()
 
-    # ---------------------------------------------------------
     def single_point(self, xyz_file, step, log_path=None):
         calc = self._make_calculator(
             xyz_file,
