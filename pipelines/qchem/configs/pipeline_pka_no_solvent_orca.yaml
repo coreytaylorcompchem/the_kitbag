@@ -1,0 +1,32 @@
+task: workflow
+workflow_name: staged_workflow
+input_file: inputs/pka_molecules.csv
+
+workflow:
+  - site_pka
+  - calc_pka
+
+site_pka:
+  backend: orca
+  csv_file: ${input_file} 
+  output_dir: outputs/site_pka
+
+calc_pka:
+  backend: orca
+  site_pka_data_path: outputs/site_pka/site_pka_data.pkl
+  method: b3lyp
+  basis: def2-svp
+  temperature: 298.15
+  ram: 8000         # RAM in MB
+  ncpu: 16           # number of CPU cores
+  freq: true       # run vib frequency calculation
+  solvent:
+    model: cpcm             # only support cpcm for now
+    name: water             # See all solvents here: https://www.faccts.de/docs/orca/6.0/manual/contents/detailed/solvationmodels.html#table-list-solvents
+    epsilon: 80.0           # dielectric constant (optional)
+    draco: false             # Dynamic Radii Adjustment for Continuum Solvation (DRACO) - adds quite a bit of cost.
+  output_dir: outputs/calc_pka
+
+output:
+  directory: outputs/site_pka
+  overwrite: true

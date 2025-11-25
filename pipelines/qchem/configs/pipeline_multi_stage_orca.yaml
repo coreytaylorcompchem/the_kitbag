@@ -4,7 +4,7 @@ input_file: inputs/water.xyz
 
 workflow:
   - optimise
-  - single_point
+  # - single_point
   # - mesp
 
 # Most of the scf, grid, etc. parameters are optional. Here for demonstration purposes. 

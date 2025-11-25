@@ -50,7 +50,11 @@ def run(backend, csv_file, step_config, global_config=None):
                 a_mol = deprotonate_site(mol, atom_idx)
 
                 ha_xyz = mol_to_xyz_string(ha_mol)
+                ha_charge = Chem.GetFormalCharge(ha_mol)
+                ha_mult = 1   # RDKit cannot detect radicals, assume singlet for acids
                 a_xyz = mol_to_xyz_string(a_mol)
+                a_charge = Chem.GetFormalCharge(a_mol)
+                a_mult = 1    # carboxylates & phenolates are closed-shell anions
 
                 site_data[i] = {
                     'atom_idx': atom_idx,
@@ -59,6 +63,10 @@ def run(backend, csv_file, step_config, global_config=None):
                     'a_xyz': a_xyz,
                     'ha_mol': ha_mol,
                     'a_mol': a_mol,
+                    'ha_charge': ha_charge,
+                    'ha_mult': ha_mult,
+                    'a_charge': a_charge,
+                    'a_mult': a_mult,
                 }
             except Exception as e:
                 logger.warning(f"Failed to process site {atom_idx} in {name}: {e}")

@@ -7,6 +7,7 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 PROTON_GAS_PHASE_G = -6.28  # kcal/mol
+PROTON_SOLUTION_G = -265.9  # kcal/mol
 
 @register_task(
     'calc_pka',
@@ -24,11 +25,7 @@ def run(backend, input_for_task, step_config, global_config=None):
 
     # Retrieve configs for use in optimisations
 
-    method = step_config.get('method', 'b3lyp')
-    basis = step_config.get('basis', 'def2-svp')
     temperature = step_config.get('temperature', 298.15)
-    ram = step_config.get('ram', 2000)
-    ncpu = step_config.get('ncpu', 2)
 
     output_dir = step_config.get("output_dir", "outputs/calc_pka")
     os.makedirs(output_dir, exist_ok=True)
@@ -45,29 +42,53 @@ def run(backend, input_for_task, step_config, global_config=None):
 
             try:
                 # Temp files for geometries
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.xyz', delete=False) as ha_file:
-                    ha_file.write(ha_xyz)
-                    ha_filepath = ha_file.name
+                ha_filepath = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_HA.xyz")
+                with open(ha_filepath, "w") as f:
+                    f.write(ha_xyz)
 
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.xyz', delete=False) as a_file:
-                    a_file.write(a_xyz)
-                    a_filepath = a_file.name
+                a_filepath = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_A.xyz")
+                with open(a_filepath, "w") as f:
+                    f.write(a_xyz)
 
                 # Create log paths
                 ha_log_path = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_HA.log")
                 a_log_path = os.path.join(output_dir, f"{mol_name}_site_{site_idx}_A.log")
 
-                logger.info(f"Optimising HA structure for {mol_name} site {site_idx} from file: {ha_filepath}")
-                ha_result = backend.optimise(ha_filepath, step_config, log_path=ha_log_path)
+                # HA
+                ha_step = {**step_config}
+                ha_step.update({"charge": data.get("ha_charge", 0),
+                                "multiplicity": data.get("ha_mult", 1),
+                                "freq": True})  # request frequencies
 
-                energy_ha = ha_result.get('energy')
+                if "solvent" in step_config:
+                    ha_step["solvent"] = step_config["solvent"]
+
+                logger.info(f"Optimising HA structure for {mol_name} site {site_idx} "
+                            f"from file: {ha_filepath} (charge={ha_step['charge']} mult={ha_step['multiplicity']})")
+
+                ha_result = backend.optimise(ha_filepath, ha_step, log_path=ha_log_path)
+
+                energy_ha = ha_result.get('gibbs_energy', ha_result['energy'])
+
                 if energy_ha is None:
                     raise ValueError(f"No energy returned for HA species in {mol_name} site {site_idx}")
 
-                logger.info(f"Optimising A- structure for {mol_name} site {site_idx} from file: {a_filepath}")
-                a_result = backend.optimise(a_filepath, step_config, log_path=a_log_path)
+                # A–
+                a_step = {**step_config}
+                a_step.update({"charge": data.get("a_charge", -1),
+                            "multiplicity": data.get("a_mult", 1),
+                            "freq": True})
 
-                energy_a = a_result.get('energy')
+                if "solvent" in step_config:
+                    a_step["solvent"] = step_config["solvent"]
+
+                logger.info(f"Optimising A- structure for {mol_name} site {site_idx} "
+                            f"from file: {a_filepath} (charge={a_step['charge']} mult={a_step['multiplicity']})")
+
+                a_result = backend.optimise(a_filepath, a_step, log_path=a_log_path)
+
+                energy_a = a_result.get('gibbs_energy', a_result['energy'])
+
                 if energy_a is None:
                     raise ValueError(f"No energy returned for A- species in {mol_name} site {site_idx}")
 
@@ -83,7 +104,7 @@ def run(backend, input_for_task, step_config, global_config=None):
 
             # Free energy difference (ΔG)
             hartree_to_kcal = 627.509
-            deltaG = (energy_a - energy_ha) * hartree_to_kcal + PROTON_GAS_PHASE_G
+            deltaG = (energy_a - energy_ha) * hartree_to_kcal + PROTON_SOLUTION_G
 
             R = 1.9872036e-3
             ln10 = 2.302585
