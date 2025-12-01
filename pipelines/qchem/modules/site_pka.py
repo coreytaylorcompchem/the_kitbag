@@ -51,10 +51,10 @@ def run(backend, csv_file, step_config, global_config=None):
 
                 ha_xyz = mol_to_xyz_string(ha_mol)
                 ha_charge = Chem.GetFormalCharge(ha_mol)
-                ha_mult = 1   # RDKit cannot detect radicals, assume singlet for acids
+                ha_mult = 1   
                 a_xyz = mol_to_xyz_string(a_mol)
                 a_charge = Chem.GetFormalCharge(a_mol)
-                a_mult = 1    # carboxylates & phenolates are closed-shell anions
+                a_mult = 1    
 
                 site_data[i] = {
                     'atom_idx': atom_idx,
@@ -97,36 +97,95 @@ def load_molecule_from_smiles(smiles):
     AllChem.UFFOptimizeMolecule(mol)
     return mol
 
-
 def find_acidic_sites(mol):
-    acidic_smarts = {
-        "carboxylic_acid": "[CX3](=O)[OX2H1]",
-        "phenol": "[OX2H]c",
-        "alcohol": "[CX4][OX2H]",  
-        "thiol": "[#16X2H]",
-    } # feed this in as a file?
+    """
+    Identify acidic *functional groups*, regardless of protonation.
+    Returns heavy atom indices that are protonatable/deprotonatable acidic sites.
+    Does NOT require explicit hydrogens.
+    Excludes C–H acidity.
+    """
+    mol = Chem.AddHs(mol)
 
-    acidic_sites = set()
-    mol = Chem.AddHs(mol)  # Ensure explicit Hs
+    # Acidic fragments (stealing approach from EPIK)
+    FRAGMENTS = [
+        # Carboxylic acid / carboxylate
+        ("carboxylic",       "[CX3](=O)[OX2H1]",        5.0),
+        ("carboxylate",      "[CX3](=O)[O-]",           5.0),
 
-    for name, smarts in acidic_smarts.items():
+        # Sulfonic acid / sulfonate
+        ("sulfonic",         "S(=O)(=O)[OX2H1]",        5.0),
+        ("sulfonate",        "S(=O)(=O)[O-]",           5.0),
+
+        # Phosphoric acid series (mono/di/triprotic)
+        ("phosphate_OH",     "P(=O)(O)(O)[OX2H1]",      4.5),
+        ("phosphate_O-",     "P(=O)(O)(O)[O-]",         4.5),
+
+        # Pyro/Meta/Poly-phosphate (any protonation)
+        ("polyphosphate_OH", "P(=O)(O)O[OX2H1]",        4.5),
+        ("polyphosphate_O-", "P(=O)(O)O[O-]",           4.5),
+
+        # Boric acid / borate
+        ("boric_OH",         "B(O)(O)[OX2H1]",          4.0),
+        ("borate_O-",        "B(O)(O)[O-]",             4.0),
+
+        # Arsenic acid / arsenate
+        ("arsenic_OH",       "As(=O)(O)(O)[OX2H1]",     4.0),
+        ("arsenate_O-",      "As(=O)(O)(O)[O-]",        4.0),
+
+        # Chromic acid / chromate
+        ("chromate_OH",      "Cr(=O)(=O)[OX2H1]",       3.5),
+        ("chromate_O-",      "Cr(=O)(=O)[O-]",          3.5),
+
+        # Phenols / Enols
+        ("phenol",           "[OX2H1][cX3]",            2.0),
+        ("phenolate",        "[O-][cX3]",               2.0),
+        ("enol",             "[OX2H1][C]=C",            1.5),
+        ("enolate",          "[O-][C]=C",               1.5),
+
+        # Thiols / Thiolates
+        ("thiol",            "[SX2H1]",                 2.0),
+        ("thiolate",         "[S-]",                    2.0),
+
+        # Amides / imides / heterocycles
+        ("amide_NH",         "N([CX3](=O))[H]",         1.0),
+        ("imide_NH",         "[CX3](=O)N([CX3](=O))[H]",1.2),
+        ("heterocycle_nH",   "[nH]",                    1.0),
+        ("protonated_amine", "[N+H3]",                  1.0),
+
+        # Hydroxylamines / oximes
+        ("oxime",            "N(=C)O",                  1.0),
+    ]
+
+    acidic_sites = {}
+
+    for name, smarts, weight in FRAGMENTS:
         patt = Chem.MolFromSmarts(smarts)
+        if not patt:
+            continue
+
         matches = mol.GetSubstructMatches(patt)
-        logger.debug(f"Pattern '{name}' found matches: {matches}")
         for match in matches:
-            heavy_atom_idx = None
             for idx in match:
                 atom = mol.GetAtomWithIdx(idx)
-                if atom.GetAtomicNum() > 1 and any(
-                    nbr.GetAtomicNum() == 1
-                    for nbr in atom.GetNeighbors()
-                ):
-                    heavy_atom_idx = idx
-                    break
-            if heavy_atom_idx is not None:
-                acidic_sites.add(heavy_atom_idx)
 
-    return sorted(list(acidic_sites))
+                # NO carbon acidity
+                if atom.GetAtomicNum() == 6:
+                    continue
+
+                acidic_sites[idx] = acidic_sites.get(idx, 0.0) + weight
+
+    # Additional generic rule:
+    # Any O, S, N, P, B, As with a single-bond to electronegative center
+    for atom in mol.GetAtoms():
+        Z = atom.GetAtomicNum()
+        if Z in (8, 7, 16, 15, 5, 33):  # O, N, S, P, B, As
+            # ignore carbon-bound neutral oxygen unless matched above
+            if Z == 8 and atom.GetDegree() == 1 and atom.GetNeighbors()[0].GetAtomicNum() == 6:
+                continue
+            acidic_sites.setdefault(atom.GetIdx(), 0.5)
+
+    return sorted(acidic_sites.keys(), key=lambda i: -acidic_sites[i])
+
 
 
 def protonate_site(mol, atom_idx):
@@ -180,7 +239,7 @@ def deprotonate_site(mol, atom_idx):
     else:
         logger.warning(f"No proton found on acidic site atom idx {atom_idx} for deprotonation.")
 
-    # Adjust formal charge to -1 (TODO: make more better)
+    # Adjust formal charge to -1 (TODO: make more betterer)
     atom = mol_copy.GetAtomWithIdx(atom_idx)
     atom.SetFormalCharge(atom.GetFormalCharge() - 1)
 

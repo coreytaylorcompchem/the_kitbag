@@ -25,6 +25,9 @@ calc_pka:
     name: water             # See all solvents here: https://www.faccts.de/docs/orca/6.0/manual/contents/detailed/solvationmodels.html#table-list-solvents
     epsilon: 80.0           # dielectric constant (optional)
     draco: false             # Dynamic Radii Adjustment for Continuum Solvation (DRACO) - adds quite a bit of cost.
+  empirical_correction:
+    from_ref: true
+    ref_file: ref_pkas.csv
   output_dir: outputs/calc_pka
 
 output:
