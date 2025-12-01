@@ -169,6 +169,13 @@ class OrcaBackend:
         job_dir = Path(self.working_dir) / job_name
         job_dir.mkdir(parents=True, exist_ok=True)
 
+        prop_json = job_dir / f"{job_name}.property.json"
+        if prop_json.exists():
+            logger.debug(f"Skipping completed optimisation for {job_name}")
+            # Parse and return existing results
+            fake_output = type("FakeOutput", (), {"working_dir": job_dir, "basename": job_name})
+            return self._wrap_result(fake_output, None)
+
         calc = self._make_calculator(
             xyz_file,
             basename=job_name,
@@ -196,6 +203,7 @@ class OrcaBackend:
 
         output = calc.get_output()
         output.parse()
+        
         return self._wrap_result(calc, output)
     
     #TODO add progress tracking to SPE.
@@ -204,6 +212,12 @@ class OrcaBackend:
         job_name = Path(xyz_file).stem
         job_dir = Path(self.working_dir) / job_name
         job_dir.mkdir(parents=True, exist_ok=True)
+
+        prop_json = job_dir / f"{job_name}.property.json"
+        if prop_json.exists():
+            logger.debug(f"Skipping completed single point for {job_name}")
+            fake_output = type("FakeOutput", (), {"working_dir": job_dir, "basename": job_name})
+            return self._wrap_result(fake_output, None)
 
         calc = self._make_calculator(
             xyz_file,
@@ -215,10 +229,13 @@ class OrcaBackend:
             working_dir=job_dir
         )
         self._apply_keywords(calc, step)
+        
         calc.write_input()
         calc.run()
+        
         calc.create_jsons()
 
         output = calc.get_output()
         output.parse()
+        
         return self._wrap_result(calc, output)
