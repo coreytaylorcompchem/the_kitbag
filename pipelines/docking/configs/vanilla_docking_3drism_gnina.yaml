@@ -9,6 +9,7 @@ workflow:
   # - save_final_conformers
   - convert_to_pdbqt
   - dock
+  - run_3d_rism
 
 options:
   use_conformer_generation: false
@@ -43,16 +44,15 @@ ligands_txt: "ligs_small.txt"
 # The docking_mode parameter controls whether you dock multiple generated conformers ('ensemble') 
 # or just the lowest energy from generated coformers ('lowest_energy').
 # rmsd_threshold and min_energy_gap control how many conformers you dock.
-# In practice, the parameters below are tight, so only one conformer is generated here anyway. 
-# TODO: add actual ensemble docking (multiple proteins) and rename this to something else.
+# In practice, the parameters below are tight, so only one conformer is generated here anyway.
 
 docking:
-  output_dir: "output_gnina"
+  output_dir: "output_3drism_gnina"
   docking_mode: ensemble # or 'lowest_energy'
   final_n_conformers: 2
   rmsd_threshold: 0.75
   min_energy_gap: 0.5   # in kcal/mol higher = more permissive
-  n_output_binding_modes: 2
+  n_output_binding_modes: 1
   exhaustiveness: 8
 
   ### Binding pocket detection
@@ -66,9 +66,14 @@ docking:
   # size: [15.0, 15.0, 15.0]
 
   # Option 3: Use crystallized ligand in a 15 x 15 x 15 Angstrom box.
-  # TODO: use the output of a pocket finder (e.g. fpocket) to dock into multiple pockets end-to-end.
   use_crystal_ligand: true
   size: [15.0, 15.0, 15.0]
+
+# 3D-RISM specific options
+rism:
+  solvent: water  # options: water, methanol, ethanol, etc.
+  grid_spacing: 0.5  # in Å
+  probe_radius: 1.4  # in Å
 
 ### Docking parameters - extra args
 

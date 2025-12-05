@@ -19,7 +19,7 @@ backend:
   use_gpu: true
 
 protein:
-  pdb_path: "/home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
+  pdb_path: "/home/corey/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
   pH: 7.4
 
 ### Ligand prep

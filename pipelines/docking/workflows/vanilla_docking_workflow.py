@@ -151,6 +151,7 @@ def run(config_path: str):
         "save_final_conformers",
         "convert_to_pdbqt",
         "dock"
+        "run_3d_rism"
     ])
 
     # Handle optional conformer generation

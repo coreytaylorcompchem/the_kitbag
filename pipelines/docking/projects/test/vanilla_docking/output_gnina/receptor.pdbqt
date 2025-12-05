@@ -1,4 +1,4 @@
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
 REMARK                            x       y       z     vdW  Elec       q    Type
 REMARK                         _______ _______ _______ _____ _____    ______ ____
 ATOM      1  N   ASN A  18     -29.871 -48.177   0.939  0.00  0.00    -0.123 NA
@@ -1537,7 +1537,7 @@ ATOM   1533  CD2 HIS A 214     -59.142  -4.727 -14.990  0.00  0.00    +0.115 A
 ATOM   1534  CE1 HIS A 214     -60.499  -4.885 -13.275  0.00  0.00    +0.199 A 
 ATOM   1535  NE2 HIS A 214     -59.272  -4.554 -13.634  0.00  0.00    -0.221 NA
 TER 
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
 REMARK                            x       y       z     vdW  Elec       q    Type
 REMARK                         _______ _______ _______ _____ _____    ______ ____
 ATOM      1  N   ALA A 264     -57.405  -2.759  -6.085  0.00  0.00    -0.123 NA
@@ -2192,7 +2192,7 @@ ATOM    649  O   CYS A 346     -46.310  -1.566 -18.003  0.00  0.00    -0.286 OA
 ATOM    650  CB  CYS A 346     -48.368  -3.515 -18.176  0.00  0.00    +0.098 C 
 ATOM    651  SG  CYS A 346     -47.757  -4.318 -16.676  0.00  0.00    -0.080 S 
 TER 
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
 REMARK                            x       y       z     vdW  Elec       q    Type
 REMARK                         _______ _______ _______ _____ _____    ______ ____
 ATOM      1  N   GLU H  20     -39.662 -68.448  16.430  0.00  0.00    -0.123 NA
@@ -3197,7 +3197,7 @@ ATOM    999  CB  PRO H 146     -43.839-102.369  12.881  0.00  0.00    +0.030 C
 ATOM   1000  CG  PRO H 146     -44.351-101.420  13.904  0.00  0.00    +0.024 C 
 ATOM   1001  CD  PRO H 146     -45.846-101.625  13.959  0.00  0.00    +0.094 C 
 TER 
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
 REMARK                            x       y       z     vdW  Elec       q    Type
 REMARK                         _______ _______ _______ _____ _____    ______ ____
 ATOM      1  N   SER H 147     -43.343-105.485  13.472  0.00  0.00    -0.134 NA
@@ -3213,7 +3213,7 @@ ATOM     10  CB  SER H 147     -42.689-107.855  13.648  0.00  0.00    +0.299 C
 ATOM     11  OG  SER H 147     -42.162-107.886  12.345  0.00  0.00    -0.298 OA
 ATOM     12  OG  SER H 147     -44.028-108.318  13.622  0.00  0.00    -0.298 OA
 TER 
-REMARK  Name = /home/corey/Documents/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
+REMARK  Name = /media/corey/Crucial2To/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_gnina/receptor_clean.pdb
 REMARK                            x       y       z     vdW  Elec       q    Type
 REMARK                         _______ _______ _______ _____ _____    ______ ____
 ATOM      1  N   VAL H 148     -40.660-105.750  15.545  0.00  0.00    -0.123 NA
