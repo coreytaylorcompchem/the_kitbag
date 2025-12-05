@@ -70,6 +70,7 @@ def parameterize_ligand(ligand_pdb: Path, output_dir: Path):
 
     return mol2_file, frcmod_file
 
+
 def prepare_topology_and_coordinates(receptor_pdb: Path, ligand_mol2: Path, ligand_frcmod: Path, output_dir: Path, force_field: str = 'ff14SB'):
     """
     Prepare the topology and coordinate files using tleap from AmberTools.
