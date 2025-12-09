@@ -1,0 +1,19 @@
+# Purpose: retrieve and clean PubChem bioactivity data for a single target
+
+task: workflow
+workflow_name: pubchem_bioactivity_single_target
+
+uniprot_id: P35408
+readout: IC50
+relation: "="
+
+workflow:
+  - retrieve_pubchem_bioactivities
+  - clean_pubchem_bioactivities
+  - retrieve_pubchem_smiles
+  # - annotate_bioactivity_pactivity
+
+output:
+  directory: outputs/pubchem_single_target
+  filename: ep4_pubchem_bioactivity.csv
+  overwrite: true
