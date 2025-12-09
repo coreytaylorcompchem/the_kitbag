@@ -82,19 +82,38 @@ class ProteinPreparer:
             else:
                 logger.warning("[ProteinPreparer] No non-water HETATM groups found — no crystal ligand extracted.")
 
-        # Convert cleaned receptor to PDBQT
-        cmd = [
+        # --- STEP 2: Protonate cleaned receptor ---
+        protonated_pdb = output_dir / f"{self.name}_protonated.pdb"
+
+        cmd_prot = [
             "obabel",
             str(self.cleaned_pdb),
-            "-O", str(self.pdbqt_path),
-            "--partialcharge", "gasteiger",
-            "-xr"  # Remove any leftover water
+            "-O", str(protonated_pdb),
+            "-p", str(self.pH),            # protonate at given pH
+            "--addhydrogen",               # ensure hydrogens added
+            "-xr"                          # remove residual waters
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd_prot, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"Open Babel failed while preparing receptor:\n{result.stderr}")
-            raise RuntimeError(f"Protein preparation failed for {self.pdb_path.name}")
+            logger.error(f"Open Babel protonation failed:\n{result.stderr}")
+            raise RuntimeError(f"Protein protonation failed for {self.pdb_path.name}")
+
+        logger.info(f"[ProteinPreparer] Protonated receptor saved at: {protonated_pdb}")
+
+        # --- STEP 3: Convert protonated receptor → PDBQT ---
+        cmd_pdbqt = [
+            "obabel",
+            str(protonated_pdb),
+            "-O", str(self.pdbqt_path),
+            "--partialcharge", "gasteiger",
+            "-xh"
+        ]
+
+        result = subprocess.run(cmd_pdbqt, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"Open Babel failed while generating receptor PDBQT:\n{result.stderr}")
+            raise RuntimeError(f"Protein PDBQT conversion failed for {self.pdb_path.name}")
 
         logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
         return self.pdbqt_path
