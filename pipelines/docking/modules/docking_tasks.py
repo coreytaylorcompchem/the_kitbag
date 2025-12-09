@@ -101,9 +101,7 @@ class ProteinPreparer:
             logger.error(f"Open Babel protonation failed:\n{result.stderr}")
             raise RuntimeError(f"Protein protonation failed for {self.pdb_path.name}")
 
-        if multiprocessing.current_process().name == "MainProcess":
-            logger.info(f"[ProteinPreparer] Protonated receptor saved at: {protonated_pdb}")
- 
+        logger.info(f"[ProteinPreparer] Protonated receptor saved at: {protonated_pdb}")
 
         # --- STEP 3: Convert protonated receptor → PDBQT ---
         cmd_pdbqt = [
@@ -119,9 +117,7 @@ class ProteinPreparer:
             logger.error(f"Open Babel failed while generating receptor PDBQT:\n{result.stderr}")
             raise RuntimeError(f"Protein PDBQT conversion failed for {self.pdb_path.name}")
 
-        if multiprocessing.current_process().name == "MainProcess":
-            logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
- 
+        logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
         return self.pdbqt_path
 
 def get_ligand_preparer(backend, ligand):
