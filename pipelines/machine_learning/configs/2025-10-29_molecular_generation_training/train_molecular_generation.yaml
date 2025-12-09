@@ -1,0 +1,69 @@
+workflow_name: train_model
+
+workflow:
+  - load_preprocess_standardise_data
+  - split_and_create_dataloaders
+  - build_model
+  - train_molecular_generation
+  - evaluate_molecular_generation
+  # - generate_and_evaluate # after we train at scale
+
+load_preprocess_standardise_data:
+  input_file: data/combined.csv
+  max_len: 128
+  standardise_smiles: true
+  tokenise_smiles: true
+  save_vocab: true
+
+split_and_create_dataloaders:
+  max_len: 128
+  batch_size: 64 # pump this up to 128 or more when you have a better GPU than my laptop does!
+  test_size: 0.1
+  random_state: 42
+
+build_model:
+  vocab_size: 5000
+  embed_dim: 512
+  num_heads: 8
+  hidden_dim: 2048
+  num_layers: 6
+  dropout: 0.1
+  max_len: 128
+  device: cuda
+
+train_molecular_generation:
+  num_epochs: 50
+  # batch_size: 64
+  learning_rate: 1e-3
+  warmup_steps: 4000
+  loss_fn: LabelSmoothingLoss
+  optimizer: Adam
+  scheduler: WarmupInverseSqrtScheduler
+  save_dir: models
+  save_frequency: 1
+
+evaluate_model:
+  batch_size: 64
+  eval_metrics:
+    - validity
+    - uniqueness
+    - novelty
+    - avg_length
+    - qed_mean
+    - mol_wt_mean
+    - logp_mean
+    - tpsa_mean
+  save_dir: evaluation
+
+# generate_and_evaluate:
+#   n_samples: 200
+#   beam_width: 5
+#   max_len: 100
+#   temperature: 1.0
+#   output_dir: output/generated_smiles/
+#   generate_for_epoch: true
+#   save_plots: true
+
+output:
+  directory: outputs/molecular_generation
+  overwrite: true
