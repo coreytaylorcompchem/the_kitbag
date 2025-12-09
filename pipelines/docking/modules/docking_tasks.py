@@ -1,4 +1,5 @@
 import subprocess
+import multiprocessing
 import tempfile
 import shutil
 import pandas as pd
@@ -78,7 +79,8 @@ class ProteinPreparer:
                 largest_res = max(hetatm_blocks, key=lambda r: len(hetatm_blocks[r]))
                 for l in hetatm_blocks[largest_res]:
                     ligand_out.write(l)
-                logger.info(f"[ProteinPreparer] Extracted crystal ligand: {largest_res} -> {self.extracted_ligand_path}")
+                if multiprocessing.current_process().name == "MainProcess":
+                    logger.info(f"[ProteinPreparer] Extracted crystal ligand: {largest_res} -> {self.extracted_ligand_path}")
             else:
                 logger.warning("[ProteinPreparer] No non-water HETATM groups found — no crystal ligand extracted.")
 
@@ -99,7 +101,9 @@ class ProteinPreparer:
             logger.error(f"Open Babel protonation failed:\n{result.stderr}")
             raise RuntimeError(f"Protein protonation failed for {self.pdb_path.name}")
 
-        logger.info(f"[ProteinPreparer] Protonated receptor saved at: {protonated_pdb}")
+        if multiprocessing.current_process().name == "MainProcess":
+            logger.info(f"[ProteinPreparer] Protonated receptor saved at: {protonated_pdb}")
+ 
 
         # --- STEP 3: Convert protonated receptor → PDBQT ---
         cmd_pdbqt = [
@@ -115,7 +119,9 @@ class ProteinPreparer:
             logger.error(f"Open Babel failed while generating receptor PDBQT:\n{result.stderr}")
             raise RuntimeError(f"Protein PDBQT conversion failed for {self.pdb_path.name}")
 
-        logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
+        if multiprocessing.current_process().name == "MainProcess":
+            logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
+ 
         return self.pdbqt_path
 
 def get_ligand_preparer(backend, ligand):
