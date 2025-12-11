@@ -89,13 +89,14 @@ class ProteinPreparer:
             "pdb4amber",
             "-i", str(self.cleaned_pdb),
             "-o", str(self.protonated_pdb),
+            # "-a", # keep amber compatible residues"
             "--add-missing-atoms",
             "--reduce",
             # "--pH", str(self.pH),
             "--most-populous",
             "--keep-altlocs",
-            "--constantph",
-            "--no-conect"
+            "--no-conect",
+            "--add-missing-atoms"
         ]
 
         result = subprocess.run(cmd_pdb4amber, capture_output=True, text=True)
