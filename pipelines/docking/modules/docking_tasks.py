@@ -30,27 +30,30 @@ class ProteinPreparer:
     Prepares receptor PDBQT files for docking:
       - Removes crystal ligands and water
       - Saves extracted ligand separately (for binding site definition)
-      - Adds Gasteiger partial charges via Open Babel
+      - Adds hydrogens via pdb4amber (no reduce)
+      - Converts protonated receptor to PDBQT with Gasteiger charges
     """
 
-    def __init__(self, pdb_path: Path, name: str = "receptor", method: str = "autodocktools", pH: float = 7.4):
+    def __init__(self, pdb_path: Path, name: str = "receptor", pH: float = 7.4):
         self.pdb_path = Path(pdb_path)
         self.name = name
-        self.method = method.lower()
         self.pH = pH
+
         self.pdbqt_path = None
         self.cleaned_pdb = None
         self.extracted_ligand_path = None
+        self.protonated_pdb = None
 
     def prepare(self, output_dir: Path):
         output_dir.mkdir(parents=True, exist_ok=True)
+
         self.pdbqt_path = output_dir / f"{self.name}.pdbqt"
         self.cleaned_pdb = output_dir / f"{self.name}_clean.pdb"
         self.extracted_ligand_path = output_dir / f"{self.name}_crystal_ligand.pdb"
+        self.protonated_pdb = output_dir / f"{self.name}_protonated.pdb"
 
-        # If receptor already exists, reuse it
-        if self.pdbqt_path.exists():
-            logger.debug(f"[ProteinPreparer] Using existing receptor PDBQT at: {self.pdbqt_path}")
+        if self.pdbqt_path.exists() and self.protonated_pdb.exists():
+            logger.debug(f"[ProteinPreparer] Using pre-existing prepared receptor PDBQT and protonated PDB.")
             return self.pdbqt_path
 
         logger.debug(f"[ProteinPreparer] Cleaning and preparing receptor: {self.pdb_path.name}")
@@ -60,7 +63,6 @@ class ProteinPreparer:
              open(self.cleaned_pdb, 'w') as protein_out, \
              open(self.extracted_ligand_path, 'w') as ligand_out:
 
-            current_resname = None
             hetatm_blocks = {}
 
             for line in infile:
@@ -68,61 +70,52 @@ class ProteinPreparer:
                     protein_out.write(line)
                 elif line.startswith("HETATM"):
                     res_name = line[17:20].strip()
-                    # Save all non-water heteroatoms to a ligand file
                     if res_name not in ("HOH", "WAT"):
                         hetatm_blocks.setdefault(res_name, []).append(line)
                 elif line.startswith(("TER", "END")):
                     protein_out.write(line)
 
-            # Pick the largest HETATM group (usually the bound ligand)
             if hetatm_blocks:
                 largest_res = max(hetatm_blocks, key=lambda r: len(hetatm_blocks[r]))
                 for l in hetatm_blocks[largest_res]:
                     ligand_out.write(l)
-                if multiprocessing.current_process().name == "MainProcess":
-                    logger.info(f"[ProteinPreparer] Extracted crystal ligand: {largest_res} -> {self.extracted_ligand_path}")
+                logger.info(f"[ProteinPreparer] Extracted crystal ligand: {largest_res} -> {self.extracted_ligand_path}")
             else:
-                logger.warning("[ProteinPreparer] No non-water HETATM groups found — no crystal ligand extracted.")
+                logger.warning("[ProteinPreparer] No HETATM groups (non-water) found.")
 
-        # --- STEP 2: Protonate cleaned receptor ---
-        protonated_pdb = output_dir / f"{self.name}_protonated.pdb"
-
-        cmd_prot = [
-            "obabel",
-            str(self.cleaned_pdb),
-            "-O", str(protonated_pdb),
-            "-p", str(self.pH),            # protonate at given pH
-            "--addhydrogen",               # ensure hydrogens added
-            "-xr"                          # remove residual waters
+        # --- Step 2: Protonate cleaned receptor using pdb4amber only ---
+        cmd_pdb4amber = [
+            "pdb4amber",
+            "-i", str(self.cleaned_pdb),
+            "-o", str(self.protonated_pdb),
+            "--add-missing-atoms",
+            "--reduce"
         ]
-
-        result = subprocess.run(cmd_prot, capture_output=True, text=True)
+        logger.debug(f"[ProteinPreparer] Running pdb4amber: {' '.join(cmd_pdb4amber)}")
+        result = subprocess.run(cmd_pdb4amber, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"Open Babel protonation failed:\n{result.stderr}")
-            raise RuntimeError(f"Protein protonation failed for {self.pdb_path.name}")
+            logger.error(f"pdb4amber failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
+            raise RuntimeError("pdb4amber failed")
 
-        if multiprocessing.current_process().name == "MainProcess":
-            logger.info(f"[ProteinPreparer] Protonated receptor saved at: {protonated_pdb}")
- 
+        logger.info(f"[ProteinPreparer] Protonated receptor saved at: {self.protonated_pdb}")
 
-        # --- STEP 3: Convert protonated receptor → PDBQT ---
+        # --- Step 3: Convert protonated receptor → PDBQT for docking ---
         cmd_pdbqt = [
             "obabel",
-            str(protonated_pdb),
+            str(self.protonated_pdb),
             "-O", str(self.pdbqt_path),
             "--partialcharge", "gasteiger",
             "-xh"
         ]
-
         result = subprocess.run(cmd_pdbqt, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"Open Babel failed while generating receptor PDBQT:\n{result.stderr}")
-            raise RuntimeError(f"Protein PDBQT conversion failed for {self.pdb_path.name}")
+            logger.error(f"Open Babel failed converting to PDBQT:\n{result.stderr}")
+            raise RuntimeError("Protein PDBQT conversion failed.")
 
-        if multiprocessing.current_process().name == "MainProcess":
-            logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
- 
+        logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
+
         return self.pdbqt_path
+
 
 def get_ligand_preparer(backend, ligand):
     if "ligand_preparers" not in backend.cache:

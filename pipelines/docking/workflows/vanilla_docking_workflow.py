@@ -85,10 +85,10 @@ def run(config_path: str):
     ligands_csv_path = Path(config.get('ligands_csv', output_dir / 'ligands.csv'))
 
     if ligands_txt_path.exists():
-        logger.info(f"Found ligands.txt — generating ligands.csv.")
+        logger.info(f"Found ligand file - generating ligands.csv.")
         generate_ligands_csv_from_txt(ligands_txt_path, ligands_csv_path)
     elif ligands_csv_path.exists():
-        logger.info(f"Found ligands.csv — using it directly.")
+        logger.info(f"Found ligands.csv - using it directly.")
     else:
         raise FileNotFoundError(
             "No ligand input found. Provide either 'ligands_txt' or 'ligands_csv' in the config or directory."

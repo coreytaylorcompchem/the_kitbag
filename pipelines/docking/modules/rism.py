@@ -10,6 +10,7 @@ from sklearn.neighbors import KDTree
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
+from modules.docking_tasks import get_protein_preparer
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
@@ -107,59 +108,77 @@ def pdb_to_mol2_with_obabel(pdb_file: Path, mol2_file: Path):
 # ================================================================
 def parameterize_ligand(docked_sdf: Path, output_dir: Path):
     """
-    Parameterize ligand by converting docked SDF → PDB, then mol2 → antechamber, etc.
+    Fully robust antechamber + parmchk2 ligand parameterization.
     """
-    docked_sdf = docked_sdf.resolve()
-    output_dir = output_dir.resolve()
-    output_dir.mkdir(exist_ok=True, parents=True)
 
-    corrected_pdb = rdkit_reconstruct_ligand(
-        docked_sdf,
-        output_dir
-    )
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    mol2_file = output_dir / f"{corrected_pdb.stem}.mol2"
-    pdb_to_mol2_with_obabel(corrected_pdb, mol2_file)
+    ligand_name = docked_sdf.stem
+    final_mol2 = output_dir / f"{ligand_name}.mol2"
+    final_frcmod = output_dir / f"{ligand_name}.frcmod"
 
-    net_charge = get_ligand_charge_from_smiles(corrected_pdb)
-    logger.debug(f"Detected ligand charge = {net_charge}")
+    # --- Step 1: RDKit SDF -> PDB (preserve coords / names) ---
+    mol = Chem.MolFromMolFile(str(docked_sdf), removeHs=False)
+    if mol is None:
+        raise RuntimeError(f"Failed to read SDF: {docked_sdf}")
 
-    frcmod_file = output_dir / f"{corrected_pdb.stem}.frcmod"
+    rdkit_pdb = output_dir / f"{ligand_name}_rdkit.pdb"
+    Chem.MolToPDBFile(mol, str(rdkit_pdb))
 
-    tmpdir = (output_dir / f"{corrected_pdb.stem}_ante_tmp")
+    # --- Step 2: Charge detection ---
+    net_charge = get_ligand_charge_from_smiles(rdkit_pdb)
+
+    # --- Step 3: Create tmpdir and stage input inside it ---
+    tmpdir = output_dir / f"{ligand_name}_ante_tmp"
     tmpdir.mkdir(exist_ok=True)
 
-    cmd = [
+    ante_input_pdb = tmpdir / "input.pdb"
+    ante_output_mol2 = tmpdir / "ante.mol2"
+    ante_output_frcmod = tmpdir / "ante.frcmod"
+
+    shutil.copy(rdkit_pdb, ante_input_pdb)
+
+    # --- Step 4: antechamber (NO PATHS — ONLY FILENAMES) ---
+    cmd_ante = [
         "antechamber",
-        "-i", str(mol2_file),
-        "-fi", "mol2",
-        "-o", str(mol2_file),
+        "-i", "input.pdb",
+        "-fi", "pdb",
+        "-o", "ante.mol2",
         "-fo", "mol2",
         "-c", "bcc",
         "-nc", str(net_charge),
         "-at", "gaff2",
-        "-j", "4",
+        "-j", "5",
         "-s", "2"
     ]
 
-    result = subprocess.run(cmd, cwd=tmpdir, capture_output=True, text=True)
+    result = subprocess.run(cmd_ante, cwd=tmpdir, capture_output=True, text=True)
     if result.returncode != 0:
-        logger.error(f"Antechamber error: {result.stderr}")
-        raise RuntimeError("Antechamber failed")
+        raise RuntimeError(
+            f"Antechamber failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
 
-    result = subprocess.run(
-        ["parmchk2", "-i", str(mol2_file), "-f", "mol2", "-o", str(frcmod_file)],
-        capture_output=True, text=True
-    )
+    # --- Step 5: parmchk2 ---
+    cmd_parmchk = [
+        "parmchk2",
+        "-i", "ante.mol2",
+        "-f", "mol2",
+        "-o", "ante.frcmod"
+    ]
+    result = subprocess.run(cmd_parmchk, cwd=tmpdir, capture_output=True, text=True)
     if result.returncode != 0:
-        logger.error(f"parmchk2 error: {result.stderr}")
-        raise RuntimeError("parmchk2 failed")
+        raise RuntimeError(
+            f"parmchk2 failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
 
-    logger.info(f"Generated MOL2 + FRCMOD: {mol2_file}, {frcmod_file}")
+    # --- Step 6: Copy the GOOD files out of tmpdir ---
+    shutil.copy(ante_output_mol2, final_mol2)
+    shutil.copy(ante_output_frcmod, final_frcmod)
+
+    # --- Step 7: Cleanup ---
     shutil.rmtree(tmpdir, ignore_errors=True)
 
-    return mol2_file, frcmod_file
-
+    return final_mol2, final_frcmod
 
 
 # ================================================================
@@ -198,6 +217,15 @@ quit
         f.write(tleap_input)
 
     result = subprocess.run(["tleap", "-f", str(script)], capture_output=True, text=True)
+
+    logfile = output_dir / "tleap_debug.log"
+    with open(logfile, "w") as f:
+        f.write(result.stdout)
+        f.write("\n\n--- STDERR ---\n\n")
+        f.write(result.stderr)
+
+    logger.debug("\n\nFULL TLEAP LOG SAVED TO:", logfile)
+
     if result.returncode != 0:
         logger.error(f"tleap failed:\n{result.stderr}")
         raise RuntimeError("tleap failed")
@@ -252,32 +280,36 @@ def run_3d_rism_calculation(receptor_top: Path, receptor_crd: Path,
                description="Run 3D-RISM calculation using AmberTools.")
 def run_3d_rism(backend, ligand, config, **kwargs):
 
-    receptor_pdb = Path(config['protein']['pdb_path'])
+    # ✓ Always use the prepared receptor, never the raw file
+    preparer = get_protein_preparer(backend, config)
+    if preparer.protonated_pdb is None:
+        raise RuntimeError("Receptor was not prepared before RISM step. Run prepare_receptor_pdbqt first.")
+
+    receptor_pdb = preparer.protonated_pdb  # <------ FIXED
+
     output_dir = Path(config['docking']['output_dir'])
+    output_dir.mkdir(exist_ok=True)
 
+    # GNINA docking output
     sdf_file = output_dir / f"{ligand['name']}_conf0_docked.sdf"
-    original_smiles = ligand["smiles"]
-
-    if not receptor_pdb.exists():
-        raise FileNotFoundError(f"Receptor PDB missing: {receptor_pdb}")
     if not sdf_file.exists():
-        raise FileNotFoundError(f"SDF missing: {sdf_file}")
+        raise FileNotFoundError(f"Docked SDF missing: {sdf_file}")
 
-    # Step 1: SDF → PDB (still needed for tleap)
+    # --- Step 1: Convert docked SDF → PDB for tleap ---
     ligand_pdb = convert_sdf_to_pdb(sdf_file, output_dir)
 
-    # Step 2: Parameterization (FIXED: pass SDF!)
+    # --- Step 2: Ligand parameterization ---
     ligand_mol2, ligand_frcmod = parameterize_ligand(
-        sdf_file,        # <---- FIXED
+        sdf_file,       # correct input: SDF file 
         output_dir,
     )
 
-    # Step 3: tleap
+    # --- Step 3: tleap ---
     receptor_top, receptor_crd, ligand_top, ligand_crd = prepare_topology_and_coordinates(
         receptor_pdb, ligand_mol2, ligand_frcmod, output_dir
     )
 
-    # Step 4: 3D-RISM
+    # --- Step 4: 3D-RISM ---
     rism_output = run_3d_rism_calculation(
         receptor_top, receptor_crd, ligand_top, ligand_crd, output_dir, config
     )
