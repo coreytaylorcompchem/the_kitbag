@@ -27,11 +27,11 @@ def get_protein_preparer(backend, config):
 
 class ProteinPreparer:
     """
-    Prepares receptor PDBQT files for docking:
+    Prepares receptor PDB files for docking / AmberTools:
       - Removes crystal ligands and water
-      - Saves extracted ligand separately (for binding site definition)
-      - Adds hydrogens via pdb4amber (no reduce)
-      - Converts protonated receptor to PDBQT with Gasteiger charges
+      - Extracts ligand for binding site definition
+      - Protonates protein using pdb4amber
+      - Cleans PDB for tleap (removes CONECTs, renames disulfides)
     """
 
     def __init__(self, pdb_path: Path, name: str = "receptor", pH: float = 7.4):
@@ -39,31 +39,32 @@ class ProteinPreparer:
         self.name = name
         self.pH = pH
 
-        self.pdbqt_path = None
+        # Paths set during preparation
         self.cleaned_pdb = None
         self.extracted_ligand_path = None
         self.protonated_pdb = None
+        self.pdbqt_path = None
 
     def prepare(self, output_dir: Path):
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.pdbqt_path = output_dir / f"{self.name}.pdbqt"
         self.cleaned_pdb = output_dir / f"{self.name}_clean.pdb"
         self.extracted_ligand_path = output_dir / f"{self.name}_crystal_ligand.pdb"
         self.protonated_pdb = output_dir / f"{self.name}_protonated.pdb"
+        self.pdbqt_path = output_dir / f"{self.name}.pdbqt"
 
-        if self.pdbqt_path.exists() and self.protonated_pdb.exists():
-            logger.debug(f"[ProteinPreparer] Using pre-existing prepared receptor PDBQT and protonated PDB.")
+        # Reuse if already exists
+        if self.protonated_pdb.exists() and self.pdbqt_path.exists():
+            logger.debug(f"[ProteinPreparer] Using existing prepared receptor files.")
             return self.pdbqt_path
 
-        logger.debug(f"[ProteinPreparer] Cleaning and preparing receptor: {self.pdb_path.name}")
+        logger.debug(f"[ProteinPreparer] Cleaning protein: {self.pdb_path.name}")
 
-        # --- Step 1: Separate protein and ligand atoms ---
+        # --- Step 1: Separate protein vs. ligand atoms ---
+        hetatm_blocks = {}
         with open(self.pdb_path, 'r') as infile, \
              open(self.cleaned_pdb, 'w') as protein_out, \
              open(self.extracted_ligand_path, 'w') as ligand_out:
-
-            hetatm_blocks = {}
 
             for line in infile:
                 if line.startswith("ATOM"):
@@ -79,27 +80,35 @@ class ProteinPreparer:
                 largest_res = max(hetatm_blocks, key=lambda r: len(hetatm_blocks[r]))
                 for l in hetatm_blocks[largest_res]:
                     ligand_out.write(l)
-                logger.info(f"[ProteinPreparer] Extracted crystal ligand: {largest_res} -> {self.extracted_ligand_path}")
+                logger.info(f"[ProteinPreparer] Extracted crystal ligand: {largest_res}")
             else:
-                logger.warning("[ProteinPreparer] No HETATM groups (non-water) found.")
+                logger.warning("[ProteinPreparer] No non-water HETATM groups found.")
 
-        # --- Step 2: Protonate cleaned receptor using pdb4amber only ---
+        # --- Step 2: Protonate protein with pdb4amber ---
         cmd_pdb4amber = [
             "pdb4amber",
             "-i", str(self.cleaned_pdb),
             "-o", str(self.protonated_pdb),
             "--add-missing-atoms",
-            "--reduce"
+            "--reduce",
+            # "--pH", str(self.pH),
+            "--most-populous",
+            "--keep-altlocs",
+            "--constantph",
+            "--no-conect"
         ]
-        logger.debug(f"[ProteinPreparer] Running pdb4amber: {' '.join(cmd_pdb4amber)}")
+
         result = subprocess.run(cmd_pdb4amber, capture_output=True, text=True)
         if result.returncode != 0:
             logger.error(f"pdb4amber failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
             raise RuntimeError("pdb4amber failed")
 
-        logger.info(f"[ProteinPreparer] Protonated receptor saved at: {self.protonated_pdb}")
+        logger.info(f"[ProteinPreparer] Protonated protein saved at: {self.protonated_pdb}")
 
-        # --- Step 3: Convert protonated receptor → PDBQT for docking ---
+        # # --- Step 3: Strip CONECT records ---
+        # self._remove_conect_records(self.protonated_pdb)
+
+        # --- Step 4: Convert to PDBQT---
         cmd_pdbqt = [
             "obabel",
             str(self.protonated_pdb),
@@ -107,14 +116,25 @@ class ProteinPreparer:
             "--partialcharge", "gasteiger",
             "-xh"
         ]
+
         result = subprocess.run(cmd_pdbqt, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"Open Babel failed converting to PDBQT:\n{result.stderr}")
+            logger.error(f"Open Babel PDB → PDBQT failed:\n{result.stderr}")
             raise RuntimeError("Protein PDBQT conversion failed.")
 
         logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
-
         return self.pdbqt_path
+
+    # @staticmethod
+    # def _remove_conect_records(pdb_path: Path):
+    #     """Strip all CONECT lines from a PDB file in-place."""
+    #     tmp_path = pdb_path.with_suffix(".tmp")
+    #     with open(pdb_path) as f_in, open(tmp_path, 'w') as f_out:
+    #         for line in f_in:
+    #             if not line.startswith("CONECT"):
+    #                 f_out.write(line)
+    #     shutil.move(tmp_path, pdb_path)
+    #     logger.debug(f"[ProteinPreparer] Removed CONECT records from {pdb_path.name}")
 
 
 def get_ligand_preparer(backend, ligand):
