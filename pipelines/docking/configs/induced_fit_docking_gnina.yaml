@@ -30,7 +30,7 @@ docking:
   final_n_conformers: 2
   rmsd_threshold: 0.75
   min_energy_gap: 0.5   # in kcal/mol higher = more permissive
-  n_output_binding_modes: 2
+  n_output_binding_modes: 1
   exhaustiveness: 8
   use_crystal_ligand: true
   size: [15.0, 15.0, 15.0]

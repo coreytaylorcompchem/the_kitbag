@@ -156,7 +156,7 @@ def run(config_path: str):
         for future in as_completed(futures):
             try:
                 ligand_name = future.result()
-                logger.info(f"✅ Completed induced fit docking for ligand: {ligand_name}")
+                logger.info(f"Completed induced fit docking for ligand: {ligand_name}")
             except Exception as e:
                 logger.error(f"❌ Error during IFD for ligand: {e}")
 
