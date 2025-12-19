@@ -44,7 +44,7 @@ def add_positional_restraints(system, modeller, atom_indices, k=1000.0):
     force.addPerParticleParameter("z0")
 
     for idx in atom_indices:
-        pos = modeller.positions[idx].value_in_unit(unit.nanometer)
+        pos = modeller.positions[idx]
         force.addParticle(idx, pos)
 
     system.addForce(force)
@@ -53,59 +53,69 @@ def add_positional_restraints(system, modeller, atom_indices, k=1000.0):
 # ---------------------------------------------------------------------
 # Core IFD system construction
 # ---------------------------------------------------------------------
-
+from openmm import Vec3
 def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
-    """
-    Build an OpenMM system with protein and ligand using OpenFF,
-    applying positional restraints to the ligand if requested.
-    """
+
     ff_path = config["induced_fit_docking"]["minimisation"]["protein_forcefield"]
     ligand_fixed = config["induced_fit_docking"]["minimisation"].get("ligand_fixed", True)
 
-    # Start modeller with protein
+    # Start with protein
     modeller = Modeller(protein_pdb.topology, protein_pdb.positions)
 
-    # Load ligand using OpenFF
+    # Load ligand via OpenFF
     ligand_mol = Molecule.from_file(str(ligand_sdf))
+    ligand_mol.name = "LIG"  # optional but nice
 
-    # Sanity checks
-    if ligand_mol.n_atoms == 0:
-        raise RuntimeError(f"Ligand SDF could not be parsed: {ligand_sdf}")
     if not ligand_mol.conformers:
-        raise RuntimeError(f"Ligand SDF has no 3D coordinates: {ligand_sdf}")
+        raise RuntimeError(f"Ligand has no 3D conformers: {ligand_sdf}")
 
-    # Create OpenMM topology for the ligand
-    ligand_top = Topology()
-    ligand_chain = ligand_top.addChain()
-    ligand_residue = ligand_top.addResidue("LIG", ligand_chain)
-    for atom_idx, atom in enumerate(ligand_mol.atoms):
-        elem = Element.getByAtomicNumber(atom.atomic_number)
-        ligand_top.addAtom(atom.name, elem, ligand_residue)
+    # Convert OpenFF → OpenMM topology
+    ligand_top = ligand_mol.to_topology().to_openmm()
 
-    # Add ligand coordinates
-    import numpy as np
-    ligand_positions = []
-    conf = ligand_mol.conformers[0]
-    for atom_coords in conf:
-        pos = unit.Quantity(atom_coords, unit.angstrom)
-        ligand_positions.append(pos)
+    # Ensure residue is named LIG
+    for residue in ligand_top.residues():
+        residue.name = "LIG"
 
-    # Add ligand to modeller
+    # GNINA SDF coordinates (numpy array, Å)
+    coords = ligand_mol.conformers[0]
+
+    # Convert to Vec3 list
+    ligand_positions = [Vec3(*xyz) for xyz in coords]
+
+    # Attach units the OpenMM way (Å → nm)
+    ligand_positions = ligand_positions * unit.angstrom
+    ligand_positions = ligand_positions.in_units_of(unit.nanometer)
+
+    # Add ligand ONCE
     modeller.add(ligand_top, ligand_positions)
 
-    # Generate OpenMM system
+    lig_atoms = [a for a in modeller.topology.atoms() if a.residue.name == "LIG"]
+    lig_bonds = [
+        b for b in modeller.topology.bonds()
+        if b[0].residue.name == "LIG" or b[1].residue.name == "LIG"
+    ]
+
+    # print ligand info - debug
+
+    logger.info(f"Ligand atoms: {len(lig_atoms)}, bonds: {len(lig_bonds)}")
+
+    if len(lig_atoms) == 0 or len(lig_bonds) == 0:
+        raise RuntimeError("Ligand was not correctly added to the topology")
+
+    # Build system
     system_generator = SystemGenerator(
         forcefields=[ff_path],
         small_molecule_forcefield="openff-2.1.0",
         molecules=[ligand_mol],
     )
+
     system = system_generator.create_system(modeller.topology)
 
-    # Positional restraints if ligand_fixed
+    # Optional: restrain ligand
     if ligand_fixed:
         ligand_atom_indices = [
             atom.index for atom in modeller.topology.atoms()
-            if atom.residue.name not in STANDARD_AA
+            if atom.residue.name == "LIG"
         ]
         add_positional_restraints(system, modeller, ligand_atom_indices)
 
