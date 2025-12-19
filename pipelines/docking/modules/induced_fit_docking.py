@@ -7,7 +7,8 @@ import openmm.unit as unit
 from openmm.app import PDBFile, Modeller, Simulation, Element, Topology
 from openmmforcefields.generators import SystemGenerator
 from openff.toolkit.topology import Molecule
-from openmm.app.element import Element
+# from openmm.app.element import Element
+from openmm import Vec3
 
 from modules.docking_tasks import convert_to_pdbqt, dock
 from pipeline.task_registry import register_task
@@ -31,21 +32,29 @@ def load_protein(pdb_path: Path) -> PDBFile:
 
 def add_positional_restraints(system, modeller, atom_indices, k=1000.0):
     """
-    Apply strong positional restraints to selected atoms.
+    Apply harmonic positional restraints to selected atoms.
+    Args:
+        system: OpenMM System object
+        modeller: OpenMM Modeller containing positions
+        atom_indices: list of atom indices to restrain
+        k: force constant in kJ/mol/nm^2
     """
-    force = openmm.CustomExternalForce(
-        "k*((x-x0)^2+(y-y0)^2+(z-z0)^2)"
-    )
-    force.addGlobalParameter(
-        "k", k * unit.kilojoule_per_mole / unit.nanometer**2
-    )
+    # Make sure the positions are Quantities in nm
+    positions = modeller.positions
+    if not isinstance(positions[0], openmm.unit.Quantity):
+        positions = [p * unit.nanometer for p in positions]
+
+    # Create the harmonic restraint force
+    force = openmm.CustomExternalForce("0.5*k*((x-x0)^2 + (y-y0)^2 + (z-z0)^2)")
+    force.addGlobalParameter("k", k * unit.kilojoule_per_mole / unit.nanometer**2)
     force.addPerParticleParameter("x0")
     force.addPerParticleParameter("y0")
     force.addPerParticleParameter("z0")
 
+    # Add particles
     for idx in atom_indices:
-        pos = modeller.positions[idx]
-        force.addParticle(idx, pos)
+        pos = positions[idx].in_units_of(unit.nanometer)
+        force.addParticle(idx, [pos[0], pos[1], pos[2]])
 
     system.addForce(force)
 
@@ -53,7 +62,7 @@ def add_positional_restraints(system, modeller, atom_indices, k=1000.0):
 # ---------------------------------------------------------------------
 # Core IFD system construction
 # ---------------------------------------------------------------------
-from openmm import Vec3
+
 def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
 
     ff_path = config["induced_fit_docking"]["minimisation"]["protein_forcefield"]
@@ -113,11 +122,8 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
 
     # Optional: restrain ligand
     if ligand_fixed:
-        ligand_atom_indices = [
-            atom.index for atom in modeller.topology.atoms()
-            if atom.residue.name == "LIG"
-        ]
-        add_positional_restraints(system, modeller, ligand_atom_indices)
+        ligand_atom_indices = [a.index for a in modeller.topology.atoms() if a.residue.name == "LIG"]
+        add_positional_restraints(system, modeller, ligand_atom_indices, k=1000.0)
 
     return system, modeller
 
@@ -173,6 +179,11 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
         1 / unit.picosecond,
         0.002 * unit.picoseconds,
     )
+
+    # Sanity checks
+
+    assert system.getNumParticles() == modeller.topology.getNumAtoms()
+    assert len(modeller.positions) == modeller.topology.getNumAtoms()
 
     simulation = Simulation(modeller.topology, system, integrator)
     simulation.context.setPositions(modeller.positions)
