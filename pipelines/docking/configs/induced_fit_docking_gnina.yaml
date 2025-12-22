@@ -43,5 +43,5 @@ induced_fit_docking:
     protein_forcefield: amber14-all.xml
     ligand_fixed: true
     max_steps: 500
-    tolerance: 1e-4
+    tolerance: 0.5 # kJ/mol/nm
     num_minimisation_steps: 5000

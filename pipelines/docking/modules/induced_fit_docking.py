@@ -53,7 +53,7 @@ def add_positional_restraints(system, modeller, atom_indices, k=1000.0):
 
     # Add particles
     for idx in atom_indices:
-        pos = positions[idx].in_units_of(unit.nanometer)
+        pos = positions[idx].value_in_unit(unit.nanometer)
         force.addParticle(idx, [pos[0], pos[1], pos[2]])
 
     system.addForce(force)
@@ -86,14 +86,8 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
         residue.name = "LIG"
 
     # GNINA SDF coordinates (numpy array, Å)
-    coords = ligand_mol.conformers[0]
-
-    # Convert to Vec3 list
-    ligand_positions = [Vec3(*xyz) for xyz in coords]
-
-    # Attach units the OpenMM way (Å → nm)
-    ligand_positions = ligand_positions * unit.angstrom
-    ligand_positions = ligand_positions.in_units_of(unit.nanometer)
+    coords = ligand_mol.conformers[0].to_openmm()
+    ligand_positions = coords.in_units_of(unit.nanometer)
 
     # Add ligand ONCE
     modeller.add(ligand_top, ligand_positions)
@@ -173,6 +167,9 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
     # Build & minimise system
     # ---------------------------
     system, modeller = build_ifd_system(protein_pdb, docked_sdf, config)
+    
+    minim_cfg = config["induced_fit_docking"]["minimisation"]
+    tol = minim_cfg.get("tolerance", 0.5) # minim tolerance from the yaml
 
     integrator = openmm.LangevinIntegrator(
         300 * unit.kelvin,
@@ -188,9 +185,8 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
     simulation = Simulation(modeller.topology, system, integrator)
     simulation.context.setPositions(modeller.positions)
 
-    minim_cfg = config["induced_fit_docking"]["minimisation"]
     simulation.minimizeEnergy(
-        tolerance=minim_cfg.get("tolerance", 1e-4) * unit.kilojoule_per_mole,
+        tolerance = tol * unit.kilojoule_per_mole / unit.nanometer,
         maxIterations=minim_cfg.get("max_steps", 500),
     )
 
