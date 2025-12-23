@@ -25,7 +25,7 @@ class FlexibleShellSelector:
         cutoff_nm = self.cutoff_angstrom * 0.1
         residue_select = set(self.residue_select)
 
-        # Convert positions → numpy (nm)
+        # Convert positions (nm)
         pos = np.array([p.value_in_unit(unit.nanometer) for p in positions])
 
         ligand_atoms = [
@@ -42,11 +42,11 @@ class FlexibleShellSelector:
         for atom in topology.atoms():
             res = atom.residue
 
-            # Skip ligand itself
+            # Skip ligand
             if res.name == self.ligand_resname:
                 continue
 
-            # Optional residue-name filtering
+            # Optional: residue-name filtering
             if residue_select and res.name not in residue_select:
                 continue
 

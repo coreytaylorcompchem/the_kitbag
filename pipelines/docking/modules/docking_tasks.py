@@ -39,8 +39,6 @@ class ProteinPreparer:
         self.pdb_path = Path(pdb_path)
         self.name = name
         self.pH = pH
-
-        # Paths set during preparation
         self.cleaned_pdb = None
         self.extracted_ligand_path = None
         self.protonated_pdb = None
@@ -61,7 +59,7 @@ class ProteinPreparer:
 
         logger.debug(f"[ProteinPreparer] Cleaning protein: {self.pdb_path.name}")
 
-        # --- Step 1: Separate protein vs. ligand atoms ---
+        # Step 1: Separate protein vs. ligand atoms
         hetatm_blocks = {}
         with open(self.pdb_path, 'r') as infile, \
              open(self.cleaned_pdb, 'w') as protein_out, \
@@ -85,7 +83,7 @@ class ProteinPreparer:
             else:
                 logger.warning("[ProteinPreparer] No non-water HETATM groups found.")
 
-        # --- Step 2: Protonate protein with pdb4amber ---
+        # Step 2: Protonate protein with pdb4amber
         cmd_pdb4amber = [
             "pdb4amber",
             "-i", str(self.cleaned_pdb),
@@ -107,10 +105,10 @@ class ProteinPreparer:
 
         logger.info(f"[ProteinPreparer] Protonated protein saved at: {self.protonated_pdb}")
 
-        # # --- Step 3: Strip CONECT records ---
+        # Step 3: Strip CONECT records
         # self._remove_conect_records(self.protonated_pdb)
 
-        # --- Step 4: Convert to PDBQT---
+        # Step 4: Convert to PDBQT
         cmd_pdbqt = [
             "obabel",
             str(self.protonated_pdb),
@@ -168,24 +166,23 @@ class LigandPreparer:
         if self.mol is None:
             raise RuntimeError("Ligand must be standardised before protonation.")
 
-        # Work on a copy to avoid RDKit mutability issues
         mol = Chem.Mol(self.mol)
 
-        # --- Step 1: Normalize functional groups ---
+        # Step 1: Normalise functional groups
         normalizer = rdMolStandardize.Normalizer()
         mol = normalizer.normalize(mol)
 
-        # --- Step 2: Reionize (pH-aware where possible) ---
+        # Step 2: Use Rdkit reionizer (pH-aware where possible)
         reionizer = rdMolStandardize.Reionizer()
         mol = reionizer.reionize(mol)
 
-        # --- Step 3: Explicit hydrogens & sanitisation ---
+        # Step 3: Explicit hydrogens & sanitisation
         mol = Chem.AddHs(mol)
         Chem.SanitizeMol(mol)
 
         self.mol = mol
 
-        logger.info(f"[LigandPreparer] Protonated ligand {self.name} at pH {pH}")
+        logger.debug(f"[LigandPreparer] Protonated ligand {self.name} at pH {pH}")
 
     def generate_conformers(self, n_confs: int = 250):
         if self.mol is None:
@@ -280,7 +277,7 @@ class LigandPreparer:
             self.conformer_energies.append((conf_id, energy))
             shutil.rmtree(temp_dir)
 
-        # Sort conformers by energy after optimization
+        # Sort conformers by energy after optimisation
         self.conformer_energies.sort(key=lambda x: (x[1] if x[1] is not None else float('inf')))
         self.conformers = [conf_id for conf_id, _ in self.conformer_energies]
 
@@ -313,7 +310,7 @@ class LigandPreparer:
             writer.write(self.mol, confId=conf_id)
             writer.close()
 
-            # Convert using Open Babel with Gasteiger charges
+            # Convert using Open Babel
             cmd = [
                 "obabel", str(sdf_path), "-xh", "-p", "7.4", "-O", str(pdbqt_path)
             ]

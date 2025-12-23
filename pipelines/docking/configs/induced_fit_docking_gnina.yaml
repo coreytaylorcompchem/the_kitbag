@@ -22,7 +22,7 @@ protein:
   pH: 7.4
 
 generate_ligands_from_list: true
-ligands_txt: "ligs.txt"    
+ligands_txt: "ligs_.txt"    
 # ligands_csv: "ligands.csv" 
 
 docking:
@@ -37,7 +37,7 @@ docking:
   size: [15.0, 15.0, 15.0]
 
 induced_fit_docking:
-  residue_distance_cutoff: 5
+  residue_distance_cutoff: 5 # distance in A
   residue_select: ["LYS", "ASP", "TYR"] # only minimise these residues within the residue_distance_cutoff
   backbone_refinement: false
   minimisation:

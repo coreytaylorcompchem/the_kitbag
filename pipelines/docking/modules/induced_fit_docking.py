@@ -15,91 +15,92 @@ from rdkit import Chem
 
 from modules.docking_tasks import convert_to_pdbqt, dock
 from modules.ifd.flexible_shell import FlexibleShellSelector
+from modules.utils.ifd import load_protein, add_positional_restraints
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# ---------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------
+# # ---------------------------------------------------------------------
+# # Utilities
+# # ---------------------------------------------------------------------
 
-def load_protein(pdb_path: Path) -> PDBFile:
-    return PDBFile(str(pdb_path))
+# def load_protein(pdb_path: Path) -> PDBFile:
+#     return PDBFile(str(pdb_path))
 
 
-def add_positional_restraints(system, modeller, atom_indices, k=1000.0):
-    """
-    Apply harmonic positional restraints to selected atoms.
-    Args:
-        system: OpenMM System object
-        modeller: OpenMM Modeller containing positions
-        atom_indices: list of atom indices to restrain
-        k: force constant in kJ/mol/nm^2
-    """
-    # Make sure the positions are Quantities in nm
-    positions = modeller.positions
-    if not isinstance(positions[0], openmm.unit.Quantity):
-        positions = [p * unit.nanometer for p in positions]
+# def add_positional_restraints(system, modeller, atom_indices, k=1000.0):
+#     """
+#     Apply harmonic positional restraints to selected atoms.
+#     Args:
+#         system: OpenMM System object
+#         modeller: OpenMM Modeller containing positions
+#         atom_indices: list of atom indices to restrain
+#         k: force constant in kJ/mol/nm^2
+#     """
+#     # Make sure the positions are Quantities in nm
+#     positions = modeller.positions
+#     if not isinstance(positions[0], openmm.unit.Quantity):
+#         positions = [p * unit.nanometer for p in positions]
 
-    # Create the harmonic restraint force
-    force = openmm.CustomExternalForce("0.5*k*((x-x0)^2 + (y-y0)^2 + (z-z0)^2)")
-    force.addGlobalParameter("k", k * unit.kilojoule_per_mole / unit.nanometer**2)
-    force.addPerParticleParameter("x0")
-    force.addPerParticleParameter("y0")
-    force.addPerParticleParameter("z0")
+#     # Create the harmonic restraint force
+#     force = openmm.CustomExternalForce("0.5*k*((x-x0)^2 + (y-y0)^2 + (z-z0)^2)")
+#     force.addGlobalParameter("k", k * unit.kilojoule_per_mole / unit.nanometer**2)
+#     force.addPerParticleParameter("x0")
+#     force.addPerParticleParameter("y0")
+#     force.addPerParticleParameter("z0")
 
-    # Add particles
-    for idx in atom_indices:
-        pos = positions[idx].value_in_unit(unit.nanometer)
-        force.addParticle(idx, [pos[0], pos[1], pos[2]])
+#     # Add particles
+#     for idx in atom_indices:
+#         pos = positions[idx].value_in_unit(unit.nanometer)
+#         force.addParticle(idx, [pos[0], pos[1], pos[2]])
 
-    system.addForce(force)
+#     system.addForce(force)
 
-def get_flexible_residue_atoms(
-    topology,
-    positions,
-    cutoff_angstrom,
-    residue_select=None,
-    backbone_refinement=False,
-):
-    """
-    Returns atom indices that are allowed to move (i.e., NOT restrained).
-    """
-    cutoff_nm = cutoff_angstrom * 0.1
+# def get_flexible_residue_atoms(
+#     topology,
+#     positions,
+#     cutoff_angstrom,
+#     residue_select=None,
+#     backbone_refinement=False,
+# ):
+#     """
+#     Returns atom indices that are allowed to move (i.e., NOT restrained).
+#     """
+#     cutoff_nm = cutoff_angstrom * 0.1
 
-    ligand_atoms = [a for a in topology.atoms() if a.residue.name == "LIG"]
-    protein_atoms = [a for a in topology.atoms() if a.residue.name != "LIG"]
+#     ligand_atoms = [a for a in topology.atoms() if a.residue.name == "LIG"]
+#     protein_atoms = [a for a in topology.atoms() if a.residue.name != "LIG"]
 
-    lig_indices = [a.index for a in ligand_atoms]
+#     lig_indices = [a.index for a in ligand_atoms]
 
-    # Convert positions to numpy (nm)
-    pos = np.array([p.value_in_unit(unit.nanometer) for p in positions])
+#     # Convert positions to numpy (nm)
+#     pos = np.array([p.value_in_unit(unit.nanometer) for p in positions])
 
-    flexible_atoms = set()
+#     flexible_atoms = set()
 
-    for atom in protein_atoms:
-        res = atom.residue
+#     for atom in protein_atoms:
+#         res = atom.residue
 
-        # Optional residue-name filtering
-        if residue_select and res.name not in residue_select:
-            continue
+#         # Optional residue-name filtering
+#         if residue_select and res.name not in residue_select:
+#             continue
 
-        atom_pos = pos[atom.index]
+#         atom_pos = pos[atom.index]
 
-        # Minimum distance to any ligand atom
-        min_dist = min(
-            np.linalg.norm(atom_pos - pos[i]) for i in lig_indices
-        )
+#         # Minimum distance to any ligand atom
+#         min_dist = min(
+#             np.linalg.norm(atom_pos - pos[i]) for i in lig_indices
+#         )
 
-        if min_dist <= cutoff_nm:
-            # Optionally restrict to sidechains
-            if not backbone_refinement and atom.name in ("N", "CA", "C", "O"):
-                continue
-            flexible_atoms.add(atom.index)
+#         if min_dist <= cutoff_nm:
+#             # Optionally restrict to sidechains
+#             if not backbone_refinement and atom.name in ("N", "CA", "C", "O"):
+#                 continue
+#             flexible_atoms.add(atom.index)
 
-    return flexible_atoms
+#     return flexible_atoms
 
 # ---------------------------------------------------------------------
 # Core IFD system construction
@@ -111,13 +112,12 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
     ligand_fixed = config["induced_fit_docking"]["minimisation"].get("ligand_fixed", True)
     ifd_cfg = config["induced_fit_docking"]
     cutoff = ifd_cfg.get("residue_distance_cutoff", None)  # Å
-    residue_select = set(ifd_cfg.get("residue_select", []))  # e.g. {"LYS", "ASP"}
-    backbone_refinement = ifd_cfg.get("backbone_refinement", False)
 
-    # Start with protein
+    # Add protein
     modeller = Modeller(protein_pdb.topology, protein_pdb.positions)
 
     # Load ligand via OpenFF
+    # TODO: Load via from_rdkit() to control protonation
     ligand_mol = Molecule.from_file(str(ligand_sdf))
     ligand_mol.name = "LIG"  # optional but nice
 
@@ -131,11 +131,11 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
     for residue in ligand_top.residues():
         residue.name = "LIG"
 
-    # GNINA SDF coordinates (numpy array, Å)
+    # Convert GNINA SDF → coordinates (numpy array, Å)
     coords = ligand_mol.conformers[0].to_openmm()
     ligand_positions = coords.in_units_of(unit.nanometer)
 
-    # Add ligand ONCE
+    # Add ligand
     modeller.add(ligand_top, ligand_positions)
 
     lig_atoms = [a for a in modeller.topology.atoms() if a.residue.name == "LIG"]
@@ -143,8 +143,6 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
         b for b in modeller.topology.bonds()
         if b[0].residue.name == "LIG" or b[1].residue.name == "LIG"
     ]
-
-    # print ligand info - debug
 
     logger.debug(f"Ligand atoms: {len(lig_atoms)}, bonds: {len(lig_bonds)}")
 
@@ -179,7 +177,7 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
             positions,
         )
 
-        logger.info(
+        logger.debug(
             f"IFD shell: cutoff={cutoff} Å | "
             f"restrained atoms={len(restrained_atoms)} / "
             f"{modeller.topology.getNumAtoms()}"
@@ -206,7 +204,7 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
 
 
 # ---------------------------------------------------------------------
-# Thread-safe IFD task
+# Thread-safe IFD task (ligands run in serial for the time-being)
 # ---------------------------------------------------------------------
 
 @register_task(
@@ -217,18 +215,13 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
 def induced_fit_docking(backend, ligand, config, **kwargs):
     """
     Minimises the receptor around a docked ligand and then re-docks the ligand.
-    Uses OpenFF SDF directly, no PDB conversion needed.
     """
-    # ---------------------------
-    # Per-ligand working directory
-    # ---------------------------
+    # Per-ligand working directories
     base_output = Path(config["output_dir"])
     ligand_dir = base_output / ligand["name"]
     ligand_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---------------------------
     # Load receptor
-    # ---------------------------
     receptor_pdbqt = backend.cache.get("receptor_pdbqt")
     if receptor_pdbqt is None:
         raise RuntimeError("Receptor PDBQT not found in cache.")
@@ -236,9 +229,6 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
     receptor_clean_pdb = Path(str(receptor_pdbqt).replace(".pdbqt", "_protonated.pdb"))
     protein_pdb = load_protein(receptor_clean_pdb)
 
-    # ---------------------------
-    # Ensure ligand docked pose (SDF)
-    # ---------------------------
     if not ligand.get("pdbqt_paths"):
         convert_to_pdbqt(backend, ligand, config)
 
@@ -246,9 +236,7 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
     if not docked_sdf.exists():
         raise FileNotFoundError(f"Docked SDF not found: {docked_sdf}")
 
-    # ---------------------------
     # Build & minimise system
-    # ---------------------------
     system, modeller = build_ifd_system(protein_pdb, docked_sdf, config)
 
     minim_cfg = config["induced_fit_docking"]["minimisation"]
@@ -273,9 +261,7 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
         maxIterations=minim_cfg.get("max_steps", 500),
     )
 
-    # ---------------------------
-    # Write minimised receptor
-    # ---------------------------
+    # Write minimised complex
     minimised_pdb = ligand_dir / "protein_minimised.pdb"
     with open(minimised_pdb, "w") as f:
         PDBFile.writeFile(
@@ -285,9 +271,7 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
         )
     logger.info(f"[{ligand['name']}] Minimised receptor written")
 
-    # ---------------------------
-    # Re-dock using a LOCAL backend view
-    # ---------------------------
+    # Re-dock using backend
     local_config = dict(config)
     local_config["protein"] = dict(config["protein"])
     local_config["protein"]["pdb_path"] = str(minimised_pdb)
