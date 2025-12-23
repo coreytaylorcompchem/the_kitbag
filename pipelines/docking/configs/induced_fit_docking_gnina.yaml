@@ -4,6 +4,7 @@ workflow_name: induced_fit_docking
 workflow:
   - prepare_receptor_pdbqt
   - standardise_ligand
+  - protonate_ligand
   - convert_to_pdbqt
   - dock
   - induced_fit_docking
@@ -37,7 +38,7 @@ docking:
 
 induced_fit_docking:
   residue_distance_cutoff: 5
-  residue_select: ["LYS", "ASP"]
+  residue_select: ["LYS", "ASP", "TYR"] # only minimise these residues within the residue_distance_cutoff
   backbone_refinement: false
   minimisation:
     protein_forcefield: amber14-all.xml

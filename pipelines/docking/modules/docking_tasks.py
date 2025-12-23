@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from rdkit.Chem.MolStandardize import rdMolStandardize
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
@@ -162,6 +163,29 @@ class LigandPreparer:
         if mol is None:
             raise ValueError(f"Invalid SMILES: {self.smiles}")
         self.mol = Chem.AddHs(mol)
+    
+    def protonate(self, pH: float = 7.4):
+        if self.mol is None:
+            raise RuntimeError("Ligand must be standardised before protonation.")
+
+        # Work on a copy to avoid RDKit mutability issues
+        mol = Chem.Mol(self.mol)
+
+        # --- Step 1: Normalize functional groups ---
+        normalizer = rdMolStandardize.Normalizer()
+        mol = normalizer.normalize(mol)
+
+        # --- Step 2: Reionize (pH-aware where possible) ---
+        reionizer = rdMolStandardize.Reionizer()
+        mol = reionizer.reionize(mol)
+
+        # --- Step 3: Explicit hydrogens & sanitisation ---
+        mol = Chem.AddHs(mol)
+        Chem.SanitizeMol(mol)
+
+        self.mol = mol
+
+        logger.info(f"[LigandPreparer] Protonated ligand {self.name} at pH {pH}")
 
     def generate_conformers(self, n_confs: int = 250):
         if self.mol is None:
@@ -316,6 +340,16 @@ def standardise_ligand(backend, ligand, config, **kwargs):
     preparer = get_ligand_preparer(backend, ligand)
     preparer.standardise()
     logger.debug(f"Standardised ligand {ligand['name']}.")
+
+@register_task(
+    "protonate_ligand",
+    category="Ligand preparation",
+    description="Assign ligand protonation state at target pH."
+)
+def protonate_ligand(backend, ligand, config, **kwargs):
+    preparer = get_ligand_preparer(backend, ligand)
+    pH = config.get("protein", {}).get("pH", 7.4)
+    preparer.protonate(pH=pH)
 
 @register_task("generate_conformers", 
                category='Ligand preparation',
