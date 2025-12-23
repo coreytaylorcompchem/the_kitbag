@@ -22,86 +22,6 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# # ---------------------------------------------------------------------
-# # Utilities
-# # ---------------------------------------------------------------------
-
-# def load_protein(pdb_path: Path) -> PDBFile:
-#     return PDBFile(str(pdb_path))
-
-
-# def add_positional_restraints(system, modeller, atom_indices, k=1000.0):
-#     """
-#     Apply harmonic positional restraints to selected atoms.
-#     Args:
-#         system: OpenMM System object
-#         modeller: OpenMM Modeller containing positions
-#         atom_indices: list of atom indices to restrain
-#         k: force constant in kJ/mol/nm^2
-#     """
-#     # Make sure the positions are Quantities in nm
-#     positions = modeller.positions
-#     if not isinstance(positions[0], openmm.unit.Quantity):
-#         positions = [p * unit.nanometer for p in positions]
-
-#     # Create the harmonic restraint force
-#     force = openmm.CustomExternalForce("0.5*k*((x-x0)^2 + (y-y0)^2 + (z-z0)^2)")
-#     force.addGlobalParameter("k", k * unit.kilojoule_per_mole / unit.nanometer**2)
-#     force.addPerParticleParameter("x0")
-#     force.addPerParticleParameter("y0")
-#     force.addPerParticleParameter("z0")
-
-#     # Add particles
-#     for idx in atom_indices:
-#         pos = positions[idx].value_in_unit(unit.nanometer)
-#         force.addParticle(idx, [pos[0], pos[1], pos[2]])
-
-#     system.addForce(force)
-
-# def get_flexible_residue_atoms(
-#     topology,
-#     positions,
-#     cutoff_angstrom,
-#     residue_select=None,
-#     backbone_refinement=False,
-# ):
-#     """
-#     Returns atom indices that are allowed to move (i.e., NOT restrained).
-#     """
-#     cutoff_nm = cutoff_angstrom * 0.1
-
-#     ligand_atoms = [a for a in topology.atoms() if a.residue.name == "LIG"]
-#     protein_atoms = [a for a in topology.atoms() if a.residue.name != "LIG"]
-
-#     lig_indices = [a.index for a in ligand_atoms]
-
-#     # Convert positions to numpy (nm)
-#     pos = np.array([p.value_in_unit(unit.nanometer) for p in positions])
-
-#     flexible_atoms = set()
-
-#     for atom in protein_atoms:
-#         res = atom.residue
-
-#         # Optional residue-name filtering
-#         if residue_select and res.name not in residue_select:
-#             continue
-
-#         atom_pos = pos[atom.index]
-
-#         # Minimum distance to any ligand atom
-#         min_dist = min(
-#             np.linalg.norm(atom_pos - pos[i]) for i in lig_indices
-#         )
-
-#         if min_dist <= cutoff_nm:
-#             # Optionally restrict to sidechains
-#             if not backbone_refinement and atom.name in ("N", "CA", "C", "O"):
-#                 continue
-#             flexible_atoms.add(atom.index)
-
-#     return flexible_atoms
-
 # ---------------------------------------------------------------------
 # Core IFD system construction
 # ---------------------------------------------------------------------
@@ -210,7 +130,7 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
 @register_task(
     "induced_fit_docking",
     category="Docking",
-    description="Dock, minimise nearby residues and re-dock (thread-safe).",
+    description="Dock, minimise nearby residues and re-dock.",
 )
 def induced_fit_docking(backend, ligand, config, **kwargs):
     """
@@ -232,7 +152,7 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
     if not ligand.get("pdbqt_paths"):
         convert_to_pdbqt(backend, ligand, config)
 
-    docked_sdf = base_output / f"{ligand['name']}_conf0_docked.sdf"
+    docked_sdf = base_output / f"{ligand['name']}_conf0_docked.sdf" # only the first conformer for now
     if not docked_sdf.exists():
         raise FileNotFoundError(f"Docked SDF not found: {docked_sdf}")
 

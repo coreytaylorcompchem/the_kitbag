@@ -38,7 +38,7 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
        ↳ Backends: gnina
     - dock: Dock with backend specified.
        ↳ Backends: gnina, unidock
-    - induced_fit_docking: Dock, minimise nearby residues and re-dock.
+    - induced_fit_docking: Dock, minimise nearby residues and re-dock (thread-safe).
        ↳ Backends: gnina
   [Ligand preparation]:
     - cluster_conformers: Cluster conformers by specified energy and RMSD criteria.
@@ -47,6 +47,8 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
        ↳ Backends: gnina, unidock
     - generate_conformers: Generate multiple feasible conformers from ligands.
        ↳ Backends: gnina, unidock
+    - protonate_ligand: Assign ligand protonation state at target pH.
+       ↳ Backends: None
     - save_final_conformers: Save conformers that meet energy and RMSD criteria.
        ↳ Backends: gnina, unidock
     - standardise_ligand: Prepare and generate 3D coords for each ligand.
@@ -54,6 +56,9 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
   [Receptor preparation]:
     - prepare_receptor_pdbqt: Prepare the receptor for docking. Format: pdbqt
        ↳ Backends: gnina, unidock
+  [Solvent modeling]:
+    - run_3d_rism: Run 3D-RISM calculation using AmberTools.
+       ↳ Backends: None
 Available Workflows:
  - active_learning_docking: prepare, dock and score with Active Learning loop.
  - constrained_docking: Prepare, dock and score with core constraints.
@@ -61,6 +66,7 @@ Available Workflows:
  - multi_pocket_docking: Dock ligands into top N pockets detected by fpocket.
  - multi_structure_docking: Dock ligands into multiple PDB structures.
  - vanilla_docking: Prepare, dock and score with no constraints.
+
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
