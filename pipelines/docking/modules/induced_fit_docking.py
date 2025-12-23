@@ -269,7 +269,7 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
             simulation.context.getState(getPositions=True).getPositions(),
             f,
         )
-    logger.info(f"[{ligand['name']}] Minimised receptor written")
+    logger.info(f"[{ligand['name']}] Minimised complex written")
 
     # Re-dock using backend
     local_config = dict(config)
