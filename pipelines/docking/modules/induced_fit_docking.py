@@ -14,6 +14,8 @@ from openff.toolkit.topology import Molecule
 from rdkit import Chem
 
 from modules.docking_tasks import convert_to_pdbqt, dock
+from modules.ifd.flexible_shell import FlexibleShellSelector
+
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
@@ -144,7 +146,7 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
 
     # print ligand info - debug
 
-    logger.info(f"Ligand atoms: {len(lig_atoms)}, bonds: {len(lig_bonds)}")
+    logger.debug(f"Ligand atoms: {len(lig_atoms)}, bonds: {len(lig_bonds)}")
 
     if len(lig_atoms) == 0 or len(lig_bonds) == 0:
         raise RuntimeError("Ligand was not correctly added to the topology")
@@ -166,33 +168,31 @@ def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
     cutoff = config["induced_fit_docking"].get("residue_distance_cutoff", None)
 
     if cutoff is not None:
-        flexible_atoms = get_flexible_residue_atoms(
-            modeller.topology,
-            positions,
+        selector = FlexibleShellSelector(
             cutoff_angstrom=cutoff,
-            residue_select=set(config["induced_fit_docking"].get("residue_select", [])),
-            backbone_refinement=config["induced_fit_docking"].get("backbone_refinement", False),
+            residue_select=ifd_cfg.get("residue_select", []),
+            backbone_refinement=ifd_cfg.get("backbone_refinement", False),
         )
 
-        # Everything else gets restrained
-        restrained_atoms = [
-            a.index for a in modeller.topology.atoms()
-            if a.index not in flexible_atoms
-        ]
+        restrained_atoms = selector.select_restrained_atoms(
+            modeller.topology,
+            positions,
+        )
 
         logger.info(
-            f"IFD: {len(flexible_atoms)} flexible atoms, "
-            f"{len(restrained_atoms)} restrained atoms"
+            f"IFD shell: cutoff={cutoff} Å | "
+            f"restrained atoms={len(restrained_atoms)} / "
+            f"{modeller.topology.getNumAtoms()}"
         )
 
         add_positional_restraints(
             system,
             modeller,
-            restrained_atoms,
+            sorted(restrained_atoms),
             k=1000.0,
         )
     else:
-        logger.info("IFD: No residue_distance_cutoff set → full protein minimisation")
+        logger.info("IFD: No flexible shell → full protein minimisation")
 
     # Optional: restrain ligand
     if ligand_fixed:
@@ -292,6 +292,6 @@ def induced_fit_docking(backend, ligand, config, **kwargs):
     local_config["protein"] = dict(config["protein"])
     local_config["protein"]["pdb_path"] = str(minimised_pdb)
 
-    logger.info(f"[{ligand['name']}] Re-docking to minimised receptor")
+    logger.debug(f"[{ligand['name']}] Re-docking to minimised receptor")
     return dock(backend, ligand, local_config, **kwargs)
 
