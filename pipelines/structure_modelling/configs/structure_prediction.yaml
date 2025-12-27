@@ -1,0 +1,63 @@
+task: workflow
+workflow_name: structure_prediction
+
+workflow:
+  - predict_structures
+  - rank_predictions
+
+protein:
+  sequence: >
+    MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFPDWQNYTPGPGIRYPLK
+
+structure_prediction:
+  inference:
+    num_runs: 3              # how many independent predictions
+    base_seed: 42             # optional, for reproducibility
+    seed_strategy: increment  # increment | random | fixed
+  tools:
+    chai:
+      enabled: true
+    boltz:
+      enabled: false
+    openfold:
+      enabled: true
+  refinement:
+    enabled: true
+    reference_structure: /path/to/local_structure.pdb
+    mode: constrained           # constrained | full | region
+    regions:                    # only used if mode == region
+      - chain: A
+        start: 45
+        end: 62
+
+    weight: 0.5                 # how strongly to bias toward reference
+    ranking:
+      enabled: true
+
+      # which metrics to use
+      metrics:
+        plddt:
+          weight: 0.5
+          higher_is_better: true
+        ptm:
+          weight: 0.3
+          higher_is_better: true
+        iptm:
+          weight: 0.2
+          higher_is_better: true
+
+      # how to combine metrics
+      aggregation: weighted_sum   # weighted_sum | mean | max
+
+      # output controls
+      select:
+        best_overall: true
+        best_per_tool: true
+      # normalisation
+      normalize: true             # min-max per metric
+
+
+backend:
+  name: structure_inference
+
+output_dir: outputs/structure_prediction

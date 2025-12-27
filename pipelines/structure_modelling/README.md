@@ -33,10 +33,14 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 ```
 Available Backends:
  - base
+ - boltz
+ - chai
  - colabfold
  - modeller
+ - openfold
  - peptidebuilder
  - pyrosetta
+ - structureinference
  - xtb
 Available Tasks:
   [Peptide modelling]:
@@ -48,10 +52,15 @@ Available Tasks:
     - fix_loops: Model missing loops.
     - fix_residues: Fix incomplete residues.
     - refine_loops: Refine modelled loops (energy criteria).
+  [Structure modelling]:
+    - predict_structures: Run structure prediction tools (Chai, Boltz, etc.) in parallel.
+    - rank_predictions: Rank AI-predicted structures by confidence metrics.
 
 Available Workflows:
  - peptide_modelling: Build, minimise peptides and calculate metrics.
  - protein_modelling: Fix, model, and refine protein structure.
+ - structure_prediction: Parallel AI-based structure prediction
+
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.
