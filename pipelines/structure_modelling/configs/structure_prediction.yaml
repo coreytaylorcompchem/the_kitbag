@@ -6,11 +6,19 @@ workflow:
   - rank_predictions
   - generate_consensus
 
-protein:
-  sequence: >
-    MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFPDWQNYTPGPGIRYPLK
+# protein:
+#   sequence: >
+#     MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFPDWQNYTPGPGIRYPLK
 
 structure_prediction:
+  tools:
+      - openfold
+      - chai
+      - boltz
+  sequences:
+    chains:
+      A: "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ"
+      B: "EVQLVESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSA"
   inference:
     num_runs: 3              # how many independent predictions
     base_seed: 42             # optional, for reproducibility
@@ -57,17 +65,17 @@ structure_prediction:
       # normalisation
       normalize: true             # min-max per metric
     # Generate consensus structures
-      consensus:
+    consensus:
+      enabled: true
+      selection:
+        mode: top_k
+        k: 10
+      representative:
         enabled: true
-        selection:
-          mode: top_k
-          k: 10
-        representative:
-          enabled: true
-          strategy: best_score
-        clustering:
-          enabled: true
-          cutoff: 0.3  # 1-TMscore distance
+        strategy: best_score
+      clustering:
+        enabled: true
+        cutoff: 0.3  # 1-TMscore distance
 
 backend:
   name: structure_inference

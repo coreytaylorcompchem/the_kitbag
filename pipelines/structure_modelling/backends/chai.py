@@ -2,11 +2,9 @@ import os
 import subprocess
 import logging
 from pathlib import Path
-
 from backends.base import BaseStructureTool
 
 logger = logging.getLogger(__name__)
-
 
 class ChaiBackend(BaseStructureTool):
     name = "chai"
@@ -17,25 +15,24 @@ class ChaiBackend(BaseStructureTool):
         seed: int,
         device: int,
         output_dir: Path,
-        refinement: dict | None = None,
+        refinement: dict | None = None
     ):
-        """
-        Run a single Chai inference job.
-        """
-
+        """Run a single Chai inference job with optional refinement."""
         # --- environment isolation ---
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(device)
         env["PYTHONHASHSEED"] = str(seed)
 
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # --- per-run output dir ---
+        run_dir = output_dir / f"run_{run_id}"
+        run_dir.mkdir(parents=True, exist_ok=True)
 
         # --- input FASTA ---
-        fasta = output_dir / "input.fasta"
+        fasta = run_dir / "input.fasta"
         fasta.write_text(f">query\n{self.sequence}\n")
 
-        # --- output directory ---
-        out_dir = output_dir / "results"
+        # --- results dir ---
+        out_dir = run_dir / "results"
         out_dir.mkdir(exist_ok=True)
 
         # --- base Chai command ---
@@ -54,7 +51,6 @@ class ChaiBackend(BaseStructureTool):
                     "--template", str(reference),
                     "--template_weight", str(refinement.get("weight", 0.5)),
                 ]
-
             if refinement.get("mode") == "region":
                 for region in refinement.get("regions", []):
                     cmd += [
@@ -62,22 +58,35 @@ class ChaiBackend(BaseStructureTool):
                         f"{region['chain']}:{region['start']}-{region['end']}",
                     ]
 
-        logger.info(
-            f"[Chai] run={run_id} seed={seed} gpu={device}"
-        )
-
+        logger.info(f"[Chai] run={run_id} seed={seed} gpu={device}")
         subprocess.run(cmd, check=True, env=env)
 
         structure = out_dir / "model.pdb"
         metrics = self._parse_metrics(out_dir)
 
         return {
-            "structure_path": str(structure),
-            "metrics": metrics,
             "run_id": run_id,
             "seed": seed,
             "device": device,
+            "structure_path": str(structure),
+            "metrics": metrics,
+            "tool": self.name,
         }
+
+    def run_multi(
+        self,
+        seeds: list[int],
+        device: int,
+        output_dir: Path,
+        refinement: dict | None = None
+    ):
+        all_results = []
+        for run_id, seed in enumerate(seeds):
+            result = self.run(run_id, seed, device, output_dir, refinement)
+            all_results.append(result)
+
+        self.cache = {"ranking": {"results": all_results}}
+        return all_results
 
     def _parse_metrics(self, out_dir: Path):
         import json
@@ -88,7 +97,6 @@ class ChaiBackend(BaseStructureTool):
             return {"plddt": None, "ptm": None, "iptm": None}
 
         data = json.loads(metrics_file.read_text())
-
         return {
             "plddt": data.get("plddt"),
             "ptm": data.get("ptm"),

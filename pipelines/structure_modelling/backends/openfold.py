@@ -7,7 +7,6 @@ from backends.base import BaseStructureTool
 
 logger = logging.getLogger(__name__)
 
-
 class OpenFoldBackend(BaseStructureTool):
     name = "openfold"
 
@@ -17,86 +16,87 @@ class OpenFoldBackend(BaseStructureTool):
         seed: int,
         device: int,
         output_dir: Path,
-        refinement: dict | None = None,
+        refinement: dict | None = None
     ):
         """
-        Parameters are injected by the StructureInferenceBackend scheduler.
+        Run OpenFold inference on the given sequence.
+
+        Parameters:
+        - run_id: unique run identifier (used for output dir)
+        - seed: random seed for reproducibility
+        - device: CUDA device ID
+        - output_dir: base output directory
+        - refinement: optional dict with {"pdb_path": ...} for local refinement
         """
 
-        # --- environment isolation ---
+        # --- set environment ---
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(device)
         env["PYTHONHASHSEED"] = str(seed)
 
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # --- prepare input fasta (supports multi-chain sequences) ---
+        fasta = self.prepare_input(output_dir)
 
-        # --- input FASTA ---
-        fasta = output_dir / "input.fasta"
-        fasta.write_text(f">query\n{self.sequence}\n")
-
-        # --- OpenFold output directory ---
-        out_dir = output_dir / "results"
+        # --- create per-run output dir ---
+        out_dir = output_dir / f"run_{run_id}"
         out_dir.mkdir(exist_ok=True)
 
-        # --- base OpenFold command ---
+        # --- construct command ---
         cmd = [
             "openfold_run.py",
             "--fasta", str(fasta),
             "--output_dir", str(out_dir),
-            "--seed", str(seed),
         ]
 
-        # --- optional refinement / templating ---
         if refinement:
-            reference = refinement.get("reference_structure")
-            if reference:
-                cmd += [
-                    "--template_pdb", str(reference),
-                    "--template_weight", str(refinement.get("weight", 0.5)),
-                ]
+            cmd.extend(["--refine_pdb", refinement["pdb_path"]])
 
-            # region-based refinement is optional and tool-dependent
-            if refinement.get("mode") == "region":
-                for region in refinement.get("regions", []):
-                    cmd += [
-                        "--template_region",
-                        f"{region['chain']}:{region['start']}-{region['end']}",
-                    ]
-
-        logger.info(
-            f"[OpenFold] run={run_id} seed={seed} gpu={device}"
-        )
-
+        # --- execute ---
         subprocess.run(cmd, check=True, env=env)
 
-        # --- outputs ---
+        # --- parse results ---
         structure = out_dir / "relaxed_model_1.pdb"
         metrics = self._parse_metrics(out_dir)
 
         return {
+            "run_id": run_id,
             "structure_path": str(structure),
             "metrics": metrics,
-            "run_id": run_id,
-            "seed": seed,
-            "device": device,
+            "tool": self.name,
         }
 
     def _parse_metrics(self, out_dir: Path):
-        """
-        Parse OpenFold confidence outputs.
-        """
+        """Parse PLDDT and pTM metrics safely."""
         import numpy as np
 
-        plddt_path = out_dir / "plddt.npy"
-        ptm_path = out_dir / "ptm.txt"
-        iptm_path = out_dir / "iptm.txt"
+        plddt_file = out_dir / "plddt.npy"
+        ptm_file = out_dir / "ptm.txt"
 
-        plddt = float(np.load(plddt_path).mean()) if plddt_path.exists() else None
-        ptm = float(ptm_path.read_text()) if ptm_path.exists() else None
-        iptm = float(iptm_path.read_text()) if iptm_path.exists() else None
+        plddt = float(np.load(plddt_file).mean()) if plddt_file.exists() else None
+        ptm = float(ptm_file.read_text().strip()) if ptm_file.exists() else None
 
         return {
             "plddt": plddt,
             "ptm": ptm,
-            "iptm": iptm,
+            "iptm": None,
         }
+
+    def run_multi(
+        self,
+        seeds: list[int],
+        device: int,
+        output_dir: Path,
+        refinement: dict | None = None
+    ):
+        """
+        Run multiple OpenFold inferences with different seeds.
+        Stores all results in self.cache['ranking']['results'].
+        """
+        all_results = []
+        for run_id, seed in enumerate(seeds):
+            result = self.run(run_id, seed, device, output_dir, refinement)
+            all_results.append(result)
+
+        # cache results for consensus / ranking
+        self.cache = {"ranking": {"results": all_results}}
+        return all_results

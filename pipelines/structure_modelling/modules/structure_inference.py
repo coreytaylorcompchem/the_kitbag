@@ -153,6 +153,58 @@ def rank_predictions(backend, config, **kwargs):
 
     return backend.cache["ranking"]
 
+@register_task(
+    "rank_models",
+    category="Structure modelling",
+    description="Rank predicted structures from multiple backends/tools using confidence scores.",
+)
+def rank_models(backend_tools, config, **kwargs):
+    """
+    Rank models across multiple backends and seeds.
+
+    backend_tools: list of backend instances (OpenFold, Boltz, Chai, etc.)
+    config: configuration dict
+    """
+    all_runs = []
+
+    # --- collect all predictions from each backend ---
+    for backend in backend_tools:
+        cache_ranking = backend.cache.get("runs", [])
+        for run in cache_ranking:
+            score = run.get("metrics", {}).get("plddt", 0)  # default ranking metric
+            all_runs.append({
+                "tool": backend.name,
+                "run_id": run.get("run_id", 0),
+                "seed": run.get("seed", 0),
+                "structure_path": run["structure_path"],
+                "metrics": run.get("metrics", {}),
+                "score": score,
+            })
+
+    if not all_runs:
+        raise ValueError("No predictions found for ranking.")
+
+    # --- sort by score descending ---
+    ranked = sorted(all_runs, key=lambda r: r["score"], reverse=True)
+
+    # --- save ranking to backend cache ---
+    ranking_dir = Path(config["output_dir"]) / "ranking"
+    ranking_dir.mkdir(exist_ok=True)
+    ranking_json = ranking_dir / "ranking.json"
+
+    with open(ranking_json, "w") as f:
+        json.dump(ranked, f, indent=2)
+
+    # --- store in cache for downstream consensus ---
+    for backend in backend_tools:
+        backend.cache["ranking"] = {
+            "ranking_json": str(ranking_json),
+            "results": ranked
+        }
+
+    logger.info(f"Ranked {len(ranked)} models across {len(backend_tools)} backends.")
+    return backend_tools[0].cache["ranking"]
+
 def compute_tmscore_matrix(pdb_files):
     """
     Compute pairwise TM-score matrix for a list of PDB files using TM-align.
@@ -208,19 +260,19 @@ def cluster_structures(pdb_files, cutoff=0.3):
     category="Structure modelling",
     description="Generate consensus / ensemble from ranked predictions with optional clustering.",
 )
-def generate_consensus(backend, config, **kwargs):
+def generate_consensus(backend_tools, config, **kwargs):
+    """
+    Generate consensus structure from multiple tools and seeds.
 
+    backend_tools: list of backend instances (OpenFold, Boltz, Chai, etc.)
+    config: configuration dict
+    """
     def average_structures(pdb_files, out_path):
-        """
-        Average atomic coordinates across a list of PDB files.
-        Only averages atoms with the same name and residue number.
-        """
+        """Average atomic coordinates across a list of PDB files."""
         parser = PDBParser(QUIET=True)
         structures = [parser.get_structure(f"s{i}", pdb) for i, pdb in enumerate(pdb_files)]
 
-        # reference structure
         ref_structure = structures[0]
-        # initialize coords to zero
         for model in ref_structure:
             for chain in model:
                 for res in chain:
@@ -233,7 +285,6 @@ def generate_consensus(backend, config, **kwargs):
                 for ref_chain, chain in zip(ref_model, model):
                     for ref_res, res in zip(ref_chain, chain):
                         for ref_atom in ref_res:
-                            # find matching atom in current structure
                             atom = res[ref_atom.get_name()]
                             ref_atom.coord += atom.coord / n_structs
 
@@ -253,25 +304,29 @@ def generate_consensus(backend, config, **kwargs):
     consensus_dir.mkdir(exist_ok=True)
     ensemble_dir.mkdir(exist_ok=True)
 
-    ranking = backend.cache.get("ranking")
-    if not ranking:
-        raise ValueError("Consensus requires ranking results")
-    with open(ranking["ranking_json"]) as f:
-        ranked = json.load(f)
+    # --- flatten all runs across backends ---
+    all_runs = []
+    for backend in backend_tools:
+        ranking = backend.cache.get("ranking", {}).get("results", [])
+        all_runs.extend(ranking)
 
-    # --- select top models first ---
-    selection_cfg = consensus_cfg["selection"]
-    mode = selection_cfg["mode"]
+    if not all_runs:
+        raise ValueError("No predictions available for consensus.")
+
+    # --- select top models ---
+    selection_cfg = consensus_cfg.get("selection", {})
+    mode = selection_cfg.get("mode", "top_k")
     selected = []
+
     if mode == "top_k":
         k = selection_cfg.get("k", 1)
-        selected = ranked[:k]
+        selected = sorted(all_runs, key=lambda r: r.get("score", 0), reverse=True)[:k]
     elif mode == "score_threshold":
         threshold = selection_cfg["score_threshold"]
-        selected = [r for r in ranked if r["score"] >= threshold]
+        selected = [r for r in all_runs if r.get("score", 0) >= threshold]
     elif mode == "per_tool":
         seen = set()
-        for r in ranked:
+        for r in all_runs:
             if r["tool"] not in seen:
                 selected.append(r)
                 seen.add(r["tool"])
@@ -279,15 +334,17 @@ def generate_consensus(backend, config, **kwargs):
         raise ValueError(f"Unknown consensus selection mode: {mode}")
 
     if not selected:
-        raise ValueError("No models selected for consensus")
+        raise ValueError("No models selected for consensus.")
 
     logger.info(f"Selected {len(selected)} models for consensus")
 
-    # --- copy selected models into ensemble dir ---
+    # --- copy PDBs into ensemble dir ---
     pdb_files = []
     for model in selected:
+        run_id = model.get("run_id", 0)
+        seed = model.get("seed", 0)
         src = Path(model["structure_path"])
-        dst = ensemble_dir / f"{model['tool']}_run{model['run_id']}.pdb"
+        dst = ensemble_dir / f"{model['tool']}_run{run_id}_seed{seed}.pdb"
         shutil.copy(src, dst)
         pdb_files.append(dst)
         model["ensemble_path"] = str(dst)
@@ -303,31 +360,27 @@ def generate_consensus(backend, config, **kwargs):
         cluster_centroids = [selected[i] for i in centroid_indices]
         logger.info(f"Identified {len(set(cluster_labels))} clusters")
 
-    # --- select representative from cluster centroids if clustering enabled ---
+    # --- select representative ---
     rep_cfg = consensus_cfg.get("representative", {})
     representative = None
     if rep_cfg.get("enabled", True):
         strategy = rep_cfg.get("strategy", "best_score")
-        if clustering_enabled and cluster_centroids:
-            candidates = cluster_centroids
-        else:
-            candidates = selected
+        candidates = cluster_centroids if clustering_enabled and cluster_centroids else selected
 
         if strategy == "best_score":
-            representative = max(candidates, key=lambda x: x["score"])
+            representative = max(candidates, key=lambda x: x.get("score", 0))
         elif strategy == "median_score":
-            scores = [m["score"] for m in candidates]
+            scores = [m.get("score",0) for m in candidates]
             median = statistics.median(scores)
-            representative = min(candidates, key=lambda x: abs(x["score"] - median))
+            representative = min(candidates, key=lambda x: abs(x.get("score",0)-median))
         else:
             raise ValueError(f"Unknown representative strategy: {strategy}")
 
-        rep_src = Path(representative["structure_path"])
         rep_dst = consensus_dir / "representative.pdb"
-        shutil.copy(rep_src, rep_dst)
-        logger.info(f"Representative model: {representative['tool']} run {representative['run_id']} (score={representative['score']:.3f})")
+        shutil.copy(Path(representative["structure_path"]), rep_dst)
+        logger.info(f"Representative model: {representative['tool']} run {representative['run_id']} seed {representative.get('seed',0)} (score={representative.get('score',0):.3f})")
 
-    # --- optional: average cluster centroids ---
+    # --- optional averaging of centroids ---
     average_enabled = consensus_cfg.get("average_centroids", {}).get("enabled", True)
     average_structure = None
     if average_enabled and cluster_centroids and len(cluster_centroids) > 1:
@@ -340,11 +393,11 @@ def generate_consensus(backend, config, **kwargs):
     # --- save consensus metadata ---
     consensus_data = {
         "n_models": len(selected),
-        "mean_score": sum(m["score"] for m in selected) / len(selected),
-        "max_score": max(m["score"] for m in selected),
+        "mean_score": sum(m.get("score",0) for m in selected) / len(selected),
+        "max_score": max(m.get("score",0) for m in selected),
         "ensemble": selected,
         "cluster_labels": cluster_labels.tolist() if cluster_labels is not None else None,
-        "cluster_centroids": [c["tool"] + f"_run{c['run_id']}" for c in cluster_centroids] if cluster_centroids else None,
+        "cluster_centroids": [c["tool"] + f"_run{c['run_id']}_seed{c.get('seed',0)}" for c in cluster_centroids] if cluster_centroids else None,
         "representative": representative,
         "average_structure": average_structure,
     }
@@ -352,13 +405,10 @@ def generate_consensus(backend, config, **kwargs):
     with open(consensus_dir / "consensus.json", "w") as f:
         json.dump(consensus_data, f, indent=2)
 
-    backend.cache["consensus"] = {
+    return {
         "consensus_dir": str(consensus_dir),
         "ensemble_dir": str(ensemble_dir),
         "representative": str(consensus_dir / "representative.pdb") if representative else None,
         "average_structure": average_structure,
         "metadata": consensus_data,
     }
-
-    return backend.cache["consensus"]
-
