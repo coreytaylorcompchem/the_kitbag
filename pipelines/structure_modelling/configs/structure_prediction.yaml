@@ -4,6 +4,7 @@ workflow_name: structure_prediction
 workflow:
   - predict_structures
   - rank_predictions
+  - generate_consensus
 
 protein:
   sequence: >
@@ -55,7 +56,18 @@ structure_prediction:
         best_per_tool: true
       # normalisation
       normalize: true             # min-max per metric
-
+    # Generate consensus structures
+      consensus:
+        enabled: true
+        selection:
+          mode: top_k
+          k: 10
+        representative:
+          enabled: true
+          strategy: best_score
+        clustering:
+          enabled: true
+          cutoff: 0.3  # 1-TMscore distance
 
 backend:
   name: structure_inference
