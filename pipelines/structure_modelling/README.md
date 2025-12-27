@@ -5,6 +5,7 @@ Modelling of proteins and peptides, mainly.
 ![Structure modelling logo](_images/structure_modelling_logo.jpg)
 
 ## Setup and dependencies
+### Structure modelling
 
 * [Rdkit](https://www.rdkit.org/docs/Install.html)
 * [Biopython](https://biopython.org/wiki/Download)
@@ -12,7 +13,13 @@ Modelling of proteins and peptides, mainly.
 * [OpenMM](https://docs.openmm.org/latest/userguide/application/01_getting_started.html)
 * [PyRosetta](https://www.pyrosetta.org/downloads) 
   * NOTE: 1.7 Gb download
+
+### Structure prediction
+
+* [Boltz-2](https://github.com/jwohlwend/boltz)
 * [ColabFold](https://github.com/sokrypton/ColabFold)
+* [Chai-1](https://github.com/chaidiscovery/chai-lab)
+* [OpenFold](https://github.com/aqlaboratory/openfold)
 
 See `environment.yml` for the rest. The list is indicative only, as this repo is under development.
 

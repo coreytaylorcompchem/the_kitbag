@@ -23,13 +23,13 @@ structure_prediction:
     num_runs: 3              # how many independent predictions
     base_seed: 42             # optional, for reproducibility
     seed_strategy: increment  # increment | random | fixed
-  tools:
-    chai:
-      enabled: true
-    boltz:
-      enabled: false
-    openfold:
-      enabled: true
+  # tools:
+  #   chai:
+  #     enabled: true
+  #   boltz:
+  #     enabled: false
+  #   openfold:
+  #     enabled: true
   refinement:
     enabled: true
     reference_structure: /path/to/local_structure.pdb
@@ -42,7 +42,7 @@ structure_prediction:
     weight: 0.5                 # how strongly to bias toward reference
     ranking:
       enabled: true
-
+      
       # which metrics to use
       metrics:
         plddt:

@@ -4,7 +4,9 @@ import logging
 from pathlib import Path
 from backends.base import BaseStructureTool
 
-logger = logging.getLogger(__name__)
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 class ChaiBackend(BaseStructureTool):
     name = "chai"
