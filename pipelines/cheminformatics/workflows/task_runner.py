@@ -162,7 +162,7 @@ def dynamic_task_runner(config):
         if any(task_requires_input_file(task_name) for task_name in task_list):
             raise ValueError("Missing 'input_file' in config, but required by one or more tasks.")
         else:
-            logger.info("No 'input_file' needed for this workflow.")
+            logger.info("No input_file needed for this workflow.")
             current_data = {}
             for task_name in task_list:
                 task_func = get_task(task_name)
@@ -525,8 +525,3 @@ def streamed_feature_runner(config):
         "feature_files": feature_files,
         "combined_output": str(combined_output_path) if combined_output_path else None
     }
-
-
-
-
-

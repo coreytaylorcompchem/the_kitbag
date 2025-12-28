@@ -29,11 +29,9 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 Available Tasks:
   [DEL Analysis]:
-    - compute_fingerprints: Compute fps for iPCA.
-    - dimensionality_reduction_analyses: Run PCA, t-SNE, and UMAP on DEL fingerprints and plot enrichment maps.
+    - compute_fingerprints: Compute Morgan fingerprints for iPCA.
+    - dimensionality_reduction_analyses: Run PCA, t-SNE, and UMAP on DEL fingerprints, analyze enrichment patterns, and produce summary plots.
     - incremental_pca: Initial dimensionality reduction to produce reduced dataset.
-    - medoid_analysis: Compute cluster medoids based on molecular scaffolds.
-    - report_generation: Generate descriptive plots and clustering reports for DEL results.
   [Filtering]:
     - activity_filtering: Filter molecules based on activity cutoff
     - basic_lipinski_filtering: Basic Lipinski Rule of 5 filtering
@@ -47,6 +45,9 @@ Available Tasks:
   [Molecular generation]:
     - mmp_apply_transformations: Apply learned rules to leads, generate synthesis suggestions.
     - mmp_rule_learning: Learn BRICS‑based transformation rules from actives
+  [Pocket detection]:
+    - pocket_classification: Classify GPCR pockets by location and functionality.
+    - run_fpocket: Run fpocket on protein structures to detect binding pockets.
   [Prediction]:
     - adme_prediction: Predict ADME properties (hERG, LogD, CYP3A4, A->B (Papp)) from SMILES using PyTorch models
   [Project-based analyses]:
@@ -62,7 +63,8 @@ Available Tasks:
 
 Available Workflows:
  - dynamic_task_runner: Run a task list in parallel on input chunks and output CSV/SDF/SMI
- - streamed_feature_runner: Stream large datasets (e.g. parquet), generate features per chunk, and save feature matrices.
+ - streamed_feature_runner: Stream large datasets (e.g. parquet), generate features per chunk, combine results, and run postprocessing analyses.
+
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.

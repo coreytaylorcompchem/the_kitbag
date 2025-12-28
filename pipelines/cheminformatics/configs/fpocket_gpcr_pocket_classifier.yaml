@@ -1,0 +1,35 @@
+# GPCR Pocket Classification
+
+# Purpose: To classify GPCR pockets (from fpocket) into known, orphan, and non-functional categories.
+# Workflow:
+# - feed in
+#   - pocket data (from fpocket), including pocket names and their SMILES
+#   - 7TM and ECD regions predicted via DeepTMHMM or manually defined
+# - output: CSV with classified pockets, their locations (7TM/ECD), and functional classifications
+
+workflow_name: dynamic_task_runner
+
+workflow_serial:
+  - run_fpocket
+  - pocket_classification
+
+
+run_fpocket:
+  input_file_gpcr_pdbs: data/pdbs
+  output_directory: outputs/fpocket_output
+  max_pockets_per_structure: 100
+
+gpcr_pocket_classification:
+  input_file_pockets: data/fpocket_pockets.csv
+  input_file_7tm_regions: data/7tm_regions.csv
+  input_file_ecd_regions: data/ecd_regions.csv
+  gpcrdb_api_url: "https://www.gpcrdb.org/api/get_binding_site"
+  max_pockets_per_classification: 500
+  # chunk_size: 500
+
+output:
+  directory: outputs/gpcr_pocket_classification
+  filename: classified_gpcr_pockets.csv
+  overwrite: true
+
+cleanup: true
