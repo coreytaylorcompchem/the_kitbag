@@ -13,15 +13,22 @@ parser = PDBParser(QUIET=True)
 
 def extract_pocket_residues(pocket_atm_pdb):
     """
-    Returns set of (chain_id, pdb_resseq)
+    Returns set of (chain_id, pdb_resseq) compatible with SIFTS mapping
     """
     structure = parser.get_structure("pocket", pocket_atm_pdb)
     residues = set()
 
-    for atom in structure.get_atoms():
-        res = atom.get_parent()
-        chain = res.get_parent().id
-        resseq = res.get_id()[1]
+    for res in structure.get_residues():
+        hetflag, resseq, icode = res.get_id()
+
+        # Skip hetero / water
+        if hetflag.strip():
+            continue
+
+        chain = res.get_parent().id.strip()
+        # if not chain:
+        #     chain = "A"  # fpocket often uses blank chain
+
         residues.add((chain, resseq))
 
     return residues
@@ -34,66 +41,117 @@ def fetch_sifts_mapping(pdb_id):
 
 
 def build_pdb_to_uniprot_map(sifts_data):
+    """
+    Map (chain_id, pdb_resseq) -> (uniprot_id, uniprot_resseq)
+    using PDBe SIFTS residue_number (coordinate numbering).
+    """
     mapping = {}
 
     for pdb_id, entry in sifts_data.items():
-        for uniprot_id, udata in entry["UniProt"].items():
-            for m in udata["mappings"]:
-                chain = m["chain_id"]
-                pdb_start = m["start"]["residue_number"]
-                pdb_end = m["end"]["residue_number"]
-                uni_start = m["unp_start"]
-                uni_end = m["unp_end"]
+        for uniprot_id, udata in entry.get("UniProt", {}).items():
+            for m in udata.get("mappings", []):
+                chain = (m.get("chain_id") or "").strip()
+                if not chain:
+                    continue
+
+                pdb_start = m["start"].get("residue_number")
+                pdb_end = m["end"].get("residue_number")
+                uni_start = m.get("unp_start")
+                uni_end = m.get("unp_end")
+
+                if None in (pdb_start, pdb_end, uni_start, uni_end):
+                    continue
 
                 for pdb_res, uni_res in zip(
-                    range(pdb_start, pdb_end + 1),
-                    range(uni_start, uni_end + 1),
+                    range(int(pdb_start), int(pdb_end) + 1),
+                    range(int(uni_start), int(uni_end) + 1),
                 ):
                     mapping[(chain, pdb_res)] = (uniprot_id, uni_res)
 
     return mapping
 
-def fetch_gpcrdb_segments(uniprot_id):
-    url = f"https://gpcrdb.org/services/residues/{uniprot_id}/"
+def fetch_gpcrdb_protein_from_structure(pdb_id):
+    """
+    Returns GPCRdb protein entry name (e.g. pe2r4_human)
+    """
+    url = f"https://gpcrdb.org/services/structure/{pdb_id.upper()}/"
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    return r.json()["protein"]
+
+
+def fetch_gpcrdb_segments(protein_name):
+    """
+    Returns mapping:
+    UniProt residue number -> GPCRdb protein_segment
+    """
+    url = f"https://gpcrdb.org/services/residues/{protein_name}/"
     r = requests.get(url, timeout=30)
     r.raise_for_status()
 
-    return {
-        r["sequence_number"]: r["protein_segment"]
-        for r in r.json()
-    }
-
-def classify_pocket_topology(pocket_residues, pdb_to_uni, gpcrdb_segments):
-    labels = []
-
-    for key in pocket_residues:
-        if key not in pdb_to_uni:
+    segments = {}
+    for entry in r.json():
+        try:
+            seqnum = int(entry["sequence_number"])
+            seg = entry.get("protein_segment")
+            if seg:
+                segments[seqnum] = seg
+        except (KeyError, ValueError, TypeError):
             continue
 
-        _, uni_res = pdb_to_uni[key]
-        segment = gpcrdb_segments.get(uni_res, "Unknown")
-        labels.append(segment)
+    return segments
 
-    if not labels:
+def classify_pocket_topology(pocket_residues, pdb_to_uni, gpcrdb_segments):
+    """
+    Collapse GPCRdb residue annotations into biologically meaningful pocket regions.
+    Only uses residues that successfully map to GPCRdb via UniProt.
+    Returns: (region, confidence, raw_counts)
+    """
+
+    # Map each pocket residue to gpcrdb segment (if possible)
+    raw_labels = []
+    for chain_res in pocket_residues:
+        if chain_res not in pdb_to_uni:
+            continue
+
+        uniprot_id, uni_res = pdb_to_uni[chain_res]
+        # fetch segment for this residue number
+        seg = gpcrdb_segments.get(uni_res)
+        if seg:
+            raw_labels.append(seg)
+
+    if not raw_labels:
         return "Unknown", 0.0, {}
 
-    counts = Counter(labels)
+    raw_counts = Counter(raw_labels)
 
     collapsed = {
-        "7TM": sum(v for k, v in counts.items() if k.startswith("TM")),
-        "ECL-ICL": sum(v for k, v in counts.items() if "CL" in k),
-        "ECD": counts.get("N-term", 0),
-        "H8": counts.get("H8", 0),
+        "7TM": 0,
+        "Loops": 0,
+        "ECD": 0,
+        "H8": 0,
     }
+
+    for seg, count in raw_counts.items():
+        if seg.startswith("TM"):
+            collapsed["7TM"] += count
+        elif "CL" in seg:              # ECL / ICL
+            collapsed["Loops"] += count
+        elif seg in {"N-term", "ECD"}:
+            collapsed["ECD"] += count
+        elif seg == "H8":
+            collapsed["H8"] += count
 
     total = sum(collapsed.values())
     if total == 0:
-        return "Unknown", 0.0, dict(counts)
+        return "Unknown", 0.0, dict(raw_counts)
 
     region = max(collapsed, key=collapsed.get)
-    confidence = collapsed[region] / total
+    confidence = round(collapsed[region] / total, 3)
 
-    return region, round(confidence, 3), dict(counts)
+    return region, confidence, dict(raw_counts)
+
+
 
 def load_fpocket_descriptors(descriptor_file):
     """
@@ -175,8 +233,15 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
         sifts = fetch_sifts_mapping(pdb_id)
         pdb_to_uni = build_pdb_to_uniprot_map(sifts)
 
-        uniprot_id = next(iter(sifts[pdb_id.lower()]["UniProt"]))
-        gpcrdb_segments = fetch_gpcrdb_segments(uniprot_id)
+        sifts_chains = {c for (c, _) in pdb_to_uni.keys()}
+
+        if len(sifts_chains) == 1:
+            canonical_chain = next(iter(sifts_chains))
+        else:
+            canonical_chain = None
+
+        protein_name = fetch_gpcrdb_protein_from_structure(pdb_id)
+        gpcrdb_segments = fetch_gpcrdb_segments(protein_name)
 
         for pocket_pdb in pocket_files:
             # pocket10_env_atm.pdb → pocket10, idx=10
@@ -185,6 +250,27 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
             pocket_name = f"pocket{pocket_idx}"
 
             residues = extract_pocket_residues(pocket_pdb)
+
+            normalized_residues = set()
+            for chain, resseq in residues:
+                if not chain and canonical_chain:
+                    normalized_residues.add((canonical_chain, resseq))
+                else:
+                    normalized_residues.add((chain, resseq))
+
+            # 🔍 DEBUG: how many pocket residues map to UniProt via SIFTS?
+            mapped = sum(1 for r in residues if r in pdb_to_uni)
+            logger.info(
+                f"{pdb_id} {pocket_name}: {mapped}/{len(normalized_residues)} residues mapped via SIFTS"
+            )
+
+            if mapped == 0:
+                logger.info(
+                    f"Example pocket residues: {list(residues)[:5]}"
+                )
+                logger.info(
+                    f"Example SIFTS keys: {list(pdb_to_uni.keys())[:5]}"
+                )
 
             region, confidence, raw = classify_pocket_topology(
                 residues, pdb_to_uni, gpcrdb_segments
@@ -200,8 +286,6 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
                 "region": region,
                 "confidence": confidence,
                 "n_residues": len(residues),
-
-                # ✅ Correct fpocket columns
                 "fpocket_drug_score": fpocket_metrics.get("drug_score"),
                 "fpocket_volume": fpocket_metrics.get("volume"),
                 "fpocket_hydrophobicity": fpocket_metrics.get("hydrophobicity_score"),
