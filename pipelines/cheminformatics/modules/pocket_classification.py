@@ -159,16 +159,16 @@ def load_fpocket_descriptors(descriptor_file):
     Handles whitespace-delimited fpocket output (-d flag).
     Returns DataFrame indexed by pocket number (string).
     """
-    # fpocket -d output is whitespace-delimited, not CSV
+    # IMPORTANT: fpocket -d output is whitespace-delimited, not CSV
     df = pd.read_csv(
         descriptor_file,
         delim_whitespace=True,
         comment="#"
     )
 
-    # Known pocket ID column names used by fpocket
+    # fpocket column IDs
     pocket_cols = [
-        "cav_id",          # most common with -d
+        "cav_id",          # most common with -d parameter
         "pocket",
         "pocket_number",
         "pocket_id",
@@ -188,6 +188,18 @@ def load_fpocket_descriptors(descriptor_file):
     df = df.set_index(pocket_col)
 
     return df
+
+def assign_pocket_role(row, orthosteric_pocket):
+    if row["pocket"] == orthosteric_pocket:
+        return "orthosteric"
+
+    if row["region"] == "Loops":
+        return "known_allosteric"
+
+    if row["region"] == "7TM":
+        return "candidate_allosteric"
+
+    return "orphan"
 
 @register_task(
     "pocket_classification",
@@ -221,7 +233,7 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
 
         logger.info(f"Found {len(pocket_files)} pockets for {pdb_id}")
 
-        # 🔹 Load fpocket descriptors (whitespace-delimited)
+        # Load fpocket descriptors (NOTE: whitespace-delimited)
         descriptor_file = struct_dir / f"{pdb_id}_pocket_descriptors.csv"
         fpocket_df = (
             load_fpocket_descriptors(descriptor_file)
@@ -229,7 +241,6 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
             else None
         )
 
-        # 🔹 Topology mapping
         sifts = fetch_sifts_mapping(pdb_id)
         pdb_to_uni = build_pdb_to_uniprot_map(sifts)
 
@@ -244,7 +255,8 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
         gpcrdb_segments = fetch_gpcrdb_segments(protein_name)
 
         for pocket_pdb in pocket_files:
-            # pocket10_env_atm.pdb → pocket10, idx=10
+
+            # Make sure fpocket indices map correctly: pocket10_env_atm.pdb → pocket10, idx=10
             stem = pocket_pdb.stem
             pocket_idx = stem.replace("pocket", "").replace("_env_atm", "")
             pocket_name = f"pocket{pocket_idx}"
@@ -258,17 +270,17 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
                 else:
                     normalized_residues.add((chain, resseq))
 
-            # 🔍 DEBUG: how many pocket residues map to UniProt via SIFTS?
+            # DEBUG: how many pocket residues map to UniProt via SIFTS?
             mapped = sum(1 for r in residues if r in pdb_to_uni)
-            logger.info(
+            logger.debug(
                 f"{pdb_id} {pocket_name}: {mapped}/{len(normalized_residues)} residues mapped via SIFTS"
             )
 
             if mapped == 0:
-                logger.info(
+                logger.debug(
                     f"Example pocket residues: {list(residues)[:5]}"
                 )
-                logger.info(
+                logger.debug(
                     f"Example SIFTS keys: {list(pdb_to_uni.keys())[:5]}"
                 )
 
@@ -291,17 +303,42 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
                 "fpocket_hydrophobicity": fpocket_metrics.get("hydrophobicity_score"),
                 "fpocket_polarity": fpocket_metrics.get("polarity_score"),
                 "fpocket_inter_chain": fpocket_metrics.get("inter_chain"),
-
-                # transparency
                 "raw_segment_counts": raw,
             })
 
     df = pd.DataFrame(records)
-    df.to_csv(output_file, index=False, quoting=csv.QUOTE_ALL)
 
-    logger.info(f"Wrote {len(df)} classified pockets → {output_file}")
+    # Assign regions in each structure
+    final_rows = []
+
+    for pdb_id, sdf in df.groupby("pdb_id"):
+        
+        # Identify orthosteric pocket: top 7TM by drug_score then volume
+        seven_tm = sdf[sdf["region"] == "7TM"]
+
+        if not seven_tm.empty:
+            orthosteric_pocket = (
+                seven_tm
+                .sort_values(
+                    ["fpocket_drug_score", "fpocket_volume"],
+                    ascending=False
+                )
+                .iloc[0]["pocket"]
+            )
+        else:
+            orthosteric_pocket = None
+
+        for _, row in sdf.iterrows():
+            row = row.copy()
+            row["pocket_role"] = assign_pocket_role(row, orthosteric_pocket)
+            final_rows.append(row)
+
+    final_df = pd.DataFrame(final_rows)
+    final_df.to_csv(output_file, index=False, quoting=csv.QUOTE_ALL)
+
+    logger.info(f"Wrote {len(final_df)} classified pockets → {output_file}")
 
     return {
         "classified_pockets_file": str(output_file),
-        "df": df,
+        "df": final_df,
     }

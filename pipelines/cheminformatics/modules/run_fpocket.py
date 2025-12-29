@@ -9,10 +9,13 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def run_fpocket_on_structure(pdb_file, input_dir, output_dir):
     """
-    Run fpocket on a PDB structure file after creating a symbolic link to the output directory.
+    Run fpocket on a PDB structure file.
     The output pocket descriptors are captured and saved in a CSV file.
     """
     try:
+        # Annoying workaround: fpocket does not allow us to control the output dir 
+        # So we need to symlink the pdb where we want to dump data (output dir from yaml).
+
         # Ensure input and output directories exist
         input_dir = Path(input_dir).resolve()  # Absolute path for input
         output_dir = Path(output_dir).resolve()  # Absolute path for output
@@ -27,10 +30,10 @@ def run_fpocket_on_structure(pdb_file, input_dir, output_dir):
 
         # Create the symbolic link using absolute path
         os.symlink(pdb_file.resolve(), linked_pdb)  # Correct symlink using absolute path
-        logger.info(f"Symbolically linked {pdb_file} to {linked_pdb}")
+        logger.debug(f"Symbolically linked {pdb_file} to {linked_pdb}")
 
         # Run fpocket on the symbolic link and output descriptors to a file
-        output_prefix_dir = output_dir / f"{pdb_name}_out"  # Subdirectory based on pdb name
+        output_prefix_dir = output_dir / f"{pdb_name}_out"  # Subdirectory -> pdb name
         output_prefix_dir.mkdir(parents=True, exist_ok=True)
 
         # Command to run fpocket with -d flag to output pocket descriptors to stdout
@@ -63,7 +66,7 @@ def run_fpocket_on_gpcr_structures(gpcr_pdb_dir, output_dir, max_pockets_per_str
     pocket_files = []
     for pdb_file in pdb_files:
         # Make sure output_dir is passed to the run_fpocket_on_structure function
-        pocket_file = run_fpocket_on_structure(pdb_file, gpcr_pdb_dir, output_dir)  # Ensure the output_dir is passed here
+        pocket_file = run_fpocket_on_structure(pdb_file, gpcr_pdb_dir, output_dir)  
         
         if pocket_file:
             pocket_files.append(pocket_file)
@@ -82,12 +85,10 @@ def run_fpocket(config: dict, data: dict = None) -> dict:
     output_dir = Path(params.get("output_directory"))
     max_pockets_per_structure = params.get("max_pockets_per_structure", 100)
 
-    # Create output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Running fpocket on GPCR structures in {gpcr_pdb_dir}...")
     
-    # Run fpocket on all GPCR PDBs
     pocket_files = run_fpocket_on_gpcr_structures(gpcr_pdb_dir, output_dir, max_pockets_per_structure)
     
     if not pocket_files:
