@@ -13,11 +13,15 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 parser = PDBParser(QUIET=True)
 
+##### convert pockets to grids
+
 def extract_tm_ca_atoms(structure, pdb_to_uni, gpcrdb_segments):
     """
-    Returns list of Bio.PDB Atom objects (Cα) for TM residues only
+    Returns dict:
+      uni_residue_number -> CA Atom
+    Only for TM residues
     """
-    atoms = []
+    atoms = {}
 
     for model in structure:
         for chain in model:
@@ -34,29 +38,46 @@ def extract_tm_ca_atoms(structure, pdb_to_uni, gpcrdb_segments):
                 seg = gpcrdb_segments.get(uni_res)
 
                 if seg and seg.startswith("TM") and "CA" in residue:
-                    atoms.append(residue["CA"])
+                    atoms[uni_res] = residue["CA"]
 
     return atoms
 
 def compute_alignment(reference_pdb, mobile_pdb, pdb_to_uni, gpcrdb_segments):
     """
-    Returns Bio.PDB Superimposer object with transform fitted
+    Aligns structures using common TM Cα atoms mapped by UniProt residue number.
+    Returns Bio.PDB Superimposer
     """
     parser = PDBParser(QUIET=True)
 
     ref_struct = parser.get_structure("ref", reference_pdb)
     mob_struct = parser.get_structure("mob", mobile_pdb)
 
-    ref_atoms = extract_tm_ca_atoms(ref_struct, pdb_to_uni, gpcrdb_segments)
-    mob_atoms = extract_tm_ca_atoms(mob_struct, pdb_to_uni, gpcrdb_segments)
+    ref_atoms_dict = extract_tm_ca_atoms(
+        ref_struct, pdb_to_uni, gpcrdb_segments
+    )
+    mob_atoms_dict = extract_tm_ca_atoms(
+        mob_struct, pdb_to_uni, gpcrdb_segments
+    )
 
-    if len(ref_atoms) < 20 or len(mob_atoms) < 20:
-        raise ValueError("Not enough TM atoms for reliable alignment")
+    # Intersection of UniProt residues
+    common_residues = sorted(
+        set(ref_atoms_dict.keys()) & set(mob_atoms_dict.keys())
+    )
+
+    if len(common_residues) < 20:
+        raise ValueError(
+            f"Not enough common TM residues for alignment "
+            f"({len(common_residues)} found)"
+        )
+
+    ref_atoms = [ref_atoms_dict[r] for r in common_residues]
+    mob_atoms = [mob_atoms_dict[r] for r in common_residues]
 
     sup = Superimposer()
     sup.set_atoms(ref_atoms, mob_atoms)
 
     return sup
+
 
 def transform_pocket_atoms(pocket_pdb, superimposer):
     """
