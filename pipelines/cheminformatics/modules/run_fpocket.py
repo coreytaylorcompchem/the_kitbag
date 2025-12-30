@@ -81,7 +81,7 @@ def run_fpocket(config: dict, data: dict = None) -> dict:
     """
     params = config.get("run_fpocket", {})
 
-    gpcr_pdb_dir = Path(params.get("input_file_gpcr_pdbs"))
+    gpcr_pdb_dir = Path(params.get("structure_directory"))
     output_dir = Path(params.get("output_directory"))
     max_pockets_per_structure = params.get("max_pockets_per_structure", 100)
 

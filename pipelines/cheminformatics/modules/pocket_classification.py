@@ -1,15 +1,237 @@
 import requests
 import csv
+
+import numpy as np
 from pathlib import Path
 from collections import Counter
 import pandas as pd
-from Bio.PDB import PDBParser
+from Bio.PDB import PDBParser, Superimposer
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 parser = PDBParser(QUIET=True)
+
+def extract_tm_ca_atoms(structure, pdb_to_uni, gpcrdb_segments):
+    """
+    Returns list of Bio.PDB Atom objects (Cα) for TM residues only
+    """
+    atoms = []
+
+    for model in structure:
+        for chain in model:
+            for residue in chain:
+                hetflag, resseq, icode = residue.get_id()
+                if hetflag.strip():
+                    continue
+
+                key = (chain.id.strip(), resseq)
+                if key not in pdb_to_uni:
+                    continue
+
+                _, uni_res = pdb_to_uni[key]
+                seg = gpcrdb_segments.get(uni_res)
+
+                if seg and seg.startswith("TM") and "CA" in residue:
+                    atoms.append(residue["CA"])
+
+    return atoms
+
+def compute_alignment(reference_pdb, mobile_pdb, pdb_to_uni, gpcrdb_segments):
+    """
+    Returns Bio.PDB Superimposer object with transform fitted
+    """
+    parser = PDBParser(QUIET=True)
+
+    ref_struct = parser.get_structure("ref", reference_pdb)
+    mob_struct = parser.get_structure("mob", mobile_pdb)
+
+    ref_atoms = extract_tm_ca_atoms(ref_struct, pdb_to_uni, gpcrdb_segments)
+    mob_atoms = extract_tm_ca_atoms(mob_struct, pdb_to_uni, gpcrdb_segments)
+
+    if len(ref_atoms) < 20 or len(mob_atoms) < 20:
+        raise ValueError("Not enough TM atoms for reliable alignment")
+
+    sup = Superimposer()
+    sup.set_atoms(ref_atoms, mob_atoms)
+
+    return sup
+
+def transform_pocket_atoms(pocket_pdb, superimposer):
+    """
+    Returns Nx3 numpy array of transformed atom coordinates
+    """
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("pocket", pocket_pdb)
+
+    coords = []
+
+    for atom in structure.get_atoms():
+        if atom.element != "H":
+            coord = atom.get_coord()
+            new_coord = np.dot(coord, superimposer.rotran[0]) + superimposer.rotran[1]
+            coords.append(new_coord)
+
+    return np.array(coords)
+
+
+def voxelize(coords, spacing=1.0):
+    """
+    Convert coordinates into a density grid
+    """
+    min_xyz = coords.min(axis=0) - spacing
+    max_xyz = coords.max(axis=0) + spacing
+
+    shape = np.ceil((max_xyz - min_xyz) / spacing).astype(int)
+    grid = np.zeros(shape, dtype=np.float32)
+
+    indices = ((coords - min_xyz) / spacing).astype(int)
+    for x, y, z in indices:
+        grid[x, y, z] += 1
+
+    return grid, min_xyz, spacing
+
+def write_dx(grid, origin, spacing, out_file):
+    nx, ny, nz = grid.shape
+
+    with open(out_file, "w") as f:
+        f.write("object 1 class gridpositions counts ")
+        f.write(f"{nx} {ny} {nz}\n")
+        f.write(f"origin {origin[0]} {origin[1]} {origin[2]}\n")
+        f.write(f"delta {spacing} 0 0\n")
+        f.write(f"delta 0 {spacing} 0\n")
+        f.write(f"delta 0 0 {spacing}\n")
+        f.write(f"object 2 class gridconnections counts ")
+        f.write(f"{nx} {ny} {nz}\n")
+        f.write(f"object 3 class array type double rank 0 items {grid.size} data follows\n")
+
+        flat = grid.flatten(order="C")
+        for i in range(0, len(flat), 3):
+            f.write(" ".join(f"{v:.3f}" for v in flat[i:i+3]) + "\n")
+
+        f.write("object \"density\" class field\n")
+        f.write("component \"positions\" value 1\n")
+        f.write("component \"connections\" value 2\n")
+        f.write("component \"data\" value 3\n")
+
+def build_pocket_cluster_grid(
+    cluster_rows,
+    structure_dir,
+    reference_pdb_id,
+    pdb_to_uni,
+    gpcrdb_segments,
+    out_dir,
+    spacing=1.0
+):
+    """
+    cluster_rows: rows belonging to ONE pocket_cluster_id
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    ref_pdb = structure_dir / f"{reference_pdb_id}.pdb"
+
+    all_coords = []
+
+    for row in cluster_rows:
+        pdb_id = row["pdb_id"]
+        pocket = row["pocket"]
+
+        pocket_pdb = structure_dir / f"{pdb_id}_out" / f"{pocket}_env_atm.pdb"
+        mob_pdb = structure_dir / f"{pdb_id}.pdb"
+
+        sup = compute_alignment(ref_pdb, mob_pdb, pdb_to_uni, gpcrdb_segments)
+        coords = transform_pocket_atoms(pocket_pdb, sup)
+        all_coords.append(coords)
+
+    all_coords = np.vstack(all_coords)
+    grid, origin, spacing = voxelize(all_coords, spacing=spacing)
+
+    out_file = out_dir / f"{cluster_rows[0]['pocket_cluster_id']}_density.dx"
+    write_dx(grid, origin, spacing, out_file)
+
+    return out_file
+
+
+#### calculate persistence
+
+def jaccard(a, b):
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def cluster_pockets_across_structures(pocket_rows, default_threshold=0.3):
+    """
+    pocket_rows: list of dicts, each with keys:
+      - pdb_id
+      - pocket
+      - region
+      - uni_residues (set of UniProt residue numbers)
+
+    Returns:
+      updated pocket_rows (with pocket_cluster_id assigned),
+      clusters list
+    """
+
+    # Region-specific Jaccard thresholds
+    REGION_THRESHOLDS = {
+        "7TM": 0.30,
+        "Loops": 0.20,
+        "ECD": 0.25,
+        "H8": 0.25,
+        "Unknown": 0.35,
+    }
+
+    clusters = []
+    cluster_counter = 0
+
+    for row in pocket_rows:
+        assigned = False
+        res = row["uni_residues"]
+        region = row.get("region", "Unknown")
+
+        # Skip empty residue sets safely
+        if not res:
+            cluster_counter += 1
+            cid = f"PC{cluster_counter:02d}"
+            row["pocket_cluster_id"] = cid
+            clusters.append({
+                "id": cid,
+                "region": region,
+                "members": [row],
+                "residues": set()
+            })
+            continue
+
+        threshold = REGION_THRESHOLDS.get(region, default_threshold)
+
+        for cluster in clusters: 
+            if cluster["region"] != region:
+                continue
+
+            score = jaccard(res, cluster["residues"])
+            if score >= threshold:
+                cluster["members"].append(row)
+                cluster["residues"] |= res
+                row["pocket_cluster_id"] = cluster["id"]
+                assigned = True
+                break
+
+        if not assigned:
+            cluster_counter += 1
+            cid = f"PC{cluster_counter:02d}"
+            row["pocket_cluster_id"] = cid
+            clusters.append({
+                "id": cid,
+                "region": region,
+                "members": [row],
+                "residues": set(res)
+            })
+
+    return pocket_rows, clusters
+
 
 def extract_pocket_residues(pocket_atm_pdb):
     """
@@ -269,6 +491,13 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
                     normalized_residues.add((canonical_chain, resseq))
                 else:
                     normalized_residues.add((chain, resseq))
+            
+            # UniProt residue numbers for persistence clustering
+            uni_residues = set()
+            for chain_res in normalized_residues:
+                if chain_res in pdb_to_uni:
+                    _, uni_res = pdb_to_uni[chain_res]
+                    uni_residues.add(uni_res)
 
             # DEBUG: how many pocket residues map to UniProt via SIFTS?
             mapped = sum(1 for r in residues if r in pdb_to_uni)
@@ -304,6 +533,7 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
                 "fpocket_polarity": fpocket_metrics.get("polarity_score"),
                 "fpocket_inter_chain": fpocket_metrics.get("inter_chain"),
                 "raw_segment_counts": raw,
+                "uni_residues": uni_residues,
             })
 
     df = pd.DataFrame(records)
@@ -334,6 +564,69 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
             final_rows.append(row)
 
     final_df = pd.DataFrame(final_rows)
+    rows = final_df.to_dict(orient="records")
+
+    clustered_rows, clusters = cluster_pockets_across_structures(rows)
+
+    # Compute persistence stats
+    total_structures = final_df["pdb_id"].nunique()
+    cluster_stats = {}
+
+    for cluster in clusters:
+        pdbs = {r["pdb_id"] for r in cluster["members"]}
+        cluster_stats[cluster["id"]] = {
+            "persistence": round(len(pdbs) / total_structures, 3),
+            "n_structures": len(pdbs)
+        }
+
+    # Annotate rows
+    for row in clustered_rows:
+        cid = row["pocket_cluster_id"]
+        row["pocket_persistence"] = cluster_stats[cid]["persistence"]
+        row["pocket_cluster_size"] = cluster_stats[cid]["n_structures"]
+        row.pop("uni_residues", None)  # not for CSV
+
+    final_df = pd.DataFrame(clustered_rows)
+
+    # ---- Build density grids for persistent pocket clusters ----
+
+    # Infer structure directory from fpocket input
+    structure_dir = Path(
+        config.get("run_fpocket", {}).get("output_directory", "")
+    )
+
+    if not structure_dir or not structure_dir.exists():
+        raise KeyError(
+            "Structure directory not found. Please define "
+            "run_fpocket.structure_directory in your config."
+        )
+    reference_pdb_id = sorted(final_df["pdb_id"].unique())[0]
+
+    grid_dir = output_dir / "pocket_density_grids"
+    grid_dir.mkdir(exist_ok=True)
+
+    for cluster in clusters:
+        if len(cluster["members"]) < 2:
+            continue  # skip non-persistent pockets
+
+        try:
+            dx_file = build_pocket_cluster_grid(
+                cluster_rows=cluster["members"],
+                structure_dir=structure_dir,
+                reference_pdb_id=reference_pdb_id,
+                pdb_to_uni=pdb_to_uni,
+                gpcrdb_segments=gpcrdb_segments,
+                out_dir=grid_dir,
+                spacing=1.0
+            )
+
+            logger.info(f"Built density grid for {cluster['id']} → {dx_file}")
+
+        except Exception as e:
+            logger.warning(
+                f"Failed grid build for {cluster['id']}: {e}"
+            )
+
     final_df.to_csv(output_file, index=False, quoting=csv.QUOTE_ALL)
 
     logger.info(f"Wrote {len(final_df)} classified pockets → {output_file}")
