@@ -17,6 +17,7 @@ workflow_serial:
 run_fpocket:
   structure_directory: data/pdbs
   output_directory: outputs/fpocket_output
+  n_jobs: 8
   # max_pockets_per_structure: 100
 
 output:
