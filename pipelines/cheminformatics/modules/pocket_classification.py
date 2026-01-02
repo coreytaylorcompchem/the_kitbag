@@ -1,448 +1,27 @@
-import requests
 import csv
 
-import numpy as np
 from pathlib import Path
-from collections import Counter
 import pandas as pd
-from Bio.PDB import PDBParser, Superimposer
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
+from modules.utils.pocket_to_grids import build_pocket_cluster_grid
+from modules.utils.retrieve_pocket_residues import ( 
+                                                    fetch_sifts_mapping, 
+                                                    fetch_gpcrdb_protein_from_structure, 
+                                                    fetch_gpcrdb_segments,
+                                                    build_pdb_to_uniprot_map,
+                                                    extract_pocket_residues
+                                                    )
+from modules.utils.extract_metrics_and_classify_pockets import (
+                                                                load_fpocket_descriptors, 
+                                                                cluster_pockets_across_structures, 
+                                                                classify_pocket_topology, 
+                                                                assign_pocket_role
+                                                                )
+
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
-parser = PDBParser(QUIET=True)
-
-##### convert pockets to grids
-
-def extract_tm_ca_atoms(structure, pdb_to_uni, gpcrdb_segments):
-    """
-    Returns dict:
-      uni_residue_number -> CA Atom
-    Only for TM residues
-    """
-    atoms = {}
-
-    for model in structure:
-        for chain in model:
-            for residue in chain:
-                hetflag, resseq, icode = residue.get_id()
-                if hetflag.strip():
-                    continue
-
-                key = (chain.id.strip(), resseq)
-                if key not in pdb_to_uni:
-                    continue
-
-                _, uni_res = pdb_to_uni[key]
-                seg = gpcrdb_segments.get(uni_res)
-
-                if seg and seg.startswith("TM") and "CA" in residue:
-                    atoms[uni_res] = residue["CA"]
-
-    return atoms
-
-def compute_alignment(reference_pdb, mobile_pdb, pdb_to_uni, gpcrdb_segments):
-    """
-    Aligns structures using common TM Cα atoms mapped by UniProt residue number.
-    Returns Bio.PDB Superimposer
-    """
-    parser = PDBParser(QUIET=True)
-
-    ref_struct = parser.get_structure("ref", reference_pdb)
-    mob_struct = parser.get_structure("mob", mobile_pdb)
-
-    ref_atoms_dict = extract_tm_ca_atoms(
-        ref_struct, pdb_to_uni, gpcrdb_segments
-    )
-    mob_atoms_dict = extract_tm_ca_atoms(
-        mob_struct, pdb_to_uni, gpcrdb_segments
-    )
-
-    # Intersection of UniProt residues
-    common_residues = sorted(
-        set(ref_atoms_dict.keys()) & set(mob_atoms_dict.keys())
-    )
-
-    if len(common_residues) < 20:
-        raise ValueError(
-            f"Not enough common TM residues for alignment "
-            f"({len(common_residues)} found)"
-        )
-
-    ref_atoms = [ref_atoms_dict[r] for r in common_residues]
-    mob_atoms = [mob_atoms_dict[r] for r in common_residues]
-
-    sup = Superimposer()
-    sup.set_atoms(ref_atoms, mob_atoms)
-
-    return sup
-
-
-def transform_pocket_atoms(pocket_pdb, superimposer):
-    """
-    Returns Nx3 numpy array of transformed atom coordinates
-    """
-    parser = PDBParser(QUIET=True)
-    structure = parser.get_structure("pocket", pocket_pdb)
-
-    coords = []
-
-    for atom in structure.get_atoms():
-        if atom.element != "H":
-            coord = atom.get_coord()
-            new_coord = np.dot(coord, superimposer.rotran[0]) + superimposer.rotran[1]
-            coords.append(new_coord)
-
-    return np.array(coords)
-
-
-def voxelize(coords, spacing=1.0):
-    """
-    Convert coordinates into a density grid
-    """
-    min_xyz = coords.min(axis=0) - spacing
-    max_xyz = coords.max(axis=0) + spacing
-
-    shape = np.ceil((max_xyz - min_xyz) / spacing).astype(int)
-    grid = np.zeros(shape, dtype=np.float32)
-
-    indices = ((coords - min_xyz) / spacing).astype(int)
-    for x, y, z in indices:
-        grid[x, y, z] += 1
-
-    return grid, min_xyz, spacing
-
-def write_dx(grid, origin, spacing, out_file):
-    nx, ny, nz = grid.shape
-
-    with open(out_file, "w") as f:
-        f.write("object 1 class gridpositions counts ")
-        f.write(f"{nx} {ny} {nz}\n")
-        f.write(f"origin {origin[0]} {origin[1]} {origin[2]}\n")
-        f.write(f"delta {spacing} 0 0\n")
-        f.write(f"delta 0 {spacing} 0\n")
-        f.write(f"delta 0 0 {spacing}\n")
-        f.write(f"object 2 class gridconnections counts ")
-        f.write(f"{nx} {ny} {nz}\n")
-        f.write(f"object 3 class array type double rank 0 items {grid.size} data follows\n")
-
-        flat = grid.flatten(order="C")
-        for i in range(0, len(flat), 3):
-            f.write(" ".join(f"{v:.3f}" for v in flat[i:i+3]) + "\n")
-
-        f.write("object \"density\" class field\n")
-        f.write("component \"positions\" value 1\n")
-        f.write("component \"connections\" value 2\n")
-        f.write("component \"data\" value 3\n")
-
-def build_pocket_cluster_grid(
-    cluster_rows,
-    structure_dir,
-    reference_pdb_id,
-    pdb_to_uni,
-    gpcrdb_segments,
-    out_dir,
-    spacing=1.0
-):
-    """
-    cluster_rows: rows belonging to ONE pocket_cluster_id
-    """
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    ref_pdb = structure_dir / f"{reference_pdb_id}.pdb"
-
-    all_coords = []
-
-    for row in cluster_rows:
-        pdb_id = row["pdb_id"]
-        pocket = row["pocket"]
-
-        pocket_pdb = structure_dir / f"{pdb_id}_out" / f"{pocket}_env_atm.pdb"
-        mob_pdb = structure_dir / f"{pdb_id}.pdb"
-
-        sup = compute_alignment(ref_pdb, mob_pdb, pdb_to_uni, gpcrdb_segments)
-        coords = transform_pocket_atoms(pocket_pdb, sup)
-        all_coords.append(coords)
-
-    all_coords = np.vstack(all_coords)
-    grid, origin, spacing = voxelize(all_coords, spacing=spacing)
-
-    out_file = out_dir / f"{cluster_rows[0]['pocket_cluster_id']}_density.dx"
-    write_dx(grid, origin, spacing, out_file)
-
-    return out_file
-
-
-#### calculate persistence
-
-def jaccard(a, b):
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
-def cluster_pockets_across_structures(pocket_rows, default_threshold=0.3):
-    """
-    pocket_rows: list of dicts, each with keys:
-      - pdb_id
-      - pocket
-      - region
-      - uni_residues (set of UniProt residue numbers)
-
-    Returns:
-      updated pocket_rows (with pocket_cluster_id assigned),
-      clusters list
-    """
-
-    # Region-specific Jaccard thresholds
-    REGION_THRESHOLDS = {
-        "7TM": 0.30,
-        "Loops": 0.20,
-        "ECD": 0.25,
-        "H8": 0.25,
-        "Unknown": 0.35,
-    }
-
-    clusters = []
-    cluster_counter = 0
-
-    for row in pocket_rows:
-        assigned = False
-        res = row["uni_residues"]
-        region = row.get("region", "Unknown")
-
-        # Skip empty residue sets safely
-        if not res:
-            cluster_counter += 1
-            cid = f"PC{cluster_counter:02d}"
-            row["pocket_cluster_id"] = cid
-            clusters.append({
-                "id": cid,
-                "region": region,
-                "members": [row],
-                "residues": set()
-            })
-            continue
-
-        threshold = REGION_THRESHOLDS.get(region, default_threshold)
-
-        for cluster in clusters: 
-            if cluster["region"] != region:
-                continue
-
-            score = jaccard(res, cluster["residues"])
-            if score >= threshold:
-                cluster["members"].append(row)
-                cluster["residues"] |= res
-                row["pocket_cluster_id"] = cluster["id"]
-                assigned = True
-                break
-
-        if not assigned:
-            cluster_counter += 1
-            cid = f"PC{cluster_counter:02d}"
-            row["pocket_cluster_id"] = cid
-            clusters.append({
-                "id": cid,
-                "region": region,
-                "members": [row],
-                "residues": set(res)
-            })
-
-    return pocket_rows, clusters
-
-
-def extract_pocket_residues(pocket_atm_pdb):
-    """
-    Returns set of (chain_id, pdb_resseq) compatible with SIFTS mapping
-    """
-    structure = parser.get_structure("pocket", pocket_atm_pdb)
-    residues = set()
-
-    for res in structure.get_residues():
-        hetflag, resseq, icode = res.get_id()
-
-        # Skip hetero / water
-        if hetflag.strip():
-            continue
-
-        chain = res.get_parent().id.strip()
-        # if not chain:
-        #     chain = "A"  # fpocket often uses blank chain
-
-        residues.add((chain, resseq))
-
-    return residues
-
-def fetch_sifts_mapping(pdb_id):
-    url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{pdb_id.lower()}"
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-    return r.json()
-
-
-def build_pdb_to_uniprot_map(sifts_data):
-    """
-    Map (chain_id, pdb_resseq) -> (uniprot_id, uniprot_resseq)
-    using PDBe SIFTS residue_number (coordinate numbering).
-    """
-    mapping = {}
-
-    for pdb_id, entry in sifts_data.items():
-        for uniprot_id, udata in entry.get("UniProt", {}).items():
-            for m in udata.get("mappings", []):
-                chain = (m.get("chain_id") or "").strip()
-                if not chain:
-                    continue
-
-                pdb_start = m["start"].get("residue_number")
-                pdb_end = m["end"].get("residue_number")
-                uni_start = m.get("unp_start")
-                uni_end = m.get("unp_end")
-
-                if None in (pdb_start, pdb_end, uni_start, uni_end):
-                    continue
-
-                for pdb_res, uni_res in zip(
-                    range(int(pdb_start), int(pdb_end) + 1),
-                    range(int(uni_start), int(uni_end) + 1),
-                ):
-                    mapping[(chain, pdb_res)] = (uniprot_id, uni_res)
-
-    return mapping
-
-def fetch_gpcrdb_protein_from_structure(pdb_id):
-    """
-    Returns GPCRdb protein entry name (e.g. pe2r4_human)
-    """
-    url = f"https://gpcrdb.org/services/structure/{pdb_id.upper()}/"
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-    return r.json()["protein"]
-
-
-def fetch_gpcrdb_segments(protein_name):
-    """
-    Returns mapping:
-    UniProt residue number -> GPCRdb protein_segment
-    """
-    url = f"https://gpcrdb.org/services/residues/{protein_name}/"
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-
-    segments = {}
-    for entry in r.json():
-        try:
-            seqnum = int(entry["sequence_number"])
-            seg = entry.get("protein_segment")
-            if seg:
-                segments[seqnum] = seg
-        except (KeyError, ValueError, TypeError):
-            continue
-
-    return segments
-
-def classify_pocket_topology(pocket_residues, pdb_to_uni, gpcrdb_segments):
-    """
-    Collapse GPCRdb residue annotations into biologically meaningful pocket regions.
-    Only uses residues that successfully map to GPCRdb via UniProt.
-    Returns: (region, confidence, raw_counts)
-    """
-
-    # Map each pocket residue to gpcrdb segment (if possible)
-    raw_labels = []
-    for chain_res in pocket_residues:
-        if chain_res not in pdb_to_uni:
-            continue
-
-        uniprot_id, uni_res = pdb_to_uni[chain_res]
-        # fetch segment for this residue number
-        seg = gpcrdb_segments.get(uni_res)
-        if seg:
-            raw_labels.append(seg)
-
-    if not raw_labels:
-        return "Unknown", 0.0, {}
-
-    raw_counts = Counter(raw_labels)
-
-    collapsed = {
-        "7TM": 0,
-        "Loops": 0,
-        "ECD": 0,
-        "H8": 0,
-    }
-
-    for seg, count in raw_counts.items():
-        if seg.startswith("TM"):
-            collapsed["7TM"] += count
-        elif "CL" in seg:              # ECL / ICL
-            collapsed["Loops"] += count
-        elif seg in {"N-term", "ECD"}:
-            collapsed["ECD"] += count
-        elif seg == "H8":
-            collapsed["H8"] += count
-
-    total = sum(collapsed.values())
-    if total == 0:
-        return "Unknown", 0.0, dict(raw_counts)
-
-    region = max(collapsed, key=collapsed.get)
-    confidence = round(collapsed[region] / total, 3)
-
-    return region, confidence, dict(raw_counts)
-
-
-
-def load_fpocket_descriptors(descriptor_file):
-    """
-    Load fpocket descriptor table.
-    Handles whitespace-delimited fpocket output (-d flag).
-    Returns DataFrame indexed by pocket number (string).
-    """
-    # IMPORTANT: fpocket -d output is whitespace-delimited, not CSV
-    df = pd.read_csv(
-        descriptor_file,
-        delim_whitespace=True,
-        comment="#"
-    )
-
-    # fpocket column IDs
-    pocket_cols = [
-        "cav_id",          # most common with -d parameter
-        "pocket",
-        "pocket_number",
-        "pocket_id",
-        "ID",
-        "id"
-    ]
-
-    pocket_col = next((c for c in pocket_cols if c in df.columns), None)
-
-    if pocket_col is None:
-        raise ValueError(
-            f"Could not find pocket ID column in {descriptor_file.name}. "
-            f"Columns found: {list(df.columns)}"
-        )
-
-    df[pocket_col] = df[pocket_col].astype(str)
-    df = df.set_index(pocket_col)
-
-    return df
-
-def assign_pocket_role(row, orthosteric_pocket):
-    if row["pocket"] == orthosteric_pocket:
-        return "orthosteric"
-
-    if row["region"] == "Loops":
-        return "known_allosteric"
-
-    if row["region"] == "7TM":
-        return "candidate_allosteric"
-
-    return "orphan"
 
 @register_task(
     "pocket_classification",
@@ -474,7 +53,7 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
             logger.warning(f"No env pockets found for {pdb_id}")
             continue
 
-        logger.info(f"Found {len(pocket_files)} pockets for {pdb_id}")
+        logger.debug(f"Found {len(pocket_files)} pockets for {pdb_id}")
 
         # Load fpocket descriptors (NOTE: whitespace-delimited)
         descriptor_file = struct_dir / f"{pdb_id}_pocket_descriptors.csv"
@@ -610,7 +189,6 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
     final_df = pd.DataFrame(clustered_rows)
 
     # ---- Build density grids for persistent pocket clusters ----
-
     # Infer structure directory from fpocket input
     structure_dir = Path(
         config.get("run_fpocket", {}).get("output_directory", "")
@@ -641,7 +219,8 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
                 spacing=1.0
             )
 
-            logger.info(f"Built density grid for {cluster['id']} → {dx_file}")
+            logger.debug(f"Built density grid for {cluster['id']}")
+            logger.debug(f"Saved {cluster['id']} grid to {dx_file}")
 
         except Exception as e:
             logger.warning(

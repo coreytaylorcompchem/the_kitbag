@@ -43,7 +43,8 @@ def run_fpocket_on_structure(pdb_file, input_dir, output_dir):
 
         # Check if pocket descriptors were successfully generated
         if pocket_descriptor_file.exists():
-            logger.info(f"Successfully ran fpocket on {pdb_file.name}. Pocket descriptors saved to {pocket_descriptor_file}")
+            logger.info(f"Successfully ran fpocket on {pdb_file.name}.")
+            logger.debug(f"Pocket descriptors saved to {pocket_descriptor_file}")
         else:
             logger.error(f"Fpocket did not generate a valid pocket descriptor file for {pdb_file.name}")
             return None
