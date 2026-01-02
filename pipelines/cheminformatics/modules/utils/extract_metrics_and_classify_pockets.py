@@ -137,7 +137,7 @@ def load_fpocket_descriptors(descriptor_file):
     # IMPORTANT: fpocket -d output is whitespace-delimited, not CSV
     df = pd.read_csv(
         descriptor_file,
-        delim_whitespace=True,
+        sep=r"\s+",
         comment="#"
     )
 

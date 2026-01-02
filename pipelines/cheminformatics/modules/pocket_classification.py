@@ -2,6 +2,7 @@ import csv
 
 from pathlib import Path
 import pandas as pd
+from tqdm import tqdm
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
@@ -44,9 +45,15 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
 
     records = []
 
-    for struct_dir in fpocket_dir.glob("*_out"):
+    structure_dirs = sorted(fpocket_dir.glob("*_out"))
+
+    for struct_dir in tqdm(
+        structure_dirs,
+        desc="Classifying structures",
+        unit="structure"
+    ):
         pdb_id = struct_dir.name.replace("_out", "")
-        logger.info(f"Classifying pockets for {pdb_id}")
+        logger.debug(f"Classifying pockets for {pdb_id}")
 
         pocket_files = sorted(struct_dir.glob("pocket*_env_atm.pdb"))
         if not pocket_files:
@@ -204,10 +211,15 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
     grid_dir = output_dir / "pocket_density_grids"
     grid_dir.mkdir(exist_ok=True)
 
-    for cluster in clusters:
-        if len(cluster["members"]) < 2:
-            continue  # skip non-persistent pockets
+    persistent_clusters = [
+        c for c in clusters if len(c["members"]) >= 2
+    ]
 
+    for cluster in tqdm(
+        persistent_clusters,
+        desc="Building pocket density grids",
+        unit="cluster"
+    ):
         try:
             dx_file = build_pocket_cluster_grid(
                 cluster_rows=cluster["members"],
@@ -218,9 +230,6 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
                 out_dir=grid_dir,
                 spacing=1.0
             )
-
-            logger.debug(f"Built density grid for {cluster['id']}")
-            logger.debug(f"Saved {cluster['id']} grid to {dx_file}")
 
         except Exception as e:
             logger.warning(
