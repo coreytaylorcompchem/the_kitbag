@@ -3,11 +3,11 @@ import csv
 from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
-from modules.utils.pocket_to_grids import build_pocket_cluster_grid
 from modules.utils.retrieve_pocket_residues import ( 
                                                     fetch_sifts_mapping, 
                                                     fetch_gpcrdb_protein_from_structure, 
@@ -21,6 +21,7 @@ from modules.utils.extract_metrics_and_classify_pockets import (
                                                                 classify_pocket_topology, 
                                                                 assign_pocket_role
                                                                 )
+from modules.utils.pocket_to_grids import build_pocket_cluster_grid
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
@@ -215,26 +216,39 @@ def gpcr_pocket_classification(config: dict, data: dict = None) -> dict:
         c for c in clusters if len(c["members"]) >= 2
     ]
 
-    for cluster in tqdm(
-        persistent_clusters,
-        desc="Building pocket density grids",
-        unit="cluster"
-    ):
-        try:
-            dx_file = build_pocket_cluster_grid(
-                cluster_rows=cluster["members"],
-                structure_dir=structure_dir,
-                reference_pdb_id=reference_pdb_id,
-                pdb_to_uni=pdb_to_uni,
-                gpcrdb_segments=gpcrdb_segments,
-                out_dir=grid_dir,
-                spacing=1.0
-            )
+    grid_n_jobs = (
+        config.get("pocket_classification", {})
+            .get("grid_n_jobs", 1)
+    )
 
-        except Exception as e:
-            logger.warning(
-                f"Failed grid build for {cluster['id']}: {e}"
-            )
+    with ProcessPoolExecutor(max_workers=grid_n_jobs) as executor:
+        futures = {
+            executor.submit(
+                build_pocket_cluster_grid,
+                cluster["members"],
+                structure_dir,
+                reference_pdb_id,
+                pdb_to_uni,
+                gpcrdb_segments,
+                grid_dir,
+                1.0
+            ): cluster["id"]
+            for cluster in persistent_clusters
+        }
+
+        for future in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Building pocket density grids",
+            unit="cluster"
+        ):
+            cluster_id = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                logger.warning(
+                    f"Failed grid build for {cluster_id}: {e}"
+                )
 
     final_df.to_csv(output_file, index=False, quoting=csv.QUOTE_ALL)
 

@@ -20,6 +20,9 @@ run_fpocket:
   n_jobs: 8
   # max_pockets_per_structure: 100
 
+pocket_classification:
+  grid_n_jobs: 8
+
 output:
   directory: outputs/gpcr_pocket_classification
   filename: classified_gpcr_pockets.csv
