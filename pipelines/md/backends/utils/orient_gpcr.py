@@ -1,4 +1,3 @@
-# backends/utils/orient_gpcr.py
 import numpy as np
 from Bio.PDB import PDBParser, PDBIO
 

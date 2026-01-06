@@ -312,7 +312,7 @@ class OpenMMBackend:
         # Step 7a: Orient protein for membrane
         if cfg.get("membrane", False):
             oriented_pdb_path = os.path.join(input_pdb_dir, "protein_oriented.pdb")
-            logger.info("Orienting GPCR for membrane embedding (may take some time)...")
+            logger.info("Orienting GPCR for membrane embedding (will take several minutes)...")
             orient_gpcr_with_ligand(
                 pdb_path=stripped_pdb_path,
                 output_path=oriented_pdb_path,
@@ -323,27 +323,44 @@ class OpenMMBackend:
             pdb_oriented = PDBFile(oriented_pdb_path)
             modeller = Modeller(pdb_oriented.topology, pdb_oriented.positions)
 
-            # Remove pre-existing ligand residue from the oriented PDB
+            ligand_atoms = []
+            ligand_positions = []
+
             if ligand_offmol:
-                atoms_to_delete = [atom for atom in modeller.topology.atoms() if atom.residue.name == ligand_resname]
-                if atoms_to_delete:
-                    modeller.delete(atoms_to_delete)
-                    logger.debug(f"Removed pre-existing ligand {ligand_resname} from oriented PDB")
+                for atom, pos in zip(modeller.topology.atoms(), modeller.positions):
+                    if atom.residue.name == ligand_resname:
+                        ligand_atoms.append(atom)
+                        ligand_positions.append(pos)
+            if ligand_atoms:
+                modeller.delete(ligand_atoms)
+                logger.debug("Temporarily removed ligand for membrane insertion")
 
-                # Hack: re-add ligand using OpenFF topology and coordinates
-                ligand_topology = ligand_offmol.to_topology().to_openmm()
-                conf = ligand_offmol.conformers[0]
-                coords_array = conf.to('angstrom').magnitude
-                ligand_positions = unit.Quantity(coords_array, unit.angstrom).in_units_of(unit.nanometer)
-                modeller.add(ligand_topology, ligand_positions)
-                logger.debug(f"Re-added ligand {ligand_resname} using OpenFF template")
+            # Remove pre-existing ligand residue from the oriented PDB
+            # if ligand_offmol:
+            #     atoms_to_delete = [atom for atom in modeller.topology.atoms() if atom.residue.name == ligand_resname]
+            #     if atoms_to_delete:
+            #         modeller.delete(atoms_to_delete)
+            #         logger.debug(f"Removed pre-existing ligand {ligand_resname} from oriented PDB")
 
-        #  Step 7b: Add membrane
+            #     # Hack: re-add ligand using OpenFF topology and coordinates
+            #     ligand_topology = ligand_offmol.to_topology().to_openmm()
+            #     conf = ligand_offmol.conformers[0]
+            #     coords_array = conf.to('angstrom').magnitude
+            #     ligand_positions = unit.Quantity(coords_array, unit.angstrom).in_units_of(unit.nanometer)
+            #     modeller.add(ligand_topology, ligand_positions)
+            #     logger.debug(f"Re-added ligand {ligand_resname} using OpenFF template")
+
+        #  Step 7b: Add membrane and re-insert ligand
         if cfg.get("membrane", False):
             lipid_type = cfg.get("lipid_type", "POPC")
             padding = cfg.get("membrane_padding", 1.0) * unit.nanometer
             logger.info(f"Adding membrane: {lipid_type}")
             modeller.addMembrane(forcefield, lipidType=lipid_type, minimumPadding=padding)
+
+        if ligand_atoms:
+            ligand_topology = ligand_offmol.to_topology().to_openmm()
+            modeller.add(ligand_topology, ligand_positions)
+            logger.debug("Re-added ligand using oriented coordinates")
 
         # Step 8: Solvate system
         ionic_strength = cfg.get("ionic_strength", 0.0)
