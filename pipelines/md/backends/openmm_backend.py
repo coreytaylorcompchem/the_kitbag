@@ -1,8 +1,12 @@
-from backends.utils.add_terminal_caps import CapTermini
-from backends.utils.load_ligand import load_ligand_from_sdf
+# from backends.utils.add_terminal_caps import CapTermini
+# from backends.utils.load_ligand import load_ligand_from_sdf
 
 import os
+import sys
 import subprocess
+import threading
+import time
+import itertools
 
 from openff.toolkit.topology import Molecule
 from openff.toolkit.typing.engines.smirnoff import ForceField as OFFForceField
@@ -28,6 +32,28 @@ from backends.utils.orient_gpcr import orient_gpcr_with_ligand
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+class Spinner:
+    def __init__(self, message="Working"):
+        self.message = message
+        self._stop = threading.Event()
+
+    def start(self):
+        def run():
+            for c in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
+                if self._stop.is_set():
+                    break
+                sys.stdout.write(f"\r{self.message} {c}")
+                sys.stdout.flush()
+                time.sleep(0.1)
+            sys.stdout.write("\r" + " " * (len(self.message) + 2) + "\r")
+
+        self.thread = threading.Thread(target=run)
+        self.thread.start()
+
+    def stop(self):
+        self._stop.set()
+        self.thread.join()
 
 class OpenMMBackend:
     supported_tasks = [ 
@@ -148,6 +174,9 @@ class OpenMMBackend:
         ionic_strength = cfg.get("ionic_strength", 0.0)
         box_padding = cfg.get("box_padding", 1.0)
         ph = cfg.get("pH", 7.4)
+
+        spinner = Spinner("Preparing system")
+        spinner.start()
 
         # Step 1: Mutate unnatural residues
         # TODO: make this work with others.
@@ -331,9 +360,12 @@ class OpenMMBackend:
                     if atom.residue.name == ligand_resname:
                         ligand_atoms.append(atom)
                         ligand_positions.append(pos)
+
+            # Filthy hack: remove then re-add ligand using OpenFF topology and coordinates
+
             if ligand_atoms:
                 modeller.delete(ligand_atoms)
-                logger.debug("Temporarily removed ligand for membrane insertion")
+                logger.info("Removed ligand for membrane insertion")
 
             # Remove pre-existing ligand residue from the oriented PDB
             # if ligand_offmol:
@@ -357,10 +389,12 @@ class OpenMMBackend:
             logger.info(f"Adding membrane: {lipid_type}")
             modeller.addMembrane(forcefield, lipidType=lipid_type, minimumPadding=padding)
 
+        # End of filthy hack: re-add ligand with re-oriented topology and coordinates
+
         if ligand_atoms:
             ligand_topology = ligand_offmol.to_topology().to_openmm()
             modeller.add(ligand_topology, ligand_positions)
-            logger.debug("Re-added ligand using oriented coordinates")
+            logger.info("Re-added ligand using oriented coordinates")
 
         # Step 8: Solvate system
         ionic_strength = cfg.get("ionic_strength", 0.0)
@@ -391,6 +425,8 @@ class OpenMMBackend:
             PDBFile.writeFile(self.topology, self.positions, f, keepIds=True)
 
         logger.info(f"Saved prepared protein + ligand system topology to {topology_path}")
+        
+        spinner.stop()
 
         # Debug; check parameters
         logger.debug("\n=== ForceField contents ===")
