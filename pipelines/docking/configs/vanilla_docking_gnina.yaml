@@ -4,6 +4,7 @@ workflow_name: vanilla_docking  # corresponds to workflows/vanilla_docking.py
 workflow:
   - prepare_receptor_pdbqt
   - standardise_ligand
+  - adme_prediction
   # - generate_conformers
   # - cluster_conformers
   # - save_final_conformers
@@ -79,3 +80,9 @@ docking:
 # extra_args:
 #   cnn_model: arg
 #   cnn_rotation: arg
+
+adme_prediction:
+  models:
+    - herg
+    - logd
+    - cyp3a4

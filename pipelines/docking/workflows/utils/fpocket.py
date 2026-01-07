@@ -23,7 +23,7 @@ def run_fpocket(pdb_path: Path, output_dir: Path) -> Path:
 
     Args:
         pdb_path (Path): Path to the protein PDB file.
-        output_dir (Path): Directory where fpocket output should live (for downstream tasks).
+        output_dir (Path): Directory where fpocket output should live for downstream tasks.
 
     Returns:
         Path: Path to fpocket output directory (ends in *_out)

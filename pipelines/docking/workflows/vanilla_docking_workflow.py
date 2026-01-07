@@ -1,6 +1,8 @@
 import os
 import yaml
 import csv
+
+import pandas as pd
 from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -180,8 +182,32 @@ def run(config_path: str):
         for future in as_completed(futures):
             try:
                 ligand_name = future.result()
-                # logger.info(f"Completed ligand: {ligand_name}")
             except Exception as e:
                 logger.error(f"❌ Error during ligand processing: {e}")
+        
+        results = []
+
+        for lig in ligands:
+            row = {
+                "name": lig.get("name"),
+                "smiles": lig.get("smiles"),
+            }
+
+            # ADME predictions
+            if "adme" in lig:
+                row.update(lig["adme"])
+
+            # Docking outputs (optional / future-proof)
+            if "docking_score" in lig:
+                row["docking_score"] = lig["docking_score"]
+
+            results.append(row)
+
+        df = pd.DataFrame(results)
+
+        out_csv = output_dir / "results.csv"
+        df.to_csv(out_csv, index=False)
+
+        logger.info(f"Saved combined ADME/docking results to: {out_csv}")
 
     logger.info("Vanilla docking workflow completed.")
