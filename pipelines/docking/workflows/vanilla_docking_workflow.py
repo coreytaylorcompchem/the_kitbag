@@ -12,7 +12,15 @@ from modules.protein_preparation import ProteinPreparer
 from pipeline.task_registry import get_task
 from workflows import register_workflow
 
-from workflows.utils.docking import generate_ligands_csv_from_txt, validate_ligands_csv, get_docking_box, validate_config
+from workflows.utils.docking import (
+    generate_ligands_csv_from_txt,
+    summarise_docking_results,
+    validate_config,
+    plot_multi_structure_scores,
+    extract_crystal_ligand_center,
+    extract_scores_from_docking_output,
+    get_docking_box
+)
 
 from pipeline.logger import setup_logger
 
@@ -23,16 +31,48 @@ logger = setup_logger(
 )
 
 def run_single_ligand(ligand, backend, config, workflow_steps):
-    """
-    Run all workflow steps for a single ligand.
-    Returns ligand name for logging.
-    """
+    docking_outputs = []
+
     for step in workflow_steps:
         task_func = get_task(step)
         if not task_func:
             raise ValueError(f"Workflow step '{step}' is not a registered task.")
-        task_func(backend, ligand, config)
-    return ligand['name']
+
+        result = task_func(backend, ligand, config)
+
+        if step == "dock" and result:
+            if isinstance(result, list):
+                docking_outputs.extend(result)
+            else:
+                docking_outputs.append(result)
+
+    # ----------------------
+    # Extract docking scores
+    # ----------------------
+    all_scores = []
+
+    for entry in docking_outputs:
+        docked_outputs = entry.get("docked_output")
+
+        if not docked_outputs:
+            continue
+
+        if not isinstance(docked_outputs, (list, tuple)):
+            docked_outputs = [docked_outputs]
+
+        for sdf_path in docked_outputs:
+            scores = extract_scores_from_docking_output(sdf_path)
+            all_scores.extend(scores)
+
+    if all_scores:
+        ligand["docking_scores"] = all_scores
+        best = min(all_scores, key=lambda x: x["score"])
+        ligand["docking_score"] = best["score"]
+        ligand["best_pose_idx"] = best.get("pose_idx")
+        ligand["best_pose_rank"] = best.get("pose_rank")
+
+    return ligand["name"]
+
 
 # --------------------------
 # Main Workflow Function
@@ -152,7 +192,7 @@ def run(config_path: str):
         "cluster_conformers",
         "save_final_conformers",
         "convert_to_pdbqt",
-        "dock"
+        "dock",
         "run_3d_rism"
     ])
 
@@ -161,7 +201,7 @@ def run(config_path: str):
     use_conformer_generation = options.get("use_conformer_generation", True)
 
     if not use_conformer_generation:
-        logger.warning("⚠️  Conformer generation steps disabled - skipping.")
+        logger.warning("Conformer generation steps disabled - skipping.")
         workflow_steps = [
             step for step in workflow_steps
             if step not in ("generate_conformers", "cluster_conformers", "save_final_conformers")
@@ -191,15 +231,12 @@ def run(config_path: str):
             row = {
                 "name": lig.get("name"),
                 "smiles": lig.get("smiles"),
+                "docking_score": lig.get("docking_score"),
             }
 
             # ADME predictions
             if "adme" in lig:
                 row.update(lig["adme"])
-
-            # Docking outputs (optional / future-proof)
-            if "docking_score" in lig:
-                row["docking_score"] = lig["docking_score"]
 
             results.append(row)
 

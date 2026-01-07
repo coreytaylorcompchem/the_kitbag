@@ -129,9 +129,3 @@ def adme_prediction(backend, ligand, config, **kwargs):
             results[name] = None
 
     ligand.setdefault("adme", {}).update(results)
-
-    logger.info(
-        f"[ADME] {ligand['name']}: "
-        + ", ".join(f"{k}={v:.3f}" if v is not None else f"{k}=None"
-                    for k, v in results.items())
-    )
