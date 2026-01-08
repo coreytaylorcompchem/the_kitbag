@@ -2,8 +2,9 @@ task: workflow
 workflow_name: vanilla_docking  # corresponds to workflows/vanilla_docking.py
 
 workflow:
-  - prepare_receptor_pdbqt
+  - prepare_receptor_pdbqt 
   - standardise_ligand
+  - compute_rdkit_descriptors
   - adme_prediction
   # - generate_conformers
   # - cluster_conformers
@@ -36,7 +37,7 @@ protein:
 # TODO: Add capability to add other data (e.g. IC50) to the csv that can be used later.
 
 generate_ligands_from_list: true
-ligands_txt: "ligs_small.txt"    
+ligands_txt: "ligs_med.txt"    
 # ligands_csv: "ligands.csv" 
 
 ### Docking parameters - standard
@@ -53,7 +54,7 @@ docking:
   final_n_conformers: 2
   rmsd_threshold: 0.75
   min_energy_gap: 0.5   # in kcal/mol higher = more permissive
-  n_output_binding_modes: 2
+  n_output_binding_modes: 10
   exhaustiveness: 8
 
   ### Binding pocket detection

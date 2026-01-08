@@ -1,12 +1,19 @@
 import csv
-from pathlib import Path
-from rdkit import Chem
+import re
 
-from rdkit.Chem.rdmolfiles import MolFromPDBFile
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import seaborn as sns
+
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
+
+from rdkit import Chem
+from rdkit.Chem.rdmolfiles import MolFromPDBFile
+
+import prolif as plf
+import prolif.plotting as plf_plot
 
 from pipeline.logger import setup_logger
 
@@ -313,4 +320,240 @@ def _is_float(s):
         return True
     except ValueError:
         return False
+    
+# plotting code
 
+def ligand_sort_key(name):
+    """
+    Extract integer index from ligand names like 'ligand12'.
+    Falls back to name if no integer found.
+    """
+    m = re.search(r"(\d+)$", str(name))
+    return int(m.group(1)) if m else name
+
+
+def plot_docking_scatter_with_errorbars(csv_path: Path, output_dir: Path):
+    df = pd.read_csv(csv_path)
+
+    # enforce ligand order by name (ligand1, ligand2, ...)
+    df["ligand_order"] = df["name"].apply(ligand_sort_key)
+    df = df.sort_values("ligand_order")
+
+    # keep only valid docking scores
+    df = df.dropna(subset=["docking_score"])
+    df = df[df["docking_score"] < 0]  # remove invalid positive scores
+
+    # aggregate per ligand
+    agg = (
+        df.groupby("name")
+        .agg(
+            min_score=("docking_score", "min"),
+            max_score=("docking_score", "max"),
+            best_score=("docking_score", "min"),  # best = most negative
+        )
+        .reset_index()
+    )
+
+    # assign ligand index (NOT docking-ranked)
+    agg["mol_idx"] = agg["name"].apply(ligand_sort_key)
+
+    # sort by ligand index
+    agg = agg.sort_values("mol_idx")
+
+    # correct asymmetric error bars
+    lower_err = agg["best_score"] - agg["min_score"]
+    upper_err = agg["max_score"] - agg["best_score"]
+    yerr = [lower_err.abs(), upper_err.abs()]
+
+    plt.figure(figsize=(10, 6))
+    plt.errorbar(
+        agg["mol_idx"],
+        agg["best_score"],
+        yerr=yerr,
+        fmt="o",
+        ecolor="gray",
+        elinewidth=1,
+        capsize=3,
+        markersize=5
+    )
+
+    # reference lines
+    plt.axhline(-7.0, linestyle="--", color="red", alpha=0.7, label="Weak binder")
+    plt.axhline(-8.0, linestyle="--", color="orange", alpha=0.7, label="Good binder")
+    plt.axhline(-9.0, linestyle="--", color="green", alpha=0.7, label="Strong binder")
+
+    plt.xlabel("Molecule (ligand index)")
+    plt.ylabel("Docking score (kcal/mol)")
+    plt.title("Docking score range per ligand")
+
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    plt.legend()
+    plt.tight_layout()
+
+    out = output_dir / "docking_scatter_errorbars.png"
+    plt.savefig(out, dpi=300)
+    plt.close()
+
+
+ADME_THRESHOLDS = {
+    "cyp3a4": 7.0,
+    "caco2": 20.0,
+    "logd": 3.0,
+    "herg": 0.5
+}
+
+DESCRIPTORS = ["MW", "QED", "HBD", "csp3", "TPSA", "LogP"]
+
+
+def plot_adme_descriptor_grids(csv_path: Path, output_dir: Path):
+    df = pd.read_csv(csv_path)
+
+    # one row per ligand
+    df = (
+        df.groupby("name", as_index=False)
+          .first()
+    )
+
+    # enforce ligand order
+    df["ligand_order"] = df["name"].apply(ligand_sort_key)
+    df = df.sort_values("ligand_order").reset_index(drop=True)
+    df["mol_idx"] = df["ligand_order"]
+
+    for adme, threshold in ADME_THRESHOLDS.items():
+        if adme not in df.columns:
+            continue
+
+        fig, axes = plt.subplots(3, 2, figsize=(12, 10), sharex=True)
+        axes = axes.flatten()
+
+        for ax, desc in zip(axes, DESCRIPTORS):
+            if desc not in df.columns:
+                ax.axis("off")
+                continue
+
+            sc = ax.scatter(
+                df["mol_idx"],
+                df[adme],
+                c=df[desc],
+                cmap="inferno_r",
+                s=40,
+                alpha=0.8
+            )
+
+            ax.axhline(
+                threshold,
+                linestyle="--",
+                color="red",
+                linewidth=1
+            )
+
+            ax.set_title(f"{adme.upper()} coloured by {desc}")
+            ax.set_ylabel(adme)
+
+            cbar = plt.colorbar(sc, ax=ax)
+            cbar.set_label(desc)
+
+        for ax in axes:
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+        for ax in axes[-2:]:
+            ax.set_xlabel("Molecule number")
+
+        plt.suptitle(
+            f"Predicted {adme.upper()} by molecule.",
+            fontsize=14
+        )
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+        out = output_dir / f"{adme}_descriptor_grid.png"
+        plt.savefig(out, dpi=300)
+        plt.close()
+
+# Interaction analysis
+
+def select_best_poses(csv_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(csv_path)
+
+    # keep only valid docking scores
+    df = df.dropna(subset=["docking_score"])
+    df = df[df["docking_score"] < 0]
+
+    # select best pose per ligand
+    idx = df.groupby("name")["docking_score"].idxmin()
+    best_df = df.loc[idx].reset_index(drop=True)
+
+    return best_df
+
+def build_prolif_dataframe(
+    best_pose_df: pd.DataFrame,
+    protein_pdb: Path,
+) -> pd.DataFrame:
+    """
+    Build a ProLIF interaction fingerprint dataframe
+    using only the best docking pose per ligand.
+    """
+
+    # Load protein once
+    protein = plf.Molecule.from_pdb(str(protein_pdb))
+
+    fps = []
+    ligand_names = []
+
+    for _, row in best_pose_df.iterrows():
+        sdf_path = row.get("sdf_path")
+        if not sdf_path or not Path(sdf_path).exists():
+            continue
+
+        mol = Chem.SDMolSupplier(str(sdf_path), removeHs=False)[0]
+        if mol is None:
+            continue
+
+        ligand = plf.Molecule.from_rdkit(mol)
+
+        fp = plf.Fingerprint()
+        fp.run(ligand, protein)
+
+        fps.append(fp)
+        ligand_names.append(row["name"])
+
+    # Build dataframe (rows = ligands, columns = interactions)
+    df_fp = plf.to_dataframe(fps)
+    df_fp.index = ligand_names
+
+    return df_fp
+
+def plot_prolif_barcode(
+    fp_df: pd.DataFrame,
+    output_dir: Path,
+    min_frequency: float = 0.1,
+):
+    """
+    Generate a static ProLIF barcode plot for best docking poses.
+    """
+
+    # Filter rare interactions (declutter)
+    freq = fp_df.mean(axis=0)
+    keep_cols = freq[freq >= min_frequency].index
+    fp_df = fp_df[keep_cols]
+
+    # Create figure explicitly (important for saving)
+    fig, ax = plt.subplots(
+        figsize=(
+            max(10, fp_df.shape[1] * 0.35),
+            max(4, fp_df.shape[0] * 0.3),
+        )
+    )
+
+    plf_plot.barcode(
+        fp_df,
+        ax=ax,
+    )
+
+    ax.set_title("Protein–ligand interaction barcode (best poses only)")
+    plt.tight_layout()
+
+    out = output_dir / "prolif_barcode_best_poses.png"
+    fig.savefig(out, dpi=300, bbox_inches="tight")
+    plt.close(fig)

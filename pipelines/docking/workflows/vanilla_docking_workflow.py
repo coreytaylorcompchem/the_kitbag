@@ -14,13 +14,17 @@ from workflows import register_workflow
 
 from workflows.utils.docking import (
     generate_ligands_csv_from_txt,
-    summarise_docking_results,
     validate_config,
-    plot_multi_structure_scores,
-    extract_crystal_ligand_center,
     extract_scores_from_docking_output,
-    get_docking_box
+    get_docking_box,
+    plot_docking_scatter_with_errorbars,
+    plot_adme_descriptor_grids,
+    select_best_poses,
+    build_prolif_dataframe,
+    plot_prolif_barcode
 )
+
+from workflows.utils.rdkit import compute_rdkit_descriptors
 
 from pipeline.logger import setup_logger
 
@@ -181,7 +185,15 @@ def run(config_path: str):
     with open(ligands_csv_path, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            ligands.append({'name': row['name'], 'smiles': row['smiles']})
+            lig = {
+                "name": row["name"],
+                "smiles": row["smiles"],
+            }
+
+            # RDKit descriptors (once per ligand)
+            lig.update(compute_rdkit_descriptors(row["smiles"]))
+
+            ligands.append(lig)
 
     # ----------------------
     # Execute Workflow Steps
@@ -208,7 +220,7 @@ def run(config_path: str):
         ]
 
     # ----------------------
-    # Parallel Execution (per ligand)
+    # Parallel code (per ligand)
     # ----------------------
     n_cores = os.cpu_count() or 20
     n_workers = max(1, n_cores - 2)  # reserve 2 cores
@@ -227,24 +239,68 @@ def run(config_path: str):
         
         results = []
 
+        LIGAND_EXCLUDE_KEYS = {
+            "docking_scores",
+            "best_pose_idx",
+            "best_pose_rank",
+            "adme",
+            "pdbqt_paths",
+            "pdbqt_path"
+        }
+
         for lig in ligands:
-            row = {
-                "name": lig.get("name"),
-                "smiles": lig.get("smiles"),
-                "docking_score": lig.get("docking_score"),
-            }
+            base = {
+            k: v for k, v in lig.items()
+            if k not in LIGAND_EXCLUDE_KEYS
+}
 
-            # ADME predictions
+            # ADME (copied to every pose)
             if "adme" in lig:
-                row.update(lig["adme"])
+                base.update(lig["adme"])
 
-            results.append(row)
+            docking_scores = lig.get("docking_scores", [])
+
+            if docking_scores:
+                for entry in docking_scores:
+                    row = base.copy()
+                    row.update({
+                        "pose_idx": entry.get("pose_idx"),
+                        "pose_rank": entry.get("pose_rank"),
+                        "docking_score": entry.get("score"),
+                    })
+                    results.append(row)
+            else:
+                # ligand with no docking result
+                results.append(base)
 
         df = pd.DataFrame(results)
 
-        out_csv = output_dir / "results.csv"
+        out_csv = output_dir / "docking_results.csv"
         df.to_csv(out_csv, index=False)
 
         logger.info(f"Saved combined ADME/docking results to: {out_csv}")
+
+    # ----------------------
+    # Post-docking analysis plots
+    # ----------------------
+    analysis_dir = output_dir / "analysis"
+    analysis_dir.mkdir(exist_ok=True)
+
+    try:
+    # after saving docking_results.csv
+        plot_docking_scatter_with_errorbars(out_csv, analysis_dir)
+        plot_adme_descriptor_grids(out_csv, analysis_dir)
+
+        # ProLIF barcode (best poses only)
+        best_df = select_best_poses(out_csv)
+        fp_df = build_prolif_dataframe(
+            best_df,
+            protein_pdb=Path(config["protein"]["pdb_path"])
+        )
+        plot_prolif_barcode(fp_df, analysis_dir)
+
+        logger.info("Generated docking and ADME analysis plots.")
+    except Exception as e:
+        logger.error(f"❌ Failed to generate analysis plots: {e}")
 
     logger.info("Vanilla docking workflow completed.")

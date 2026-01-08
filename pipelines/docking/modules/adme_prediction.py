@@ -89,10 +89,6 @@ def get_adme_models(backend, requested_models):
     backend.cache["adme_models"] = models
     return models
 
-
-# -------------------------
-# Workflow task
-# -------------------------
 @register_task(
     "adme_prediction",
     category="Prediction",
