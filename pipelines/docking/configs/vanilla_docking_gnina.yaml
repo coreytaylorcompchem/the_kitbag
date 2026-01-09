@@ -11,6 +11,7 @@ workflow:
   # - save_final_conformers
   - convert_to_pdbqt
   - dock
+  - post_processing
 
 options:
   use_conformer_generation: false
@@ -37,7 +38,7 @@ protein:
 # TODO: Add capability to add other data (e.g. IC50) to the csv that can be used later.
 
 generate_ligands_from_list: true
-ligands_txt: "ligs_small.txt"    
+ligands_txt: "ligs.txt"    
 # ligands_csv: "ligands.csv" 
 
 ### Docking parameters - standard
@@ -87,3 +88,19 @@ adme_prediction:
     - herg
     - logd
     - cyp3a4
+    - caco2
+
+post_processing:
+  enabled: true
+  steps:
+    prolif:
+      enabled: true
+      min_frequency: 0.1
+      color_scheme: separated
+      output:
+        barcode: true
+        csv: false
+    docking_score_plots:
+      enabled: true
+    adme_plots:
+      enabled: true

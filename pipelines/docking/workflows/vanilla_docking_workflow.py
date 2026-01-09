@@ -17,11 +17,6 @@ from workflows.utils.docking import (
     validate_config,
     extract_scores_from_docking_output,
     get_docking_box,
-    plot_docking_scatter_with_errorbars,
-    plot_adme_descriptor_grids,
-    select_best_poses,
-    build_prolif_dataframe,
-    plot_prolif_barcode
 )
 
 from workflows.utils.rdkit import compute_rdkit_descriptors
@@ -33,25 +28,6 @@ logger = setup_logger(
     debug_mode=False,
     simple_format=True
 )
-
-separated_interaction_colors = { 
-    "Hydrophobic": "#59e382", 
-    "VdWContact": "#dfab43", 
-    "HBAcceptor": "#59bee3", 
-    "HBDonor": "#239fcd", 
-    "XBAcceptor": "#ff9f02", 
-    "XBDonor": "#ce8000", 
-    "Cationic": "#e35959", 
-    "Anionic": "#5979e3", 
-    "CationPi": "#e359d8", 
-    "PiCation": "#ea85e2", 
-    "PiStacking": "#b559e3", 
-    "EdgeToFace": "#c885ea", 
-    "FaceToFace": "#a22ddc", 
-    "MetalAcceptor": "#7da982", 
-    "MetalDonor": "#609267", 
-    "WaterBridge": "#323aa8", 
-    }
 
 def run_single_ligand(ligand, backend, config, workflow_steps):
     docking_outputs = []
@@ -228,8 +204,22 @@ def run(config_path: str):
         "save_final_conformers",
         "convert_to_pdbqt",
         "dock",
-        "run_3d_rism"
     ])
+
+    # --------------------------------------
+    # Separate per-ligand and dataset tasks
+    # --------------------------------------
+    DATASET_LEVEL_TASKS = {"post_processing"}
+
+    per_ligand_steps = [
+        step for step in workflow_steps
+        if step not in DATASET_LEVEL_TASKS
+    ]
+
+    dataset_steps = [
+        step for step in workflow_steps
+        if step in DATASET_LEVEL_TASKS
+    ]
 
     # Handle optional conformer generation
     options = config.get("options", {})
@@ -251,7 +241,7 @@ def run(config_path: str):
 
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
         futures = [
-            executor.submit(run_single_ligand, lig, backend, config, workflow_steps)
+            executor.submit(run_single_ligand, lig, backend, config, per_ligand_steps)
             for lig in ligands
         ]
         for future in as_completed(futures):
@@ -304,38 +294,21 @@ def run(config_path: str):
 
         logger.info(f"Saved combined ADME/docking results to: {out_csv}")
 
-    # ----------------------
-    # Post-docking analysis plots
-    # ----------------------
-    analysis_dir = output_dir / "analysis"
-    analysis_dir.mkdir(exist_ok=True)
+    # --------------------------------------
+    # Run dataset-level workflow steps
+    # --------------------------------------
+    for step in dataset_steps:
+        task_func = get_task(step)
+        if not task_func:
+            raise ValueError(
+                f"Workflow step '{step}' is not a registered task."
+            )
 
-    protein_pdb = output_dir / "receptor_protonated.pdb"
+        logger.info(f"Running dataset-level task: {step}")
 
-    if not protein_pdb.exists():
-        raise FileNotFoundError(
-            f"Prepared protein PDB not found: {protein_pdb}"
-        )
-
-    try:
-    # after saving docking_results.csv
-        plot_docking_scatter_with_errorbars(out_csv, analysis_dir)
-        plot_adme_descriptor_grids(out_csv, analysis_dir)
-
-        # ProLIF barcode (highest scored pose only)
-        best_df = select_best_poses(out_csv)
-        fp_df = build_prolif_dataframe(
-            best_df,
-            protein_pdb=protein_pdb
-        )
-        plot_prolif_barcode(
-                fp_df,
-        analysis_dir,
-        interaction_colors=separated_interaction_colors,
-        )
-
-        logger.info("Generated docking and ADME analysis plots.")
-    except Exception as e:
-        logger.error(f"❌ Failed to generate analysis plots: {e}")
+        try:
+            task_func(backend, None, config)
+        except Exception as e:
+            logger.error(f"❌ Dataset task '{step}' failed: {e}")
 
     logger.info("Vanilla docking workflow completed.")
