@@ -5,15 +5,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from collections import OrderedDict
 
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+from matplotlib.patches import Rectangle
 
 from rdkit import Chem
 from rdkit.Chem.rdmolfiles import MolFromPDBFile
 
+import MDAnalysis as mda
+
 import prolif as plf
-import prolif.plotting as plf_plot
+from prolif import sdf_supplier
 
 from pipeline.logger import setup_logger
 
@@ -476,82 +480,190 @@ def plot_adme_descriptor_grids(csv_path: Path, output_dir: Path):
 def select_best_poses(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
 
-    # keep only valid docking scores
     df = df.dropna(subset=["docking_score"])
     df = df[df["docking_score"] < 0]
 
-    # select best pose per ligand
     idx = df.groupby("name")["docking_score"].idxmin()
     best_df = df.loc[idx].reset_index(drop=True)
 
     return best_df
 
+
 def build_prolif_dataframe(
     best_pose_df: pd.DataFrame,
     protein_pdb: Path,
 ) -> pd.DataFrame:
-    """
-    Build a ProLIF interaction fingerprint dataframe
-    using only the best docking pose per ligand.
-    """
 
-    # Load protein once
-    protein = plf.Molecule.from_pdb(str(protein_pdb))
+    protein_rdkit = Chem.MolFromPDBFile(
+        str(protein_pdb),
+        removeHs=False
+    )
+    protein = plf.Molecule.from_rdkit(protein_rdkit)
 
-    fps = []
+    dfs = []
     ligand_names = []
 
     for _, row in best_pose_df.iterrows():
         sdf_path = row.get("sdf_path")
+        pose_idx = row.get("pose_idx")
+
         if not sdf_path or not Path(sdf_path).exists():
             continue
-
-        mol = Chem.SDMolSupplier(str(sdf_path), removeHs=False)[0]
-        if mol is None:
+        if pose_idx is None:
             continue
 
-        ligand = plf.Molecule.from_rdkit(mol)
+        ligands = list(sdf_supplier(str(sdf_path)))
+        if pose_idx >= len(ligands):
+            continue
+
+        ligand = plf.Molecule.from_rdkit(ligands[int(pose_idx)])
 
         fp = plf.Fingerprint()
-        fp.run(ligand, protein)
+        fp.run_from_iterable([ligand], protein)
 
-        fps.append(fp)
+        df_fp_single = fp.to_dataframe()
+        dfs.append(df_fp_single)
         ligand_names.append(row["name"])
 
-    # Build dataframe (rows = ligands, columns = interactions)
-    df_fp = plf.to_dataframe(fps)
+    if not dfs:
+        raise ValueError("No valid ProLIF fingerprints generated.")
+
+    # Build DataFrame directly avoiding Prolif's crap helpers
+
+    df_fp = pd.concat(dfs, axis=0)
     df_fp.index = ligand_names
+    df_fp.index.name = "ligand"
+    df_fp = df_fp.fillna(False)
 
     return df_fp
 
 def plot_prolif_barcode(
-    fp_df: pd.DataFrame,
+    fp_df,
     output_dir: Path,
+    interaction_colors: dict,
     min_frequency: float = 0.1,
 ):
-    """
-    Generate a static ProLIF barcode plot for best docking poses.
-    """
+    mat = fp_df.astype(int)
 
-    # Filter rare interactions (declutter)
-    freq = fp_df.mean(axis=0)
-    keep_cols = freq[freq >= min_frequency].index
-    fp_df = fp_df[keep_cols]
+    interaction_level = mat.columns.nlevels - 1
+    residue_level = interaction_level - 1
 
-    # Create figure explicitly (important for saving)
-    fig, ax = plt.subplots(
-        figsize=(
-            max(10, fp_df.shape[1] * 0.35),
-            max(4, fp_df.shape[0] * 0.3),
-        )
+    # Filter rare interactions
+
+    interaction_freq = (
+        mat.groupby(level=interaction_level, axis=1)
+           .mean()
+           .mean(axis=0)
     )
 
-    plf_plot.barcode(
-        fp_df,
-        ax=ax,
+    keep_interactions = interaction_freq[
+        interaction_freq >= min_frequency
+    ].index
+
+    mat = mat.loc[
+        :,
+        mat.columns.get_level_values(interaction_level)
+                   .isin(keep_interactions)
+    ]
+
+    mat = mat.sort_index(axis=1)
+    mat_plot = mat.T  # residues × ligands
+
+
+    # Build residue groups
+
+    residues = mat_plot.index.get_level_values(residue_level)
+    unique_residues = list(OrderedDict.fromkeys(residues))
+
+    y_positions = []
+    y_labels = []
+    y_ticks = []
+
+    y = 0
+    row_map = []
+
+    for res in unique_residues:
+        idxs = [
+            i for i, r in enumerate(residues) if r == res
+        ]
+        start = y
+        for i in idxs:
+            row_map.append((y, i))
+            y += 1
+        end = y - 1
+
+        y_ticks.append((start + end) / 2)
+        y_labels.append(res)
+
+    # Plotting with matplotlib
+
+    fig_w = max(8, mat_plot.shape[1] * 0.6)
+    fig_h = max(6, len(row_map) * 0.25)
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    # background
+    ax.imshow(
+        np.zeros((len(row_map), mat_plot.shape[1])),
+        cmap="Greys",
+        vmin=0,
+        vmax=1,
+        aspect="auto"
     )
 
-    ax.set_title("Protein–ligand interaction barcode (best poses only)")
+    # draw interactions
+    for y_pos, row_idx in row_map:
+        _, residue, interaction = mat_plot.index[row_idx]
+        color = interaction_colors.get(interaction, "#000000")
+
+        for x, ligand in enumerate(mat_plot.columns):
+            if mat_plot.iloc[row_idx, x]:
+                ax.add_patch(
+                    Rectangle(
+                        (x - 0.5, y_pos - 0.5),
+                        1,
+                        1,
+                        facecolor=color,
+                        edgecolor="none"
+                    )
+                )
+
+    # FOrmatting axes similar to Prolif
+
+    ax.set_xticks(np.arange(mat_plot.shape[1]))
+    ax.set_xticklabels(mat_plot.columns, rotation=45, ha="right")
+
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels(y_labels)
+
+    ax.set_xlabel("Ligand ID")
+    ax.set_ylabel("Protein residue")
+
+    ax.set_title("Barcode (P-L interactions)")
+
+    # grid
+    ax.set_xticks(np.arange(-.5, mat_plot.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-.5, len(row_map), 1), minor=True)
+    ax.grid(which="minor", color="lightgrey", linestyle="-", linewidth=0.5)
+
+
+    # Build legend
+
+    handles = [
+        Rectangle((0, 0), 1, 1, color=c)
+        for c in interaction_colors.values()
+    ]
+    labels = list(interaction_colors.keys())
+
+    ax.legend(
+        handles,
+        labels,
+        title="Interaction type",
+        bbox_to_anchor=(1.02, 1),
+        loc="upper left",
+        borderaxespad=0,
+    )
+
     plt.tight_layout()
 
     out = output_dir / "prolif_barcode_best_poses.png"

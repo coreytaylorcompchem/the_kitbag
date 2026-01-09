@@ -37,7 +37,7 @@ protein:
 # TODO: Add capability to add other data (e.g. IC50) to the csv that can be used later.
 
 generate_ligands_from_list: true
-ligands_txt: "ligs_med.txt"    
+ligands_txt: "ligs_small.txt"    
 # ligands_csv: "ligands.csv" 
 
 ### Docking parameters - standard

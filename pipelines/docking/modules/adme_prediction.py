@@ -92,7 +92,7 @@ def get_adme_models(backend, requested_models):
 @register_task(
     "adme_prediction",
     category="Prediction",
-    description="Predict ADME properties per ligand (cached GNN inference).",
+    description="Predict per-ligand ADME properties.",
 )
 def adme_prediction(backend, ligand, config, **kwargs):
 

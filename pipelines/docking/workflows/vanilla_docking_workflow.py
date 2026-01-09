@@ -34,6 +34,25 @@ logger = setup_logger(
     simple_format=True
 )
 
+separated_interaction_colors = { 
+    "Hydrophobic": "#59e382", 
+    "VdWContact": "#dfab43", 
+    "HBAcceptor": "#59bee3", 
+    "HBDonor": "#239fcd", 
+    "XBAcceptor": "#ff9f02", 
+    "XBDonor": "#ce8000", 
+    "Cationic": "#e35959", 
+    "Anionic": "#5979e3", 
+    "CationPi": "#e359d8", 
+    "PiCation": "#ea85e2", 
+    "PiStacking": "#b559e3", 
+    "EdgeToFace": "#c885ea", 
+    "FaceToFace": "#a22ddc", 
+    "MetalAcceptor": "#7da982", 
+    "MetalDonor": "#609267", 
+    "WaterBridge": "#323aa8", 
+    }
+
 def run_single_ligand(ligand, backend, config, workflow_steps):
     docking_outputs = []
 
@@ -66,6 +85,10 @@ def run_single_ligand(ligand, backend, config, workflow_steps):
 
         for sdf_path in docked_outputs:
             scores = extract_scores_from_docking_output(sdf_path)
+
+            for s in scores:
+                s["sdf_path"] = str(sdf_path)
+
             all_scores.extend(scores)
 
     if all_scores:
@@ -250,9 +273,9 @@ def run(config_path: str):
 
         for lig in ligands:
             base = {
-            k: v for k, v in lig.items()
-            if k not in LIGAND_EXCLUDE_KEYS
-}
+                k: v for k, v in lig.items()
+                if k not in LIGAND_EXCLUDE_KEYS
+            }
 
             # ADME (copied to every pose)
             if "adme" in lig:
@@ -267,6 +290,7 @@ def run(config_path: str):
                         "pose_idx": entry.get("pose_idx"),
                         "pose_rank": entry.get("pose_rank"),
                         "docking_score": entry.get("score"),
+                        "sdf_path": entry.get("sdf_path"),
                     })
                     results.append(row)
             else:
@@ -286,18 +310,29 @@ def run(config_path: str):
     analysis_dir = output_dir / "analysis"
     analysis_dir.mkdir(exist_ok=True)
 
+    protein_pdb = output_dir / "receptor_protonated.pdb"
+
+    if not protein_pdb.exists():
+        raise FileNotFoundError(
+            f"Prepared protein PDB not found: {protein_pdb}"
+        )
+
     try:
     # after saving docking_results.csv
         plot_docking_scatter_with_errorbars(out_csv, analysis_dir)
         plot_adme_descriptor_grids(out_csv, analysis_dir)
 
-        # ProLIF barcode (best poses only)
+        # ProLIF barcode (highest scored pose only)
         best_df = select_best_poses(out_csv)
         fp_df = build_prolif_dataframe(
             best_df,
-            protein_pdb=Path(config["protein"]["pdb_path"])
+            protein_pdb=protein_pdb
         )
-        plot_prolif_barcode(fp_df, analysis_dir)
+        plot_prolif_barcode(
+                fp_df,
+        analysis_dir,
+        interaction_colors=separated_interaction_colors,
+        )
 
         logger.info("Generated docking and ADME analysis plots.")
     except Exception as e:
