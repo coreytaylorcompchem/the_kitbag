@@ -122,6 +122,11 @@ class ProteinPreparer:
         if result.returncode != 0:
             logger.error(f"Open Babel PDB → PDBQT failed:\n{result.stderr}")
             raise RuntimeError("Protein PDBQT conversion failed.")
+        
+        if not self.reference_ligand_path.exists():
+            logger.warning(
+                "[ProteinPreparer] Reference ligand file does not exist - docking box may fail."
+            )
 
         logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
         return self.pdbqt_path
