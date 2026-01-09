@@ -49,6 +49,8 @@ class ProteinPreparer:
 
         self.cleaned_pdb = output_dir / f"{self.name}_clean.pdb"
         self.extracted_ligand_path = output_dir / f"{self.name}_crystal_ligand.pdb"
+        # Alias for downstream consumers (docking box, etc.)
+        self.reference_ligand_path = self.extracted_ligand_path
         self.protonated_pdb = output_dir / f"{self.name}_protonated.pdb"
         self.pdbqt_path = output_dir / f"{self.name}.pdbqt"
 
@@ -95,7 +97,6 @@ class ProteinPreparer:
             "--most-populous",
             "--keep-altlocs",
             "--no-conect",
-            "--add-missing-atoms"
         ]
 
         result = subprocess.run(cmd_pdb4amber, capture_output=True, text=True)
@@ -321,14 +322,35 @@ class LigandPreparer:
         return pdbqt_paths
 
 @register_task("prepare_receptor_pdbqt", 
-               category='Receptor preparation',
+               category="Receptor preparation",
                description="Prepare the receptor for docking. Format: pdbqt")
 def prepare_receptor_pdbqt(backend, ligand, config, **kwargs):
-    preparer = get_protein_preparer(backend, config)
-    output_dir = Path(config.get("output_dir", "output"))
+
+    if ligand is not None:
+        raise RuntimeError(
+            "prepare_receptor_pdbqt must be run in global context (ligand=None)"
+        )
+
+    # Reuse preparer instance if it already exists
+    if "protein_preparer" not in backend.cache:
+        preparer = ProteinPreparer(
+            pdb_path=Path(config["protein"]["pdb_path"]),
+            name="receptor",
+            pH=config["protein"].get("pH", 7.4)
+        )
+        backend.cache["protein_preparer"] = preparer
+    else:
+        preparer = backend.cache["protein_preparer"]
+
+    if "receptor_pdbqt" in backend.cache:
+        logger.debug("Receptor already prepared — reusing.")
+        return backend.cache["receptor_pdbqt"]
+
+    output_dir = Path(config["output_dir"])
     pdbqt_path = preparer.prepare(output_dir)
 
     backend.cache["receptor_pdbqt"] = pdbqt_path
+    return pdbqt_path
 
 @register_task("standardise_ligand", 
                category='Ligand preparation',

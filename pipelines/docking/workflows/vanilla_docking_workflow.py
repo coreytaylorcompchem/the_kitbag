@@ -30,9 +30,15 @@ logger = setup_logger(
 )
 
 def run_single_ligand(ligand, backend, config, workflow_steps):
+    FORBIDDEN_LIGAND_TASKS = {"prepare_receptor_pdbqt"}
     docking_outputs = []
 
     for step in workflow_steps:
+        if step in FORBIDDEN_LIGAND_TASKS:
+            raise RuntimeError(
+                f"Task '{step}' must not appear in workflow_steps. "
+                "Receptor prep is handled globally."
+            )
         task_func = get_task(step)
         if not task_func:
             raise ValueError(f"Workflow step '{step}' is not a registered task.")
@@ -78,9 +84,10 @@ def run_single_ligand(ligand, backend, config, workflow_steps):
 
 
 # --------------------------
-# Main Workflow Function
+# Main workflow function
 # --------------------------
-@register_workflow("vanilla_docking", description="Prepare, dock and score with no constraints.")
+
+@register_workflow("vanilla_docking", description="Prepare, dock and score - no constraints.")
 def run(config_path: str):
 
     # ----------------------
@@ -143,25 +150,27 @@ def run(config_path: str):
     # Backend Initialization
     # ----------------------
     # Extract backend details from config
+
     backend_name = config['backend']['name']
     backend_kwargs = {k: v for k, v in config['backend'].items() if k != 'name'}
     backend = get_backend(backend_name, **backend_kwargs)
     
     # ----------------------
-    # Protein Preparation
+    # GLOBAL: Protein preparation (serial)
     # ----------------------
-    protein_preparer = ProteinPreparer(
-        pdb_path=Path(config['protein']['pdb_path']),
-        work_dir=output_dir,
-        pH=config['protein'].get('pH', 7.4)
-    )
-    receptor_pdbqt = protein_preparer.prepare()
-    backend.cache["receptor_pdbqt"] = receptor_pdbqt
+    logger.info("Preparing receptor...")
+    prep_task = get_task("prepare_receptor_pdbqt")
+    prep_task(backend, ligand=None, config=config)
 
     # ----------------------
     # Docking Center
     # ----------------------
+
     # Docking box (center, size)
+    protein_preparer = backend.cache.get("protein_preparer")
+    if protein_preparer is None:
+        raise RuntimeError("ProteinPreparer not found in backend cache.")
+
     center, size = get_docking_box(config, protein_preparer)
     config['docking']['center'] = center
     config['docking']['size'] = size
@@ -169,6 +178,7 @@ def run(config_path: str):
     # ----------------------
     # Ligand CSV Handling
     # ----------------------
+
     if config.get('generate_ligands_from_list', False):
         if not ligands_txt_path.exists():
             raise FileNotFoundError(f"Ligands SMILES list not found at: {ligands_txt_path}")
@@ -180,6 +190,7 @@ def run(config_path: str):
     # ----------------------
     # Read Ligands
     # ----------------------
+
     ligands = []
     with open(ligands_csv_path, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -189,14 +200,13 @@ def run(config_path: str):
                 "smiles": row["smiles"],
             }
 
-            # RDKit descriptors (once per ligand)
             lig.update(compute_rdkit_descriptors(row["smiles"]))
-
             ligands.append(lig)
 
     # ----------------------
     # Execute Workflow Steps
     # ----------------------
+
     workflow_steps = config.get("workflow", [
         "standardise_ligand",
         "generate_conformers",
@@ -207,19 +217,22 @@ def run(config_path: str):
     ])
 
     # --------------------------------------
-    # Separate per-ligand and dataset tasks
+    # Explicit task phases
     # --------------------------------------
-    DATASET_LEVEL_TASKS = {"post_processing"}
+    
+    GLOBAL_TASKS = set()  # protein prep already handled above
+    POST_TASKS = {"post_processing"}
 
-    per_ligand_steps = [
+    LIGAND_TASKS = [
         step for step in workflow_steps
-        if step not in DATASET_LEVEL_TASKS
+        if step not in GLOBAL_TASKS and step not in POST_TASKS
     ]
 
-    dataset_steps = [
+    POST_WORKFLOW_TASKS = [
         step for step in workflow_steps
-        if step in DATASET_LEVEL_TASKS
+        if step in POST_TASKS
     ]
+
 
     # Handle optional conformer generation
     options = config.get("options", {})
@@ -235,15 +248,38 @@ def run(config_path: str):
     # ----------------------
     # Parallel code (per ligand)
     # ----------------------
+
     n_cores = os.cpu_count() or 20
     n_workers = max(1, n_cores - 2)  # reserve 2 cores
     logger.info(f"Using {n_workers} parallel workers (out of {n_cores} cores).")
 
+    # ----------------------
+    # GLOBAL: Prepare receptor once
+    # ----------------------
+
+    logger.info("Preparing receptor...")
+
+    prep_task = get_task("prepare_receptor_pdbqt")
+    prep_task(backend, ligand=None, config=config)
+
+    if "receptor_pdbqt" not in backend.cache:
+        raise RuntimeError("Receptor preparation failed — pdbqt not found in backend cache.")
+
+    # parallel code; divides jobs per-ligand
+    # TODO: create batches of ligands to run on available cores
+    
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
         futures = [
-            executor.submit(run_single_ligand, lig, backend, config, per_ligand_steps)
+            executor.submit(
+                run_single_ligand,
+                lig,
+                backend,
+                config,
+                LIGAND_TASKS
+            )
             for lig in ligands
         ]
+
         for future in as_completed(futures):
             try:
                 ligand_name = future.result()
@@ -267,7 +303,6 @@ def run(config_path: str):
                 if k not in LIGAND_EXCLUDE_KEYS
             }
 
-            # ADME (copied to every pose)
             if "adme" in lig:
                 base.update(lig["adme"])
 
@@ -284,7 +319,7 @@ def run(config_path: str):
                     })
                     results.append(row)
             else:
-                # ligand with no docking result
+                # Fallback: ligand with no docking result
                 results.append(base)
 
         df = pd.DataFrame(results)
@@ -295,9 +330,10 @@ def run(config_path: str):
         logger.info(f"Saved combined ADME/docking results to: {out_csv}")
 
     # --------------------------------------
-    # Run dataset-level workflow steps
+    # Run dataset-level workflow steps (e.g. post-processing)
     # --------------------------------------
-    for step in dataset_steps:
+
+    for step in POST_WORKFLOW_TASKS:
         task_func = get_task(step)
         if not task_func:
             raise ValueError(

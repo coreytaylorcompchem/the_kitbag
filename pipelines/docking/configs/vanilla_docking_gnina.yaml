@@ -2,7 +2,7 @@ task: workflow
 workflow_name: vanilla_docking  # corresponds to workflows/vanilla_docking.py
 
 workflow:
-  - prepare_receptor_pdbqt 
+  # - prepare_receptor_pdbqt # removed from workflow for now, pipeline will fail if this is enabled. 
   - standardise_ligand
   - compute_rdkit_descriptors
   - adme_prediction
