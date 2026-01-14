@@ -46,8 +46,6 @@ def select_best_poses(csv_path: Path) -> pd.DataFrame:
 
     return best_df
 
-
-
 def build_prolif_dataframe(
     best_pose_df: pd.DataFrame,
     protein_pdb: Path,
@@ -117,6 +115,14 @@ def build_prolif_dataframe(
 
     return df_fp
 
+def residue_number(res):
+    """
+    Extract residue number from labels like 'ARG250.' or 'THR52'
+    """
+    import re
+    m = re.search(r"(\d+)", str(res))
+    return int(m.group(1)) if m else float("inf")
+
 def plot_prolif_barcode(
     fp_df,
     output_dir: Path,
@@ -153,9 +159,13 @@ def plot_prolif_barcode(
     mat = mat.sort_index(axis=1)
     mat_plot = mat.T  # residues × ligands
 
-    # Build residue groups
+    # Sort by residue number)
     residues = mat_plot.index.get_level_values(residue_level)
-    unique_residues = list(OrderedDict.fromkeys(residues))
+
+    unique_residues = sorted(
+        set(residues),
+        key=residue_number
+    )
 
     y_ticks = []
     y_labels = []
@@ -219,7 +229,7 @@ def plot_prolif_barcode(
 
     ax.set_xlabel("Ligand ID")
     ax.set_ylabel("Protein residue")
-    ax.set_title("Barcode (P-L interactions)")
+    ax.set_title("Barcode plot (prot x lig interactions)")
 
     # Grid
     ax.set_xticks(np.arange(-0.5, n_ligands, 1), minor=True)

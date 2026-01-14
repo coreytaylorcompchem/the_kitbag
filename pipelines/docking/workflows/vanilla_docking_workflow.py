@@ -51,9 +51,9 @@ def run_single_ligand(ligand, backend, config, workflow_steps):
             else:
                 docking_outputs.append(result)
 
-    # ----------------------
+    
     # Extract docking scores
-    # ----------------------
+    
     all_scores = []
 
     for entry in docking_outputs:
@@ -95,9 +95,7 @@ def run_single_ligand(ligand, backend, config, workflow_steps):
 @register_workflow("vanilla_docking", description="Prepare, dock and score - no constraints.")
 def run(config_path: str):
 
-    # ----------------------
-    # Load YAML Config
-    # ----------------------
+    # Load YAML
 
     # Minimum fields required from yaml for successful docking
     required_fields = [
@@ -128,16 +126,16 @@ def run(config_path: str):
     logger.info(f"Workflow steps:   {config.get('workflow', [])}")
     logger.info("---------------------------------------------")
 
-    # ----------------------
-    # Output Directory
-    # ----------------------
+    
+    # Set output Directory
+    
     output_dir = Path.cwd() / docking_cfg['output_dir']
     output_dir.mkdir(parents=True, exist_ok=True)
     config['output_dir'] = output_dir
 
-    # ----------------------
-    # Ligand Input Handling
-    # ----------------------
+    
+    # Ligand input handling (depending on if you feed in csv or txt)
+    
     ligands_txt_path = Path(config.get('ligands_txt', 'ligands.txt'))
     ligands_csv_path = Path(config.get('ligands_csv', output_dir / 'ligands.csv'))
 
@@ -151,26 +149,21 @@ def run(config_path: str):
             "No ligand input found. Provide either 'ligands_txt' or 'ligands_csv' in the config or directory."
         )
     
-    # ----------------------
     # Backend Initialization
-    # ----------------------
-    # Extract backend details from config
 
     backend_name = config['backend']['name']
     backend_kwargs = {k: v for k, v in config['backend'].items() if k != 'name'}
     backend = get_backend(backend_name, **backend_kwargs)
     
-    # ----------------------
+    
     # GLOBAL: Protein preparation (serial)
-    # ----------------------
+    
     logger.info("Preparing receptor...")
     prep_task = get_task("prepare_receptor_pdbqt")
     prep_task(backend, ligand=None, config=config)
 
-    # ----------------------
+    
     # Docking Center
-    # ----------------------
-
     # Docking box (center, size)
     protein_preparer = backend.cache.get("protein_preparer")
     if protein_preparer is None:
@@ -180,9 +173,7 @@ def run(config_path: str):
     config['docking']['center'] = center
     config['docking']['size'] = size
 
-    # ----------------------
     # Ligand CSV Handling
-    # ----------------------
 
     if config.get('generate_ligands_from_list', False):
         if not ligands_txt_path.exists():
@@ -192,9 +183,7 @@ def run(config_path: str):
     if not ligands_csv_path.exists():
         raise FileNotFoundError(f"Ligands CSV not found at: {ligands_csv_path}")
 
-    # ----------------------
     # Read Ligands
-    # ----------------------
 
     ligands = []
     with open(ligands_csv_path, newline='') as csvfile:
@@ -208,9 +197,7 @@ def run(config_path: str):
             lig.update(compute_rdkit_descriptors(row["smiles"]))
             ligands.append(lig)
 
-    # ----------------------
-    # Execute Workflow Steps
-    # ----------------------
+    # Execute workflow
 
     workflow_steps = config.get("workflow", [
         "standardise_ligand",
@@ -220,12 +207,8 @@ def run(config_path: str):
         "convert_to_pdbqt",
         "dock",
     ])
-
-    # --------------------------------------
-    # Explicit task phases
-    # --------------------------------------
     
-    GLOBAL_TASKS = set()  # protein prep already handled above
+    GLOBAL_TASKS = set() 
     POST_TASKS = {"post_processing"}
 
     LIGAND_TASKS = [
@@ -238,7 +221,6 @@ def run(config_path: str):
         if step in POST_TASKS
     ]
 
-
     # Handle optional conformer generation
     options = config.get("options", {})
     use_conformer_generation = options.get("use_conformer_generation", True)
@@ -250,17 +232,13 @@ def run(config_path: str):
             if step not in ("generate_conformers", "cluster_conformers", "save_final_conformers")
         ]
 
-    # ----------------------
     # Parallel code (per ligand)
-    # ----------------------
 
     n_cores = os.cpu_count() or 20
     n_workers = max(1, n_cores - 2)  # reserve 2 cores
     logger.info(f"Using {n_workers} parallel workers (out of {n_cores} cores).")
 
-    # ----------------------
     # GLOBAL: Prepare receptor once
-    # ----------------------
 
     logger.info("Preparing receptor...")
 
@@ -346,9 +324,7 @@ def run(config_path: str):
 
         logger.info(f"Saved combined ADME/docking results to: {out_csv}")
 
-    # --------------------------------------
-    # Run dataset-level workflow steps (e.g. post-processing)
-    # --------------------------------------
+    # Dataset-level workflow steps
 
     for step in POST_WORKFLOW_TASKS:
         task_func = get_task(step)
