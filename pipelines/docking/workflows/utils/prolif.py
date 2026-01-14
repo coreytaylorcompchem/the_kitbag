@@ -31,13 +31,21 @@ def natural_key(s):
 def select_best_poses(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
 
+    # Defensive check: only use docks that succeed.
+    if "dock_status" in df.columns:
+        df = df[df["dock_status"] == "success"]
+
     df = df.dropna(subset=["docking_score"])
     df = df[df["docking_score"] < 0]
+
+    if df.empty:
+        raise ValueError("No successful docking poses found after filtering.")
 
     idx = df.groupby("name")["docking_score"].idxmin()
     best_df = df.loc[idx].reset_index(drop=True)
 
     return best_df
+
 
 
 def build_prolif_dataframe(
@@ -71,10 +79,23 @@ def build_prolif_dataframe(
         if pose_idx >= len(ligands):
             continue
 
-        ligand = plf.Molecule.from_rdkit(ligands[int(pose_idx)])
+        mol = ligands[int(pose_idx)]
+        if mol is None:
+            logger.warning(
+                f"Skipping ligand {row['name']} – RDKit failed to parse SDF pose"
+            )
+            continue
 
-        fp = plf.Fingerprint()
-        fp.run_from_iterable([ligand], protein, progress=False)
+        ligand = plf.Molecule.from_rdkit(mol)
+
+        try:
+            fp = plf.Fingerprint()
+            fp.run_from_iterable([ligand], protein, progress=False)
+        except Exception as e:
+            logger.warning(
+                f"ProLIF failed for ligand {row['name']}: {e}"
+            )
+            continue
 
         df_fp_single = fp.to_dataframe()
         dfs.append(df_fp_single)
@@ -152,7 +173,7 @@ def plot_prolif_barcode(
         y_ticks.append((start + end) / 2)
         y_labels.append(res)
 
-    # ---- Adaptive sizing ----
+    # Adaptive sizing for plot
     n_ligands = mat_plot.shape[1]
 
     # Thinner columns as ligand count grows

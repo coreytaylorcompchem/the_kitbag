@@ -79,6 +79,11 @@ def run_single_ligand(ligand, backend, config, workflow_steps):
         ligand["docking_score"] = best["score"]
         ligand["best_pose_idx"] = best.get("pose_idx")
         ligand["best_pose_rank"] = best.get("pose_rank")
+        ligand["dock_status"] = "success"
+        ligand["dock_error"] = ""
+    else:
+        ligand["dock_status"] = "failed"
+        ligand["dock_error"] = "No docking poses generated"
 
     return ligand["name"]
 
@@ -280,11 +285,13 @@ def run(config_path: str):
             for lig in ligands
         ]
 
-        for future in as_completed(futures):
+        for future, lig in zip(futures, ligands):
             try:
                 ligand_name = future.result()
             except Exception as e:
-                logger.error(f"❌ Error during ligand processing: {e}")
+                logger.error(f"❌ Error during ligand processing ({lig['name']}): {e}")
+                lig["dock_status"] = "failed"
+                lig["dock_error"] = str(e)
         
         results = []
 
@@ -316,11 +323,21 @@ def run(config_path: str):
                         "pose_rank": entry.get("pose_rank"),
                         "docking_score": entry.get("score"),
                         "sdf_path": entry.get("sdf_path"),
+                        "dock_status": "success",
+                        "dock_error": "",
                     })
                     results.append(row)
             else:
-                # Fallback: ligand with no docking result
-                results.append(base)
+                row = base.copy()
+                row.update({
+                    "pose_idx": None,
+                    "pose_rank": None,
+                    "docking_score": None,
+                    "sdf_path": None,
+                    "dock_status": lig.get("dock_status", "failed"),
+                    "dock_error": lig.get("dock_error", "Unknown docking failure"),
+                })
+                results.append(row)
 
         df = pd.DataFrame(results)
 
