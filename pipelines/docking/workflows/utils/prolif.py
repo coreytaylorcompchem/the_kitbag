@@ -1,4 +1,5 @@
 import re
+import sys
 
 from pathlib import Path
 import numpy as np
@@ -52,109 +53,102 @@ def build_prolif_dataframe(
     best_pose_df: pd.DataFrame,
     protein_pdb: Path,
 ) -> pd.DataFrame:
+    """
+    Generate ProLIF fingerprints for the best docking poses.
+    Fully defensive: skips invalid SDFs, missing poses, empty molecules.
+    """
 
-    protein_rdkit = Chem.MolFromPDBFile(
-        str(protein_pdb),
-        removeHs=False
-    )
-
-    protein_rdkit = Chem.MolFromPDBFile(
-    str(protein_pdb),
-    sanitize=False,
-    removeHs=False,
-)
-
+    protein_rdkit = Chem.MolFromPDBFile(str(protein_pdb), removeHs=False, sanitize=False)
     if protein_rdkit is None:
-        logger.error(
-            f"[ProLIF] Failed to parse protein PDB: {protein_pdb}"
-        )
+        logger.error(f"[ProLIF] Failed to parse protein PDB: {protein_pdb}")
         return None
 
     try:
         Chem.SanitizeMol(protein_rdkit)
     except Exception as e:
-        logger.warning(
-            f"[ProLIF] Protein sanitization failed: {e}"
-        )
+        logger.warning(f"[ProLIF] Protein sanitization failed: {e}")
 
     try:
         protein = plf.Molecule.from_rdkit(protein_rdkit)
     except Exception as e:
-        logger.error(
-            f"[ProLIF] Failed to create protein molecule: {e}"
-        )
+        logger.error(f"[ProLIF] Failed to create protein molecule: {e}")
         return None
 
     dfs = []
     ligand_names = []
 
-    for _, row in tqdm(
-            best_pose_df.iterrows(),
-            total=len(best_pose_df),
-            desc="Calculating ProLIF fingerprints",
-        ):
+    for _, row in tqdm(best_pose_df.iterrows(),
+                        total=len(best_pose_df),
+                        desc="Calculating ProLIF fingerprints",
+                        leave=True,
+                        ncols=100,
+                        file=sys.stdout):
+
         sdf_path = row.get("sdf_path")
         pose_idx = row.get("pose_idx")
+        ligand_name = row.get("name", "unknown")
 
+        # ---- Defensive checks ----
         if not sdf_path or not Path(sdf_path).exists():
+            logger.warning(f"[ProLIF] Skipping {ligand_name} – missing SDF: {sdf_path}")
             continue
+
         if pose_idx is None:
-            continue
-
-        ligands = list(sdf_supplier(str(sdf_path)))
-        if pose_idx >= len(ligands):
-            continue
-
-        mol = ligands[int(pose_idx)]
-        
-        if mol is None:
-            logger.warning(
-                f"Skipping ligand {row['name']} – RDKit failed to parse SDF pose"
-            )
-            continue
-
-        if mol.GetNumConformers() == 0:
-            logger.warning(
-                f"[ProLIF] Skipping ligand {row['name']} – no conformers"
-            )
+            logger.warning(f"[ProLIF] Skipping {ligand_name} – pose_idx is None")
             continue
 
         try:
-            ligand = plf.Molecule.from_rdkit(mol)
-
-            fp = plf.Fingerprint()
-            fp.run_from_iterable([ligand], protein, progress=False)
-
-            df_fp_single = fp.to_dataframe()
-
+            ligands = list(sdf_supplier(str(sdf_path)))
         except Exception as e:
-            logger.warning(
-                f"[ProLIF] Skipping ligand {row['name']} – {type(e).__name__}: {e}"
-            )
+            logger.warning(f"[ProLIF] Skipping {ligand_name} – failed to read SDF: {e}")
             continue
 
-        dfs.append(df_fp_single)
-        ligand_names.append(row["name"])
+        if len(ligands) <= pose_idx:
+            logger.warning(f"[ProLIF] Skipping {ligand_name} – pose_idx {pose_idx} out of range ({len(ligands)} poses)")
+            continue
 
+        mol = ligands[int(pose_idx)]
+        if mol is None:
+            logger.warning(f"[ProLIF] Skipping {ligand_name} – RDKit failed to parse SDF pose")
+            continue
+
+        if mol.GetNumConformers() == 0:
+            logger.warning(f"[ProLIF] Skipping {ligand_name} – no conformers")
+            continue
+
+        # ---- ProLIF fingerprint ----
+        try:
+            ligand = plf.Molecule.from_rdkit(mol)
+        except Exception as e:
+            logger.warning(f"[ProLIF] Skipping {ligand_name} – failed to convert to ProLIF Molecule: {e}")
+            continue
+
+        try:
+            fp = plf.Fingerprint()
+            fp.run_from_iterable([ligand], protein, progress=False)
+            df_fp_single = fp.to_dataframe()
+        except Exception as e:
+            logger.warning(f"[ProLIF] Skipping {ligand_name} – failed to compute fingerprint: {e}")
+            continue
+
+        # ---- Add to output ----
+        dfs.append(df_fp_single)
+        ligand_names.append(ligand_name)
 
     if not dfs:
-        logger.warning(
-            "[ProLIF] No valid fingerprints generated; skipping ProLIF analysis."
-        )
+        logger.warning("[ProLIF] No valid fingerprints generated; skipping ProLIF analysis.")
         return None
 
-    # Build DataFrame directly avoiding Prolif's crap helpers
-
+    # Concatenate into a single dataframe
     df_fp = pd.concat(dfs, axis=0)
     df_fp.index = ligand_names
     df_fp.index.name = "ligand"
-    df_fp = (
-        df_fp
-        .astype("boolean")
-        .fillna(False)
-    )
+
+    # Ensure boolean dtype, fill NaNs
+    df_fp = df_fp.astype("boolean").fillna(False)
 
     return df_fp
+
 
 def residue_number(res):
     """
