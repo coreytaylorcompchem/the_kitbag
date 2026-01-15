@@ -6,6 +6,8 @@ import pandas as pd
 from collections import OrderedDict
 from tqdm import tqdm
 
+import matplotlib
+matplotlib.use("Agg")  # Non-interactive backend for headless environments
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
