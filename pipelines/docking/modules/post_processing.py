@@ -27,10 +27,7 @@ def post_processing(backend, ligand, config, **kwargs):
     Dataset-level task.
     Executed once after docking.
     """
-
-    # -----------------------------------------
-    # Skip per-ligand calls
-    # -----------------------------------------
+    
     if ligand is not None:
         return None
 
