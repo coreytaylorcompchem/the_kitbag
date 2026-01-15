@@ -64,7 +64,7 @@ grouped_interaction_colors = {
 def post_processing(backend, ligand, config, **kwargs):
     """
     Dataset-level task.
-    Executed ONCE after docking; ignored for per-ligand execution.
+    Executed once after docking.
     """
 
     # -----------------------------------------
@@ -110,22 +110,33 @@ def post_processing(backend, ligand, config, **kwargs):
 
         best_df = select_best_poses(csv_path)
 
-        fp_df = build_prolif_dataframe(
-            best_df,
-            protein_pdb=protein_pdb,
-        )
-
-        if prolif_cfg.get("output", {}).get("csv", False):
-            fp_df.to_csv(analysis_dir / "prolif_fingerprint.csv")
-
-        if prolif_cfg.get("output", {}).get("barcode", True):
-            plot_prolif_barcode(
-                fp_df,
-                analysis_dir,
-                interaction_colors=interaction_colors,
-                min_frequency=min_freq,
+        try:
+            fp_df = build_prolif_dataframe(
+                best_df,
+                protein_pdb=protein_pdb,
             )
-    
+        except Exception as e:
+            logger.error(
+                f"[post_processing] ProLIF failed unexpectedly: {e}"
+            )
+            fp_df = None
+
+        if fp_df is None or fp_df.empty:
+            logger.warning(
+                "[post_processing] ProLIF skipped (no valid data)."
+            )
+        else:
+            if prolif_cfg.get("output", {}).get("csv", False):
+                fp_df.to_csv(analysis_dir / "prolif_fingerprint.csv")
+
+            if prolif_cfg.get("output", {}).get("barcode", True):
+                plot_prolif_barcode(
+                    fp_df,
+                    analysis_dir,
+                    interaction_colors=interaction_colors,
+                    min_frequency=min_freq,
+                )
+
     # adme and docking score plots
 
     score_cfg = steps.get("docking_score_plots", {})

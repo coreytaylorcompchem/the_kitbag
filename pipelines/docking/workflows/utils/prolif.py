@@ -55,7 +55,33 @@ def build_prolif_dataframe(
         str(protein_pdb),
         removeHs=False
     )
-    protein = plf.Molecule.from_rdkit(protein_rdkit)
+
+    protein_rdkit = Chem.MolFromPDBFile(
+    str(protein_pdb),
+    sanitize=False,
+    removeHs=False,
+)
+
+    if protein_rdkit is None:
+        logger.error(
+            f"[ProLIF] Failed to parse protein PDB: {protein_pdb}"
+        )
+        return None
+
+    try:
+        Chem.SanitizeMol(protein_rdkit)
+    except Exception as e:
+        logger.warning(
+            f"[ProLIF] Protein sanitization failed: {e}"
+        )
+
+    try:
+        protein = plf.Molecule.from_rdkit(protein_rdkit)
+    except Exception as e:
+        logger.error(
+            f"[ProLIF] Failed to create protein molecule: {e}"
+        )
+        return None
 
     dfs = []
     ligand_names = []
@@ -78,29 +104,42 @@ def build_prolif_dataframe(
             continue
 
         mol = ligands[int(pose_idx)]
+        
         if mol is None:
             logger.warning(
                 f"Skipping ligand {row['name']} – RDKit failed to parse SDF pose"
             )
             continue
 
-        ligand = plf.Molecule.from_rdkit(mol)
-
-        try:
-            fp = plf.Fingerprint()
-            fp.run_from_iterable([ligand], protein, progress=False)
-        except Exception as e:
+        if mol.GetNumConformers() == 0:
             logger.warning(
-                f"ProLIF failed for ligand {row['name']}: {e}"
+                f"[ProLIF] Skipping ligand {row['name']} – no conformers"
             )
             continue
 
-        df_fp_single = fp.to_dataframe()
+        try:
+            ligand = plf.Molecule.from_rdkit(mol)
+
+            fp = plf.Fingerprint()
+            fp.run_from_iterable([ligand], protein, progress=False)
+
+            df_fp_single = fp.to_dataframe()
+
+        except Exception as e:
+            logger.warning(
+                f"[ProLIF] Skipping ligand {row['name']} – {type(e).__name__}: {e}"
+            )
+            continue
+
         dfs.append(df_fp_single)
         ligand_names.append(row["name"])
 
+
     if not dfs:
-        raise ValueError("No valid ProLIF fingerprints generated.")
+        logger.warning(
+            "[ProLIF] No valid fingerprints generated; skipping ProLIF analysis."
+        )
+        return None
 
     # Build DataFrame directly avoiding Prolif's crap helpers
 
