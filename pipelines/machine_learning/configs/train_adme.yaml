@@ -1,0 +1,39 @@
+workflow_name: train_
+
+workflow:
+  - load_smiles_dataset
+  - featurise_smiles
+  - split_data
+  - load_model_spec
+  - train_adme_model
+  - evaluate_model
+
+load_smiles_dataset:
+  csv_path: data_cyp_3a4/cyp_3a4_chembl.csv
+
+featurise_smiles:
+  featuriser:
+    module: models.cyp3a4.featurisation
+    function: mol_to_graph
+  smiles_col: smiles
+  label_col: pIC50
+
+
+split_data:
+  val_size: 0.2
+  batch_size: 32
+
+load_model_spec:
+  module: models.cyp3a4.model
+  class: CYP3A4GIN
+
+train_adme_model:
+  num_epochs: 100
+  param_grid:
+    hidden_dim: [64, 128]
+    lr: [1e-3]
+  model_path: output/cyp3a4_best.pth
+  device: cuda
+
+evaluate_model:
+  save_plots: true
