@@ -6,7 +6,7 @@ workflow:
   - split_data
   - load_model_spec
   - train_adme_model
-  # - evaluate_model
+  - evaluate_model
 
 load_smiles_dataset:
   csv_path: inputs/cyp_3a4_chembl.csv
@@ -44,4 +44,5 @@ train_adme_model:
     hidden_dim: [64, 128]
 
 evaluate_model:
+  eval_plot_dir: outputs/cyp3a4/eval
   save_plots: true

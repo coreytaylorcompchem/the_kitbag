@@ -112,4 +112,32 @@ def train_adme_model(config, context):
 
     return context
 
+@register_task("evaluate_model", category="ADME")
+def evaluate_model(config, context):
+    """
+    Generic evaluation task.
+    Calls a model-specific evaluation function defined in trainer/evaluation module.
+    """
+    eval_cfg = config.get("evaluator")
+    if eval_cfg is None:
+        # Fallback: try using module/function from config directly
+        module_path = config.get("module", "models.adme.cyp3a4.evaluation")
+        function_name = config.get("function", "evaluate")
+    else:
+        module_path = eval_cfg["module"]
+        function_name = eval_cfg["function"]
+
+    # Import evaluation function dynamically
+    module = importlib.import_module(module_path)
+    eval_fn = getattr(module, function_name)
+
+    # Call the evaluation function with context and config
+    result = eval_fn(context=context, config=config)
+
+    # Update context with any results returned by the evaluation function
+    if isinstance(result, dict):
+        context.update(result)
+
+    return context
+
 

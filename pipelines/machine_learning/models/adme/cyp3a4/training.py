@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from pathlib import Path
 
 from models.adme.cyp3a4.model import GINRegressor
+
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
