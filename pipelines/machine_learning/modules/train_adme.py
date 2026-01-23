@@ -2,11 +2,11 @@ import importlib
 
 import pandas as pd
 
+import torch
 from torch_geometric.loader import DataLoader
 from sklearn.model_selection import train_test_split
 
 from pipeline.task_registry import register_task
-from models.cyp3a4.featurisation import mol_to_graph
 
 from pipeline.logger import setup_logger
 
@@ -87,3 +87,29 @@ def load_model_spec(config, context):
 
     context["model_class"] = ModelClass
     return {"model_class": ModelClass}
+
+@register_task("train_adme_model", category="ADME")
+def train_adme_model(config, context):
+    trainer_cfg = config["trainer"]
+    module = importlib.import_module(trainer_cfg["module"])
+    train_fn = getattr(module, trainer_cfg["function"])
+
+    context["device"] = torch.device(config.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
+
+    # Call trainer
+    result = train_fn(context=context, config=config)
+
+    # Handle either dict or direct model
+    if isinstance(result, dict):
+        trained_model = result.get("model")
+    else:
+        trained_model = result
+
+    context.update({
+        "trained_model": trained_model,
+        "training_summary": result,
+    })
+
+    return context
+
+

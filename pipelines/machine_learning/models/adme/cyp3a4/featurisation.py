@@ -7,9 +7,12 @@ from torch_geometric.data import Data
 # ---------- Data class ----------
 
 class MoleculeData(Data):
+    def __inc__(self, key, value, *args, **kwargs):
+        return super().__inc__(key, value)
+
     def __cat_dim__(self, key, value, *args, **kwargs):
         if key == 'global_features':
-            return None
+            return None  # do not concatenate along any dimension
         return super().__cat_dim__(key, value)
 
 # ---------- Descriptor definitions ----------
@@ -123,36 +126,43 @@ def mol_to_graph(smiles: str, label: float = None):
     except:
         pass
 
-    x = torch.tensor(
-        [get_atom_features(a, mol) for a in mol.GetAtoms()],
-        dtype=torch.float
-    )
+    atom_features = [get_atom_features(atom, mol) for atom in mol.GetAtoms()]
+    x = torch.tensor(atom_features, dtype=torch.float)
 
-    edges, edge_feats = [], []
+    edge_index = []
+    edge_attr = []
     for bond in mol.GetBonds():
-        i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-        bf = get_bond_features(bond)
-        edges += [[i,j],[j,i]]
-        edge_feats += [bf,bf]
+        i = bond.GetBeginAtomIdx()
+        j = bond.GetEndAtomIdx()
+        bond_feat = get_bond_features(bond)
+        edge_index += [[i, j], [j, i]]
+        edge_attr += [bond_feat, bond_feat]
 
-    edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
-    edge_attr = torch.tensor(edge_feats, dtype=torch.float)
+    edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
+    edge_attr = torch.tensor(edge_attr, dtype=torch.float)
 
-    global_feats = []
-    for fn in descriptor_functions:
+    global_features = []
+    for func in descriptor_functions:
         try:
-            global_feats.append(safe_value(fn(mol)))
+            val = func(mol)
+            val = safe_value(val)
         except:
-            global_feats.append(0.0)
+            val = 0.0
+        global_features.append(val)
+    global_features = torch.tensor(global_features, dtype=torch.float32)
 
+    global_features = [0.0 if np.isnan(v) or np.isinf(v) else float(v) for v in global_features]
+
+    # Use MoleculeData class we added here instead of Data
     data = MoleculeData(
-        x=x,
+        x=x.float(),  # <- enforce float32
         edge_index=edge_index,
-        edge_attr=edge_attr,
-        global_features=torch.tensor(global_feats, dtype=torch.float)
+        edge_attr=edge_attr.float(),
+        global_features=torch.tensor(global_features, dtype=torch.float)  # float32
     )
 
     if label is not None:
         data.y = torch.tensor([label], dtype=torch.float)
 
     return data
+
