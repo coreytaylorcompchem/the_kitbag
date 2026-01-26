@@ -69,6 +69,10 @@ def basic_lipinski(config, data=None):
         raise FileNotFoundError(f"Input file does not exist: {input_file}")
 
     df = pd.read_csv(input_file)
+    if data is not None and "df" in data:
+        df = data["df"].copy()
+    else:
+        df = pd.read_csv(input_file)
     if "smiles" not in df.columns:
         raise ValueError("Input CSV must contain a 'smiles' column.")
 
@@ -133,7 +137,11 @@ def physchem_filtering(config, data=None):
     if not input_path.exists():
         raise FileNotFoundError(f"Input file does not exist: {input_file}")
 
-    df = pd.read_csv(input_file)
+    if data is not None and "df" in data:
+        df = data["df"].copy()
+    else:
+        df = pd.read_csv(input_file)
+
     if "smiles" not in df.columns:
         raise ValueError("Input CSV must contain a 'smiles' column.")
 

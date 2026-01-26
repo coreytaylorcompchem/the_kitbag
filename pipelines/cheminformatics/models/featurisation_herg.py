@@ -41,8 +41,8 @@ def mol_to_graph(smiles: str):
     if mol is None:
         return None
 
-    atom_features = [get_atom_features(atom) for atom in mol.GetAtoms()]
-    x = torch.tensor(atom_features, dtype=torch.float)
+    atom_features = np.stack([get_atom_features(atom) for atom in mol.GetAtoms()])
+    x = torch.from_numpy(atom_features)
 
     edge_index = []
     edge_attr = []
@@ -54,7 +54,7 @@ def mol_to_graph(smiles: str):
         edge_attr += [bond_feat, bond_feat]
 
     edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-    edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+    edge_attr = torch.from_numpy(np.stack(edge_attr))
 
     data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
     return data

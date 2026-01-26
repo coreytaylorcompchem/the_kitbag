@@ -60,7 +60,10 @@ def adme_prediction(config, data=None):
     if not input_file:
         raise ValueError("Missing 'input_file' in config.")
 
-    df = pd.read_csv(input_file)
+    if data is not None and "df" in data:
+        df = data["df"].copy()
+    else:
+        df = pd.read_csv(input_file)
 
     if "smiles" not in df.columns:
         raise ValueError("Input file must contain a 'smiles' column.")
@@ -68,7 +71,7 @@ def adme_prediction(config, data=None):
     df["smiles"] = df["smiles"].astype(str).str.strip()
     df = df[df["smiles"].notna() & df["smiles"].str.len() > 0].copy()
 
-    result_df = df[["smiles"]].copy()
+    result_df = df.copy()   # keep all columns
 
     device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
     logger.debug(f"Using device: {device}")

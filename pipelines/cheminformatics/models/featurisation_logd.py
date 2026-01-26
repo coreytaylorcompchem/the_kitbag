@@ -194,8 +194,10 @@ def mol_to_graph(smiles: str, label: float = None, radius=2, nBits=1024):
         logger.debug(f"[mol_to_graph] Warning: Gasteiger charges failed for {smiles}: {e}")
 
     try:
-        atom_features = [get_atom_features(atom, mol) for atom in mol.GetAtoms()]
-        x = torch.tensor(atom_features, dtype=torch.float)
+        atom_features = np.stack(
+            [get_atom_features(atom, mol) for atom in mol.GetAtoms()]
+        )
+        x = torch.from_numpy(atom_features)
         logger.debug(f"[mol_to_graph] Atom features shape: {x.shape}")
     except Exception as e:
         logger.debug(f"[mol_to_graph] Failed to get atom features: {e}")
@@ -212,7 +214,10 @@ def mol_to_graph(smiles: str, label: float = None, radius=2, nBits=1024):
             edge_attr += [bond_feat, bond_feat]
 
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-        edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+        if len(edge_attr) > 0:
+            edge_attr = torch.from_numpy(np.stack(edge_attr))
+        else:
+            edge_attr = torch.empty((0, 6), dtype=torch.float32)  # 6 = bond feature dim
         logger.debug(f"[mol_to_graph] Edge index shape: {edge_index.shape}, edge_attr shape: {edge_attr.shape}")
     except Exception as e:
         logger.debug(f"[mol_to_graph] Failed to get edge features: {e}")
