@@ -1,0 +1,52 @@
+workflow_name: streamed_feature_runner
+
+input_file: raw_data/CF776  # or CSV if needed
+
+workflow_preprocess:
+  - del_stream_aggregate_counts
+
+del_stream_aggregate_counts:
+  group_cols:
+    - NsynthonID
+    - lib
+    - condition
+  count_cols:
+    pre: RCount
+    post: ARCount
+  physchem_cols:
+    - MW
+    - logP
+    - PSA
+  min_pre_count: 20
+
+workflow_postprocess:
+  - del_bayesian_model
+  - del_hit_picker
+
+del_bayesian_model:
+  model:
+    family: negative_binomial
+    overdispersion: 1.5
+  output:
+    directory: outputs/del_bayes
+    filename: synthon_posteriors.parquet
+
+del_hit_picker:
+  posterior_cutoff: 0.97
+  require_hdi_positive: true
+
+  physchem_filters:
+    MW: [0, 500]
+    logP: [-1, 5]
+
+  sort_by:
+    - p_active
+    - beta_mean
+
+  ascending:
+    - false
+    - false
+
+  output:
+    directory: outputs/del_hits
+    filename: wuxi_del_hits.csv

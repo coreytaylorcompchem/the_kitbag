@@ -387,7 +387,7 @@ def dynamic_task_runner(config):
 
 @register_workflow(
     "streamed_feature_runner",
-    description="Stream large datasets (e.g. parquet), generate features per chunk, combine results, and run postprocessing analyses."
+    description="Stream large datasets (Parquet or CSV directory), generate features per chunk, combine results, and run postprocessing analyses."
 )
 def streamed_feature_runner(config):
     input_file = config.get("input_file")
@@ -400,7 +400,6 @@ def streamed_feature_runner(config):
         raise ValueError("No 'workflow_preprocess' task list specified in config")
 
     # === Prepare output directories ===
-    # Default chunk directory if nothing else is specified
     default_output_dir = Path("outputs/streamed_features")
     output_dir = default_output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -409,61 +408,108 @@ def streamed_feature_runner(config):
     total_rows = 0
     max_row_groups = config.get("row_groups", None)
 
-    # === Stream parquet row groups ===
-    for i, (rg_index, df_chunk) in enumerate(
-        tqdm(stream_parquet_rowgroups(input_file), desc="Row groups")
-    ):
-        if max_row_groups is not None and i >= max_row_groups:
-            logger.info(f"[streamed_feature_runner] Stopping after {max_row_groups} row group(s) (prototype mode).")
-            break
+    input_path = Path(input_file)
 
-        logger.info(f"[streamed_feature_runner] Processing row group {rg_index}")
-        if df_chunk is None or df_chunk.empty:
-            logger.warning(f"Row group {rg_index} is empty, skipping.")
-            continue
+    # --- Determine input type: directory of CSVs or single Parquet ---
+    if input_path.is_dir():
+        logger.info(f"[streamed_feature_runner] Input is a directory; streaming CSVs from {input_path}")
+        csv_files = sorted(input_path.glob("*.csv"))
+        for rg_index, csv_file in enumerate(tqdm(csv_files, desc="CSV chunks")):
+            if max_row_groups is not None and rg_index >= max_row_groups:
+                logger.info(f"[streamed_feature_runner] Stopping after {max_row_groups} CSV chunk(s) (prototype mode).")
+                break
 
-        current_data = {"df": df_chunk}
+            logger.info(f"[streamed_feature_runner] Processing CSV chunk {csv_file.name}")
+            df_chunk = pd.read_csv(csv_file)
+            if df_chunk.empty:
+                logger.warning(f"CSV chunk {csv_file.name} is empty, skipping.")
+                continue
 
-        # === Run all preprocessing tasks sequentially ===
-        for task_name in preprocess_tasks:
-            task_func = get_task(task_name)
-            if task_func is None:
-                registered = list_tasks()
-                msg = (
-                    f"[streamed_feature_runner] Task '{task_name}' not found.\n"
-                    f"  → Did you mean one of these?\n"
-                    f"    {registered}\n"
-                    f"  Check your YAML 'workflow_preprocess:' section or @register_task names."
-                )
-                logger.error(msg)
-                raise ValueError(msg)
+            current_data = {"df": df_chunk}
 
-            logger.info(f"[streamed_feature_runner] Running preprocess task '{task_name}'...")
-            result = task_func(config, data=current_data)
-            current_data = result if isinstance(result, dict) else {"df": result}
+            for task_name in preprocess_tasks:
+                task_func = get_task(task_name)
+                if task_func is None:
+                    registered = list_tasks()
+                    msg = (
+                        f"[streamed_feature_runner] Task '{task_name}' not found.\n"
+                        f"  → Did you mean one of these?\n"
+                        f"    {registered}"
+                    )
+                    logger.error(msg)
+                    raise ValueError(msg)
 
-        df_features = current_data.get("df")
-        if df_features is None or df_features.empty:
-            logger.warning(f"Row group {rg_index} produced no features, skipping.")
-            continue
+                logger.info(f"[streamed_feature_runner] Running preprocess task '{task_name}'...")
+                result = task_func(config, data=current_data)
+                current_data = result if isinstance(result, dict) else {"df": result}
 
-        total_rows += len(df_features)
+            df_features = current_data.get("df")
+            if df_features is None or df_features.empty:
+                logger.warning(f"CSV chunk {csv_file.name} produced no features, skipping.")
+                continue
 
-        # === Save per-chunk feature file ===
-        # Store in generic streamed_features dir (fast local cache)
-        chunk_dir = output_dir / "chunks"
-        chunk_dir.mkdir(parents=True, exist_ok=True)
+            total_rows += len(df_features)
 
-        feature_file = chunk_dir / f"features_chunk_{rg_index}.feather"
-        df_features.to_feather(feature_file)
-        feature_files.append(feature_file)
+            # Save per-chunk feature file
+            chunk_dir = output_dir / "chunks"
+            chunk_dir.mkdir(parents=True, exist_ok=True)
+            feature_file = chunk_dir / f"features_chunk_{rg_index}.feather"
+            df_features.to_feather(feature_file)
+            feature_files.append(feature_file)
 
-        del df_chunk, current_data, df_features
-        gc.collect()
+            del df_chunk, current_data, df_features
+            gc.collect()
+
+    else:
+        # Fall back to original Parquet row group streaming
+        logger.info(f"[streamed_feature_runner] Input is a single file; treating as Parquet: {input_path}")
+        for i, (rg_index, df_chunk) in enumerate(tqdm(stream_parquet_rowgroups(input_file), desc="Row groups")):
+            if max_row_groups is not None and i >= max_row_groups:
+                logger.info(f"[streamed_feature_runner] Stopping after {max_row_groups} row group(s) (prototype mode).")
+                break
+
+            if df_chunk is None or df_chunk.empty:
+                logger.warning(f"Row group {rg_index} is empty, skipping.")
+                continue
+
+            current_data = {"df": df_chunk}
+
+            for task_name in preprocess_tasks:
+                task_func = get_task(task_name)
+                if task_func is None:
+                    registered = list_tasks()
+                    msg = (
+                        f"[streamed_feature_runner] Task '{task_name}' not found.\n"
+                        f"  → Did you mean one of these?\n"
+                        f"    {registered}"
+                    )
+                    logger.error(msg)
+                    raise ValueError(msg)
+
+                logger.info(f"[streamed_feature_runner] Running preprocess task '{task_name}'...")
+                result = task_func(config, data=current_data)
+                current_data = result if isinstance(result, dict) else {"df": result}
+
+            df_features = current_data.get("df")
+            if df_features is None or df_features.empty:
+                logger.warning(f"Row group {rg_index} produced no features, skipping.")
+                continue
+
+            total_rows += len(df_features)
+
+            # Save per-chunk feature file
+            chunk_dir = output_dir / "chunks"
+            chunk_dir.mkdir(parents=True, exist_ok=True)
+            feature_file = chunk_dir / f"features_chunk_{rg_index}.feather"
+            df_features.to_feather(feature_file)
+            feature_files.append(feature_file)
+
+            del df_chunk, current_data, df_features
+            gc.collect()
 
     logger.info(f"[streamed_feature_runner] Processed {total_rows:,} rows total across {len(feature_files)} chunks.")
 
-    # === Combine chunked feather files into a single Parquet ===
+        # === Combine chunked feather files into a single Parquet ===
     if feature_files:
         logger.info(f"[streamed_feature_runner] Combining {len(feature_files)} feature chunks into one Parquet file...")
 
