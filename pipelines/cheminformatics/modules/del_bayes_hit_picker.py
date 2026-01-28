@@ -153,133 +153,115 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
 @register_task(
     "del_hit_picker",
     category="DEL",
-    description="Select DEL synthons based on Bayesian posteriors."
+    description="Select DEL synthons based on Bayesian posteriors and generate plots."
 )
 def del_hit_picker(config: dict, data: dict) -> dict:
-
-    import os
+    import warnings
+    from pathlib import Path
+    from modules.utils.plot_del_hits import plot_del_hits
+    import polars as pl
+    import pandas as pd
 
     params = config.get("del_hit_picker", {})
-    df = data.get("df")
+    df = data.get("df")  # Bayesian posterior output
+    physchem_df = data.get("physchem_df")  # aggregated physchem data
 
     if df is None or len(df) == 0:
         raise ValueError("[del_hit_picker] Input dataframe is empty.")
 
-    # Convert to Polars
-    if isinstance(df, pd.DataFrame):
-        pl_df = pl.from_pandas(df)
-    elif isinstance(df, pl.DataFrame):
-        pl_df = df
-    else:
-        raise TypeError(f"Unsupported df type: {type(df)}")
+    # Convert to pandas if needed
+    if isinstance(df, pl.DataFrame):
+        df = df.to_pandas()
 
-    # Required columns
-    required = {"NsynthonID", "beta_mean", "beta_hdi_lower", "beta_hdi_upper", "p_active", "condition"}
-    missing = required - set(pl_df.columns)
-    if missing:
-        raise ValueError(f"[del_hit_picker] Missing columns: {missing}")
+    if physchem_df is not None and isinstance(physchem_df, pl.DataFrame):
+        physchem_df = physchem_df.to_pandas()
 
+    # Merge physchem features onto posterior table by synthon and condition
+    physchem_cols = []
+    if physchem_df is not None:
+        # Keep only numeric physchem columns, exclude counts
+        physchem_cols = [
+            c for c in physchem_df.columns
+            if c not in {"NsynthonID", "condition", "total_count", "n_compounds"} 
+            and pd.api.types.is_numeric_dtype(physchem_df[c])
+        ]
+
+        if physchem_cols:
+            merge_cols = ["NsynthonID", "condition"] + physchem_cols
+            df = df.merge(physchem_df[merge_cols], on=["NsynthonID", "condition"], how="left")
+
+            # Remove any physchem columns that became entirely NaN
+            physchem_cols = [c for c in physchem_cols if c in df.columns and df[c].notna().any()]
+
+    # ---------------- Apply Bayesian and physchem filters ----------------
     posterior_cutoff = params.get("posterior_cutoff", 0.95)
     require_hdi_positive = params.get("require_hdi_positive", True)
     physchem_filters = params.get("physchem_filters", {})
 
-    # Logging summaries
-    logger.info("[del_hit_picker] Total synthons received: %d", pl_df.height)
-    logger.info(
-        "[del_hit_picker] p_active summary: min=%.3f median=%.3f max=%.3f",
-        pl_df["p_active"].min(),
-        pl_df["p_active"].median(),
-        pl_df["p_active"].max()
-    )
-    logger.info(
-        "[del_hit_picker] beta_hdi_lower summary: min=%.3f median=%.3f max=%.3f",
-        pl_df["beta_hdi_lower"].min(),
-        pl_df["beta_hdi_lower"].median(),
-        pl_df["beta_hdi_lower"].max()
-    )
-
-    # Apply Bayesian filters
-    mask = pl_df["p_active"] >= posterior_cutoff
+    mask = df["p_active"] >= posterior_cutoff
     if require_hdi_positive:
-        mask &= pl_df["beta_hdi_lower"] > 0.0
-
-    filtered_hits = pl_df.filter(mask)
-    logger.info("[del_hit_picker] Synthons after posterior/HDI filter: %d", filtered_hits.height)
-
-    # Apply physchem filters
+        mask &= df["beta_hdi_lower"] > 0.0
     for col, (low, high) in physchem_filters.items():
-        if col in filtered_hits.columns:
-            filtered_hits = filtered_hits.filter((pl.col(col) >= low) & (pl.col(col) <= high))
-    logger.info("[del_hit_picker] Synthons after physchem filters: %d", filtered_hits.height)
+        if col in df.columns:
+            mask &= df[col].between(low, high)
+    hits_df = df[mask].copy()
 
-    # Check for zero hits and log possible reasons
-    if filtered_hits.height == 0:
-        reasons = []
-        if (pl_df["p_active"] >= posterior_cutoff).sum() == 0:
-            reasons.append(f"posterior_cutoff ({posterior_cutoff}) too strict")
-        if require_hdi_positive and (pl_df["beta_hdi_lower"] > 0).sum() == 0:
-            reasons.append("HDI lower bound > 0 removed all synthons")
-        for col, (low, high) in physchem_filters.items():
-            if col in pl_df.columns:
-                phys_mask = (pl_df[col] >= low) & (pl_df[col] <= high)
-                if phys_mask.sum() == 0:
-                    reasons.append(f"physchem filter {col} [{low}, {high}] removed all synthons")
-        if not reasons:
-            reasons.append("unknown, possibly small dataset or no real hits")
-        logger.warning("[del_hit_picker] ZERO HITS Possible reasons: %s", "; ".join(reasons))
-
-    # Sorting full hits
+    # ---------------- Sorting ----------------
     sort_by = params.get("sort_by", ["p_active", "beta_mean"])
     ascending = params.get("ascending", [False, False])
-    if len(sort_by) != len(ascending):
-        raise ValueError("[del_hit_picker] 'sort_by' and 'ascending' must have same length.")
-    descending = [not a for a in ascending]
-    hits = filtered_hits.sort(by=sort_by, descending=descending)
-    logger.info("[del_hit_picker] Hits after sorting: %d", hits.height)
+    hits_df = hits_df.sort_values(by=sort_by, ascending=ascending)
 
-    # Top-hit-per-synthon summary
-    top_hits = (
-        hits
-        .sort(["p_active", "beta_mean"], descending=[True, True])
-        .group_by("NsynthonID")
-        .agg([
-            pl.first("condition").alias("top_condition"),
-            pl.first("beta_mean").alias("top_beta_mean"),
-            pl.first("beta_hdi_lower").alias("top_beta_hdi_lower"),
-            pl.first("beta_hdi_upper").alias("top_beta_hdi_upper"),
-            pl.first("p_active").alias("top_p_active")
-        ])
-        .sort("top_p_active", descending=True)
+    # ---------------- Top-hit-per-synthon summary ----------------
+    top_hits_df = (
+        hits_df.sort_values(["p_active", "beta_mean"], ascending=[False, False])
+        .groupby("NsynthonID", as_index=False)
+        .first()
+        .rename(columns={
+            "condition": "top_condition",
+            "beta_mean": "top_beta_mean",
+            "beta_hdi_lower": "top_beta_hdi_lower",
+            "beta_hdi_upper": "top_beta_hdi_upper",
+            "p_active": "top_p_active"
+        })
     )
-    logger.info("[del_hit_picker] Top-hit-per-synthon summary rows: %d", top_hits.height)
 
-    # --- Save CSVs ---
-    output_cfg = params.get("output", {})
-    out_dir = Path(output_cfg.get("directory", "outputs/del_hits"))
+    # ---------------- Save CSVs ----------------
+    out_dir = Path(params.get("output", {}).get("directory", "outputs/del_hits"))
     out_dir.mkdir(parents=True, exist_ok=True)
+    full_csv_path = out_dir / params.get("output", {}).get("filename", "wuxi_del_hits.csv")
+    top_csv_path = out_dir / params.get("output", {}).get("top_hits_filename", "wuxi_del_top_hits.csv")
 
-    full_csv_path = out_dir / output_cfg.get("filename", "wuxi_del_hits.csv")
-    top_csv_path = out_dir / output_cfg.get("top_hits_filename", "wuxi_del_top_hits.csv")
+    hits_df.to_csv(full_csv_path, index=False)
+    top_hits_df.to_csv(top_csv_path, index=False)
 
-    hits.to_pandas().to_csv(full_csv_path, index=False)
-    top_hits.to_pandas().to_csv(top_csv_path, index=False)
+    logger.info("[del_hit_picker] Full hits CSV saved: %s", str(full_csv_path))
+    logger.info("[del_hit_picker] Top-hit summary CSV saved: %s", str(top_csv_path))
 
-    logger.info("[del_hit_picker] Full hits CSV saved: %s", full_csv_path)
-    logger.info("[del_hit_picker] Top-hit summary CSV saved: %s", top_csv_path)
+    # ---------------- Generate plots ----------------
+    plot_dir = params.get("output", {}).get("directory", "outputs/plots")
+    Path(plot_dir).mkdir(parents=True, exist_ok=True)
 
-    # Convert filtered hits to pandas for plotting
-    hits_pd = hits.to_pandas()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FutureWarning)
 
-    # Generate plots automatically
-    plot_files = plot_del_hits(
-        hits_pd,
-        output_dir=params.get("output", {}).get("directory", "outputs/plots"),
-        top_n=params.get("top_n_per_condition", 10)
-    )
+        # Only pass numeric physchem columns that exist in hits_df
+        valid_physchem_cols = [c for c in physchem_cols if c in hits_df.columns and pd.api.types.is_numeric_dtype(hits_df[c])]
 
-    logger.info("Plots generated: %s", plot_files)
+        plot_files = plot_del_hits(
+            hits_df,
+            output_dir=plot_dir,
+            top_n=params.get("top_n_per_condition", 10),
+            physchem_cols=valid_physchem_cols
+        )
+
+    # Convert PosixPath to str in logs
+    plot_files_str = {k: str(v) for k, v in plot_files.items()}
+    logger.info("[del_hit_picker] Plots generated: %s", plot_files_str)
 
     return {
-        "df": hits.to_pandas(),
-        "top_hits_df": top_hits.to_pandas()
+        "df": hits_df,
+        "top_hits_df": top_hits_df,
+        "plot_files": plot_files_str
     }
+
+
