@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
+from modules.utils.plot_del_hits import plot_del_hits
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
@@ -17,7 +18,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 @register_task(
     "del_stream_aggregate_counts",
     category="DEL",
-    description="Stream DEL CSV chunks and aggregate synthon-level counts using DuckDB."
+    description="Stream DEL CSV chunks and aggregate synthon-level counts (DuckDB)."
 )
 def del_stream_aggregate_counts(config: dict, data: dict) -> dict:
     params = config.get("del_stream_aggregate_counts", {})
@@ -266,10 +267,19 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     logger.info("[del_hit_picker] Full hits CSV saved: %s", full_csv_path)
     logger.info("[del_hit_picker] Top-hit summary CSV saved: %s", top_csv_path)
 
+    # Convert filtered hits to pandas for plotting
+    hits_pd = hits.to_pandas()
+
+    # Generate plots automatically
+    plot_files = plot_del_hits(
+        hits_pd,
+        output_dir=params.get("output", {}).get("directory", "outputs/plots"),
+        top_n=params.get("top_n_per_condition", 10)
+    )
+
+    logger.info("Plots generated: %s", plot_files)
+
     return {
         "df": hits.to_pandas(),
         "top_hits_df": top_hits.to_pandas()
     }
-
-
-
