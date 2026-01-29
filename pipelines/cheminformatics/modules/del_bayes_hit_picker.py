@@ -161,7 +161,7 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
 def del_hit_picker(config: dict, data: dict) -> dict:
     
     params = config.get("del_hit_picker", {})
-    df = data.get("df")  # Bayesian posterior output
+    df = data.get("df")  # Output from Bayes model 
     physchem_df = data.get("physchem_df")  # aggregated physchem data
 
     if df is None or len(df) == 0:
@@ -205,6 +205,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             mask &= df[col].between(low, high)
     hits_df = df[mask].copy()
 
+    # Check if no hits, gracefully fail and warn
     if hits_df.empty:
         logger.warning("[del_hit_picker] No hits found after filtering.")
         
@@ -270,7 +271,6 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             physchem_cols=valid_physchem_cols
         )
 
-    # Convert PosixPath to str in logs
     plot_files_str = {k: str(v) for k, v in plot_files.items()}
     logger.info("[del_hit_picker] Plots generated: %s", plot_files_str)
 

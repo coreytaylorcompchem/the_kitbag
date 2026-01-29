@@ -413,7 +413,7 @@ def streamed_feature_runner(config):
     # --- Determine input type: directory of CSVs or single Parquet ---
     if input_path.is_dir():
         logger.info(f"[streamed_feature_runner] Input is a directory; streaming CSVs from {input_path}")
-        csv_files = sorted(input_path.glob("*.csv"))
+        csv_files = sorted(input_path.rglob("*.csv"))
         for rg_index, csv_file in enumerate(tqdm(csv_files, desc="CSV chunks")):
             if max_row_groups is not None and rg_index >= max_row_groups:
                 logger.info(f"[streamed_feature_runner] Stopping after {max_row_groups} CSV chunk(s) (prototype mode).")
