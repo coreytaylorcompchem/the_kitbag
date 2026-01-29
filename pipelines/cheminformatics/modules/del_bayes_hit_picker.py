@@ -1,5 +1,5 @@
 import duckdb
-import os
+import warnings
 
 import polars as pl
 import pandas as pd
@@ -148,6 +148,9 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         "p_active": p_active[syn_idx],
     })
 
+    # merge physchem columns
+    physchem_cols = [c for c in df.columns if c.endswith("_mean")]
+    summary_df = summary_df.merge(df[["NsynthonID", "condition"] + physchem_cols], on=["NsynthonID", "condition"], how="left")
     return {"df": summary_df, "trace": trace}
 
 @register_task(
@@ -156,12 +159,7 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
     description="Select DEL synthons based on Bayesian posteriors and generate plots."
 )
 def del_hit_picker(config: dict, data: dict) -> dict:
-    import warnings
-    from pathlib import Path
-    from modules.utils.plot_del_hits import plot_del_hits
-    import polars as pl
-    import pandas as pd
-
+    
     params = config.get("del_hit_picker", {})
     df = data.get("df")  # Bayesian posterior output
     physchem_df = data.get("physchem_df")  # aggregated physchem data
@@ -182,7 +180,8 @@ def del_hit_picker(config: dict, data: dict) -> dict:
         # Keep only numeric physchem columns, exclude counts
         physchem_cols = [
             c for c in physchem_df.columns
-            if c not in {"NsynthonID", "condition", "total_count", "n_compounds"} 
+            if c not in {"NsynthonID", "condition", "total_count", "n_compounds",
+                     "beta_mean", "beta_hdi_lower", "beta_hdi_upper", "p_active"} 
             and pd.api.types.is_numeric_dtype(physchem_df[c])
         ]
 
@@ -193,7 +192,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             # Remove any physchem columns that became entirely NaN
             physchem_cols = [c for c in physchem_cols if c in df.columns and df[c].notna().any()]
 
-    # ---------------- Apply Bayesian and physchem filters ----------------
+    # Apply Bayesian and physchem filters 
     posterior_cutoff = params.get("posterior_cutoff", 0.95)
     require_hdi_positive = params.get("require_hdi_positive", True)
     physchem_filters = params.get("physchem_filters", {})
@@ -206,12 +205,29 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             mask &= df[col].between(low, high)
     hits_df = df[mask].copy()
 
-    # ---------------- Sorting ----------------
+    if hits_df.empty:
+        logger.warning("[del_hit_picker] No hits found after filtering.")
+        
+        # Return empty structures, but still in the same format
+        top_hits_df = pd.DataFrame(
+            columns=[
+                "NsynthonID", "top_condition", "top_beta_mean",
+                "top_beta_hdi_lower", "top_beta_hdi_upper", "top_p_active"
+            ]
+        )
+        
+        return {
+            "df": hits_df,          # empty
+            "top_hits_df": top_hits_df,  # empty
+            "plot_files": {}        # no plots
+        }
+
+    # Sorting 
     sort_by = params.get("sort_by", ["p_active", "beta_mean"])
     ascending = params.get("ascending", [False, False])
     hits_df = hits_df.sort_values(by=sort_by, ascending=ascending)
 
-    # ---------------- Top-hit-per-synthon summary ----------------
+    # Top-hit-per-synthon summary 
     top_hits_df = (
         hits_df.sort_values(["p_active", "beta_mean"], ascending=[False, False])
         .groupby("NsynthonID", as_index=False)
@@ -225,7 +241,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
         })
     )
 
-    # ---------------- Save CSVs ----------------
+    # Save CSVs 
     out_dir = Path(params.get("output", {}).get("directory", "outputs/del_hits"))
     out_dir.mkdir(parents=True, exist_ok=True)
     full_csv_path = out_dir / params.get("output", {}).get("filename", "wuxi_del_hits.csv")
@@ -237,7 +253,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     logger.info("[del_hit_picker] Full hits CSV saved: %s", str(full_csv_path))
     logger.info("[del_hit_picker] Top-hit summary CSV saved: %s", str(top_csv_path))
 
-    # ---------------- Generate plots ----------------
+    # Generate plots 
     plot_dir = params.get("output", {}).get("directory", "outputs/plots")
     Path(plot_dir).mkdir(parents=True, exist_ok=True)
 
