@@ -1,9 +1,16 @@
 import random
 from collections import defaultdict
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
+
+from tqdm import tqdm
+
+from itertools import combinations
+import matplotlib.cm as cm
+
 import esm
 from catboost import CatBoostRegressor
 from joblib import Parallel, delayed
@@ -16,31 +23,42 @@ import seaborn as sns
 from matplotlib import cm
 
 from pipeline.task_registry import register_task
-from pipeline.logger import setup_logger
 from modules.utils.plotting import (
     compute_multi_condition_pareto,
     plot_round_radar
 )
+from modules.utils.settings_logs import log_pipeline_config
+
+from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# ---------------------------
-# Task 1: load_seed_dataset
-# ---------------------------
-
 @register_task("load_seed_dataset", category="VHH", description="Load seed sequences and initialize context")
 def load_seed_dataset(config, context):
+
+    log_pipeline_config(config, context)
+
+    # --- Load CSV ---
     df = pd.read_csv(config["csv_path"])
     expected_len = config.get("expected_len", 125)
     df = df[df["sequence"].str.len() == expected_len].reset_index(drop=True)
 
     seeds = df["sequence"].tolist()
     seed_ids = list(range(len(df)))
-
-    # define mutable positions
     seq_len = len(seeds[0])
-    framework_positions = list(range(0, 30)) + list(range(45, 60)) + list(range(67, 95)) + list(range(115, 120))
-    mutable_positions = list(set(range(seq_len)) - set(framework_positions))
+
+    # --- Framework positions from YAML ---
+    framework_ranges = config.get("framework_positions")
+    if not framework_ranges:
+        logger.warning("No framework_positions found in YAML! All positions will be mutable.")
+        framework_ranges = []
+
+    framework_positions = []
+    for start, end in framework_ranges:
+        framework_positions.extend(range(start, end))
+
+    all_positions = set(range(seq_len))
+    mutable_positions = sorted(list(all_positions - set(framework_positions)))
 
     context.update({
         "df_seeds": df,
@@ -48,6 +66,7 @@ def load_seed_dataset(config, context):
         "seed_ids": seed_ids,
         "multi_condition_props": config["multi_condition_props"],
         "mutable_positions": mutable_positions,
+        "framework_positions": framework_positions,
         "current_seeds": seeds.copy(),
         "current_seed_ids": seed_ids.copy(),
         "current_ancestor_ids": df["ancestor_id"].tolist(),
@@ -56,11 +75,12 @@ def load_seed_dataset(config, context):
     })
 
     logger.info(f"Loaded {len(seeds)} seed sequences")
+    logger.info(f"Expected sequence length: {seq_len}")
+    logger.info(f"Framework positions count: {len(framework_positions)}")
+    logger.info(f"Mutable positions count: {len(mutable_positions)}")
+
     return context
 
-# ---------------------------
-# Task 2: load_esm_model
-# ---------------------------
 
 @register_task("load_esm_model", category="VHH", description="Load pretrained ESM model")
 def load_esm_model(config, context):
@@ -82,14 +102,8 @@ def load_esm_model(config, context):
     logger.info(f"Loaded ESM model '{model_name}' on device {device}")
     return context
 
-# ---------------------------
-# Task 3: active_learning_rounds
-# ---------------------------
-
 @register_task("active_learning_rounds", category="VHH", description="Run AL rounds with UMAP and radar plots")
 def active_learning_rounds(config, context):
-    from itertools import combinations
-    import matplotlib.cm as cm
 
     n_rounds = config.get("n_rounds", 3)
     batch_size = config.get("batch_size", 32)
@@ -152,7 +166,7 @@ def active_learning_rounds(config, context):
                 to_compute.append(seq)
                 compute_idx.append(i)
 
-        for i in range(0, len(to_compute), batch_size):
+        for i in tqdm(range(0, len(to_compute), batch_size), desc=f"Embedding batch {round_idx}", leave=False):
             batch_seqs = to_compute[i:i+batch_size]
             data = [("seq", seq) for seq in batch_seqs]
             _, _, batch_tokens = batch_converter(data)
@@ -180,6 +194,8 @@ def active_learning_rounds(config, context):
         X_train_full = esm_embed_cached(df_labeled["sequence"].tolist())
         y_train = df_labeled[multi_condition_props].values
 
+        logger.info(f"Embedding {len(df_labeled)} labeled sequences...")
+
         if pca is None:
             n_samples, _ = X_train_full.shape
             pca_components = min(config.get("n_components", 512), n_samples)
@@ -188,6 +204,9 @@ def active_learning_rounds(config, context):
         X_train_pca = pca.transform(X_train_full)
 
         # --- Train CatBoost per property ---
+
+        logger.info("Training CatBoost models for properties...")
+        
         models = {}
         for i, prop in enumerate(multi_condition_props):
             y_i = y_train[:, i]
@@ -200,6 +219,9 @@ def active_learning_rounds(config, context):
             models[prop] = model
 
         # --- Generate candidates ---
+
+        logger.info(f"Generating candidate mutants for {len(current_seeds)} seeds...")
+
         seed_id_to_ancestor = dict(zip(current_seed_ids, current_ancestor_ids))
         candidate_seqs, candidate_meta = [], []
         for sid, seq in zip(current_seed_ids, current_seeds):
@@ -223,11 +245,17 @@ def active_learning_rounds(config, context):
         X_cand_pca = pca.transform(X_emb)
 
         # --- Predict properties ---
+
+        logger.info(f"Predicting properties for {len(df_candidates)} candidates...")
+
         preds = np.column_stack([model.predict(X_cand_pca) for model in models.values()])
         df_preds = pd.DataFrame(preds, columns=multi_condition_props)
         df_candidates = pd.concat([df_candidates.reset_index(drop=True), df_preds], axis=1)
 
         # --- Pareto and scoring ---
+
+        logger.info("Selecting top candidates based on score and Pareto fronts...")
+
         df_candidates["pareto_flag"] = compute_multi_condition_pareto(df_candidates, multi_condition_props)
         df_candidates["score"] = df_candidates["Tm1 (°C)"] - 0.5 * df_candidates["mut_count"]
 
@@ -257,6 +285,7 @@ def active_learning_rounds(config, context):
         df_selected.to_csv(data_dir / f"round{round_idx}_selected_batch.csv", index=False)
 
         # --- UMAP projection ---
+        
         n_umap_sample = min(1000, len(df_candidates))
         sample_idx = np.random.choice(len(df_candidates), n_umap_sample, replace=False)
         reducer = umap.UMAP(n_components=2,
@@ -282,6 +311,9 @@ def active_learning_rounds(config, context):
                                    for i, anc in enumerate(surviving_ancestors)}
 
         # --- UMAP plot ---
+
+        logger.info("Generating UMAP and radar plots...")
+
         plt.figure(figsize=(9, 7))
         sns.scatterplot(data=df_candidates, x="umap1", y="umap2",
                         color="lightgray", s=25, alpha=0.35, legend=False)
@@ -296,6 +328,12 @@ def active_learning_rounds(config, context):
 
         # --- Radar plot ---
         plot_round_radar(df_candidates, round_idx, plots_dir / f"round{round_idx}_radar.png", multi_condition_props)
+
+        logger.info(f"Round {round_idx} complete.\n")
+
+        logger.info(f"Round {round_idx} stats: median Tm={df_candidates['Tm1 (°C)'].median():.2f}, "
+            f"mean score={df_candidates['score'].mean():.2f}, "
+            f"Pareto count={int(df_candidates['pareto_flag'].sum())}")
 
     # --- Save context ---
     context.update({

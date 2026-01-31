@@ -18,6 +18,11 @@ load_seed_dataset:
     - Heparin rel ret time (%)
     - yield (mg/L)
     - HIC rel ret time (%)
+  framework_positions:
+    - [0, 30]
+    - [45, 60]
+    - [67, 95]
+    - [115, 120]
 
 load_esm_model:
   device: cuda:2
@@ -26,10 +31,11 @@ load_esm_model:
 
 active_learning_rounds:
   n_rounds: 3
-  batch_size: 32
   samples_per_seed: 10
-  max_mutants: 3
   top_candidates_per_round: 10
+  max_mutants: 3
+  batch_size: 32
+  expected_len: 125   # expected VHH sequence length
   min_per_ancestor: 5
   noise_scale: 1.0
 
