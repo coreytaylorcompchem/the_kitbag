@@ -1,27 +1,194 @@
 import importlib
 
 import pandas as pd
+import numpy as np
 
 import torch
 from torch_geometric.loader import DataLoader
 from sklearn.model_selection import train_test_split
 
 from pipeline.task_registry import register_task
+from modules.utils.plotting import plot_label_histograms
 
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_task("load_smiles_dataset", category="ADME")
+# def stratified_balanced_sampling(df, label_col='pIC50', n_bins=20, max_samples_per_bin=500, random_state=42):
+#     """
+#     Stratified sampling to balance dataset by label distribution.
+
+#     Args:
+#         df (pd.DataFrame): DataFrame containing labelled data.
+#         label_col (str): Name of the label column (e.g., 'pIC50').
+#         n_bins (int): Number of bins to discretize the label.
+#         max_samples_per_bin (int): Maximum number of samples to keep per bin.
+#         random_state (int): Random seed for reproducibility.
+
+#     Returns:
+#         pd.DataFrame: Balanced DataFrame sampled from input.
+#     """
+#     np.random.seed(random_state)
+    
+#     bins = np.linspace(df[label_col].min(), df[label_col].max(), n_bins + 1)
+#     df['bin'] = pd.cut(df[label_col], bins=bins, include_lowest=True, labels=False)
+
+#     balanced_indices = []
+
+#     for bin_id in range(n_bins):
+#         bin_indices = df[df['bin'] == bin_id].index.values
+#         n_samples = len(bin_indices)
+
+#         if n_samples == 0:
+#             continue
+        
+#         if n_samples > max_samples_per_bin:
+#             chosen = np.random.choice(bin_indices, max_samples_per_bin, replace=False)
+#         else:
+#             chosen = np.random.choice(bin_indices, max_samples_per_bin, replace=True)
+
+#         balanced_indices.extend(chosen)
+
+#     balanced_df = df.loc[balanced_indices].reset_index(drop=True)
+
+#     balanced_df = balanced_df.drop(columns=['bin'])
+
+#     return balanced_df
+
+def quantile_balanced_sampling(
+    df,
+    label_col="pIC50",
+    n_bins=20,
+    max_samples_per_bin=None,
+    random_state=42,
+):
+    rng = np.random.default_rng(random_state)
+
+    df = df.copy()
+    df["bin"] = pd.qcut(df[label_col], q=n_bins, labels=False, duplicates="drop")
+
+    balanced_idx = []
+
+    for bin_id in df["bin"].unique():
+        bin_idx = df[df["bin"] == bin_id].index.to_numpy()
+
+        if max_samples_per_bin:
+            n_keep = min(len(bin_idx), max_samples_per_bin)
+            chosen = rng.choice(bin_idx, size=n_keep, replace=False)
+        else:
+            chosen = bin_idx
+
+        balanced_idx.extend(chosen)
+
+    return df.loc[balanced_idx].drop(columns="bin").reset_index(drop=True)
+
+
+def stratified_balanced_sampling(
+    df,
+    label_col="pIC50",
+    n_bins=20,
+    max_samples_per_bin=500,
+    random_state=42,
+):
+    """
+    Stratified downsampling to balance dataset by label distribution
+    WITHOUT duplication and WITHOUT increasing dataset size.
+    """
+
+    rng = np.random.default_rng(random_state)
+
+    # Create bins
+    bins = np.linspace(df[label_col].min(), df[label_col].max(), n_bins + 1)
+    df = df.copy()
+    df["bin"] = pd.cut(df[label_col], bins=bins, include_lowest=True, labels=False)
+
+    balanced_indices = []
+
+    for bin_id in range(n_bins):
+        bin_indices = df[df["bin"] == bin_id].index.to_numpy()
+
+        if len(bin_indices) == 0:
+            continue
+
+        # Downsample only
+        n_keep = min(len(bin_indices), max_samples_per_bin)
+        chosen = rng.choice(bin_indices, size=n_keep, replace=False)
+
+        balanced_indices.extend(chosen)
+
+    balanced_df = df.loc[balanced_indices].drop(columns=["bin"]).reset_index(drop=True)
+
+    return balanced_df
+
+@register_task("load_smiles_dataset", category="ADME", description="Load dataset with sampling.")
 def load_smiles_dataset(config, context):
     csv_path = config["csv_path"]
+    label_col = config.get("label_col", "pIC50")
 
     df = pd.read_csv(csv_path)
+    df_before = df.copy()
+
+    logger.info(f"Dataset size before sampling: {len(df)}")
+
+    sampling_cfg = config.get("sampling")
+
+    if sampling_cfg:
+        sample_type = sampling_cfg.get("sample_type")
+        n_bins = sampling_cfg.get("n_bins", 20)
+        max_samples_per_bin = sampling_cfg.get("max_samples_per_bin", 500)
+        random_state = sampling_cfg.get("random_state", 42)
+
+        if sample_type == "balanced":
+            logger.info(
+                f"Applying stratified balanced sampling: "
+                f"{n_bins} bins, max {max_samples_per_bin} per bin"
+            )
+            df = stratified_balanced_sampling(
+                df,
+                label_col=label_col,
+                n_bins=n_bins,
+                max_samples_per_bin=max_samples_per_bin,
+                random_state=random_state,
+            )
+
+        elif sample_type == "quantile":
+            logger.info(
+                f"Applying quantile balanced sampling: "
+                f"{n_bins} bins, max {max_samples_per_bin} per bin"
+            )
+            df = quantile_balanced_sampling(
+                df,
+                label_col=label_col,
+                n_bins=n_bins,
+                max_samples_per_bin=max_samples_per_bin,
+                random_state=random_state,
+            )
+
+        else:
+            logger.info("Sampling block present but no valid sample_type specified")
+
+        # Optional diagnostic plot
+        if sampling_cfg.get("plot_distributions", False):
+            plot_dir = sampling_cfg.get("plot_dir", "outputs/cyp3a4/sampling")
+            plot_path = plot_label_histograms(
+                df_before,
+                df,
+                label_col=label_col,
+                out_dir=plot_dir,
+                title_suffix=f" ({sample_type})",
+            )
+            logger.info(f"Saved label distribution plot to {plot_path}")
+
+    else:
+        logger.info("No sampling configuration found; using full dataset")
+
     context["dataframe"] = df
+    logger.info(f"Dataset size after sampling: {len(df)}")
 
     return {"dataframe": df}
 
-@register_task("featurise_smiles", category="ADME")
+
+@register_task("featurise_smiles", category="ADME", description="Featurise SMILES for graph-based models.")
 def featurise_smiles(config, context):
     df = context["dataframe"]
 
@@ -51,7 +218,7 @@ def featurise_smiles(config, context):
 
     return context
 
-@register_task("split_data", category="ADME")
+@register_task("split_data", category="ADME", description="Perform train/test/val splits.")
 def split_data(config, context):
     graphs = context["graphs"]
 
@@ -77,8 +244,14 @@ def split_data(config, context):
         "val_loader": val_loader
     }
 
-@register_task("load_model_spec", category="ADME")
-def load_model_spec(config, context):
+@register_task("load_adme_model_spec", category="ADME", description="Instantiate Pytorch ADME models.")
+def load_adme_model_spec(config, context):
+    if "module" not in config or "class" not in config:
+        raise KeyError(
+            "load_adme_model_spec requires 'module' and 'class' in YAML config. "
+            "Check that the task name matches the YAML block."
+        )
+    
     module_path = config["module"]
     class_name = config["class"]
 
@@ -88,7 +261,7 @@ def load_model_spec(config, context):
     context["model_class"] = ModelClass
     return {"model_class": ModelClass}
 
-@register_task("train_adme_model", category="ADME")
+@register_task("train_adme_model", category="ADME", description="Train Pytorch model.")
 def train_adme_model(config, context):
     trainer_cfg = config["trainer"]
     module = importlib.import_module(trainer_cfg["module"])
@@ -112,7 +285,7 @@ def train_adme_model(config, context):
 
     return context
 
-@register_task("evaluate_model", category="ADME")
+@register_task("evaluate_adme_model", category="ADME", description="Evaluate trained model.")
 def evaluate_model(config, context):
     """
     Generic evaluation task.

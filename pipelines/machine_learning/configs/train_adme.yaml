@@ -4,12 +4,19 @@ workflow:
   - load_smiles_dataset
   - featurise_smiles
   - split_data
-  - load_model_spec
+  - load_adme_model_spec
   - train_adme_model
-  - evaluate_model
+  - evaluate_adme_model
 
 load_smiles_dataset:
   csv_path: inputs/cyp_3a4_chembl.csv
+  ### options for sampling, if you need them
+  # sampling: 
+  #   sample_type: balanced | quantil
+  #   n_bins: 20
+  #   max_samples_per_bin: 500
+    # plot_distributions: true
+    # plot_dir: outputs/cyp3a4/sampling
 
 featurise_smiles:
   featuriser:
@@ -22,7 +29,7 @@ split_data:
   val_size: 0.2
   batch_size: 32
 
-load_model_spec:
+load_adme_model_spec:
   module: models.adme.cyp3a4.model
   class: GINRegressor
 
@@ -36,13 +43,20 @@ train_adme_model:
   patience: 10
   val_fraction: 0.2
   random_seed: 42
+  loss:
+    type: weighted_mse
+    n_bins: 50
+    min_weight: 0.3
+    max_weight: 5.0
   loss_curve_dir: outputs/cyp3a4/loss_curves 
   model_path: outputs/cyp3a4/models/cyp3a4_best.pth
 
   param_grid:
+    # lr: [0.001, 0.0005, 0.0001]
+    # hidden_dim: [64, 128, 256]
     lr: [0.001]
     hidden_dim: [64, 128]
 
-evaluate_model:
+evaluate_adme_model:
   eval_plot_dir: outputs/cyp3a4/eval
   save_plots: true

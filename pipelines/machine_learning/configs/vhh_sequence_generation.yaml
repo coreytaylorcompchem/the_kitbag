@@ -1,0 +1,69 @@
+workflow_name: vhh_active_learning
+
+workflow:
+  - load_seed_dataset
+  - load_esm_model
+  - active_learning_rounds
+
+# ---------------------------
+# Task configs
+# ---------------------------
+
+load_seed_dataset:
+  csv_path: data_vhh/2026-01-30_VHHSeqsPhysChemEC50.csv
+  expected_len: 125
+  multi_condition_props:
+    - Tm1 (°C)
+    - Pre-peak Sec cats
+    - Heparin rel ret time (%)
+    - yield (mg/L)
+    - HIC rel ret time (%)
+
+load_esm_model:
+  device: cuda:2
+  pretrained_model: esm1b_t33_650M_UR50S
+  batch_size: 32
+
+active_learning_rounds:
+  n_rounds: 3
+  batch_size: 32
+  samples_per_seed: 10
+  max_mutants: 3
+  top_candidates_per_round: 10
+  min_per_ancestor: 5
+  noise_scale: 1.0
+
+  # CatBoost training
+  catboost_params:
+    loss_function: RMSE
+    task_type: GPU
+    gpu_ram_part: 0.9
+    devices: "0"
+    iterations: 400
+    depth: 6
+    max_ctr_complexity: 1
+    learning_rate: 0.05
+    subsample: 0.8
+    random_strength: 1.0
+    l2_leaf_reg: 3.0
+    bootstrap_type: Bernoulli
+    grow_policy: SymmetricTree
+    verbose: False
+    allow_writing_files: False
+    gpu_cat_features_storage: GpuRam
+
+  early_stopping_rounds: 50
+  val_fraction: 0.1
+
+  # PCA
+  n_components: 512
+  pca_seed: 42
+
+  # UMAP
+  umap_n_neighbors: 15
+  umap_min_dist: 0.1
+  umap_n_epochs: 50
+
+  # Output directories
+  data_dir: data_vhh
+  plots_dir: plots_vhh
