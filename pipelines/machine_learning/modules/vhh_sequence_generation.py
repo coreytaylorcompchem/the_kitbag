@@ -25,13 +25,39 @@ from matplotlib import cm
 from pipeline.task_registry import register_task
 from modules.utils.plotting import (
     compute_multi_condition_pareto,
-    plot_round_radar
+    plot_round_radar,
+    generate_summary_plots,
+    # get_cdr_regions_from_mutable,
 )
-from modules.utils.settings_logs import log_pipeline_config
 
+from modules.utils.settings_logs import log_pipeline_config
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+# def get_cdr_regions_from_mutable(mutable_positions):
+#     """
+#     Converts a sorted list of mutable positions into contiguous regions.
+#     Returns dict with keys CDR1, CDR2, ... and values (start, end)
+#     """
+#     if not mutable_positions:
+#         return {}
+
+#     mutable_positions = sorted(mutable_positions)
+#     regions = []
+#     start = mutable_positions[0]
+#     prev = mutable_positions[0]
+
+#     for pos in mutable_positions[1:]:
+#         if pos != prev + 1:
+#             regions.append((start, prev))
+#             start = pos
+#         prev = pos
+#     regions.append((start, prev))
+
+#     # Give names automatically: CDR1, CDR2, ...
+#     cdr_regions = {f"CDR{i+1}": (s, e) for i, (s, e) in enumerate(regions)}
+#     return cdr_regions
 
 @register_task("load_seed_dataset", category="VHH", description="Load seed sequences and initialize context")
 def load_seed_dataset(config, context):
@@ -47,18 +73,36 @@ def load_seed_dataset(config, context):
     seed_ids = list(range(len(df)))
     seq_len = len(seeds[0])
 
+    # --- CDR positions from YAML ---
+
+    cdr_regions = config.get("cdr_regions")
+    if cdr_regions is None:
+        raise ValueError("cdr_regions must be explicitly defined in YAML for VHHs")
+
+    if len(cdr_regions) != 3:
+        raise ValueError("Expected exactly 3 CDR regions for VHHs (CDR1–3)")
+
     # --- Framework positions from YAML ---
     framework_ranges = config.get("framework_positions")
     if not framework_ranges:
         logger.warning("No framework_positions found in YAML! All positions will be mutable.")
         framework_ranges = []
 
-    framework_positions = []
-    for start, end in framework_ranges:
-        framework_positions.extend(range(start, end))
+    # Keep the original ranges for plotting
+    framework_ranges_tuples = [(start, end) for start, end in framework_ranges]
 
-    all_positions = set(range(seq_len))
-    mutable_positions = sorted(list(all_positions - set(framework_positions)))
+    # Flatten for mutable positions
+    framework_positions_flat = []
+    for start, end in framework_ranges_tuples:
+        framework_positions_flat.extend(range(start, end))
+
+    cdr_regions = config["cdr_regions"]
+
+    mutable_positions = []
+    for start, end in cdr_regions.values():
+        mutable_positions.extend(range(start, end))
+
+    mutable_positions = sorted(set(mutable_positions))
 
     context.update({
         "df_seeds": df,
@@ -66,7 +110,8 @@ def load_seed_dataset(config, context):
         "seed_ids": seed_ids,
         "multi_condition_props": config["multi_condition_props"],
         "mutable_positions": mutable_positions,
-        "framework_positions": framework_positions,
+        "cdr_regions": cdr_regions,
+        "framework_positions": framework_ranges_tuples,
         "current_seeds": seeds.copy(),
         "current_seed_ids": seed_ids.copy(),
         "current_ancestor_ids": df["ancestor_id"].tolist(),
@@ -76,7 +121,7 @@ def load_seed_dataset(config, context):
 
     logger.info(f"Loaded {len(seeds)} seed sequences")
     logger.info(f"Expected sequence length: {seq_len}")
-    logger.info(f"Framework positions count: {len(framework_positions)}")
+    logger.info(f"Framework positions count: {len(framework_positions_flat)}")
     logger.info(f"Mutable positions count: {len(mutable_positions)}")
 
     return context
@@ -230,6 +275,45 @@ def active_learning_rounds(config, context):
             candidate_meta.extend([{"seed_id": sid, "ancestor_id": seed_id_to_ancestor[sid], "parent_round": round_idx} for _ in muts])
         df_candidates = pd.DataFrame(candidate_meta)
         df_candidates["sequence"] = candidate_seqs
+        df_candidates["round"] = round_idx
+
+        # --- VERIFY CDR-ONLY MUTATIONS ---
+        # # Map seed_id -> parent sequence
+        seed_id_to_parent = dict(zip(current_seed_ids, current_seeds))
+
+        # for seq, sid in zip(candidate_seqs, df_candidates["seed_id"]):
+        #     parent = seed_id_to_parent[sid]
+        #     for i, (a, b) in enumerate(zip(seq, parent)):
+        #         if a != b and i not in mutable_positions:
+        #             raise RuntimeError(
+        #                 f"Illegal mutation outside CDR at position {i} "
+        #                 f"(ancestor_id={seed_id_to_ancestor[sid]}, seq={seq})"
+        #             )
+
+        # --- VERIFY CDR-ONLY MUTATIONS (vectorized) ---
+        # Build arrays: candidates × sequence length
+        candidate_array = np.array([list(seq) for seq in candidate_seqs])
+        parent_array = np.array([list(seed_id_to_parent[sid]) for sid in df_candidates["seed_id"]])
+
+        # Boolean mask: True where candidate differs from parent
+        mut_mask = candidate_array != parent_array
+
+        # Boolean mask: True where mutation is illegal (outside mutable_positions/CDRs)
+        allowed_mask = np.zeros(candidate_array.shape[1], dtype=bool)
+        allowed_mask[mutable_positions] = True
+        illegal_mut_mask = mut_mask & (~allowed_mask)
+
+        # Check if any illegal mutation exists
+        illegal_positions = np.where(illegal_mut_mask)
+        if illegal_positions[0].size > 0:
+            idx = illegal_positions[0][0]
+            pos = illegal_positions[1][0]
+            sid = df_candidates.iloc[idx]["seed_id"]
+            seq = candidate_seqs[idx]
+            raise RuntimeError(
+                f"Illegal mutation outside CDR at position {pos} "
+                f"(ancestor_id={seed_id_to_ancestor[sid]}, seq={seq})"
+            )
 
         # --- Mutation counts ---
         seed_enc = {sid: np.array([aa_to_int[aa] for aa in s]) for sid, s in zip(current_seed_ids, current_seeds)}
@@ -268,6 +352,7 @@ def active_learning_rounds(config, context):
             filler = df_candidates.drop(df_selected.index).sort_values("score", ascending=False).head(remaining)
             df_selected = pd.concat([df_selected, filler])
         df_selected = df_selected.sort_values("score", ascending=False).head(top_k)
+        df_selected["round"] = round_idx
 
         # --- Update seeds for next round ---
         current_seeds = df_selected["sequence"].tolist()
@@ -282,6 +367,9 @@ def active_learning_rounds(config, context):
 
         # --- Save CSVs ---
         df_candidates.to_csv(data_dir / f"round{round_idx}_candidates.csv", index=False)
+        df_selected.to_csv(data_dir / f"round{round_idx}_selected_batch.csv", index=False)
+
+        df_selected["round"] = round_idx
         df_selected.to_csv(data_dir / f"round{round_idx}_selected_batch.csv", index=False)
 
         # --- UMAP projection ---
@@ -330,11 +418,17 @@ def active_learning_rounds(config, context):
         plot_round_radar(df_candidates, round_idx, plots_dir / f"round{round_idx}_radar.png", multi_condition_props)
 
         logger.info(f"Round {round_idx} complete.\n")
-
         logger.info(f"Round {round_idx} stats: median Tm={df_candidates['Tm1 (°C)'].median():.2f}, "
             f"mean score={df_candidates['score'].mean():.2f}, "
             f"Pareto count={int(df_candidates['pareto_flag'].sum())}")
-
+        
+        # --- Append round stats for summary plots ---
+        context["round_stats"].append({
+            "round": round_idx,
+            "median_Tm": df_candidates["Tm1 (°C)"].median(),
+            "mean_score": df_candidates["score"].mean(),
+            "pareto_count": int(df_candidates["pareto_flag"].sum())
+        })
     # --- Save context ---
     context.update({
         "df_labeled": df_labeled,
@@ -344,6 +438,37 @@ def active_learning_rounds(config, context):
         "esm_cache": esm_cache,
         "pca": pca
     })
+
+    # --- Summary plots and CSVs ---
+
+    logger.info("Generating summary plots and ancestor prioritisation CSV...")
+
+    # cdr_regions = get_cdr_regions_from_mutable(context["mutable_positions"])
+    cdr_regions = context["cdr_regions"]
+
+    generate_summary_plots(
+        df_all=pd.concat(
+            [pd.read_csv(data_dir / f"round{r}_candidates.csv")
+            for r in range(1, n_rounds + 1)],
+            ignore_index=True
+        ),
+        centroid_history=centroid_history,
+        ancestor_colour_map=ancestor_colour_map,
+        context=context,
+        data_dir=data_dir,
+        plots_dir=plots_dir,
+        ancestor_to_seq=dict(zip(
+            context["df_seeds"]["ancestor_id"],
+            context["df_seeds"]["sequence"]
+        )),
+        aa_to_int={aa: i for i, aa in enumerate("ACDEFGHIKLMNPQRSTVWY")},
+        cdr_regions=cdr_regions,                       # ✅ explicit
+        framework_positions=context["framework_positions"],
+        max_variants=config.get("max_variants_per_heatmap", 150),
+    )
+
+    logger.info("Summary plots, heatmaps, and CSVs generation complete")
+
     logger.info("Active learning rounds complete")
     return context
 

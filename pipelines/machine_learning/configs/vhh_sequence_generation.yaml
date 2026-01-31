@@ -18,6 +18,10 @@ load_seed_dataset:
     - Heparin rel ret time (%)
     - yield (mg/L)
     - HIC rel ret time (%)
+  cdr_regions:
+    CDR1: [30, 38]
+    CDR2: [56, 65]
+    CDR3: [95, 115]
   framework_positions:
     - [0, 30]
     - [45, 60]
@@ -30,7 +34,7 @@ load_esm_model:
   batch_size: 32
 
 active_learning_rounds:
-  n_rounds: 3
+  n_rounds: 2
   samples_per_seed: 10
   top_candidates_per_round: 10
   max_mutants: 3
@@ -71,5 +75,5 @@ active_learning_rounds:
   umap_n_epochs: 50
 
   # Output directories
-  data_dir: data_vhh
-  plots_dir: plots_vhh
+  data_dir: outputs
+  plots_dir: outputs/plots_vhh
