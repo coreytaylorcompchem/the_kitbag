@@ -29,8 +29,9 @@ from modules.utils.plotting import (
     generate_summary_plots,
     # get_cdr_regions_from_mutable,
 )
-
 from modules.utils.settings_logs import log_pipeline_config
+from modules.utils.regression_eval import save_evaluation, evaluate_with_bootstrap
+
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
@@ -263,6 +264,33 @@ def active_learning_rounds(config, context):
                       early_stopping_rounds=config.get("early_stopping_rounds", 50), verbose=False)
             models[prop] = model
 
+        # eval
+        
+        eval_dir = plots_dir / "evaluation" / f"round{round_idx}"
+
+        df_eval = context["df_seeds"][["sequence", "ancestor_id"] + multi_condition_props]
+
+        eval_result = evaluate_with_bootstrap(
+            models=models,
+            pca=pca,
+            embed_fn=esm_embed_cached,
+            df_eval=df_eval,
+            properties=multi_condition_props,
+            n_boot=config.get("eval_bootstrap", 500)
+        )
+
+        save_evaluation(eval_result, eval_dir)
+
+        logger.info(
+            f"[Eval R{round_idx}] "
+            + ", ".join(
+                f"{p}: r={eval_result.metrics[p]['pearson'].mean:.2f} "
+                f"[{eval_result.metrics[p]['pearson'].low:.2f}, "
+                f"{eval_result.metrics[p]['pearson'].high:.2f}]"
+                for p in eval_result.metrics
+            )
+        )
+        
         # --- Generate candidates ---
 
         logger.info(f"Generating candidate mutants for {len(current_seeds)} seeds...")
