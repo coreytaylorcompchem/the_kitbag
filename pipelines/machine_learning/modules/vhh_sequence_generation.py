@@ -27,10 +27,12 @@ from modules.utils.plotting import (
     compute_multi_condition_pareto,
     plot_round_radar,
     generate_summary_plots,
+    plot_learning_curves_per_property,
     # get_cdr_regions_from_mutable,
 )
 from modules.utils.settings_logs import log_pipeline_config
-from modules.utils.regression_eval import save_evaluation, evaluate_with_bootstrap
+from modules.utils.eval_regression import save_evaluation, evaluate_with_bootstrap
+from modules.utils.eval_roundwise import run_roundwise_evaluation
 
 from pipeline.logger import setup_logger
 
@@ -490,9 +492,39 @@ def active_learning_rounds(config, context):
             context["df_seeds"]["sequence"]
         )),
         aa_to_int={aa: i for i, aa in enumerate("ACDEFGHIKLMNPQRSTVWY")},
-        cdr_regions=cdr_regions,                       # ✅ explicit
+        cdr_regions=cdr_regions,
         framework_positions=context["framework_positions"],
         max_variants=config.get("max_variants_per_heatmap", 150),
+    )
+
+    # ============================================================
+    # Final evaluation + executive summary
+    # ============================================================
+
+    logger.info("Running round-wise evaluation with bootstrapping...")
+
+    df_all_rounds = pd.concat(
+        [pd.read_csv(data_dir / f"round{r}_candidates.csv")
+        for r in range(1, n_rounds + 1)],
+        ignore_index=True
+    )
+
+    eval_dir = plots_dir / "evaluation"
+
+    df_metrics = run_roundwise_evaluation(
+        models=models,
+        pca=pca,
+        embed_fn=esm_embed_cached,
+        df_all=df_all_rounds,
+        properties=multi_condition_props,
+        out_dir=eval_dir,
+        n_boot=500,
+        min_n=20,
+    )
+
+    plot_learning_curves_per_property(
+        df_metrics,
+        out_path=eval_dir / "executive_learning_curves.png"
     )
 
     logger.info("Summary plots, heatmaps, and CSVs generation complete")

@@ -736,3 +736,68 @@ def plot_mutation_entropy_track_for_ancestor(
     plt.savefig(save_path, dpi=150)
     plt.close()
     return save_path
+
+def plot_learning_curves_per_property(df_metrics, out_path):
+    """
+    Creates executive summary:
+    Rows = properties
+    Cols = [Train Spearman | Train RMSE | Future Spearman]
+    """
+    properties = sorted(df_metrics["property"].unique())
+    n_props = len(properties)
+
+    fig, axes = plt.subplots(
+        n_props, 3,
+        figsize=(15, 4 * n_props),
+        sharex=True
+    )
+
+    if n_props == 1:
+        axes = axes.reshape(1, -1)
+
+    for i, prop in enumerate(properties):
+        dfp = df_metrics[df_metrics["property"] == prop]
+
+        # ---- Train Spearman ----
+        ax = axes[i, 0]
+        ax.plot(dfp["round"], dfp["train_spearman"], marker="o")
+        ax.fill_between(
+            dfp["round"],
+            dfp["train_spearman_low"],
+            dfp["train_spearman_high"],
+            alpha=0.25
+        )
+        ax.set_ylim(-1, 1)
+        ax.set_title(f"{prop}\nTrain Spearman")
+        ax.axhline(0, color="gray", linestyle="--")
+
+        # ---- Train RMSE ----
+        ax = axes[i, 1]
+        ax.plot(dfp["round"], dfp["train_rmse"], marker="o")
+        ax.fill_between(
+            dfp["round"],
+            dfp["train_rmse_low"],
+            dfp["train_rmse_high"],
+            alpha=0.25
+        )
+        ax.set_title(f"{prop}\nTrain RMSE")
+
+        # ---- Future Spearman ----
+        ax = axes[i, 2]
+        ax.plot(dfp["round"], dfp["future_spearman"], marker="o")
+        ax.fill_between(
+            dfp["round"],
+            dfp["future_spearman_low"],
+            dfp["future_spearman_high"],
+            alpha=0.25
+        )
+        ax.set_ylim(-1, 1)
+        ax.set_title(f"{prop}\nFuture-only Spearman")
+        ax.axhline(0, color="gray", linestyle="--")
+
+    for ax in axes[-1, :]:
+        ax.set_xlabel("Active learning round")
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
