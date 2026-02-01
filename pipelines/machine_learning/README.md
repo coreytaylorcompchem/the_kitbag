@@ -33,20 +33,32 @@ If the calculation runs correctly, you should see output (`log.log`) and a `outp
 
 ```
 Available Tasks:
+  [ADME]:
+    - evaluate_adme_model: Evaluate trained model.
+    - featurise_smiles: Featurise SMILES for graph-based models.
+    - load_adme_model_spec: Instantiate Pytorch ADME models.
+    - load_smiles_dataset: Load dataset with sampling.
+    - split_data: Perform train/test/val splits.
+    - train_adme_model: Train Pytorch model.
   [Molecular generation]:
-    - build_model: 
+    - build_model:
     - evaluate_molecular_generation: Plot training history and evaluation metrics.
-    - load_preprocess_standardise_data: 
+    - load_preprocess_standardise_data:
     - split_and_create_dataloaders: Create train/val dataloaders for SMILES transformer training.
-    - train_molecular_generation: Train SMILES Transformer model.
+    - train_molecular_generation: Train SMILES Transformer model using configuration-driven hyperparameters.
   [Pose ranker]:
     - evaluate_model: Evaluate trained model stats and plots.
     - load_model_spec: Load Pose Ranker model spec.
     - load_targets_prepare_graphs: Load MD trajs and parameterise as graphs.
     - prepare_dataloaders: Normalise labels and create train/val DataLoaders
     - train_pose_ranker: Train Pose Ranker model with grid search.
+  [VHH generation]:
+    - active_learning_rounds: Run AL rounds with UMAP and radar plots
+    - load_esm_model: Load pretrained ESM model
+    - load_seed_dataset: Load seed sequences and initialize context
 Available Workflows:
  - train_model: Train and evaluate specified model
+ - vhh_active_learning: Run VHH generation active learning workflow
 ```
 
 If you want to register new workflows, you'll also need to do so with metadata to describe what it does.

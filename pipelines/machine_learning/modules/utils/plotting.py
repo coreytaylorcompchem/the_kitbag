@@ -143,135 +143,6 @@ def get_cdr_regions_from_mutable(mutable_positions):
     cdr_regions = {f"CDR{i+1}": (s, e) for i, (s, e) in enumerate(regions)}
     return cdr_regions
 
-# def generate_summary_plots(
-#     df_all,
-#     centroid_history,
-#     ancestor_colour_map,
-#     context,
-#     data_dir,
-#     plots_dir,
-#     ancestor_to_seq,
-#     aa_to_int,
-#     cdr_regions,
-#     framework_positions=None,
-#     max_variants=150,
-# ):
-
-#     logger.info("Generating summary plots and ancestor prioritisation CSV...")
-
-#     # ------------------------------------------------------------------
-#     # 1. Centroid trajectories (UNCHANGED)
-#     # ------------------------------------------------------------------
-#     plt.figure(figsize=(8, 7))
-#     for ancestor_id, history in centroid_history.items():
-#         if len(history) < 2:
-#             continue
-#         hx = [h["umap1"] for h in history]
-#         hy = [h["umap2"] for h in history]
-#         rounds = [h["round"] for h in history]
-#         plt.plot(hx, hy, marker="o", linewidth=2, alpha=0.9,
-#                  color=ancestor_colour_map[ancestor_id], label=f"Ancestor {ancestor_id}")
-#         plt.scatter(hx[-1], hy[-1], s=140, edgecolor="black", zorder=5,
-#                     color=ancestor_colour_map[ancestor_id])
-#         plt.text(hx[-1], hy[-1], f"R{rounds[-1]}", fontsize=9)
-
-#     plt.title("Pareto Centroid Trajectories Across Rounds")
-#     plt.xlabel("UMAP1")
-#     plt.ylabel("UMAP2")
-#     plt.legend(title="Ancestor ID", bbox_to_anchor=(1.05, 1))
-#     plt.tight_layout()
-#     plt.savefig(plots_dir / "ancestor_centroid_trajectories.png", dpi=150)
-#     plt.close()
-
-#     # ------------------------------------------------------------------
-#     # 2. Ancestor prioritisation CSV (UNCHANGED)
-#     # ------------------------------------------------------------------
-#     n_rounds = context.get("n_rounds", df_all["round"].max())
-
-#     ancestor_summary = (
-#         df_all
-#         .groupby("ancestor_id")
-#         .agg(
-#             total_descendants=("sequence", "count"),
-#             pareto_rate=("pareto_flag", "mean"),
-#             best_score=("score", "max"),
-#             mean_score=("score", "mean"),
-#             max_mutations=("mut_count", "max"),
-#             survived_rounds=("round", "max"),
-#         )
-#         .reset_index()
-#         .sort_values("best_score", ascending=False)
-#     )
-#     ancestor_summary.to_csv(
-#         data_dir / "ancestor_prioritisation_summary.csv",
-#         index=False
-#     )
-
-#     logger.info("Ancestor prioritisation summary saved")
-
-#     # ------------------------------------------------------------------
-#     # 3. Round-over-round performance (UNCHANGED)
-#     # ------------------------------------------------------------------
-#     df_stats = pd.DataFrame(context["round_stats"])
-
-#     plt.figure(figsize=(8, 5))
-#     plt.plot(df_stats["round"], df_stats["median_Tm"], marker="o")
-#     plt.xlabel("Round")
-#     plt.ylabel("Median Tm (°C)")
-#     plt.title("Round-over-round property improvement")
-#     plt.tight_layout()
-#     plt.savefig(plots_dir / "round_over_round_Tm.png", dpi=150)
-#     plt.close()
-
-#     # ------------------------------------------------------------------
-#     # 4. Per-ancestor plot families (NEW + CLEAN)
-#     # ------------------------------------------------------------------
-#     residue_dir   = plots_dir / "ancestor_residue_heatmaps"
-#     chemistry_dir = plots_dir / "ancestor_chemistry_heatmaps"
-#     entropy_dir   = plots_dir / "ancestor_entropy_tracks"
-
-#     for d in [residue_dir, chemistry_dir, entropy_dir]:
-#         d.mkdir(parents=True, exist_ok=True)
-
-#     ancestors = sorted(df_all["ancestor_id"].unique())
-
-#     logger.info(f"Generating per-ancestor plots for {len(ancestors)} ancestors")
-
-#     for anc in tqdm(ancestors, desc="Ancestor plots"):
-
-#         # ---- Residue identity heatmap ----
-#         plot_residue_annotated_heatmap(
-#             df_all=df_all,
-#             ancestor_to_seq=ancestor_to_seq,
-#             ancestor_id=anc,
-#             aa_to_int=aa_to_int,
-#             cdr_regions=cdr_regions,
-#             framework_positions=framework_positions,
-#             save_path=residue_dir / f"ancestor_{anc}_residue_heatmap.png"
-#         )
-
-#         # ---- Chemistry heatmap ----
-#         plot_chemistry_annotated_heatmap(
-#             df_all=df_all,
-#             ancestor_id=anc,
-#             ancestor_to_seq=ancestor_to_seq,
-#             cdr_regions=cdr_regions,
-#             framework_positions=framework_positions,
-#             save_path=chemistry_dir / f"ancestor_{anc}_chemistry_heatmap.png"
-#         )
-
-#         # ---- Mutation entropy track ----
-#         plot_mutation_entropy_track_for_ancestor(
-#             df_all=df_all,
-#             ancestor_id=anc,
-#             ancestor_to_seq=ancestor_to_seq,
-#             cdr_regions=cdr_regions,
-#             framework_positions=framework_positions,
-#             save_dir=entropy_dir
-#         )
-
-#     logger.info("All summary plots and ancestor visualisations complete")
-
 def generate_summary_plots(
     df_all,
     centroid_history,
@@ -351,7 +222,7 @@ def generate_summary_plots(
     plt.close()
 
     # ------------------------------------------------------------------
-    # 4. Per-ancestor plot families (parallelized)
+    # 4. Per-ancestor plot families
     # ------------------------------------------------------------------
     residue_dir   = plots_dir / "ancestor_residue_heatmaps"
     chemistry_dir = plots_dir / "ancestor_chemistry_heatmaps"
@@ -364,7 +235,7 @@ def generate_summary_plots(
     logger.info(f"Generating per-ancestor plots for {len(ancestors)} ancestors using {n_jobs if n_jobs != -1 else 'all'} cores")
 
     def plot_ancestor(anc):
-    # ---- Residue identity heatmap ----
+    # Residue identity heatmap 
         plot_residue_annotated_heatmap(
             df_all=df_all,
             ancestor_to_seq=ancestor_to_seq,
@@ -376,7 +247,7 @@ def generate_summary_plots(
             save_path=residue_dir / f"ancestor_{anc}_residue_heatmap.png"
         )
 
-        # ---- Chemistry heatmap ----
+        # Chemistry heatmap
         plot_chemistry_annotated_heatmap(
             df_all=df_all,
             ancestor_to_seq=ancestor_to_seq,
@@ -387,7 +258,7 @@ def generate_summary_plots(
             save_path=chemistry_dir / f"ancestor_{anc}_chemistry_heatmap.png"
         )
 
-        # ---- Mutation entropy track ----
+        # Mutation entropy track
         plot_mutation_entropy_track_for_ancestor(
             df_all=df_all,
             ancestor_id=anc,
@@ -398,7 +269,6 @@ def generate_summary_plots(
             save_dir=entropy_dir
         )
 
-    # --- Prepare directories ---
     residue_dir   = plots_dir / "ancestor_residue_heatmaps"
     chemistry_dir = plots_dir / "ancestor_chemistry_heatmaps"
     entropy_dir   = plots_dir / "ancestor_entropy_tracks"
@@ -407,7 +277,7 @@ def generate_summary_plots(
 
     ancestors = sorted(df_all["ancestor_id"].unique())
 
-    # --- Parallel plotting with progress bar ---
+    # Plotting (parallel)
     with tqdm_joblib(tqdm(desc="Ancestor plots", total=len(ancestors))) as progress_bar:
         Parallel(n_jobs=-1)(
             delayed(plot_ancestor)(anc)
@@ -544,11 +414,11 @@ def chemistry_matrix_against_parent(parent_seq, seqs):
     return np.array(mat)
 
 chem_colors = {
-    "hydrophobic": "#FDB462",  # orange
-    "polar (S, T, N, Q)": "#80B1D3",        # blue
-    "positive (K, R, H)": "#FB8072",     # red
-    "negative (D, E)": "#B3DE69",     # green
-    "Other (C, G, P)": "#BC80BD",      # purple
+    "hydrophobic": "#FDB462", 
+    "polar (S, T, N, Q)": "#80B1D3",
+    "positive (K, R, H)": "#FB8072",
+    "negative (D, E)": "#B3DE69",
+    "Other (C, G, P)": "#BC80BD",
 }
 
 chem_cmap = ListedColormap(
@@ -586,7 +456,7 @@ def plot_chemistry_annotated_heatmap(
 
     fig, ax = plt.subplots(figsize=(18, max(4, len(df_a) * 0.05)))
 
-    # ---- Mutation background ----
+    # Mutation background 
     ax.imshow(
         mut_mask,
         aspect="auto",
@@ -596,7 +466,7 @@ def plot_chemistry_annotated_heatmap(
         interpolation="nearest"
     )
 
-    # ---- Chemistry overlay ----
+    # Chemistry overlay
     masked_chem = np.ma.masked_where(chem_mat < 0, chem_mat)
     im = ax.imshow(
         masked_chem,
@@ -607,7 +477,7 @@ def plot_chemistry_annotated_heatmap(
         interpolation="nearest"
     )
 
-    # ---- Framework shading ----
+    # Framework shading
     if framework_positions:
         for start, end in framework_positions:
             ax.axvspan(
@@ -618,7 +488,7 @@ def plot_chemistry_annotated_heatmap(
                 zorder=3
             )
 
-    # ---- CDR annotations ----
+    # CDR annotations
     for label, (start, end) in cdr_regions.items():
         ax.axvline(start - 0.5, color="black", linewidth=1)
         ax.axvline(end - 0.5, color="black", linewidth=1)
@@ -638,7 +508,7 @@ def plot_chemistry_annotated_heatmap(
     ax.set_ylabel("Variants")
     ax.set_title(f"Ancestor {ancestor_id}: mutation chemistry map")
 
-    # ---- Chemistry legend ----
+    # Chemistry legend
     cbar = plt.colorbar(im, ax=ax, ticks=range(len(chem_groups)))
     cbar.ax.set_yticklabels(chem_groups)
     cbar.set_label("Mutated residue chemistry")
@@ -705,7 +575,6 @@ def plot_mutation_entropy_track_for_ancestor(
 
     entropy = mutation_entropy_against_parent(parent_seq, seqs)
 
-    # Make directory
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -758,7 +627,7 @@ def plot_learning_curves_per_property(df_metrics, out_path):
     for i, prop in enumerate(properties):
         dfp = df_metrics[df_metrics["property"] == prop]
 
-        # ---- Train Spearman ----
+        # Train Spearman
         ax = axes[i, 0]
         ax.plot(dfp["round"], dfp["train_spearman"], marker="o")
         ax.fill_between(
@@ -771,7 +640,7 @@ def plot_learning_curves_per_property(df_metrics, out_path):
         ax.set_title(f"{prop}\nTrain Spearman")
         ax.axhline(0, color="gray", linestyle="--")
 
-        # ---- Train RMSE ----
+        # Train RMSE
         ax = axes[i, 1]
         ax.plot(dfp["round"], dfp["train_rmse"], marker="o")
         ax.fill_between(
@@ -782,7 +651,7 @@ def plot_learning_curves_per_property(df_metrics, out_path):
         )
         ax.set_title(f"{prop}\nTrain RMSE")
 
-        # ---- Future Spearman ----
+        # Future Spearman
         ax = axes[i, 2]
         ax.plot(dfp["round"], dfp["future_spearman"], marker="o")
         ax.fill_between(

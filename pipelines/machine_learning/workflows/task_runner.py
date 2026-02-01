@@ -55,7 +55,7 @@ def train_model(config_path: str):
     logger.info(f"[{workflow_name}] Workflow complete.")
     return current_data
 
-@register_workflow("vhh_active_learning", description="Run VHH active learning workflow")
+@register_workflow("vhh_active_learning", description="Run VHH generation active learning workflow")
 def run_vhh_active_learning(config_path: str):
     """
     Dynamically runs the VHH active learning workflow as defined in a YAML config file.

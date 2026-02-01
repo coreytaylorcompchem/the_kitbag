@@ -79,7 +79,7 @@ def evaluate_with_bootstrap(
         yt = y_true[mask]
         yp = y_pred[mask]
 
-        # --- Bootstrap metrics ---
+        # Bootstrap metrics (RMSEA, MAE, etc.)
         rmse = _bootstrap_metric(
             yt, yp,
             lambda a, b: root_mean_squared_error(a, b),
@@ -110,7 +110,7 @@ def evaluate_with_bootstrap(
             n_boot=n_boot
         )
 
-        # --- Calibration (point estimates only) ---
+        # Calibration (point estimates only)
         slope, intercept = np.polyfit(yp, yt, 1)
 
         metrics[prop] = {
@@ -136,7 +136,7 @@ def save_evaluation(result, out_dir):
     plots_dir = out_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
 
-    # ---- Metrics ----
+    # Metrics
     serialisable = {
         prop: {
             k: vars(v) if hasattr(v, "__dict__") else v
@@ -148,10 +148,10 @@ def save_evaluation(result, out_dir):
     with open(out_dir / "metrics.yaml", "w") as f:
         yaml.safe_dump(serialisable, f)
 
-    # ---- Predictions ----
+    # Predictions
     result.predictions.to_csv(out_dir / "predictions.csv", index=False)
 
-        # ---- Plots ----
+        # Plots
     for prop, metrics in result.metrics.items():
         if prop not in result.predictions:
             continue

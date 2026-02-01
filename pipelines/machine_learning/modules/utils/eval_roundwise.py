@@ -30,7 +30,7 @@ def run_roundwise_evaluation(
         df_train = df_all[df_all[round_col] <= r]
         df_future = df_all[df_all[round_col] > r]
 
-        # --- Train-set evaluation ---
+        # Train-set evaluation
         train_eval = evaluate_with_bootstrap(
             models=models,
             pca=pca,
@@ -46,7 +46,7 @@ def run_roundwise_evaluation(
             out_dir / f"round{r}" / "train"
         )
 
-        # --- Future-only evaluation ---
+        # Future-only evaluation
         if len(df_future) >= min_n:
             future_eval = evaluate_with_bootstrap(
                 models=models,
@@ -65,7 +65,7 @@ def run_roundwise_evaluation(
         else:
             future_eval = None
 
-        # --- Flatten metrics for plotting ---
+        # Flatten metrics for plotting
         for prop, m in train_eval.metrics.items():
             row = {
                 "round": r,
