@@ -1,3 +1,26 @@
+import os
+import psutil
+
+# ----------------------------
+# GLOBAL CPU / THREAD LIMITS
+# ----------------------------
+MAX_CPUS = 64
+THREADS_PER_CHAIN = 8
+
+# 1. Hard OS limit for the whole process
+p = psutil.Process()
+p.cpu_affinity(list(range(MAX_CPUS)))
+
+# 2. Limit BLAS / OpenMP / NumExpr threads (must happen before numpy/pymc import)
+os.environ["OMP_NUM_THREADS"] = str(THREADS_PER_CHAIN)
+os.environ["OPENBLAS_NUM_THREADS"] = str(THREADS_PER_CHAIN)
+os.environ["MKL_NUM_THREADS"] = str(THREADS_PER_CHAIN)
+os.environ["VECLIB_MAXIMUM_THREADS"] = str(THREADS_PER_CHAIN)
+os.environ["NUMEXPR_NUM_THREADS"] = str(THREADS_PER_CHAIN)
+
+# ----------------------------
+# IMPORTS AFTER THREAD LIMITS
+# ----------------------------
 import duckdb
 import warnings
 
@@ -14,6 +37,7 @@ from modules.utils.plot_del_hits import plot_del_hits
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+logger.debug("[CPU LIMIT] Affinity set to cores:", p.cpu_affinity())
 
 @register_task(
     "del_stream_aggregate_counts",
@@ -66,9 +90,18 @@ def del_stream_aggregate_counts(config: dict, data: dict) -> dict:
     description="Fit hierarchical Bayesian model to synthon counts per condition."
 )
 def del_bayesian_model(config: dict, data: dict) -> dict:
+    # import numpy as np
+    # import pandas as pd
+    # import pymc as pm
+    # import arviz as az
+    # from pathlib import Path
+    # import psutil
+
     params = config.get("del_bayesian_model", {})
+    model_cfg = params.get("model", {})
     df = data.get("df")
 
+    # Load fallback parquet if needed
     if df is None or len(df) == 0:
         parquet_path = data.get("input_file")
         if parquet_path and Path(parquet_path).exists():
@@ -76,23 +109,24 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         else:
             raise ValueError("[del_bayesian_model] Input dataframe empty and no fallback found.")
 
+    # Rename total_count if present
     if "total_count" in df.columns:
         df = df.rename(columns={"total_count": "pre_count"})
         df["post_count"] = df["pre_count"]
 
+    # Check required columns
     required_cols = {"NsynthonID", "condition", "pre_count", "post_count"}
     missing = required_cols - set(df.columns)
     if missing:
-        raise ValueError(f"Missing columns: {missing}")
+        raise ValueError(f"[del_bayesian_model] Missing columns: {missing}")
 
-    # Encode categorical
+    # Encode categorical variables
     syn_codes, syn_idx = np.unique(df["NsynthonID"], return_inverse=True)
     cond_codes, cond_idx = np.unique(df["condition"], return_inverse=True)
-
     pre = df["pre_count"].values.astype(float)
     post = df["post_count"].values.astype(int)
 
-    # Spike test
+    # Spike test (optional)
     spike_cfg = params.get("spike_test", {})
     if spike_cfg.get("enable", False):
         rng = np.random.default_rng(params.get("random_seed", 42))
@@ -100,45 +134,70 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         df.loc[spike_idx, "post_count"] = df.loc[spike_idx, "pre_count"] * spike_cfg.get("multiplier", 10)
         post = df["post_count"].values.astype(int)
 
-    overdisp = params.get("overdispersion", 1.5)
-    draws = params.get("draws", 1000)
-    tune = params.get("tune", 1000)
-    target_accept = params.get("target_accept", 0.9)
-    random_seed = params.get("random_seed", 42)
+    # Model hyperparameters
+    overdisp = model_cfg.get("overdispersion", 1.5)
+    draws = model_cfg.get("draws", 1000)
+    tune = model_cfg.get("tune", 1000)
+    target_accept = model_cfg.get("target_accept", 0.9)
+    random_seed = model_cfg.get("random_seed", 42)
+    family = model_cfg.get("family", "negative_binomial").lower()
+    chains = model_cfg.get("chains", 4)
 
-    # Build model
+    # Use global limits
+    MAX_CPUS = 32  # must match global setup
+    THREADS_PER_CHAIN = 8  # must match global setup
+    cores = min(chains, MAX_CPUS // THREADS_PER_CHAIN)
+
+    # Optional: print CPU info at runtime
+    p = psutil.Process()
+    logger.debug(f"[CPU LIMIT] Affinity cores: {p.cpu_affinity()}")
+    logger.debug(f"[CPU LIMIT] chains={chains}, cores={cores}, threads_per_chain={THREADS_PER_CHAIN}, max_cpus={MAX_CPUS}")
+
+    # -------------------------------
+    # Build hierarchical Bayesian model
+    # -------------------------------
     with pm.Model() as model:
+        # Condition effect
         alpha_cond = pm.Normal("alpha_cond", mu=0.0, sigma=1.0, shape=len(cond_codes))
+        # Synthon effect
         sigma_syn = pm.HalfNormal("sigma_syn", 1.0)
         beta_syn = pm.Normal("beta_syn", mu=0.0, sigma=sigma_syn, shape=len(syn_codes))
 
+        # Expected counts
         log_mu = alpha_cond[cond_idx] + beta_syn[syn_idx] + np.log(pre)
         mu = pm.math.exp(log_mu)
 
-        pm.NegativeBinomial("obs", mu=mu, alpha=overdisp, observed=post)
+        # Likelihood
+        if family == "negative_binomial":
+            pm.NegativeBinomial("obs", mu=mu, alpha=overdisp, observed=post)
+        elif family in {"zero_inflated_negative_binomial", "zinb"}:
+            psi = pm.Beta("psi", alpha=1.0, beta=1.0)
+            pm.ZeroInflatedNegativeBinomial("obs", mu=mu, alpha=overdisp, psi=psi, observed=post)
+        else:
+            raise ValueError(f"[del_bayesian_model] Unsupported family: {family}")
 
+        # Sampling
         trace = pm.sample(
             draws=draws,
             tune=tune,
             target_accept=target_accept,
             random_seed=random_seed,
-            chains=4,
-            progressbar=True,
+            chains=chains,
+            cores=cores,
+            progressbar=True
         )
 
+    # -------------------------------
+    # Extract posteriors and compute summary
+    # -------------------------------
     beta_post = trace.posterior["beta_syn"]
     p_active = (beta_post > 0).mean(dim=("chain", "draw")).values
 
-    # HDI
-    hdi = az.hdi(beta_post, hdi_prob=0.95)
-    hdi_da = hdi["beta_syn"]
-    hdi_vals = hdi_da.values
-    hdi_axis = hdi_vals.shape.index(2)
-    beta_hdi_lower = np.take(hdi_vals, 0, axis=hdi_axis)
-    beta_hdi_upper = np.take(hdi_vals, 1, axis=hdi_axis)
+    hdi = az.hdi(beta_post, hdi_prob=0.95)["beta_syn"].values
+    beta_hdi_lower = hdi[..., 0] if hdi.ndim == 2 else hdi[:, 0]
+    beta_hdi_upper = hdi[..., 1] if hdi.ndim == 2 else hdi[:, 1]
     beta_mean = beta_post.mean(dim=("chain", "draw")).values
 
-    # Build summary per (synthon, condition)
     summary_df = pd.DataFrame({
         "NsynthonID": df["NsynthonID"],
         "condition": df["condition"],
@@ -148,10 +207,14 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         "p_active": p_active[syn_idx],
     })
 
-    # merge physchem columns
+    # Merge physchem columns
     physchem_cols = [c for c in df.columns if c.endswith("_mean")]
-    summary_df = summary_df.merge(df[["NsynthonID", "condition"] + physchem_cols], on=["NsynthonID", "condition"], how="left")
+    if physchem_cols:
+        summary_df = summary_df.merge(df[["NsynthonID", "condition"] + physchem_cols],
+                                      on=["NsynthonID", "condition"], how="left")
+
     return {"df": summary_df, "trace": trace}
+
 
 @register_task(
     "del_hit_picker",
@@ -204,6 +267,41 @@ def del_hit_picker(config: dict, data: dict) -> dict:
         if col in df.columns:
             mask &= df[col].between(low, high)
     hits_df = df[mask].copy()
+
+    # Output Bayes and physchem filters that are being applied
+    
+    n_start = len(df)
+    logger.info("[del_hit_picker] Starting with %d rows", n_start)
+
+    mask = df["p_active"] >= posterior_cutoff
+    logger.info(
+        "[del_hit_picker] p_active >= %.3f: %d / %d pass",
+        posterior_cutoff,
+        mask.sum(),
+        n_start,
+    )
+
+    if require_hdi_positive:
+        mask_hdi = df["beta_hdi_lower"] > 0.0
+        logger.info(
+            "[del_hit_picker] beta_hdi_lower > 0: %d / %d pass",
+            (mask & mask_hdi).sum(),
+            n_start,
+        )
+        mask &= mask_hdi
+
+    for col, (low, high) in physchem_filters.items():
+        if col in df.columns:
+            mask_phys = df[col].between(low, high)
+            logger.info(
+                "[del_hit_picker] %s in [%.3f, %.3f]: %d / %d pass",
+                col,
+                low,
+                high,
+                (mask & mask_phys).sum(),
+                n_start,
+            )
+            mask &= mask_phys
 
     # Check if no hits, gracefully fail and warn
     if hits_df.empty:
@@ -261,8 +359,18 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
 
-        # Only pass numeric physchem columns that exist in hits_df
-        valid_physchem_cols = [c for c in physchem_cols if c in hits_df.columns and pd.api.types.is_numeric_dtype(hits_df[c])]
+        # Ensure physchem columns are numeric
+        for c in ["MW_mean", "logP_mean", "PSA_mean"]:
+            if c in hits_df.columns:
+                hits_df[c] = pd.to_numeric(hits_df[c], errors="coerce")
+
+        valid_physchem_cols = [
+            c for c in ["MW_mean", "logP_mean", "PSA_mean"]
+            if c in hits_df.columns and hits_df[c].notna().any()
+        ]
+
+        logger.debug("Plotting with physchem columns: %s", valid_physchem_cols)
+        logger.debug("Available columns: %s", list(hits_df.columns))
 
         plot_files = plot_del_hits(
             hits_df,

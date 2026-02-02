@@ -390,6 +390,8 @@ def dynamic_task_runner(config):
     description="Stream large datasets (Parquet or CSV directory), generate features per chunk, combine results, and run postprocessing analyses."
 )
 def streamed_feature_runner(config):
+    import os
+
     input_file = config.get("input_file")
     if not input_file:
         raise ValueError("Missing 'input_file' in config")
@@ -413,7 +415,20 @@ def streamed_feature_runner(config):
     # --- Determine input type: directory of CSVs or single Parquet ---
     if input_path.is_dir():
         logger.info(f"[streamed_feature_runner] Input is a directory; streaming CSVs from {input_path}")
-        csv_files = sorted(input_path.rglob("*.csv"))
+
+        # --- Robust CSV discovery: follow symlinks and case-insensitive ---
+        csv_files = []
+        for root, dirs, files in os.walk(input_path, followlinks=True):
+            for f in files:
+                if f.lower().endswith(".csv"):
+                    csv_files.append(Path(root) / f)
+        csv_files = sorted(csv_files)
+
+        if not csv_files:
+            raise FileNotFoundError(f"No CSV files found in {input_path} (including subdirectories and symlinks).")
+
+        logger.debug(f"[streamed_feature_runner] Found {len(csv_files)} CSV files: {[f.name for f in csv_files]}")
+
         for rg_index, csv_file in enumerate(tqdm(csv_files, desc="CSV chunks")):
             if max_row_groups is not None and rg_index >= max_row_groups:
                 logger.info(f"[streamed_feature_runner] Stopping after {max_row_groups} CSV chunk(s) (prototype mode).")
@@ -509,7 +524,7 @@ def streamed_feature_runner(config):
 
     logger.info(f"[streamed_feature_runner] Processed {total_rows:,} rows total across {len(feature_files)} chunks.")
 
-        # === Combine chunked feather files into a single Parquet ===
+    # === Combine chunked feather files into a single Parquet ===
     if feature_files:
         logger.info(f"[streamed_feature_runner] Combining {len(feature_files)} feature chunks into one Parquet file...")
 
