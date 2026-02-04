@@ -5,10 +5,11 @@ from pathlib import Path
 from upsetplot import from_indicators, UpSet
 import warnings
 
-def plot_del_hits(hits_df: pd.DataFrame, output_dir: str = "outputs/plots", top_n: int = 10, physchem_cols=None):
+def plot_del_hits(hits_df: pd.DataFrame, output_dir: str = "outputs/plots",
+                  top_n: int = 10, physchem_cols=None, heatmap_top_n: int = 100):
     """
     Generate DEL hit visualizations:
-    1. Heatmap of p_active per synthon x condition
+    1. Heatmap of p_active per synthon x condition (top N synthons by max p_active)
     2. Strip plot of p_active per condition
     3. Bar plot of top hits per condition
     4. UpSet plot of hits overlap across conditions
@@ -16,7 +17,6 @@ def plot_del_hits(hits_df: pd.DataFrame, output_dir: str = "outputs/plots", top_
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
     plot_files = {}
 
     # --- Ensure correct types ---
@@ -32,15 +32,29 @@ def plot_del_hits(hits_df: pd.DataFrame, output_dir: str = "outputs/plots", top_
             and pd.api.types.is_numeric_dtype(hits_df[c])
         ]
 
-    # Ensure physchem columns are numeric
     for col in physchem_cols:
         hits_df[col] = pd.to_numeric(hits_df[col], errors="coerce")
 
-    # --- Heatmap ---
-    heat_df = hits_df.pivot(index="NsynthonID", columns="condition", values="p_active")
-    plt.figure(figsize=(12, 8))
+    # --- Heatmap (Top synthons by max p_active) ---
+    # Take max p_active per synthon × condition to remove duplicates
+    df_unique = hits_df.groupby(["NsynthonID", "condition"], as_index=False)["p_active"].max()
+
+    # Select top N synthons by max p_active across all conditions
+    top_synthons = df_unique.groupby("NsynthonID")["p_active"].max() \
+                            .sort_values(ascending=False).head(heatmap_top_n).index
+    df_top = df_unique[df_unique["NsynthonID"].isin(top_synthons)]
+
+    # Pivot for heatmap
+    heat_df = df_top.pivot(index="NsynthonID", columns="condition", values="p_active").fillna(0)
+
+    # Sort synthons by max p_active (so top synthon at top)
+    heat_df = heat_df.loc[heat_df.max(axis=1).sort_values(ascending=False).index]
+
+    # Adjust figure height dynamically
+    fig_height = max(6, len(heat_df) * 0.25)  # 0.25 inch per synthon
+    plt.figure(figsize=(12, fig_height))
     sns.heatmap(heat_df, cmap="viridis", linewidths=0.5)
-    plt.title("Per-synthon p_active across conditions")
+    plt.title(f"Per-synthon p_active across conditions (Top {heatmap_top_n})")
     plt.ylabel("NsynthonID")
     plt.xlabel("Condition")
     plt.tight_layout()
@@ -51,14 +65,7 @@ def plot_del_hits(hits_df: pd.DataFrame, output_dir: str = "outputs/plots", top_
 
     # --- Stripplot ---
     plt.figure(figsize=(12, 6))
-    sns.stripplot(
-        data=hits_df,
-        x="condition",
-        y="p_active",
-        jitter=True,
-        size=5,
-        alpha=0.7
-    )
+    sns.stripplot(data=hits_df, x="condition", y="p_active", jitter=True, size=5, alpha=0.7)
     plt.title("Distribution of p_active per condition")
     plt.ylabel("p_active")
     plt.xlabel("Condition")
@@ -81,6 +88,7 @@ def plot_del_hits(hits_df: pd.DataFrame, output_dir: str = "outputs/plots", top_
     plot_files["barplot"] = bar_file
 
     # --- UpSet plot ---
+    # Create indicator matrix for hits
     conds = hits_df["condition"].unique()
     indicator_df = pd.DataFrame(False, index=hits_df["NsynthonID"].unique(), columns=conds)
     for cond in conds:
