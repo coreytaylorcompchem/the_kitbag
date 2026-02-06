@@ -2,8 +2,15 @@
 import os
 import psutil
 
-MAX_THREADS = min(64, psutil.cpu_count(logical=True))  # your limit
-for var in ["OMP_NUM_THREADS","OPENBLAS_NUM_THREADS","MKL_NUM_THREADS","VECLIB_MAXIMUM_THREADS","NUMEXPR_NUM_THREADS"]:
+MAX_THREADS = min(16, psutil.cpu_count(logical=True))
+
+for var in [
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+]:
     os.environ[var] = str(MAX_THREADS)
 
 # ----------------------------
@@ -116,6 +123,15 @@ def run_advi_chain(seed, y_obs, cond_idx, syn_idx, cond_codes, syn_codes, overdi
                         random_seed=int(seed)
                         )
         return approx.sample(draws=draws)
+    
+    final_loss = approx.hist[-1]
+    initial_loss = approx.hist[0]
+
+    logger.info(
+        "[del_bayesian_model] ADVI loss: %.3e → %.3e",
+        initial_loss,
+        final_loss,
+    )
 
 @register_task(
     "del_bayesian_model",
@@ -126,6 +142,17 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
 
     params = config.get("del_bayesian_model", {})
     model_cfg = params.get("model", {})
+
+    avail_gb = psutil.virtual_memory().available / 1e9
+    logger.info(
+        "[del_bayesian_model] Available RAM at start: %.1f GB",
+        avail_gb,
+    )
+
+    if avail_gb < 50:
+        logger.warning(
+            "[del_bayesian_model] Low available RAM — consider stopping early."
+        )
 
     # Load dataframe (prefer Polars)
     df = data.get("df")
@@ -147,10 +174,30 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         df["post_count"] = pd.to_numeric(df["post_count"], errors="coerce").fillna(0).astype(int)
         df_pd = df
 
+    # ---- Collapse to synthon × condition (statistically equivalent, MUCH smaller)
+    model_df = (
+        df_pd
+        .groupby(["NsynthonID", "condition"], as_index=False)
+        .agg(post_count=("post_count", "sum"))
+    )
+
+    logger.info(
+        "[del_bayesian_model] Collapsed %d rows → %d synthon-condition rows",
+        len(df_pd),
+        len(model_df),
+    )
+
+    logger.info(
+        "[del_bayesian_model] Unique synthons=%d, conditions=%d, rows=%d",
+        model_df["NsynthonID"].nunique(),
+        model_df["condition"].nunique(),
+        len(model_df),
+    )
+
     # Encode synthons and conditions
-    syn_codes, syn_idx = np.unique(df_pd["NsynthonID"], return_inverse=True)
-    cond_codes, cond_idx = np.unique(df_pd["condition"], return_inverse=True)
-    y_obs = df_pd["post_count"].to_numpy()
+    syn_codes, syn_idx = np.unique(model_df["NsynthonID"], return_inverse=True)
+    cond_codes, cond_idx = np.unique(model_df["condition"], return_inverse=True)
+    y_obs = model_df["post_count"].to_numpy()
 
     # Spike test
     spike_cfg = params.get("spike_test", {})
@@ -166,32 +213,89 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
     random_seed = model_cfg.get("random_seed", 42)
 
     # Dynamic threads allocation
-    max_cpus = min(params.get("resources", {}).get("max_cpus", psutil.cpu_count(logical=True)), 64)
-    threads_per_chain = max(1, max_cpus // chains)
-    os.environ.update({
-        "OMP_NUM_THREADS": str(threads_per_chain),
-        "OPENBLAS_NUM_THREADS": str(threads_per_chain),
-        "MKL_NUM_THREADS": str(threads_per_chain),
-        "VECLIB_MAXIMUM_THREADS": str(threads_per_chain),
-        "NUMEXPR_NUM_THREADS": str(threads_per_chain),
-    })
+    # max_cpus = min(params.get("resources", {}).get("max_cpus", psutil.cpu_count(logical=True)), 64)
+    # threads_per_chain = max(1, max_cpus // chains)
+    # os.environ.update({
+    #     "OMP_NUM_THREADS": str(threads_per_chain),
+    #     "OPENBLAS_NUM_THREADS": str(threads_per_chain),
+    #     "MKL_NUM_THREADS": str(threads_per_chain),
+    #     "VECLIB_MAXIMUM_THREADS": str(threads_per_chain),
+    #     "NUMEXPR_NUM_THREADS": str(threads_per_chain),
+    # })
 
-    logger.info(f"[del_bayesian_model] ADVI with chains={chains}, threads_per_chain={threads_per_chain}, max_cpus={max_cpus}")
+    # logger.info(f"[del_bayesian_model] ADVI with chains={chains}, threads_per_chain={threads_per_chain}, max_cpus={max_cpus}")
 
-    from multiprocessing import get_context
+    # from multiprocessing import get_context
 
-    # Prepare args for each chain
-    args_list = [
-        (seed, y_obs, cond_idx, syn_idx, cond_codes, syn_codes, overdisp, n_advi, draws, threads_per_chain)
-        for seed in np.arange(chains) + random_seed
-    ]
+    # # Prepare args for each chain
+    # args_list = [
+    #     (seed, y_obs, cond_idx, syn_idx, cond_codes, syn_codes, overdisp, n_advi, draws, threads_per_chain)
+    #     for seed in np.arange(chains) + random_seed
+    # ]
 
-    # Use spawn context
-    with get_context("spawn").Pool(processes=chains) as pool:
-        trace_list = pool.starmap(run_advi_chain, args_list)
+    # # Use spawn context
+    # with get_context("spawn").Pool(processes=chains) as pool:
+    #     trace_list = pool.starmap(run_advi_chain, args_list)
 
-    # Combine traces
-    trace = az.concat(trace_list, dim="chain")
+    # # Combine traces
+    # trace = az.concat(trace_list, dim="chain")
+
+    zero_frac = (y_obs == 0).mean()
+    logger.info(
+        "[del_bayesian_model] Zero-count fraction: %.3f",
+        zero_frac,
+    )
+
+    logger.info(
+        "[del_bayesian_model] post_count quantiles:\n%s",
+        pd.Series(y_obs).quantile([0, 0.25, 0.5, 0.75, 0.9, 0.99, 1.0])
+    )
+
+    logger.info(
+        "[del_bayesian_model] Running single ADVI fit."
+    )
+
+    import time
+
+    with pm.Model() as model:
+        alpha_cond = pm.Normal("alpha_cond", mu=0.0, sigma=1.0, shape=len(cond_codes))
+        sigma_syn = pm.HalfNormal("sigma_syn", sigma=1.0)
+        beta_syn = pm.Normal("beta_syn", mu=0.0, sigma=sigma_syn, shape=len(syn_codes))
+
+        log_mu = alpha_cond[cond_idx] + beta_syn[syn_idx]
+        mu = pm.math.exp(log_mu)
+
+        pm.NegativeBinomial(
+            "obs",
+            mu=mu,
+            alpha=overdisp,
+            observed=y_obs,
+        )
+
+        start_time = time.time()
+
+        logger.info(
+            "[del_bayesian_model] ADVI start: iterations=%d, synthons=%d, conditions=%d",
+            n_advi,
+            len(syn_codes),
+            len(cond_codes),
+        )
+
+        approx = pm.fit(
+            n=n_advi,
+            method="advi",
+            obj_optimizer=pm.adam(learning_rate=0.01),
+            progressbar=True,
+            random_seed=random_seed,
+        )
+
+        elapsed = time.time() - start_time
+        logger.info(
+            "[del_bayesian_model] ADVI finished in %.1f minutes",
+            elapsed / 60,
+        )
+
+        trace = approx.sample(draws=draws)
 
     # ----- Posterior statistics -----
     beta_post = trace.posterior["beta_syn"]
@@ -200,6 +304,11 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
     beta_hdi_lower = hdi[..., 0] if hdi.ndim == 2 else hdi[:, 0]
     beta_hdi_upper = hdi[..., 1] if hdi.ndim == 2 else hdi[:, 1]
     beta_mean = beta_post.mean(dim=("chain", "draw")).values
+
+    logger.info(
+        "[del_bayesian_model] beta_mean summary:\n%s",
+        pd.Series(beta_mean).describe()
+    )
 
     summary_df = pd.DataFrame({
         "NsynthonID": df_pd["NsynthonID"],
