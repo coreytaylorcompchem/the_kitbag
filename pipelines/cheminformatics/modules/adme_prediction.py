@@ -124,6 +124,15 @@ def adme_prediction(config, data=None):
                     logger.error(f"[{model_name}] Featuriser returned None for SMILES: '{smi}'")
                     preds.append(None)
                     continue
+                
+                for attr in ["x", "edge_index", "batch"]:
+                    if not hasattr(data, attr):
+                        logger.error(f"[{model_name}] Data object missing '{attr}' attribute for SMILES: {smi}")
+                    elif getattr(data, attr) is None:
+                        logger.error(f"[{model_name}] Data.{attr} is None for SMILES: {smi}")
+
+                if hasattr(data, "x") and torch.isnan(data.x).any():
+                    logger.warning(f"[{model_name}] data.x contains NaN for SMILES: {smi}")
 
                 loader = DataLoader([graph_data], batch_size=1, shuffle=False)
 
