@@ -7,6 +7,7 @@ from pipeline.logger import setup_logger
 from tqdm import tqdm
 from pathlib import Path
 import pandas as pd
+from collections import Counter
 
 logger = setup_logger(
     __name__,
@@ -44,19 +45,17 @@ def apply_optional_filters(props, cutoffs):
             return False
     return True
 
+from rdkit.Chem import rdDistGeom
 
 def generate_conformer(mol, max_attempts=10):
     mol_h = Chem.AddHs(mol)
+
     status = AllChem.EmbedMolecule(mol_h, AllChem.ETKDG())
     if status != 0:
-        for _ in range(1, max_attempts):
-            status = AllChem.EmbedMolecule(mol_h, AllChem.ETKDG())
-            if status == 0:
-                break
-    if status == 0:
-        AllChem.UFFOptimizeMolecule(mol_h)
-        return mol_h
-    return None
+        return None, "embed_failed"
+
+    AllChem.UFFOptimizeMolecule(mol_h)
+    return mol_h, None
 
 
 @register_task("basic_lipinski_filtering", category="Filtering", description="Basic Lipinski Rule of 5 filtering")
@@ -176,9 +175,20 @@ def physchem_filtering(config, data=None):
         if not all(props.get(k, float("inf")) <= v for k, v in filtered_optional_cutoffs.items()):
             continue
 
-        conf_mol = generate_conformer(mol)
+        conf_mol, conf_fail = generate_conformer(mol)
+        
+        fail_counts = Counter()
+
         if conf_mol is None:
+            fail_counts[f"conformer_{conf_fail}"] += 1
+
+            # optional: log examples but don’t spam
+            if fail_counts[f"conformer_{conf_fail}"] <= 3:
+                logger.debug(
+                    f"Conformer failed ({conf_fail}) for SMILES: {smi}"
+                )
             continue
+
 
         row_data = row.to_dict()
         combined = {**row_data, **props}
@@ -223,5 +233,18 @@ def physchem_filtering(config, data=None):
         logger.debug(f"SDF file written to {sdf_file}")
     except Exception as e:
         logger.error(f"Failed to write SDF file {sdf_file}: {e}")
+
+    total = len(df)
+    passed = len(output_df)
+    failed = total - passed
+
+    logger.info(
+        f"physchem_filtering summary: "
+        f"total={total}, passed={passed}, failed={failed}"
+    )
+
+    if fail_counts:
+        for reason, count in fail_counts.most_common():
+            logger.info(f"  {reason}: {count}")
 
     return (input_path.stem, output_df)

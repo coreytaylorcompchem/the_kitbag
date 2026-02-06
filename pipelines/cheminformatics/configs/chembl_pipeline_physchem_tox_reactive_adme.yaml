@@ -3,7 +3,7 @@ workflow_name: dynamic_task_runner
 input_file: data/class_a_gpcr_bioactivity_test.csv
 chunk_size: 10
 
-workflow:
+workflow_parallel:
   - basic_lipinski_filtering
   - physchem_filtering
   - adme_prediction
