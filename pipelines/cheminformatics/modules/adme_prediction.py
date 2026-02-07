@@ -10,7 +10,8 @@ from models.featurisation_cyp import mol_to_graph as mol_to_graph_cyp
 from models.featurisation_logd import mol_to_graph as mol_to_graph_logd
 from models.featurisation_herg import mol_to_graph as mol_to_graph_herg
 from models.featurisation_ppb import mol_to_graph as mol_to_graph_ppb
-from models.model_defs import GINRegressor, GATv2Regressor, GCN, PPBFuModel
+from models.featurisation_hep_met_stab_clint import mol_to_graph as mol_to_graph_hep_met_stab_clint
+from models.model_defs import GINRegressor, GATv2Regressor, GCN, PPBFuModel, ClintModel
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
@@ -42,6 +43,11 @@ def get_available_adme_models():
             "path": model_dir / "ppb_f_u_gin.pt",
             "class": PPBFuModel,
             "featuriser": mol_to_graph_ppb
+        },
+            "hep_met_stab_clint": {
+            "path": model_dir / "hep_met_stab_clint_gin.pt",
+            "class": ClintModel,
+            "featuriser": mol_to_graph_hep_met_stab_clint
         },
     }
 
@@ -90,29 +96,47 @@ def adme_prediction(config, data=None):
         try:
             checkpoint = torch.load(model_path, map_location=device)
 
+            # Ensure checkpoint has required keys
             required_keys = ['input_dim', 'model_state_dict']
             missing_keys = [k for k in required_keys if k not in checkpoint]
             if missing_keys:
                 logger.error(f"Checkpoint missing keys: {missing_keys}")
                 continue
 
-            model_args = {
-                "input_dim": checkpoint["input_dim"],
-                "hidden_dim": checkpoint.get("hidden_dim", 128),
-            }
+            if model_class == ClintModel:
+                # ClintModel uses 'model_state_dict' key
+                model_args = {
+                    "input_dim": checkpoint["input_dim"],
+                    "hidden_dim": checkpoint.get("hidden_dim", 64),
+                    "global_feat_dim": checkpoint.get("global_feat_dim", 0),
+                }
+                model = ClintModel(**model_args)
 
-            if model_class in [GINRegressor, GATv2Regressor]:
-                model_args["global_feat_dim"] = checkpoint.get("global_feat_dim", 0)
+                # Print shapes for debugging
+                logger.debug("Checkpoint parameter shapes (ClintModel):")
+                for k, v in checkpoint["model_state_dict"].items():
+                    logger.debug(f"{k}: {tuple(v.shape)}")
 
-            if model_class in [GATv2Regressor, GCN]:
-                if "edge_dim" not in checkpoint:
-                    logger.error(f"Missing 'edge_dim' in checkpoint for model '{model_name}'")
-                    continue
-                model_args["edge_dim"] = checkpoint["edge_dim"]
+                model.load_state_dict(checkpoint["model_state_dict"])
+            else:
+                # All other models
+                model_args = {
+                    "input_dim": checkpoint["input_dim"],
+                    "hidden_dim": checkpoint.get("hidden_dim", 128),
+                }
 
-            model = model_class(**model_args)
-            load_result = model.load_state_dict(checkpoint["model_state_dict"])
-            logger.debug(f"load_state_dict result for '{model_name}': {load_result}")
+                if model_class in [GINRegressor, GATv2Regressor]:
+                    model_args["global_feat_dim"] = checkpoint.get("global_feat_dim", 0)
+
+                if model_class in [GATv2Regressor, GCN]:
+                    if "edge_dim" not in checkpoint:
+                        logger.error(f"Missing 'edge_dim' in checkpoint for model '{model_name}'")
+                        continue
+                    model_args["edge_dim"] = checkpoint["edge_dim"]
+
+                model = model_class(**model_args)
+                model.load_state_dict(checkpoint["model_state_dict"])
+
             model.to(device)
             model.eval()
 
