@@ -8,8 +8,9 @@ from pipeline.logger import setup_logger
 # Import featurization and model classes
 from models.featurisation_cyp import mol_to_graph as mol_to_graph_cyp
 from models.featurisation_logd import mol_to_graph as mol_to_graph_logd
-from models.featurisation_herg import mol_to_graph as mol_to_graph_herg 
-from models.model_defs import GINRegressor, GATv2Regressor, GCN
+from models.featurisation_herg import mol_to_graph as mol_to_graph_herg
+from models.featurisation_ppb import mol_to_graph as mol_to_graph_ppb
+from models.model_defs import GINRegressor, GATv2Regressor, GCN, PPBFuModel
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
@@ -36,6 +37,11 @@ def get_available_adme_models():
             "class": GCN,
             "apply_sigmoid": True,
             "featuriser": mol_to_graph_herg
+        },
+            "ppb_f_u": {
+            "path": model_dir / "ppb_f_u_gin.pt",
+            "class": PPBFuModel,
+            "featuriser": mol_to_graph_ppb
         },
     }
 
