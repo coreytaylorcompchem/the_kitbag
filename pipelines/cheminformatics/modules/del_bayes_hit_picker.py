@@ -310,14 +310,13 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         pd.Series(beta_mean).describe()
     )
 
-    summary_df = pd.DataFrame({
-        "NsynthonID": df_pd["NsynthonID"],
-        "condition": df_pd["condition"],
-        "beta_mean": beta_mean[syn_idx],
-        "beta_hdi_lower": beta_hdi_lower[syn_idx],
-        "beta_hdi_upper": beta_hdi_upper[syn_idx],
-        "p_active": p_active[syn_idx],
-    })
+    summary_df = model_df[["NsynthonID", "condition"]].copy()
+
+    summary_df["beta_mean"] = beta_mean[syn_idx]
+    summary_df["beta_hdi_lower"] = beta_hdi_lower[syn_idx]
+    summary_df["beta_hdi_upper"] = beta_hdi_upper[syn_idx]
+    summary_df["p_active"] = p_active[syn_idx]
+
 
     # Merge physchem features
     physchem_cols = [
