@@ -1,4 +1,3 @@
-# before importing pymc, somewhere in your startup code
 import os
 import psutil
 
@@ -286,31 +285,45 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
     logger.info("[del_bayesian_model] ADVI finished in %.1f minutes", elapsed)
 
     # ----------------------------
-    # Posterior summaries (corrected per synthon × condition)
+    # Posterior summaries
     # ----------------------------
-    
+
     summary_df = model_df[["NsynthonID", "condition"]].copy()
 
-    # Posterior arrays
-    beta_post = trace.posterior["beta_syn"]      # shape: (chains, draws, n_syn)
-    alpha_post = trace.posterior["alpha_cond"]   # shape: (chains, draws, n_cond)
+    beta_post = trace.posterior["beta_syn"]      # (chain, draw, syn)
+    alpha_post = trace.posterior["alpha_cond"]   # (chain, draw, cond)
 
     # Means
-    beta_mean = beta_post.mean(dim=("chain","draw")).values  # synthon-level
-    alpha_mean = alpha_post.mean(dim=("chain","draw")).values  # condition-level
+    beta_mean = beta_post.mean(dim=("chain","draw")).values
+    alpha_mean = alpha_post.mean(dim=("chain","draw")).values
 
     # HDIs
     beta_hdi = az.hdi(beta_post, hdi_prob=0.95)["beta_syn"].values
     alpha_hdi = az.hdi(alpha_post, hdi_prob=0.95)["alpha_cond"].values
 
-    # Combine for synthon × condition
     summary_df["beta_mean"] = beta_mean[syn_idx] + alpha_mean[cond_idx]
-    summary_df["beta_hdi_lower"] = beta_hdi[syn_idx,0] + alpha_hdi[cond_idx,0]
-    summary_df["beta_hdi_upper"] = beta_hdi[syn_idx,1] + alpha_hdi[cond_idx,1]
+    summary_df["beta_hdi_lower"] = beta_hdi[syn_idx, 0] + alpha_hdi[cond_idx, 0]
+    summary_df["beta_hdi_upper"] = beta_hdi[syn_idx, 1] + alpha_hdi[cond_idx, 1]
 
-    # Synthon-level p_active (correct)
-    p_active = (beta_post > 0).mean(dim=("chain","draw")).values
-    summary_df["p_active"] = p_active[syn_idx]
+    # ----------------------------
+    # p_active (KEEP THIS)
+    # ----------------------------
+    p_active_syn = (beta_post > 0).mean(dim=("chain","draw")).values
+    summary_df["p_active"] = p_active_syn[syn_idx]
+
+    from scipy.stats import norm
+
+    # Estimate std from HDI width (95% ≈ ±1.96σ)
+    beta_std = (beta_hdi[:, 1] - beta_hdi[:, 0]) / (2 * 1.96)
+    alpha_std = (alpha_hdi[:, 1] - alpha_hdi[:, 0]) / (2 * 1.96)
+
+    mu = beta_mean[syn_idx] + alpha_mean[cond_idx]
+    sigma = np.sqrt(
+        beta_std[syn_idx] ** 2 +
+        alpha_std[cond_idx] ** 2
+    )
+
+    summary_df["p_active_cond"] = 1.0 - norm.cdf(0.0, loc=mu, scale=sigma)
 
 
     # ----------------------------
