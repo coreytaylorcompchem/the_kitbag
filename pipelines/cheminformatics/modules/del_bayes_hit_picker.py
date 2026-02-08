@@ -100,61 +100,67 @@ def del_stream_aggregate_counts(config: dict, data: dict) -> dict:
 
     return {"df": out_df, "parquet_path": data.get("parquet_path")}
 
-# Top-level function for ADVI chains to avoid multiprocessing pickling issues
-def run_advi_chain(seed, y_obs, cond_idx, syn_idx, cond_codes, syn_codes, overdisp, n_advi, draws, threads_per_chain):
+# # Top-level function for ADVI chains to avoid multiprocessing pickling issues
+# def run_advi_chain(seed, y_obs, cond_idx, syn_idx, cond_codes, syn_codes, overdisp, n_advi, draws, threads_per_chain):
 
-    # Limit threads per chain
-    for var in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
-                "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"]:
-        os.environ[var] = str(threads_per_chain)
+#     # Limit threads per chain
+#     for var in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+#                 "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"]:
+#         os.environ[var] = str(threads_per_chain)
 
-    with pm.Model() as model:
-        alpha_cond = pm.Normal("alpha_cond", mu=0.0, sigma=1.0, shape=len(cond_codes))
-        sigma_syn = pm.HalfNormal("sigma_syn", sigma=1.0)
-        beta_syn = pm.Normal("beta_syn", mu=0.0, sigma=sigma_syn, shape=len(syn_codes))
-        log_mu = alpha_cond[cond_idx] + beta_syn[syn_idx]
-        mu = pm.math.exp(log_mu)
-        pm.NegativeBinomial("obs", mu=mu, alpha=overdisp, observed=y_obs)
+#     with pm.Model() as model:
+#         alpha_cond = pm.Normal("alpha_cond", mu=0.0, sigma=1.0, shape=len(cond_codes))
+#         sigma_syn = pm.HalfNormal("sigma_syn", sigma=1.0)
+#         beta_syn = pm.Normal("beta_syn", mu=0.0, sigma=sigma_syn, shape=len(syn_codes))
+#         log_mu = alpha_cond[cond_idx] + beta_syn[syn_idx]
+#         mu = pm.math.exp(log_mu)
+#         pm.NegativeBinomial("obs", mu=mu, alpha=overdisp, observed=y_obs)
 
-        approx = pm.fit(n=5000, 
-                        method="advi", 
-                        obj_optimizer=pm.adam(learning_rate=0.01),
-                        progressbar=True, 
-                        random_seed=int(seed)
-                        )
-        return approx.sample(draws=draws)
+#         approx = pm.fit(n=5000, 
+#                         method="advi", 
+#                         obj_optimizer=pm.adam(learning_rate=0.01),
+#                         progressbar=True, 
+#                         random_seed=int(seed)
+#                         )
+#         return approx.sample(draws=draws)
     
-    final_loss = approx.hist[-1]
-    initial_loss = approx.hist[0]
+#     final_loss = approx.hist[-1]
+#     initial_loss = approx.hist[0]
 
-    logger.info(
-        "[del_bayesian_model] ADVI loss: %.3e → %.3e",
-        initial_loss,
-        final_loss,
-    )
+#     logger.info(
+#         "[del_bayesian_model] ADVI loss: %.3e → %.3e",
+#         initial_loss,
+#         final_loss,
+#     )
 
 @register_task(
     "del_bayesian_model",
     category="DEL",
-    description="Fit hierarchical Bayesian model to synthon counts per condition using ADVI (optimized, multi-chain)."
+    description="Fit hierarchical Bayesian model to synthon enrichment per condition using ADVI with low-count filtering."
 )
 def del_bayesian_model(config: dict, data: dict) -> dict:
+
+    import time
+    import numpy as np
+    import pandas as pd
+    import pymc as pm
+    import arviz as az
+    import polars as pl
+    import psutil
+    from pathlib import Path
 
     params = config.get("del_bayesian_model", {})
     model_cfg = params.get("model", {})
 
+    # ----------------------------
+    # Resource check
+    # ----------------------------
     avail_gb = psutil.virtual_memory().available / 1e9
-    logger.info(
-        "[del_bayesian_model] Available RAM at start: %.1f GB",
-        avail_gb,
-    )
+    logger.info("[del_bayesian_model] Available RAM at start: %.1f GB", avail_gb)
 
-    if avail_gb < 50:
-        logger.warning(
-            "[del_bayesian_model] Low available RAM — consider stopping early."
-        )
-
-    # Load dataframe (prefer Polars)
+    # ----------------------------
+    # Load dataframe
+    # ----------------------------
     df = data.get("df")
     if df is None or len(df) == 0:
         parquet_path = data.get("input_file")
@@ -163,174 +169,166 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         else:
             raise ValueError("[del_bayesian_model] Input dataframe empty and no fallback found.")
 
-    if "post_count" not in df.columns:
-        raise ValueError("[del_bayesian_model] Expected column 'post_count' in input dataframe.")
+    # ----------------------------
+    # Normalize schema
+    # ----------------------------
+    if "copy" not in df.columns:
+        if "post_count" in df.columns:
+            df = df.with_columns(pl.col("post_count").alias("copy")) if isinstance(df, pl.DataFrame) else df.assign(copy=df["post_count"])
+        else:
+            raise ValueError("[del_bayesian_model] No count column found (copy/post_count).")
 
-    # Convert to numeric
+    if "enrichment" not in df.columns:
+        if "enrichment_mean" in df.columns:
+            df = df.with_columns(pl.col("enrichment_mean").alias("enrichment")) if isinstance(df, pl.DataFrame) else df.assign(enrichment=df["enrichment_mean"])
+        else:
+            raise ValueError("[del_bayesian_model] No enrichment column found (enrichment/enrichment_mean).")
+
     if isinstance(df, pl.DataFrame):
-        df = df.with_columns([pl.col("post_count").cast(pl.Int64)])
-        df_pd = df.to_pandas()
+        df = df.to_pandas()
     else:
-        df["post_count"] = pd.to_numeric(df["post_count"], errors="coerce").fillna(0).astype(int)
-        df_pd = df
+        df = df.copy()
 
-    # ---- Collapse to synthon × condition (statistically equivalent, MUCH smaller)
+    # ----------------------------
+    # Column validation
+    # ----------------------------
+    required = {"NsynthonID", "condition", "copy", "enrichment"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"[del_bayesian_model] Missing required columns: {missing}")
+
+    # ----------------------------
+    # Numeric coercion
+    # ----------------------------
+    df["copy"] = pd.to_numeric(df["copy"], errors="coerce").fillna(0).astype(int)
+    df["enrichment"] = pd.to_numeric(df["enrichment"], errors="coerce")
+    df = df.dropna(subset=["enrichment"])
+
+    # ----------------------------
+    # Apply min_pre_count (copy threshold)
+    # ----------------------------
+    min_pre = params.get("min_pre_count", 5)  # Increase for debugging stability
+    df = df[df["copy"] >= min_pre]
+
+    if df.empty:
+        raise ValueError("[del_bayesian_model] No rows left after min_pre_count filtering.")
+
+    # ----------------------------
+    # Optional: Debug subset (top synthons only)
+    # ----------------------------
+    # debug_top = params.get("debug_top_synthons", 200)
+    # if debug_top > 0:
+    #     top_synthons = df.groupby("NsynthonID")["copy"].sum().nlargest(debug_top).index
+    #     df = df[df["NsynthonID"].isin(top_synthons)]
+    #     logger.info("[del_bayesian_model] Debug subset: %d synthons selected", len(top_synthons))
+
+    # ----------------------------
+    # Collapse to synthon × condition
+    # ----------------------------
     model_df = (
-        df_pd
-        .groupby(["NsynthonID", "condition"], as_index=False)
-        .agg(post_count=("post_count", "sum"))
+        df.groupby(["NsynthonID", "condition"], as_index=False)
+        .agg(
+            enrichment_mean=("enrichment", "mean"),
+            n_compounds=("copy", "count"),
+        )
     )
 
     logger.info(
         "[del_bayesian_model] Collapsed %d rows → %d synthon-condition rows",
-        len(df_pd),
+        len(df),
         len(model_df),
     )
 
-    logger.info(
-        "[del_bayesian_model] Unique synthons=%d, conditions=%d, rows=%d",
-        model_df["NsynthonID"].nunique(),
-        model_df["condition"].nunique(),
-        len(model_df),
-    )
+    # ----------------------------
+    # Response: log enrichment with clipping
+    # ----------------------------
+    y = model_df["enrichment_mean"].to_numpy(dtype=float)
+    y = np.clip(y, 1e-6, 1000.0)  # avoid log(0) and huge spikes
+    log_y = np.log(y)
+    weights = np.sqrt(model_df["n_compounds"].to_numpy())  # weight by compound count
 
-    # Encode synthons and conditions
+    # ----------------------------
+    # Encode indices
+    # ----------------------------
     syn_codes, syn_idx = np.unique(model_df["NsynthonID"], return_inverse=True)
     cond_codes, cond_idx = np.unique(model_df["condition"], return_inverse=True)
-    y_obs = model_df["post_count"].to_numpy()
 
-    # Spike test
-    spike_cfg = params.get("spike_test", {})
-    if spike_cfg.get("enable", False):
-        rng = np.random.default_rng(model_cfg.get("random_seed", 42))
-        spike_idx = rng.choice(len(y_obs), size=min(spike_cfg.get("synthons", 10), len(y_obs)), replace=False)
-        y_obs[spike_idx] *= spike_cfg.get("multiplier", 10)
-
-    overdisp = model_cfg.get("overdispersion", 1.5)
+    # ----------------------------
+    # Model parameters
+    # ----------------------------
+    n_advi = model_cfg.get("advi_iterations", 3000)
     draws = model_cfg.get("draws", 500)
-    chains = model_cfg.get("chains", 4)
-    n_advi = model_cfg.get("advi_iterations", 10000) 
     random_seed = model_cfg.get("random_seed", 42)
 
-    # Dynamic threads allocation
-    # max_cpus = min(params.get("resources", {}).get("max_cpus", psutil.cpu_count(logical=True)), 64)
-    # threads_per_chain = max(1, max_cpus // chains)
-    # os.environ.update({
-    #     "OMP_NUM_THREADS": str(threads_per_chain),
-    #     "OPENBLAS_NUM_THREADS": str(threads_per_chain),
-    #     "MKL_NUM_THREADS": str(threads_per_chain),
-    #     "VECLIB_MAXIMUM_THREADS": str(threads_per_chain),
-    #     "NUMEXPR_NUM_THREADS": str(threads_per_chain),
-    # })
+    logger.info("[del_bayesian_model] ADVI start: iterations=%d, synthons=%d, conditions=%d",
+                n_advi, len(syn_codes), len(cond_codes))
 
-    # logger.info(f"[del_bayesian_model] ADVI with chains={chains}, threads_per_chain={threads_per_chain}, max_cpus={max_cpus}")
-
-    # from multiprocessing import get_context
-
-    # # Prepare args for each chain
-    # args_list = [
-    #     (seed, y_obs, cond_idx, syn_idx, cond_codes, syn_codes, overdisp, n_advi, draws, threads_per_chain)
-    #     for seed in np.arange(chains) + random_seed
-    # ]
-
-    # # Use spawn context
-    # with get_context("spawn").Pool(processes=chains) as pool:
-    #     trace_list = pool.starmap(run_advi_chain, args_list)
-
-    # # Combine traces
-    # trace = az.concat(trace_list, dim="chain")
-
-    zero_frac = (y_obs == 0).mean()
-    logger.info(
-        "[del_bayesian_model] Zero-count fraction: %.3f",
-        zero_frac,
-    )
-
-    logger.info(
-        "[del_bayesian_model] post_count quantiles:\n%s",
-        pd.Series(y_obs).quantile([0, 0.25, 0.5, 0.75, 0.9, 0.99, 1.0])
-    )
-
-    logger.info(
-        "[del_bayesian_model] Running single ADVI fit."
-    )
-
-    import time
-
+    # ----------------------------
+    # Bayesian model
+    # ----------------------------
+    start_time = time.time()
     with pm.Model() as model:
         alpha_cond = pm.Normal("alpha_cond", mu=0.0, sigma=1.0, shape=len(cond_codes))
         sigma_syn = pm.HalfNormal("sigma_syn", sigma=1.0)
         beta_syn = pm.Normal("beta_syn", mu=0.0, sigma=sigma_syn, shape=len(syn_codes))
+        sigma_obs = pm.HalfNormal("sigma_obs", sigma=1.0)
 
-        log_mu = alpha_cond[cond_idx] + beta_syn[syn_idx]
-        mu = pm.math.exp(log_mu)
+        mu = alpha_cond[cond_idx] + beta_syn[syn_idx]
 
-        pm.NegativeBinomial(
-            "obs",
-            mu=mu,
-            alpha=overdisp,
-            observed=y_obs,
-        )
+        pm.Normal("obs", mu=mu, sigma=sigma_obs / weights, observed=log_y)
 
-        start_time = time.time()
-
-        logger.info(
-            "[del_bayesian_model] ADVI start: iterations=%d, synthons=%d, conditions=%d",
-            n_advi,
-            len(syn_codes),
-            len(cond_codes),
-        )
-
-        approx = pm.fit(
-            n=n_advi,
-            method="advi",
-            obj_optimizer=pm.adam(learning_rate=0.01),
-            progressbar=True,
-            random_seed=random_seed,
-        )
-
-        elapsed = time.time() - start_time
-        logger.info(
-            "[del_bayesian_model] ADVI finished in %.1f minutes",
-            elapsed / 60,
-        )
-
+        approx = pm.fit(n=n_advi, method="advi",
+                        obj_optimizer=pm.adam(learning_rate=0.01),
+                        progressbar=True, random_seed=random_seed)
         trace = approx.sample(draws=draws)
 
-    # ----- Posterior statistics -----
-    beta_post = trace.posterior["beta_syn"]
-    p_active = (beta_post > 0).mean(dim=("chain", "draw")).values
-    hdi = az.hdi(beta_post, hdi_prob=0.95)["beta_syn"].values
-    beta_hdi_lower = hdi[..., 0] if hdi.ndim == 2 else hdi[:, 0]
-    beta_hdi_upper = hdi[..., 1] if hdi.ndim == 2 else hdi[:, 1]
-    beta_mean = beta_post.mean(dim=("chain", "draw")).values
+    elapsed = (time.time() - start_time) / 60
+    logger.info("[del_bayesian_model] ADVI finished in %.1f minutes", elapsed)
 
-    logger.info(
-        "[del_bayesian_model] beta_mean summary:\n%s",
-        pd.Series(beta_mean).describe()
-    )
-
+    # ----------------------------
+    # Posterior summaries (corrected per synthon × condition)
+    # ----------------------------
+    
     summary_df = model_df[["NsynthonID", "condition"]].copy()
 
-    summary_df["beta_mean"] = beta_mean[syn_idx]
-    summary_df["beta_hdi_lower"] = beta_hdi_lower[syn_idx]
-    summary_df["beta_hdi_upper"] = beta_hdi_upper[syn_idx]
+    # Posterior arrays
+    beta_post = trace.posterior["beta_syn"]      # shape: (chains, draws, n_syn)
+    alpha_post = trace.posterior["alpha_cond"]   # shape: (chains, draws, n_cond)
+
+    # Means
+    beta_mean = beta_post.mean(dim=("chain","draw")).values  # synthon-level
+    alpha_mean = alpha_post.mean(dim=("chain","draw")).values  # condition-level
+
+    # HDIs
+    beta_hdi = az.hdi(beta_post, hdi_prob=0.95)["beta_syn"].values
+    alpha_hdi = az.hdi(alpha_post, hdi_prob=0.95)["alpha_cond"].values
+
+    # Combine for synthon × condition
+    summary_df["beta_mean"] = beta_mean[syn_idx] + alpha_mean[cond_idx]
+    summary_df["beta_hdi_lower"] = beta_hdi[syn_idx,0] + alpha_hdi[cond_idx,0]
+    summary_df["beta_hdi_upper"] = beta_hdi[syn_idx,1] + alpha_hdi[cond_idx,1]
+
+    # Synthon-level p_active (correct)
+    p_active = (beta_post > 0).mean(dim=("chain","draw")).values
     summary_df["p_active"] = p_active[syn_idx]
 
 
-    # Merge physchem features
+    # ----------------------------
+    # Merge physchem (mean per synthon-condition)
+    # ----------------------------
     physchem_cols = [
-        c for c in df_pd.columns
-        if c.endswith("_mean") or c in ["MW","logP","PSA","ROTN","HBD","HBA","RCount","ARCount","Fsp3","HeavyAcount"]
+        "MW","logP","PSA","ROTN","HBD","HBA",
+        "RCount","ARCount","Fsp3","HeavyAcount"
     ]
+    physchem_cols = [c for c in physchem_cols if c in df.columns]
+
     if physchem_cols:
-        summary_df = summary_df.merge(
-            df_pd[["NsynthonID", "condition"] + physchem_cols],
-            on=["NsynthonID", "condition"],
-            how="left"
-        )
+        physchem_df = df.groupby(["NsynthonID","condition"], as_index=False).agg({c:"mean" for c in physchem_cols})
+        summary_df = summary_df.merge(physchem_df, on=["NsynthonID","condition"], how="left")
 
     return {"df": summary_df, "trace": trace}
+
+
 
 
 @register_task(
@@ -361,7 +359,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
         physchem_cols = [
             c for c in physchem_df.columns
             if c not in {"NsynthonID", "condition", "total_count", "n_compounds",
-                     "beta_mean", "beta_hdi_lower", "beta_hdi_upper", "p_active"} 
+                         "beta_mean", "beta_hdi_lower", "beta_hdi_upper", "p_active"} 
             and pd.api.types.is_numeric_dtype(physchem_df[c])
         ]
 
@@ -372,21 +370,13 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             # NaN check
             physchem_cols = [c for c in physchem_cols if c in df.columns and df[c].notna().any()]
 
+    # ----------------------------
     # Apply Bayesian / physchem filters 
+    # ----------------------------
     posterior_cutoff = params.get("posterior_cutoff", 0.95)
     require_hdi_positive = params.get("require_hdi_positive", True)
     physchem_filters = params.get("physchem_filters", {})
 
-    mask = df["p_active"] >= posterior_cutoff
-    if require_hdi_positive:
-        mask &= df["beta_hdi_lower"] > 0.0
-    for col, (low, high) in physchem_filters.items():
-        if col in df.columns:
-            mask &= df[col].between(low, high)
-    hits_df = df[mask].copy()
-
-    # Output applied filters
-    
     n_start = len(df)
     logger.info("[del_hit_picker] Starting with %d rows", n_start)
 
@@ -420,11 +410,12 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             )
             mask &= mask_phys
 
+    hits_df = df[mask].copy()  # <-- filtered df, already has per-condition p_active
+
     # Check if no hits, gracefully fail and warn
     if hits_df.empty:
         logger.warning("[del_hit_picker] No hits found after filtering.")
         
-        # Return empty structures, but still in the same format
         top_hits_df = pd.DataFrame(
             columns=[
                 "NsynthonID", "top_condition", "top_beta_mean",
@@ -462,6 +453,9 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     full_csv_path = out_dir / params.get("output", {}).get("filename", "wuxi_del_hits.csv")
     top_csv_path = out_dir / params.get("output", {}).get("top_hits_filename", "wuxi_del_top_hits.csv")
+
+    # --- NO recomputation of p_active needed ---
+    # hits_df["p_active"] already contains per-condition values used in plots
 
     hits_df.to_csv(full_csv_path, index=False)
     top_hits_df.to_csv(top_csv_path, index=False)
@@ -505,5 +499,3 @@ def del_hit_picker(config: dict, data: dict) -> dict:
         "top_hits_df": top_hits_df,
         "plot_files": plot_files_str
     }
-
-
