@@ -45,7 +45,8 @@ from itertools import combinations
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
-from modules.utils.plot_del_hits import plot_del_hits, plot_squares_hits, reduce_hits_for_plotting
+from modules.utils.plot_del_hits import plot_del_hits, reduce_hits_for_plotting
+from modules.utils.plot_del_hits import plot_del_qc_metrics
 from modules.utils.umap import add_umap_clusters
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
@@ -387,6 +388,15 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         if col_mean in summary_df.columns:
             logger.info("  %s: %d non-NaN", col_mean, summary_df[col_mean].notna().sum())
 
+
+    # Propagate enrichment for QC plotting
+
+    summary_df["enrichment_mean"] = (
+        model_df.set_index(["NsynthonID", "condition"])["enrichment_mean"]
+        .reindex(summary_df.set_index(["NsynthonID", "condition"]).index)
+        .values
+    )
+
     return {"df": summary_df, "trace": trace, "physchem_cols": physchem_cols}
 
 @register_task(
@@ -417,7 +427,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
 
     # Keep only columns that actually exist and are numeric
     if physchem_cols:
-        physchem_cols = [c for c in physchem_cols if f"{c}_mean" in df.columns]
+        physchem_cols = [c for c in physchem_cols if c in df.columns]
     
     logger.debug("[del_hit_picker] physchem_cols after existence check in df: %s", physchem_cols)
 
@@ -445,6 +455,21 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     require_hdi_positive = params.get("require_hdi_positive", True)
     physchem_filters = params.get("physchem_filters", {})
 
+    print(posterior_cutoff, require_hdi_positive)
+
+    logger.info(
+        "[del_hit_picker] Physchem filters requested (YAML keys): %s",
+        list(physchem_filters.keys())
+    )
+
+    if physchem_filters:
+        logger.info(
+            "[del_hit_picker] Physchem filters requested from YAML: %s",
+            physchem_filters
+        )
+    else:
+        logger.info("[del_hit_picker] No physchem filters provided in YAML")
+
     n_start = len(df)
     logger.info("[del_hit_picker] Starting with %d rows", n_start)
 
@@ -469,18 +494,32 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     # Apply physchem filters if provided
     # ----------------------------
 
-    for col, (low, high) in physchem_filters.items():
-        if col in df.columns:
-            mask_phys = df[col].between(low, high)
-            logger.info(
-                "[del_hit_picker] %s in [%.3f, %.3f]: %d / %d pass",
-                col,
-                low,
-                high,
-                (mask & mask_phys).sum(),
-                n_start
+    for base_col, (low, high) in physchem_filters.items():
+
+        # Resolve column name
+        if base_col in df.columns:
+            col = base_col
+        elif f"{base_col}_mean" in df.columns:
+            col = f"{base_col}_mean"
+        elif f"{base_col}_mean_mean" in df.columns:
+            col = f"{base_col}_mean_mean"
+        else:
+            logger.warning(
+                "[del_hit_picker] Physchem filter '%s' not found (checked %s, %s_mean, %s_mean_mean) — skipping",
+                base_col, base_col, base_col, base_col
             )
-            mask &= mask_phys
+            continue
+
+        before = mask.sum()
+        mask_phys = df[col].between(low, high)
+        mask &= mask_phys
+        after = mask.sum()
+
+        logger.info(
+            "[del_hit_picker] Physchem filter applied: %s → %s in [%.2f, %.2f] | %d → %d rows",
+            base_col, col, low, high, before, after
+        )
+
 
     # ----------------------------
     # Filtered hits
@@ -544,19 +583,61 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     # UMAP clustering for plotting
     # ----------------------------
 
-    umap_features = [
-        "beta_mean",
-        "p_active",
-    ]
+    # umap_features = [c for c in physchem_cols if c in hits_df.columns]
 
-    umap_features += [c for c in physchem_cols if c in hits_df.columns]
+    # logger.info(
+    #     "[del_hit_picker] UMAP features: %s",
+    #     umap_features
+    # )
 
-    hits_df = add_umap_clusters(
-        hits_df,
+    # hits_df = add_umap_clusters(
+    #     hits_df,
+    #     feature_cols=umap_features,
+    #     n_neighbors=30,
+    #     min_dist=0.15,
+    #     cluster_method="hdbscan",
+    # )
+
+    # Extract library from NsynthonID
+    hits_df["library"] = hits_df["NsynthonID"].str.split("-", n=1).str[0]
+
+    # Compute per-library weights
+    lib_counts = hits_df["library"].value_counts()
+    hits_df["umap_weight"] = 1.0 / lib_counts[hits_df["library"]].values
+
+    # Number of samples for UMAP
+    n_umap_samples = min(len(hits_df), params.get("max_plot_hits", 10000))
+
+    # Sample proportionally to weights
+    umap_input_df = hits_df.sample(
+        n=n_umap_samples,
+        weights="umap_weight",
+        random_state=42
+    ).reset_index(drop=True)
+
+    logger.info(
+        "[del_hit_picker] Using %d hits for UMAP (%d libraries, proportional sampling)",
+        len(umap_input_df),
+        umap_input_df["library"].nunique()
+    )
+
+    # Features for UMAP
+    umap_features = ["beta_mean", "p_active"] + [c for c in physchem_cols if c in hits_df.columns]
+
+    # Compute UMAP embedding
+    umap_input_df = add_umap_clusters(
+        umap_input_df,
         feature_cols=umap_features,
         n_neighbors=30,
         min_dist=0.15,
         cluster_method="hdbscan",
+    )
+
+    # Merge UMAP coords back into full hits_df
+    hits_df = hits_df.merge(
+        umap_input_df[["NsynthonID", "umap_x", "umap_y", "cluster_id"]],
+        on="NsynthonID",
+        how="left"
     )
 
     # ----------------------------
@@ -593,13 +674,15 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             hits_df[c] = pd.to_numeric(hits_df[c], errors="coerce")
 
         plot_files = plot_del_hits(
-            hits_df=reduced_hits_df,   # reduced df for visuals
-            full_hits_df=hits_df,      # full df for UpSet
+            hits_df=reduced_hits_df,
+            full_hits_df=hits_df,
             output_dir=plot_dir,
             top_n=params.get("top_n_per_condition", 10),
             physchem_cols=physchem_cols,
+            physchem_filters=physchem_filters,  # NEW
             heatmap_top_n=50
         )
+
 
     plot_files_str = {k: str(v) for k, v in plot_files.items()}
     logger.debug("[del_hit_picker] Plots generated: %s", plot_files_str)
@@ -612,174 +695,168 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     }
 
 @register_task(
-    "del_squares_analysis",
+    "del_qc_metrics",
     category="DEL",
-    description="Perform proper squares analysis (SAR consistency) for DEL synthons."
+    description="Ad-hoc QC diagnostics for DEL Bayesian model (non-blocking)."
 )
-def del_squares_analysis(config: dict, data: dict) -> dict:
+def del_qc_metrics(config: dict, data: dict) -> dict:
 
-    # ----------------------------
-    # Config
-    # ----------------------------
-
-    params = config.get("del_squares_analysis", {})
-    enrichment_col = params.get("enrichment_col", "enrichment_mean")  # column to use
-    threshold = params.get("active_threshold", 1.5)  # enrichment threshold to call active
-    out_dir = Path(params.get("output", {}).get("directory", "outputs/del_squares"))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / params.get("output", {}).get("filename", "squares_counts.parquet")
-
-    # ----------------------------
-    # Get input data
-    # ----------------------------
-
-    df = data.get("df")
-    if df is None or df.empty:
-        parquet_path = data.get("input_file")
-        if parquet_path and Path(parquet_path).exists():
-            df = pl.read_parquet(parquet_path)
-        else:
-            raise ValueError("[del_squares_model] No input dataframe found and no valid input_file path.")
-    
-    # ----------------------------
-    # Normalise schema
-    # ----------------------------
-    if "copy" not in df.columns:
-        if "post_count" in df.columns:
-            df = df.with_columns(pl.col("post_count").alias("copy")) if isinstance(df, pl.DataFrame) else df.assign(copy=df["post_count"])
-        else:
-            raise ValueError("[del_squares_model] No count column found (copy/post_count).")
-
-    if "enrichment" not in df.columns:
-        if "enrichment_mean" in df.columns:
-            df = df.with_columns(pl.col("enrichment_mean").alias("enrichment")) if isinstance(df, pl.DataFrame) else df.assign(enrichment=df["enrichment_mean"])
-        else:
-            raise ValueError("[del_squares_model] No enrichment column found (enrichment/enrichment_mean).")
-
-    if isinstance(df, pl.DataFrame):
-        df = df.to_pandas()
-    else:
-        df = df.copy()
-
-    # ----------------------------
-    # Call active/inactive per condition
-    # ----------------------------
-
-    df["active"] = df[enrichment_col] >= threshold
-
-    # ----------------------------
-    # Enumerate squares per condition pair
-    # ----------------------------
-
-    conditions = df["condition"].unique()
-    squares_list = []
-
-    for c1, c2 in combinations(conditions, 2):
-        df_c1 = df[df["condition"] == c1][["NsynthonID", "active"]].set_index("NsynthonID")
-        df_c2 = df[df["condition"] == c2][["NsynthonID", "active"]].set_index("NsynthonID")
-
-        # Synthon IDs active in both conditions
-        active_c1 = set(df_c1[df_c1["active"]].index)
-        active_c2 = set(df_c2[df_c2["active"]].index)
-        square_synthon_ids = active_c1 & active_c2
-
-        for syn in square_synthon_ids:
-            squares_list.append(syn)
-
-    # ----------------------------
-    # Count nsquares per synthon
-    # ----------------------------
-
-    squares_count = pd.Series(squares_list).value_counts().reset_index()
-    squares_count.columns = ["NsynthonID", "nsquares"]
-
-    # Merge back per-condition enrichment info
-    squares_df = df[['NsynthonID','condition',enrichment_col]].merge(
-        squares_count, on='NsynthonID', how='right'
-    )
-    squares_df = squares_df.rename(columns={enrichment_col: 'enrichment_mean', 'nsquares': 'squares_score'})
-
-    # ----------------------------
-    # Save output
-    # ----------------------------
-
-    squares_df.to_parquet(out_file, index=False)
-
-    return {
-        "df": squares_df,
-        "output_file": out_file
-    }
-
-@register_task(
-    "del_squares_hit_picker",
-    category="DEL",
-    description="Pick hits from squares scores using thresholding and physchem filters, preserving per-condition info."
-)
-def del_squares_hit_picker(config: dict, data: dict) -> dict:
+    import numpy as np
     import pandas as pd
-    from pathlib import Path
+    import arviz as az
+    from collections import Counter
+    from math import log
 
-    params = config.get("del_squares_hit_picker", {})
+    logger.info("[del_qc_metrics] Running ad-hoc DEL QC metrics")
+
     df = data.get("df")
-    if df is None or df.empty:
-        raise ValueError("[del_squares_hit_picker] No squares scores found.")
+    trace = data.get("trace")
 
-    score_cutoff = params.get("score_cutoff", 2.0)
-    physchem_filters = params.get("physchem_filters", {})
+    if df is None or trace is None:
+        logger.warning("[del_qc_metrics] Missing df or trace — skipping QC")
+        return {"qc_metrics": {}}
 
-    # ----------------------------
-    # Filter by synthon-level score
-    # ----------------------------
+    df = df.copy()
 
-    hits_df = df[df["squares_score"] >= score_cutoff].copy()
+    qc = {}
 
     # ----------------------------
-    # Apply physchem filters if provided
+    # 1. Global signal sanity
     # ----------------------------
+    beta = df["beta_mean"].values
+    p_active = df["p_active"].values
 
-    for col, (low, high) in physchem_filters.items():
-        if col in hits_df.columns:
-            hits_df = hits_df[hits_df[col].between(low, high)]
-
-    # ----------------------------
-    # Top-hit-per-synthon summary
-    # ----------------------------
-
-    top_hits_df = (
-        hits_df.sort_values(["squares_score", "enrichment_mean"], ascending=[False, False])
-        .groupby("NsynthonID", as_index=False)
-        .first()
-        .rename(columns={
-            "condition": "top_condition",
-            "enrichment_mean": "top_enrichment",
-            "squares_score": "top_squares_score"
-        })
-    )
-
-    # ----------------------------
-    # Save CSVs
-    # ----------------------------
-    
-    out_dir = Path(params.get("output", {}).get("directory", "outputs/del_squares_hits"))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    hits_file = out_dir / params.get("output", {}).get("filename", "squares_hits.csv")
-    top_file = out_dir / params.get("output", {}).get("top_hits_filename", "squares_top_hits.csv")
-
-    hits_df.to_csv(hits_file, index=False)
-    top_hits_df.to_csv(top_file, index=False)
-
-    plot_files = plot_squares_hits(
-        hits_df,
-        top_n=50,
-        enrichment_col="enrichment_mean",
-        enrichment_threshold=1.5,
-        thresholds=[1.5,2.0,2.5,3.0],
-        output_dir=out_dir
-    )
-
-    return {
-        "df": hits_df,
-        "top_hits_df": top_hits_df,
-        "output_files": {"full": hits_file, "top": top_file},
-        "plot_files": {k: str(v) for k, v in plot_files.items()}
+    qc["global"] = {
+        "beta_mean_mean": float(np.mean(beta)),
+        "beta_mean_std": float(np.std(beta)),
+        "frac_p_active_gt_0.5": float((p_active > 0.5).mean()),
+        "frac_p_active_gt_0.95": float((p_active > 0.95).mean()),
+        "n_rows": int(len(df)),
     }
+
+    if qc["global"]["frac_p_active_gt_0.95"] < 0.01:
+        logger.warning(
+            "[QC] Very few strong hits (p_active > 0.95: %.2f%%)",
+            100 * qc["global"]["frac_p_active_gt_0.95"]
+        )
+
+    # ----------------------------
+    # 2. Posterior uncertainty
+    # ----------------------------
+    hdi_width = df["beta_hdi_upper"] - df["beta_hdi_lower"]
+
+    qc["posterior_uncertainty"] = {
+        "median_hdi_width": float(np.median(hdi_width)),
+        "p90_hdi_width": float(np.quantile(hdi_width, 0.9)),
+        "frac_p_active_but_hdi_crosses_0": float(
+            ((df["p_active"] > 0.95) & (df["beta_hdi_lower"] <= 0)).mean()
+        ),
+    }
+
+    if qc["posterior_uncertainty"]["frac_p_active_but_hdi_crosses_0"] > 0.3:
+        logger.warning(
+            "[QC] Many high p_active hits have HDIs crossing zero (%.1f%%)",
+            100 * qc["posterior_uncertainty"]["frac_p_active_but_hdi_crosses_0"]
+        )
+
+    # ----------------------------
+    # 3. Condition-level diagnostics
+    # ----------------------------
+    cond_stats = (
+        df.groupby("condition")
+        .agg(
+            mean_beta=("beta_mean", "mean"),
+            std_beta=("beta_mean", "std"),
+            frac_active=("p_active", lambda x: (x > 0.95).mean()),
+            n=("beta_mean", "size"),
+        )
+        .reset_index()
+    )
+
+    qc["conditions"] = cond_stats.to_dict(orient="records")
+
+    if cond_stats["frac_active"].max() > 3 * cond_stats["frac_active"].median():
+        logger.warning(
+            "[QC] One condition dominates hit rate — possible condition-specific artifact"
+        )
+
+    # ----------------------------
+    # 4. Library dominance
+    # ----------------------------
+    if "NsynthonID" in df.columns:
+        libs = df["NsynthonID"].str.split("-", n=1).str[0]
+        hit_libs = libs[p_active > 0.95]
+
+        lib_counts = Counter(hit_libs)
+        total = sum(lib_counts.values())
+
+        def shannon_entropy(counter):
+            return -sum((c/total) * log(c/total) for c in counter.values() if c > 0)
+
+        qc["libraries"] = {
+            "n_libraries_with_hits": len(lib_counts),
+            "top_library_frac": (
+                max(lib_counts.values()) / total if total > 0 else 0.0
+            ),
+            "library_entropy": shannon_entropy(lib_counts) if total > 0 else 0.0,
+        }
+
+        if qc["libraries"]["top_library_frac"] > 0.6:
+            logger.warning(
+                "[QC] One library contributes %.1f%% of hits — possible bias",
+                100 * qc["libraries"]["top_library_frac"]
+            )
+
+    # ----------------------------
+    # 5. Variance decomposition
+    # ----------------------------
+    try:
+        var_summary = az.summary(
+            trace,
+            var_names=["sigma_obs", "sigma_cond"],
+            kind="stats"
+        )
+
+        sigma_obs = var_summary.loc["sigma_obs", "mean"]
+        sigma_cond = var_summary.loc["sigma_cond", "mean"]
+
+        qc["variance"] = {
+            "sigma_obs_mean": float(sigma_obs),
+            "sigma_cond_mean": float(sigma_cond),
+            "sigma_cond_over_obs": float(sigma_cond / sigma_obs),
+        }
+
+        if sigma_obs > 2 * sigma_cond:
+            logger.warning(
+                "[QC] Observation noise dominates condition effects (sigma_obs >> sigma_cond)"
+            )
+
+    except Exception as e:
+        logger.warning("[QC] Could not compute variance diagnostics: %s", e)
+
+    # ----------------------------
+    # 6. QC plots
+    # ----------------------------
+    try:
+        plot_dir = (
+            config
+            .get("output", {})
+            .get("plots_directory", "outputs/plots_qc")
+        )
+
+        plot_del_qc_metrics(
+            df,
+            output_dir=plot_dir
+        )
+
+        logger.info("[del_qc_metrics] QC plots written to %s", plot_dir)
+
+    except Exception as e:
+        logger.warning(
+            "[del_qc_metrics] QC plotting failed (non-fatal): %s", e
+        )
+
+
+    logger.info("[del_qc_metrics] QC metrics completed")
+
+    return {"qc_metrics": qc, "df": df, "trace": trace}
