@@ -5,7 +5,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
-# from matplotlib.gridspec import GridSpec
+from matplotlib.gridspec import GridSpec
 
 from pathlib import Path
 # from upsetplot import from_indicators, UpSet
@@ -16,7 +16,7 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def plot_squares_hits(df, top_n=20, enrichment_col="enrichment_mean",
+def plot_squares_hits(df, full_df=None, top_n=20, enrichment_col="enrichment_mean",
                           enrichment_threshold=1.5, thresholds=None, output_dir=None):
     """
     Comprehensive DEL squares plotting including barplots, heatmaps, scatter, and threshold sweep.
@@ -57,6 +57,7 @@ def plot_squares_hits(df, top_n=20, enrichment_col="enrichment_mean",
         colors = cmap(norm(mean_enr.loc[categories]))
         fig, ax = plt.subplots(figsize=(12,6))
         bars = ax.bar(categories, values, color=colors)
+        ax.set_xticks(range(len(categories)))
         ax.set_xticklabels(categories, rotation=45, ha="right")
         ax.set_ylabel(ylabel)
         ax.set_title(title)
@@ -113,24 +114,57 @@ def plot_squares_hits(df, top_n=20, enrichment_col="enrichment_mean",
     fig.savefig(plot_files["mean_std_enrichment"], dpi=300)
     plt.close()
 
-    # Squares contribution heatmap
-    conditions = df_top["condition"].unique()
-    contribution_matrix = pd.DataFrame(0, index=df_top["NsynthonID"].cat.categories, columns=conditions)
-    for syn in df_top["NsynthonID"].cat.categories:
-        syn_df = df_top[df_top["NsynthonID"] == syn]
-        active_conditions_syn = syn_df[syn_df[enrichment_col] >= enrichment_threshold]["condition"].tolist()
-        for c1, c2 in combinations(active_conditions_syn, 2):
-            contribution_matrix.loc[syn, c1] += 1
-            contribution_matrix.loc[syn, c2] += 1
-    fig, ax = plt.subplots(figsize=(12, max(6, len(contribution_matrix)*0.25)))
-    sns.heatmap(contribution_matrix, cmap="viridis", linewidths=0.5, linecolor="gray", ax=ax)
+    # ----------------------------
+    # Normalised enrichment heatmap (Z-scored per condition)
+    # ----------------------------
+
+    # Decide which full dataframe to use for enrichment values
+    enr_df = full_df if full_df is not None else df
+
+    # Keep only synthons in df_top
+    plot_syn_ids = df_top["NsynthonID"].unique()
+    heatmap_df = enr_df[enr_df["NsynthonID"].isin(plot_syn_ids)].copy()
+
+    # Pivot to matrix: rows = synthon, cols = condition
+    pivot_df = heatmap_df.pivot(index="NsynthonID", columns="condition", values=enrichment_col)
+
+    # Compute per-condition z-score using all synthons
+    pivot_z = pivot_df.copy()
+    for col in pivot_z.columns:
+        col_values = enr_df[enr_df["condition"] == col][enrichment_col]
+        col_mean = col_values.mean()
+        col_std = col_values.std()
+        if col_std > 0:
+            pivot_z[col] = (pivot_z[col] - col_mean) / col_std
+        else:
+            pivot_z[col] = 0.0
+
+    # Order rows by squares_score from df_top
+    row_order = (
+        df_top.groupby("NsynthonID", observed=True)["squares_score"]
+        .max()
+        .sort_values(ascending=False)
+        .index
+    )
+    pivot_z = pivot_z.loc[row_order]
+
+    fig, ax = plt.subplots(figsize=(12, max(6, len(pivot_z)*0.3)))
+    sns.heatmap(
+        pivot_z,
+        cmap="coolwarm",
+        center=0,
+        linewidths=0.5,
+        linecolor="gray",
+        ax=ax
+    )
     ax.set_ylabel("Synthon")
     ax.set_xlabel("Condition")
-    ax.set_title("Per-Condition Contribution to Squares Score")
+    ax.set_title("Top Synthons — Condition-Normalized Enrichment (Z-score)")
     plt.tight_layout()
-    plot_files["squares_contribution_heatmap"] = output_dir / "squares_contribution_heatmap.png"
-    fig.savefig(plot_files["squares_contribution_heatmap"], dpi=300)
+    plot_files["normalized_enrichment_heatmap"] = output_dir / "squares_normalized_enrichment_heatmap.png"
+    fig.savefig(plot_files["normalized_enrichment_heatmap"], dpi=300)
     plt.close()
+
 
     # Scatter squares_score vs mean enrichment
     fig, ax = plt.subplots(figsize=(8,6))
@@ -145,12 +179,36 @@ def plot_squares_hits(df, top_n=20, enrichment_col="enrichment_mean",
     fig.savefig(plot_files["scatter_score_vs_mean"], dpi=300)
     plt.close()
 
-    # Binary heatmap: active/inactive
-    binary_df = df_top.copy()
-    binary_df["active"] = binary_df[enrichment_col] >= enrichment_threshold
-    binary_matrix = binary_df.pivot(index="NsynthonID", columns="condition", values="active").fillna(False)
+    # ----------------------------
+    # Binary heatmap: active/inactive (full conditions, top synthons only)
+    # ----------------------------
+    # Use full_df if available
+    bin_df = full_df if full_df is not None else df
+
+    # Keep only synthons in df_top
+    bin_df = bin_df[bin_df["NsynthonID"].isin(df_top["NsynthonID"].unique())].copy()
+
+    # Compute active/inactive based on enrichment threshold
+    bin_df["active"] = bin_df[enrichment_col] >= enrichment_threshold
+
+    # Pivot to matrix: rows = synthon, cols = condition
+    binary_matrix = bin_df.pivot(index="NsynthonID", columns="condition", values="active").fillna(False)
+
+    # Order rows to match normalized heatmap
+    binary_matrix = binary_matrix.loc[row_order]
+
+    inactive_matrix = (~binary_matrix).astype(int)
+
     fig, ax = plt.subplots(figsize=(12, max(6, len(binary_matrix)*0.25)))
-    sns.heatmap(binary_matrix.astype(int), cmap="Greys", linewidths=0.5, linecolor="gray", cbar=False, ax=ax)
+    sns.heatmap(
+        inactive_matrix.astype(int),
+        cmap="Blues",        # diverging or sequential colormap
+        linewidths=0.5,
+        linecolor="gray",
+        cbar=False,
+        ax=ax,
+        alpha=0.7
+    )
     ax.set_ylabel("Synthon")
     ax.set_xlabel("Condition")
     ax.set_title(f"Binary Active/Inactive per Condition (Threshold ≥ {enrichment_threshold})")
@@ -160,22 +218,35 @@ def plot_squares_hits(df, top_n=20, enrichment_col="enrichment_mean",
     plt.close()
 
     # ----------------------------
-    # Threshold sweep plots
+    # Threshold sweep plots: How many hits do we lose with different activity thresholds?
     # ----------------------------
     if thresholds is None:
         thresholds = np.linspace(1.0, 3.0, 11)
 
     active_counts = []
     total_squares_list = []
+
+    sweep_df = full_df if full_df is not None else df
+
     for th in thresholds:
-        df["active"] = df[enrichment_col] >= th
-        active_counts.append(df.groupby("NsynthonID", observed=True)["active"].any().sum())
+        tmp = sweep_df.copy()
+        tmp["active"] = tmp[enrichment_col] >= th
+
+        active_counts.append(
+            tmp.groupby("NsynthonID", observed=True)["active"].any().sum()
+        )
+
         squares_list = []
-        conds = df["condition"].unique()
+        conds = tmp["condition"].unique()
+
         for c1, c2 in combinations(conds, 2):
-            df_c1 = df[df["condition"] == c1][["NsynthonID","active"]].set_index("NsynthonID")
-            df_c2 = df[df["condition"] == c2][["NsynthonID","active"]].set_index("NsynthonID")
-            squares_list.extend(set(df_c1[df_c1["active"]].index) & set(df_c2[df_c2["active"]].index))
+            df_c1 = tmp[tmp["condition"] == c1][["NsynthonID", "active"]].set_index("NsynthonID")
+            df_c2 = tmp[tmp["condition"] == c2][["NsynthonID", "active"]].set_index("NsynthonID")
+            squares_list.extend(
+                set(df_c1[df_c1["active"]].index)
+                & set(df_c2[df_c2["active"]].index)
+            )
+
         total_squares_list.append(len(squares_list))
 
     # Active synthons vs threshold
@@ -203,6 +274,61 @@ def plot_squares_hits(df, top_n=20, enrichment_col="enrichment_mean",
     plot_files["threshold_sweep_total_squares"] = output_dir / "threshold_sweep_total_squares.png"
     fig.savefig(plot_files["threshold_sweep_total_squares"], dpi=300)
     plt.close()
+
+    # ----------------------------
+    # Faceted UMAP by condition (highlight top squares hits)
+    # ----------------------------
+    if {"umap_1", "umap_2"}.issubset(df.columns):
+        # Optional: library-weighted subsampling for plotting
+        df_for_umap = df.copy()
+        if "library" in df_for_umap.columns:
+            lib_counts = df_for_umap["library"].value_counts()
+            df_for_umap["umap_weight"] = 1.0 / lib_counts[df_for_umap["library"]].values
+            # Sample all rows proportionally to library weight
+            df_for_umap = df_for_umap.sample(n=len(df_for_umap), weights="umap_weight", random_state=42).reset_index(drop=True)
+
+        plot_col = "squares_score"
+        conditions = sorted(df_for_umap["condition"].unique())
+        n_cols = 3
+        n_rows = int(np.ceil(len(conditions) / n_cols))
+
+        fig = plt.figure(figsize=(4 * n_cols, 4 * n_rows + 1))
+        gs = GridSpec(n_rows + 1, n_cols, height_ratios=[4]*n_rows + [0.2], hspace=0.3)
+
+        vmin = df_for_umap[plot_col].min()
+        vmax = df_for_umap[plot_col].max()
+        for i, cond in enumerate(conditions):
+            row = i // n_cols
+            col = i % n_cols
+            ax = fig.add_subplot(gs[row, col])
+
+            # background points
+            ax.scatter(df_for_umap["umap_1"], df_for_umap["umap_2"], s=10, c="lightgray", alpha=0.2, linewidth=0)
+
+            # highlight points for this condition
+            sub = df_for_umap[df_for_umap["condition"] == cond]
+            sc = ax.scatter(sub["umap_1"], sub["umap_2"], c=sub[plot_col], cmap="plasma_r",
+                            vmin=vmin, vmax=vmax, s=20, alpha=0.9, linewidth=0)
+
+            ax.set_title(cond)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        for i in range(len(conditions), n_rows*n_cols):
+            ax = fig.add_subplot(gs[i // n_cols, i % n_cols])
+            ax.axis("off")
+
+        # horizontal colorbar
+        cbar_ax = fig.add_subplot(gs[-1, :])
+        plt.colorbar(sc, cax=cbar_ax, orientation="horizontal", label=plot_col)
+        fig.suptitle(f"UMAP of DEL hits (highlighted by {plot_col})", y=1.02)
+        umap_file = Path(output_dir) / "umap_by_condition.png"
+        plt.savefig(umap_file, dpi=300, bbox_inches="tight")
+        plt.close()
+        plot_files["umap_by_condition"] = umap_file
+    else:
+        logger.warning("[plot_squares_hits] UMAP scatter skipped: umap_1 / umap_2 not found in dataframe")
+
 
     return plot_files
 
