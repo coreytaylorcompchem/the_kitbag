@@ -1,201 +1,203 @@
-import os
+## TO BE RE-FIXINATED AND DONE BETTERER.
 
-import numpy as np
-from pathlib import Path
+# import os
 
-import openmm
-import openmm.app as app
-import openmm.unit as unit
+# import numpy as np
+# from pathlib import Path
 
-from openmm.app import PDBFile, Modeller, Simulation, Element, Topology
-from openmmforcefields.generators import SystemGenerator
-from openff.toolkit.topology import Molecule
+# import openmm
+# import openmm.app as app
+# import openmm.unit as unit
 
-from rdkit import Chem
+# from openmm.app import PDBFile, Modeller, Simulation, Element, Topology
+# from openmmforcefields.generators import SystemGenerator
+# from openff.toolkit.topology import Molecule
 
-from modules.docking_tasks import convert_to_pdbqt, dock
-from modules.ifd.flexible_shell import FlexibleShellSelector
-from modules.utils.ifd import load_protein, add_positional_restraints
+# from rdkit import Chem
 
-from pipeline.task_registry import register_task
-from pipeline.logger import setup_logger
+# from modules.docking_tasks import convert_to_pdbqt, dock
+# from modules.ifd.flexible_shell import FlexibleShellSelector
+# from modules.utils.ifd import load_protein, add_positional_restraints
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+# from pipeline.task_registry import register_task
+# from pipeline.logger import setup_logger
 
-# ---------------------------------------------------------------------
-# Core IFD system construction
-# ---------------------------------------------------------------------
+# logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
+# # ---------------------------------------------------------------------
+# # Core IFD system construction
+# # ---------------------------------------------------------------------
 
-    ff_path = config["induced_fit_docking"]["minimisation"]["protein_forcefield"]
-    ligand_fixed = config["induced_fit_docking"]["minimisation"].get("ligand_fixed", True)
-    ifd_cfg = config["induced_fit_docking"]
-    cutoff = ifd_cfg.get("residue_distance_cutoff", None)  # Å
+# def build_ifd_system(protein_pdb: PDBFile, ligand_sdf: Path, config: dict):
 
-    # Add protein
-    modeller = Modeller(protein_pdb.topology, protein_pdb.positions)
+#     ff_path = config["induced_fit_docking"]["minimisation"]["protein_forcefield"]
+#     ligand_fixed = config["induced_fit_docking"]["minimisation"].get("ligand_fixed", True)
+#     ifd_cfg = config["induced_fit_docking"]
+#     cutoff = ifd_cfg.get("residue_distance_cutoff", None)  # Å
 
-    # Load ligand via OpenFF
-    # TODO: Load via from_rdkit() to control protonation
-    ligand_mol = Molecule.from_file(str(ligand_sdf))
-    ligand_mol.name = "LIG"  # optional but nice
+#     # Add protein
+#     modeller = Modeller(protein_pdb.topology, protein_pdb.positions)
 
-    if not ligand_mol.conformers:
-        raise RuntimeError(f"Ligand has no 3D conformers: {ligand_sdf}")
+#     # Load ligand via OpenFF
+#     # TODO: Load via from_rdkit() to control protonation
+#     ligand_mol = Molecule.from_file(str(ligand_sdf))
+#     ligand_mol.name = "LIG"  # optional but nice
 
-    # Convert OpenFF → OpenMM topology
-    ligand_top = ligand_mol.to_topology().to_openmm()
+#     if not ligand_mol.conformers:
+#         raise RuntimeError(f"Ligand has no 3D conformers: {ligand_sdf}")
 
-    # Ensure residue is named LIG
-    for residue in ligand_top.residues():
-        residue.name = "LIG"
+#     # Convert OpenFF → OpenMM topology
+#     ligand_top = ligand_mol.to_topology().to_openmm()
 
-    # Convert GNINA SDF → coordinates (numpy array, Å)
-    coords = ligand_mol.conformers[0].to_openmm()
-    ligand_positions = coords.in_units_of(unit.nanometer)
+#     # Ensure residue is named LIG
+#     for residue in ligand_top.residues():
+#         residue.name = "LIG"
 
-    # Add ligand
-    modeller.add(ligand_top, ligand_positions)
+#     # Convert GNINA SDF → coordinates (numpy array, Å)
+#     coords = ligand_mol.conformers[0].to_openmm()
+#     ligand_positions = coords.in_units_of(unit.nanometer)
 
-    lig_atoms = [a for a in modeller.topology.atoms() if a.residue.name == "LIG"]
-    lig_bonds = [
-        b for b in modeller.topology.bonds()
-        if b[0].residue.name == "LIG" or b[1].residue.name == "LIG"
-    ]
+#     # Add ligand
+#     modeller.add(ligand_top, ligand_positions)
 
-    logger.debug(f"Ligand atoms: {len(lig_atoms)}, bonds: {len(lig_bonds)}")
+#     lig_atoms = [a for a in modeller.topology.atoms() if a.residue.name == "LIG"]
+#     lig_bonds = [
+#         b for b in modeller.topology.bonds()
+#         if b[0].residue.name == "LIG" or b[1].residue.name == "LIG"
+#     ]
 
-    if len(lig_atoms) == 0 or len(lig_bonds) == 0:
-        raise RuntimeError("Ligand was not correctly added to the topology")
+#     logger.debug(f"Ligand atoms: {len(lig_atoms)}, bonds: {len(lig_bonds)}")
 
-    # Build system
-    system_generator = SystemGenerator(
-        forcefields=[ff_path],
-        small_molecule_forcefield="openff-2.1.0",
-        molecules=[ligand_mol],
-    )
+#     if len(lig_atoms) == 0 or len(lig_bonds) == 0:
+#         raise RuntimeError("Ligand was not correctly added to the topology")
 
-    system = system_generator.create_system(modeller.topology)
+#     # Build system
+#     system_generator = SystemGenerator(
+#         forcefields=[ff_path],
+#         small_molecule_forcefield="openff-2.1.0",
+#         molecules=[ligand_mol],
+#     )
 
-    positions = modeller.positions
+#     system = system_generator.create_system(modeller.topology)
 
-    # ---------------------------
-    # Flexible shell selection
-    # ---------------------------
-    cutoff = config["induced_fit_docking"].get("residue_distance_cutoff", None)
+#     positions = modeller.positions
 
-    if cutoff is not None:
-        selector = FlexibleShellSelector(
-            cutoff_angstrom=cutoff,
-            residue_select=ifd_cfg.get("residue_select", []),
-            backbone_refinement=ifd_cfg.get("backbone_refinement", False),
-        )
+#     # ---------------------------
+#     # Flexible shell selection
+#     # ---------------------------
+#     cutoff = config["induced_fit_docking"].get("residue_distance_cutoff", None)
 
-        restrained_atoms = selector.select_restrained_atoms(
-            modeller.topology,
-            positions,
-        )
+#     if cutoff is not None:
+#         selector = FlexibleShellSelector(
+#             cutoff_angstrom=cutoff,
+#             residue_select=ifd_cfg.get("residue_select", []),
+#             backbone_refinement=ifd_cfg.get("backbone_refinement", False),
+#         )
 
-        logger.debug(
-            f"IFD shell: cutoff={cutoff} Å | "
-            f"restrained atoms={len(restrained_atoms)} / "
-            f"{modeller.topology.getNumAtoms()}"
-        )
+#         restrained_atoms = selector.select_restrained_atoms(
+#             modeller.topology,
+#             positions,
+#         )
 
-        add_positional_restraints(
-            system,
-            modeller,
-            sorted(restrained_atoms),
-            k=1000.0,
-        )
-    else:
-        logger.info("IFD: No flexible shell → full protein minimisation")
+#         logger.debug(
+#             f"IFD shell: cutoff={cutoff} Å | "
+#             f"restrained atoms={len(restrained_atoms)} / "
+#             f"{modeller.topology.getNumAtoms()}"
+#         )
 
-    # Optional: restrain ligand
-    if ligand_fixed:
-        ligand_atom_indices = [
-            a.index for a in modeller.topology.atoms()
-            if a.residue.name == "LIG"
-        ]
-        add_positional_restraints(system, modeller, ligand_atom_indices, k=1000.0)
+#         add_positional_restraints(
+#             system,
+#             modeller,
+#             sorted(restrained_atoms),
+#             k=1000.0,
+#         )
+#     else:
+#         logger.info("IFD: No flexible shell → full protein minimisation")
 
-    return system, modeller
+#     # Optional: restrain ligand
+#     if ligand_fixed:
+#         ligand_atom_indices = [
+#             a.index for a in modeller.topology.atoms()
+#             if a.residue.name == "LIG"
+#         ]
+#         add_positional_restraints(system, modeller, ligand_atom_indices, k=1000.0)
+
+#     return system, modeller
 
 
-# ---------------------------------------------------------------------
-# Thread-safe IFD task (ligands run in serial for the time-being)
-# ---------------------------------------------------------------------
+# # ---------------------------------------------------------------------
+# # Thread-safe IFD task (ligands run in serial for the time-being)
+# # ---------------------------------------------------------------------
 
-@register_task(
-    "induced_fit_docking",
-    category="Docking",
-    description="Dock, minimise nearby residues and re-dock.",
-)
-def induced_fit_docking(backend, ligand, config, **kwargs):
-    """
-    Minimises the receptor around a docked ligand and then re-docks the ligand.
-    """
-    # Per-ligand working directories
-    base_output = Path(config["output_dir"])
-    ligand_dir = base_output / ligand["name"]
-    ligand_dir.mkdir(parents=True, exist_ok=True)
+# @register_task(
+#     "induced_fit_docking",
+#     category="Docking",
+#     description="Dock, minimise nearby residues and re-dock.",
+# )
+# def induced_fit_docking(backend, ligand, config, **kwargs):
+#     """
+#     Minimises the receptor around a docked ligand and then re-docks the ligand.
+#     """
+#     # Per-ligand working directories
+#     base_output = Path(config["output_dir"])
+#     ligand_dir = base_output / ligand["name"]
+#     ligand_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load receptor
-    receptor_pdbqt = backend.cache.get("receptor_pdbqt")
-    if receptor_pdbqt is None:
-        raise RuntimeError("Receptor PDBQT not found in cache.")
+#     # Load receptor
+#     receptor_pdbqt = backend.cache.get("receptor_pdbqt")
+#     if receptor_pdbqt is None:
+#         raise RuntimeError("Receptor PDBQT not found in cache.")
 
-    receptor_clean_pdb = Path(str(receptor_pdbqt).replace(".pdbqt", "_protonated.pdb"))
-    protein_pdb = load_protein(receptor_clean_pdb)
+#     receptor_clean_pdb = Path(str(receptor_pdbqt).replace(".pdbqt", "_protonated.pdb"))
+#     protein_pdb = load_protein(receptor_clean_pdb)
 
-    if not ligand.get("pdbqt_paths"):
-        convert_to_pdbqt(backend, ligand, config)
+#     if not ligand.get("pdbqt_paths"):
+#         convert_to_pdbqt(backend, ligand, config)
 
-    docked_sdf = base_output / f"{ligand['name']}_conf0_docked.sdf" # only the first conformer for now
-    if not docked_sdf.exists():
-        raise FileNotFoundError(f"Docked SDF not found: {docked_sdf}")
+#     docked_sdf = base_output / f"{ligand['name']}_conf0_docked.sdf" # only the first conformer for now
+#     if not docked_sdf.exists():
+#         raise FileNotFoundError(f"Docked SDF not found: {docked_sdf}")
 
-    # Build & minimise system
-    system, modeller = build_ifd_system(protein_pdb, docked_sdf, config)
+#     # Build & minimise system
+#     system, modeller = build_ifd_system(protein_pdb, docked_sdf, config)
 
-    minim_cfg = config["induced_fit_docking"]["minimisation"]
-    tol = minim_cfg.get("tolerance", 0.5) # minim tolerance from the yaml
+#     minim_cfg = config["induced_fit_docking"]["minimisation"]
+#     tol = minim_cfg.get("tolerance", 0.5) # minim tolerance from the yaml
 
-    integrator = openmm.LangevinIntegrator(
-        300 * unit.kelvin,
-        1 / unit.picosecond,
-        0.002 * unit.picoseconds,
-    )
+#     integrator = openmm.LangevinIntegrator(
+#         300 * unit.kelvin,
+#         1 / unit.picosecond,
+#         0.002 * unit.picoseconds,
+#     )
 
-    # Sanity checks
+#     # Sanity checks
 
-    assert system.getNumParticles() == modeller.topology.getNumAtoms()
-    assert len(modeller.positions) == modeller.topology.getNumAtoms()
+#     assert system.getNumParticles() == modeller.topology.getNumAtoms()
+#     assert len(modeller.positions) == modeller.topology.getNumAtoms()
 
-    simulation = Simulation(modeller.topology, system, integrator)
-    simulation.context.setPositions(modeller.positions)
+#     simulation = Simulation(modeller.topology, system, integrator)
+#     simulation.context.setPositions(modeller.positions)
 
-    simulation.minimizeEnergy(
-        tolerance = tol * unit.kilojoule_per_mole / unit.nanometer,
-        maxIterations=minim_cfg.get("max_steps", 500),
-    )
+#     simulation.minimizeEnergy(
+#         tolerance = tol * unit.kilojoule_per_mole / unit.nanometer,
+#         maxIterations=minim_cfg.get("max_steps", 500),
+#     )
 
-    # Write minimised complex
-    minimised_pdb = ligand_dir / "protein_minimised.pdb"
-    with open(minimised_pdb, "w") as f:
-        PDBFile.writeFile(
-            simulation.topology,
-            simulation.context.getState(getPositions=True).getPositions(),
-            f,
-        )
-    logger.info(f"[{ligand['name']}] Minimised complex written")
+#     # Write minimised complex
+#     minimised_pdb = ligand_dir / "protein_minimised.pdb"
+#     with open(minimised_pdb, "w") as f:
+#         PDBFile.writeFile(
+#             simulation.topology,
+#             simulation.context.getState(getPositions=True).getPositions(),
+#             f,
+#         )
+#     logger.info(f"[{ligand['name']}] Minimised complex written")
 
-    # Re-dock using backend
-    local_config = dict(config)
-    local_config["protein"] = dict(config["protein"])
-    local_config["protein"]["pdb_path"] = str(minimised_pdb)
+#     # Re-dock using backend
+#     local_config = dict(config)
+#     local_config["protein"] = dict(config["protein"])
+#     local_config["protein"]["pdb_path"] = str(minimised_pdb)
 
-    logger.debug(f"[{ligand['name']}] Re-docking to minimised receptor")
-    return dock(backend, ligand, local_config, **kwargs)
+#     logger.debug(f"[{ligand['name']}] Re-docking to minimised receptor")
+#     return dock(backend, ligand, local_config, **kwargs)
 

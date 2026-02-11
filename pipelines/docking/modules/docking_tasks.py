@@ -130,6 +130,54 @@ class ProteinPreparer:
 
         logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
         return self.pdbqt_path
+    
+    def prepare_for_glide(self, output_dir: Path, grid_name: str = "receptor_grid"):
+        """
+        Prepare protein for Glide docking.
+        - ProteinPrepWizard for H-bond optimization
+        - Generate receptor grid
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        prepared_protein = output_dir / f"{self.name}_prep.mae"
+        grid_file = output_dir / f"{grid_name}.zip"
+
+        # Reuse existing files if available
+        if prepared_protein.exists() and grid_file.exists():
+            logger.debug("[ProteinPreparer] Using existing Glide prep files.")
+            self.prepared_protein = prepared_protein
+            self.receptor_grid = grid_file
+            return grid_file
+
+        logger.info(f"[ProteinPreparer] Preparing protein for Glide: {self.pdb_path.name}")
+
+        # ProteinPrepWizard step
+        cmd_prepwizard = [
+            "prepwizard",
+            str(self.pdb_path),
+            str(prepared_protein),
+            "-WAIT"
+        ]
+        result = subprocess.run(cmd_prepwizard, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"ProteinPrepWizard failed:\n{result.stderr}")
+            raise RuntimeError("ProteinPrepWizard failed.")
+
+        # Glide Receptor Grid Generation
+        cmd_grid = [
+            "glide",
+            "-HOST", "localhost",
+            "-IN", str(prepared_protein),
+            "-GRID", str(grid_file)
+        ]
+        result = subprocess.run(cmd_grid, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"Glide receptor grid generation failed:\n{result.stderr}")
+            raise RuntimeError("Glide receptor grid generation failed.")
+
+        self.prepared_protein = prepared_protein
+        self.receptor_grid = grid_file
+        logger.info(f"[ProteinPreparer] Glide receptor grid saved: {grid_file}")
+        return grid_file
 
     # @staticmethod
     # def _remove_conect_records(pdb_path: Path):
@@ -325,6 +373,42 @@ class LigandPreparer:
             pdbqt_paths.append(pdbqt_path)
 
         return pdbqt_paths
+    
+    def prepare_for_glide(self, output_dir: Path):
+        """
+        Prepare ligand for Glide using LigPrep.
+        Stores path in self.glide_input
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ligand_file = output_dir / f"{self.name}.mae"
+
+        if ligand_file.exists():
+            self.glide_input = ligand_file
+            logger.debug(f"[LigandPreparer] Using existing Glide ligand file: {ligand_file}")
+            return ligand_file
+
+        # Save SMILES to temporary SDF for LigPrep
+        tmp_sdf = output_dir / f"{self.name}.sdf"
+        writer = Chem.SDWriter(str(tmp_sdf))
+        writer.write(self.mol)
+        writer.close()
+
+        cmd_ligprep = [
+            "ligprep",
+            "-i", str(tmp_sdf),
+            "-o", str(ligand_file),
+            "-WAIT",
+            "-ph", "7.4",
+            "-s", "1"
+        ]
+        result = subprocess.run(cmd_ligprep, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"LigPrep failed:\n{result.stderr}")
+            raise RuntimeError("LigPrep failed.")
+
+        self.glide_input = ligand_file
+        logger.info(f"[LigandPreparer] Ligand prepared for Glide: {ligand_file}")
+        return ligand_file
 
 @register_task("prepare_receptor_pdbqt", 
                category="Receptor preparation",
@@ -470,3 +554,35 @@ def dock(backend, ligand, config, **kwargs):
         raise ValueError(f"Unknown docking_mode: {docking_mode}")
 
     return docking_outputs
+
+@register_task(
+    "prepare_ligand_glide",
+    category="Ligand preparation",
+    description="Prepare ligand for Glide docking (.mae format) using LigPrep."
+)
+def prepare_ligand_glide(backend, ligand, config, **kwargs):
+    preparer = get_ligand_preparer(backend, ligand)
+    output_dir = Path(config.get("output_dir", "output"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    mae_file = preparer.prepare_for_glide(output_dir)
+    ligand['glide_input'] = str(mae_file)
+    logger.info(f"Ligand {ligand['name']} prepared for Glide: {mae_file}")
+    return mae_file
+
+
+@register_task(
+    "prepare_receptor_grid",
+    category="Receptor preparation",
+    description="Prepare Glide receptor grid from protein PDB using ProteinPrepWizard."
+)
+def prepare_receptor_grid(backend, ligand, config, **kwargs):
+    if ligand is not None:
+        raise RuntimeError("prepare_receptor_grid should be run in global context (ligand=None)")
+
+    output_dir = Path(config.get("output_dir", "output"))
+    preparer = get_protein_preparer(backend, config)
+
+    grid_file = preparer.prepare_for_glide(output_dir)
+    backend.cache["receptor_grid"] = grid_file
+    return grid_file

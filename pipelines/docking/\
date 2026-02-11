@@ -1,0 +1,55 @@
+name: pipelines
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+  - defaults
+channel_priority: strict
+
+dependencies:
+  # Core
+  - python=3.11
+
+  # Molecular simulation
+  - ambertools=24.8
+  - openmm
+  - openmmforcefields=0.15.0
+  - mdanalysis
+  - modeller
+
+  # OpenFF stack
+  - openff-toolkit=0.17.1
+  - openff-interchange=0.4.8
+  - openff-forcefields
+  - openff-units
+  - openff-utilities
+
+  # Cheminformatics
+  - rdkit
+  - fpocket
+
+  # IO
+  - h5py
+
+  # General scientific stack
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+
+  # Utilities
+  - pip
+  - tqdm
+  - pyyaml
+  - requests
+  - jupyterlab
+
+  # Install CUDA PyTorch via pip (avoids conda CUDA conflicts)
+  - pip:
+      - torch==2.8.0+cu128
+      - torchvision==0.23.0+cu128
+      - torchaudio==2.8.0+cu128
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+

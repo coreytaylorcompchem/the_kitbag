@@ -1,0 +1,81 @@
+task: workflow
+workflow_name: vanilla_docking  # corresponds to workflows/vanilla_docking.py
+
+workflow:
+  - standardise_ligand          # keeps SMILES in RDKit molecule
+  - protonate_ligand            # modifies RDKit molecule
+  - compute_rdkit_descriptors   # uses RDKit molecule
+  - adme_prediction             # uses SMILES stored in ligand dict
+  - prepare_ligand_glide        # generates .mae for Glide docking
+  - prepare_receptor_grid       # generates receptor grid for Glide
+  - dock                        # uses receptor grid + .mae ligands
+  - post_processing
+
+options:
+  use_conformer_generation: false
+
+backend:
+  name: glide
+  executable_path: /opt/schrodinger2025-4"
+  use_gpu: true
+
+protein:
+  pdb_path: "/home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/5yhl.pdb"
+  pH: 7.4
+
+generate_ligands_from_list: true
+ligands_txt: "ligs_small.txt"    
+# ligands_csv: "ligands.csv" 
+
+docking:
+  output_dir: "output_glide"
+  docking_mode: ensemble # or 'lowest_energy'
+  n_output_binding_modes: 10
+  use_tautomers: true
+
+  ### Binding pocket detection
+  
+  # Option 1: Explicit center
+  # center: [10.5, 22.1, 15.7]
+  # size: [15.0, 15.0, 15.0]
+
+  # Option 2: Reference ligand path
+  # ref_ligand_path: "/path/to/reference_ligand.sdf"
+  # size: [15.0, 15.0, 15.0]
+
+  # Option 3: Use crystallized ligand in a 15 x 15 x 15 Angstrom box.
+  # TODO: use the output of a pocket finder (e.g. fpocket) to dock into multiple pockets end-to-end.
+  use_crystal_ligand: true
+  size: [15.0, 15.0, 15.0]
+
+### Docking parameters - extra args
+
+# I just exposed fairly standard args for docking above.
+# You can add any of the other Gnina args via the 'extra_args' parmeters (commented out for now).
+# e.g.
+
+# extra_args:
+#   cnn_model: arg
+#   cnn_rotation: arg
+
+adme_prediction:
+  models:
+    - herg
+    - logd
+    - cyp3a4
+    - caco2
+
+post_processing:
+  enabled: true
+  steps:
+    prolif:
+      enabled: true
+      min_frequency: 0.1
+      color_scheme: separated
+      output:
+        barcode: true
+        csv: false
+    docking_score_plots:
+      enabled: true
+    adme_plots:
+      enabled: true
