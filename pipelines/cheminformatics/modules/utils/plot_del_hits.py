@@ -121,26 +121,103 @@ def plot_del_hits(
         ordered=True
     )
 
-    # Heatmap
-    df_unique = reduced_df.groupby(["NsynthonID", "condition"], as_index=False)[plot_col].max()
-    top_synthons = (
-        df_unique.groupby("NsynthonID")[plot_col].max().sort_values(ascending=False).head(heatmap_top_n).index
-    )
-    df_top = df_unique[df_unique["NsynthonID"].isin(top_synthons)]
-    heat_df = df_top.pivot(index="NsynthonID", columns="condition", values=plot_col).fillna(0)
-    heat_df = heat_df.loc[heat_df.max(axis=1).sort_values(ascending=False).index]
+    # # Heatmap
+    # df_unique = reduced_df.groupby(["NsynthonID", "condition"], as_index=False)[plot_col].max()
+    # top_synthons = (
+    #     df_unique.groupby("NsynthonID")[plot_col].max().sort_values(ascending=False).head(heatmap_top_n).index
+    # )
+    # df_top = df_unique[df_unique["NsynthonID"].isin(top_synthons)]
+    # heat_df = df_top.pivot(index="NsynthonID", columns="condition", values=plot_col).fillna(0)
+    # heat_df = heat_df.loc[heat_df.max(axis=1).sort_values(ascending=False).index]
 
-    fig_height = max(6, len(heat_df) * 0.25)
+    # fig_height = max(6, len(heat_df) * 0.25)
+    # plt.figure(figsize=(12, fig_height))
+    # sns.heatmap(heat_df, cmap="vanimo", linewidths=0.5)
+    # plt.title(f"{plot_col} per synthon across conditions (Top {heatmap_top_n})")
+    # plt.ylabel("NsynthonID")
+    # plt.xlabel("Condition")
+    # plt.tight_layout()
+    # heatmap_file = output_dir / "heatmap_p_active.png"
+    # plt.savefig(heatmap_file, dpi=300)
+    # plt.close()
+    # plot_files["heatmap"] = heatmap_file
+
+    # Heatmap (clustered)
+
+    from scipy.cluster.hierarchy import linkage, leaves_list
+    from scipy.spatial.distance import pdist
+
+    df_unique = reduced_df.groupby(
+        ["NsynthonID", "condition"],
+        as_index=False
+    )[plot_col].max()
+
+    top_synthons = (
+        df_unique.groupby("NsynthonID")[plot_col]
+        .max()
+        .sort_values(ascending=False)
+        .head(heatmap_top_n)
+        .index
+    )
+
+    df_top = df_unique[df_unique["NsynthonID"].isin(top_synthons)]
+
+    heat_df = df_top.pivot(
+        index="NsynthonID",
+        columns="condition",
+        values=plot_col
+    ).fillna(0)
+
+    # -----------------------------
+    # Row-normalise (pattern clustering)
+    # -----------------------------
+    heat_norm = heat_df.sub(
+        heat_df.mean(axis=1), axis=0
+    ).div(
+        heat_df.std(axis=1).replace(0, 1), axis=0)
+
+    # -----------------------------
+    # Cluster only if possible
+    # -----------------------------
+    if heat_norm.shape[0] > 1:
+
+        from scipy.cluster.hierarchy import linkage, leaves_list
+        from scipy.spatial.distance import pdist
+
+        row_dist = pdist(heat_norm.values, metric="euclidean")
+        row_linkage = linkage(row_dist, method="ward")
+        row_order = leaves_list(row_linkage)
+
+        heat_df_clustered = heat_df.iloc[row_order]
+
+    else:
+        # Not enough rows to cluster
+        heat_df_clustered = heat_df.copy()
+
+    # -----------------------------
+    # Plot
+    # -----------------------------
+    fig_height = max(6, len(heat_df_clustered) * 0.25)
+
     plt.figure(figsize=(12, fig_height))
-    sns.heatmap(heat_df, cmap="vanimo", linewidths=0.5)
-    plt.title(f"{plot_col} per synthon across conditions (Top {heatmap_top_n})")
+    sns.heatmap(
+        heat_df_clustered,
+        cmap="vanimo",
+        linewidths=0.5
+    )
+
+    plt.title(f"{plot_col} per synthon across conditions (Clustered Top {heatmap_top_n})")
     plt.ylabel("NsynthonID")
     plt.xlabel("Condition")
     plt.tight_layout()
-    heatmap_file = output_dir / "heatmap_p_active.png"
+
+    heatmap_file = output_dir / "heatmap_clustered.png"
     plt.savefig(heatmap_file, dpi=300)
     plt.close()
+
     plot_files["heatmap"] = heatmap_file
+
+
 
     # ----------------------------
     # Box + strip plot by condition
@@ -428,8 +505,85 @@ def plot_del_hits(
         logger.warning(
             "[plot_del_hits] UMAP scatter skipped: umap_x / umap_y not found in dataframe"
         )
+    
+    # ----------------------------
+    # Library representation: Full vs UMAP-reduced
+    # ----------------------------
+    if {"NsynthonID"}.issubset(full_df.columns):
 
+        def extract_library(series):
+            return series.str.split("-", n=1).str[0]
+
+        full_unique = full_df.drop_duplicates("NsynthonID")
+        reduced_unique = reduced_df.drop_duplicates("NsynthonID")
+
+        full_lib = extract_library(full_unique["NsynthonID"])
+        reduced_lib = extract_library(reduced_unique["NsynthonID"])
+
+        # Proportions
+        full_counts = full_lib.value_counts(normalize=True)
+        reduced_counts = reduced_lib.value_counts(normalize=True)
+
+        # Sort by full representation
+        full_counts = full_counts.sort_values(ascending=False)
+
+        # Keep top N for readability
+        top_n_libs = 15
+        top_libs = full_counts.head(top_n_libs).index
+
+        full_top = full_counts.reindex(top_libs).fillna(0)
+        reduced_top = reduced_counts.reindex(top_libs).fillna(0)
+
+        # Add "Other"
+        full_other = full_counts.drop(top_libs).sum()
+        reduced_other = reduced_counts.drop(top_libs).sum()
+
+        full_top.loc["Other"] = full_other
+        reduced_top.loc["Other"] = reduced_other
+
+        lib_plot_df = pd.DataFrame({
+            "library": full_top.index,
+            "Full hits": full_top.values,
+            "Reduced (UMAP)": reduced_top.values
+        })
+
+        lib_plot_df = lib_plot_df.sort_values("Full hits", ascending=True)
+
+        plt.figure(figsize=(10, 8))
+
+        bar_width = 0.4
+        y_pos = np.arange(len(lib_plot_df))
+
+        plt.barh(
+            y_pos - bar_width/2,
+            lib_plot_df["Full hits"],
+            height=bar_width,
+            label="Full hits",
+            alpha=0.8
+        )
+
+        plt.barh(
+            y_pos + bar_width/2,
+            lib_plot_df["Reduced (UMAP)"],
+            height=bar_width,
+            label="Reduced (UMAP)",
+            alpha=0.8
+        )
+
+        plt.yticks(y_pos, lib_plot_df["library"])
+        plt.xlabel("Proportion of hits")
+        plt.title("Library representation before and after UMAP reduction")
+        plt.legend()
+        plt.tight_layout()
+
+        lib_file = output_dir / "library_full_vs_reduced.png"
+        plt.savefig(lib_file, dpi=300)
+        plt.close()
+
+        plot_files["library_bias"] = lib_file
+    
     return plot_files
+
 
 def plot_del_qc_metrics(
     df: pd.DataFrame,

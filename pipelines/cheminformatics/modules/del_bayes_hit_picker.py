@@ -1,5 +1,6 @@
 import os
 import psutil
+import time
 
 MAX_THREADS = min(16, psutil.cpu_count(logical=True))
 
@@ -22,19 +23,14 @@ MAX_CPUS = 128
 p = psutil.Process()
 p.cpu_affinity(list(range(MAX_CPUS)))
 
-# # 2. Limit BLAS / OpenMP / NumExpr threads
-# os.environ["OMP_NUM_THREADS"] = str(THREADS_PER_CHAIN)
-# os.environ["OPENBLAS_NUM_THREADS"] = str(THREADS_PER_CHAIN)
-# os.environ["MKL_NUM_THREADS"] = str(THREADS_PER_CHAIN)
-# os.environ["VECLIB_MAXIMUM_THREADS"] = str(THREADS_PER_CHAIN)
-# os.environ["NUMEXPR_NUM_THREADS"] = str(THREADS_PER_CHAIN)
-
 # ----------------------------
 # IMPORTS AFTER THREAD LIMITS
 # ----------------------------
 import duckdb
 import warnings
 
+from collections import Counter
+from math import log
 import polars as pl
 import pandas as pd
 import numpy as np
@@ -102,54 +98,12 @@ def del_stream_aggregate_counts(config: dict, data: dict) -> dict:
 
     return {"df": out_df, "parquet_path": data.get("parquet_path")}
 
-# # Top-level function for ADVI chains to avoid multiprocessing pickling issues
-# def run_advi_chain(seed, y_obs, cond_idx, syn_idx, cond_codes, syn_codes, overdisp, n_advi, draws, threads_per_chain):
-
-#     # Limit threads per chain
-#     for var in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
-#                 "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"]:
-#         os.environ[var] = str(threads_per_chain)
-
-#     with pm.Model() as model:
-#         alpha_cond = pm.Normal("alpha_cond", mu=0.0, sigma=1.0, shape=len(cond_codes))
-#         sigma_syn = pm.HalfNormal("sigma_syn", sigma=1.0)
-#         beta_syn = pm.Normal("beta_syn", mu=0.0, sigma=sigma_syn, shape=len(syn_codes))
-#         log_mu = alpha_cond[cond_idx] + beta_syn[syn_idx]
-#         mu = pm.math.exp(log_mu)
-#         pm.NegativeBinomial("obs", mu=mu, alpha=overdisp, observed=y_obs)
-
-#         approx = pm.fit(n=5000, 
-#                         method="advi", 
-#                         obj_optimizer=pm.adam(learning_rate=0.01),
-#                         progressbar=True, 
-#                         random_seed=int(seed)
-#                         )
-#         return approx.sample(draws=draws)
-    
-#     final_loss = approx.hist[-1]
-#     initial_loss = approx.hist[0]
-
-#     logger.info(
-#         "[del_bayesian_model] ADVI loss: %.3e → %.3e",
-#         initial_loss,
-#         final_loss,
-#     )
-
 @register_task(
     "del_bayesian_model",
     category="DEL",
     description="Fit hierarchical Bayesian model to synthon enrichment per condition using ADVI with low-count filtering."
 )
 def del_bayesian_model(config: dict, data: dict) -> dict:
-
-    import time
-    import numpy as np
-    import pandas as pd
-    import pymc as pm
-    import arviz as az
-    import polars as pl
-    import psutil
-    from pathlib import Path
 
     params = config.get("del_bayesian_model", {})
     model_cfg = params.get("model", {})
@@ -598,53 +552,63 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     #     cluster_method="hdbscan",
     # )
 
-    # Extract library from NsynthonID
-    hits_df["library"] = hits_df["NsynthonID"].str.split("-", n=1).str[0]
+    # ----------------------------
+    # UMAP embedding on unique synthons
+    # ----------------------------
 
-    # Compute per-library weights
-    lib_counts = hits_df["library"].value_counts()
-    hits_df["umap_weight"] = 1.0 / lib_counts[hits_df["library"]].values
+    # 1Aggregate to one row per NsynthonID
+    umap_base_df = hits_df.groupby("NsynthonID", as_index=False).agg({
+        "beta_mean": "max",
+        "p_active": "max",
+        **{c: "mean" for c in physchem_cols if c in hits_df.columns}
+    })
 
-    # Number of samples for UMAP
-    n_umap_samples = min(len(hits_df), params.get("max_plot_hits", 10000))
+    # Extract library
+    umap_base_df["library"] = umap_base_df["NsynthonID"].str.split("-", n=1).str[0]
 
-    # Sample proportionally to weights
-    umap_input_df = hits_df.sample(
+    # 2Compute library weights (inverse frequency)
+    lib_counts = umap_base_df["library"].value_counts()
+    umap_base_df["umap_weight"] = 1.0 / lib_counts[umap_base_df["library"]].values
+
+    # Sample for UMAP (weighted, unique synthons only)
+    n_umap_samples = min(len(umap_base_df), params.get("max_plot_hits", 10000))
+    umap_sample_df = umap_base_df.sample(
         n=n_umap_samples,
         weights="umap_weight",
         random_state=42
     ).reset_index(drop=True)
 
     logger.info(
-        "[del_hit_picker] Using %d hits for UMAP (%d libraries, proportional sampling)",
-        len(umap_input_df),
-        umap_input_df["library"].nunique()
+        "[del_hit_picker] Using %d unique synthons for UMAP (%d libraries, proportional sampling)",
+        len(umap_sample_df),
+        umap_sample_df["library"].nunique()
     )
 
-    # Features for UMAP
-    umap_features = ["beta_mean", "p_active"] + [c for c in physchem_cols if c in hits_df.columns]
-
     # Compute UMAP embedding
-    umap_input_df = add_umap_clusters(
-        umap_input_df,
+    umap_features = ["beta_mean", "p_active"] + [c for c in physchem_cols if c in umap_sample_df.columns]
+
+    umap_sample_df = add_umap_clusters(
+        umap_sample_df,
         feature_cols=umap_features,
         n_neighbors=30,
         min_dist=0.15,
         cluster_method="hdbscan",
     )
 
-    # Merge UMAP coords back into full hits_df
+    # Merge UMAP coordinates back safely into full hits_df
+    # Only one row per NsynthonID, so no duplicates introduced
     hits_df = hits_df.merge(
-        umap_input_df[["NsynthonID", "umap_x", "umap_y", "cluster_id"]],
+        umap_sample_df[["NsynthonID", "umap_x", "umap_y", "cluster_id"]],
         on="NsynthonID",
         how="left"
     )
+
 
     # ----------------------------
     # Reduce hits for plotting only
     # ----------------------------
     
-    max_plot_hits = params.get("max_plot_hits", 1000) # TODO: ADD THIS TO YAML
+    max_plot_hits = params.get("max_plot_hits", 50000) # TODO: ADD THIS TO YAML
 
     reduced_hits_df = reduce_hits_for_plotting(
         hits_df,
@@ -700,12 +664,6 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     description="Ad-hoc QC diagnostics for DEL Bayesian model (non-blocking)."
 )
 def del_qc_metrics(config: dict, data: dict) -> dict:
-
-    import numpy as np
-    import pandas as pd
-    import arviz as az
-    from collections import Counter
-    from math import log
 
     logger.info("[del_qc_metrics] Running ad-hoc DEL QC metrics")
 

@@ -131,7 +131,10 @@ def del_squares_analysis(config: dict, data: dict) -> dict:
     squares_df["umap_weight"] = 1.0 / lib_counts[squares_df["library"]].values
 
     # Sample hits for UMAP embedding
-    n_umap_samples = min(len(squares_df), params.get("max_plot_hits", 5000))
+    n_umap_samples = min(len(squares_df), params.get("umap_max_size", 2000))
+
+    logger.info(f"Max size of UMAP dataset: {n_umap_samples}")
+
     umap_input_df = squares_df.sample(
         n=n_umap_samples,
         weights="umap_weight",
@@ -139,7 +142,7 @@ def del_squares_analysis(config: dict, data: dict) -> dict:
     ).reset_index(drop=True)
 
     # ----------------------------
-    # Optional UMAP embedding
+    # UMAP embedding
     # ----------------------------
     if use_umap and not squares_df.empty:
         umap_features = squares_df[umap_cols].fillna(0).values
@@ -203,6 +206,9 @@ def del_squares_hit_picker(config: dict, data: dict) -> dict:
 
         # Sample proportionally
         max_plot_hits = params.get("max_plot_hits", 2000)
+
+        logger.info(f"Max size of UMAP plots: {max_plot_hits}")
+
         n_samples = min(len(hits_df), max_plot_hits)
 
         reduced_hits_df = (
