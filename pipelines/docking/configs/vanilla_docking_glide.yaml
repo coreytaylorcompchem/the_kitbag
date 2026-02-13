@@ -16,7 +16,7 @@ options:
 
 backend:
   name: glide
-  executable_path: /opt/schrodinger2025-4"
+  executable_path: /opt/schrodinger2025-4
   use_gpu: true
 
 protein:

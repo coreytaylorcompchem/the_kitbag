@@ -1,0 +1,25 @@
+--------------------------------------------------------------------------------
+NVIDIA Management Library Driver Version: 565.57.01
+CUDA_VISIBLE_DEVICES is not set
+
+0:   Device Name:             NVIDIA RTX A6000
+     Device UUID:             GPU-03534663-9fab-15bb-aebb-fce2c72cfe36
+     Compute Capability:      8.6
+     Total Cores:             10752
+     Discounted Cores:        10752
+     Compute Mode:            EXCLUSIVE_PROCESS
+
+1:   Device Name:             NVIDIA RTX A6000
+     Device UUID:             GPU-e13f5880-00c0-5926-d61c-80f1ac069c74
+     Compute Capability:      8.6
+     Total Cores:             10752
+     Discounted Cores:        10752
+     Compute Mode:            EXCLUSIVE_PROCESS
+
+2:   Device Name:             NVIDIA RTX A6000
+     Device UUID:             GPU-13214508-dfa6-ebdd-6931-d6b1320af191
+     Compute Capability:      8.6
+     Total Cores:             10752
+     Discounted Cores:        10752
+     Compute Mode:            EXCLUSIVE_PROCESS
+--------------------------------------------------------------------------------

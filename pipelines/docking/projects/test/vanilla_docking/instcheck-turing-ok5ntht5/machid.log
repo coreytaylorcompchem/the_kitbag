@@ -1,0 +1,100 @@
+Date:          Fri 13 Feb 2026 12:00:00
+SCHRODINGER:   /opt/schrodinger2025-4
+uname -a:      Linux turing 5.15.0-130-generic #140~20.04.1-Ubuntu SMP Wed Dec 18 21:35:34 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux
+FQDN:          turing
+Main memory:   257576 MB
+Free disk:     88893 MB
+Host ID:       bd39905fb63510d2511f5a9db96c4b46270dadebe637407d7d24916ea9e595e9
+Machine name:  turing
+OS:            Ubuntu 20.04.6 LTS
+CPU:           AMD Ryzen Threadripper 3990X 64-Core Processor
+Processors:    128
+CPU Features:  aes: True
+CPU Features:  amx_bf16: False
+CPU Features:  amx_int8: False
+CPU Features:  amx_tile: False
+CPU Features:  avx: True
+CPU Features:  avx2: True
+CPU Features:  avx512_4fmaps: False
+CPU Features:  avx512_4vbmi2: False
+CPU Features:  avx512_4vnniw: False
+CPU Features:  avx512_bf16: False
+CPU Features:  avx512_second_fma: False
+CPU Features:  avx512_vp2intersect: False
+CPU Features:  avx512bitalg: False
+CPU Features:  avx512bw: False
+CPU Features:  avx512cd: False
+CPU Features:  avx512dq: False
+CPU Features:  avx512er: False
+CPU Features:  avx512f: False
+CPU Features:  avx512ifma: False
+CPU Features:  avx512pf: False
+CPU Features:  avx512vbmi: False
+CPU Features:  avx512vbmi2: False
+CPU Features:  avx512vl: False
+CPU Features:  avx512vnni: False
+CPU Features:  avx512vpopcntdq: False
+CPU Features:  bmi1: True
+CPU Features:  bmi2: True
+CPU Features:  clflushopt: True
+CPU Features:  clfsh: True
+CPU Features:  clwb: True
+CPU Features:  cx16: True
+CPU Features:  cx8: True
+CPU Features:  dca: False
+CPU Features:  erms: False
+CPU Features:  f16c: True
+CPU Features:  fma3: True
+CPU Features:  fma4: False
+CPU Features:  fpu: True
+CPU Features:  hle: False
+CPU Features:  mmx: True
+CPU Features:  movbe: True
+CPU Features:  pclmulqdq: True
+CPU Features:  popcnt: True
+CPU Features:  rdrnd: True
+CPU Features:  rdseed: True
+CPU Features:  rtm: False
+CPU Features:  sgx: False
+CPU Features:  sha: True
+CPU Features:  smx: False
+CPU Features:  ss: False
+CPU Features:  sse: True
+CPU Features:  sse2: True
+CPU Features:  sse3: True
+CPU Features:  sse4_1: True
+CPU Features:  sse4_2: True
+CPU Features:  sse4a: True
+CPU Features:  ssse3: True
+CPU Features:  tsc: True
+CPU Features:  vaes: False
+CPU Features:  vpclmulqdq: False
+Memory:        270088085 kB
+Swap:          2147479 kB
+kernel:        5.15.0-130-generic
+glibc:         2.31.
+Product:       bioluminate-v61125-Linux-x86_64 ( bioluminate-src:ceefdfbfc3d1f7cfcf1db4c9533e6ad2756ac90b )
+Product:       canvas-v66125-Linux-x86_64 ( canvas-src:0b22a89e2a4aac79563e4ed54b412cb605ab9489 )
+Product:       combiglide-v79125-Linux-x86_64 ( vcs-src:7abdb61c78b87c334f349b7e3af0d9b2e9ae0752 )
+Product:       desmond-v84125-Linux-x86_64 ( desmond-gpu-src:02bec8acb49e6a0cbaf48b5ed3e54b56bcacb91e )
+Product:       epik-v74125-Linux-x86_64 ( epik-src:dc3317ba036e062061114ef949925c2cb0a15f14 )
+Product:       ffld-v60125-Linux-x86_64 ( ffld-src:97fc70f3688c586b665d377ed05a21309e0ed20a )
+Product:       glide-v109125-Linux-x86_64 ( glide-src:cd8fce4beb6f1c73aa17f57b1d42accfa69b3b3b )
+Product:       impact-v109125-Linux-x86_64 ( impact-src:b1ecbc7f777378e567c26f21bf0be38ed73ad6cd )
+Product:       jaguar-v130125-Linux-x86_64 ( jaguar-src:2fd0e4c72236f2a0f1807901e6958d46371f9402 )
+Product:       knime-v72125-Linux-x86_64 ( knime-src:08ce89b4f6c2ca6f1db47b3bce05866e08aa37d8 )
+Product:       macromodel-v150125-Linux-x86_64 ( macromodel-src:219b1e8d8d7d97a9ba80dd5d90aca4d35745bcf9 )
+Product:       maestro-v146125-Linux-x86_64 ( )
+Product:       mmshare-v72125-Linux-x86_64 ( DeepAutoQSAR:76dc95d420100618e3968519e9729b02351b2e7d
+                                             ligand_ml:cfd0bf54ffdd1f18bdca5d165fc3ac1af7413633
+                                             mmshare:ead57a6db3fbe21d60a283ed3c951db120fa170e
+                                             pharma-src:f20c83d83ab85889ce261b568dc803ad89b4f064
+                                             torchSANI:a40c56e5ca70a5ab97b2ce24ad377b36b893770b )
+Product:       psp-v82125-Linux-x86_64 ( plop:f8f74f927db59f21e91196150ce0634fcc12f3e8
+                                         psp-src:740b631380024df7da3ddb1da42412047ba7e9f3 )
+Product:       qikprop-v86125-Linux-x86_64 ( qikprop-src:288c1f5a8a919e0929c57ca79a81451bd0ae4527 )
+Product:       scisol-v60125-Linux-x86_64 ( scisol-src:42f0b7b1d606e8e15dc57d102dce395b83dd620e )
+Product:       watermap-v65125-Linux-x86_64 ( watermap-src:d7ae61c177186ae6a4da6f7898ea8d621c8979aa )
+Build Start Time: 2025-10-28 20:39 UTC
+Supports SLM:  True
+SLM-enabled:   True

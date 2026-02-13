@@ -1,6 +1,8 @@
 import argparse
 import sys
 import yaml
+import traceback
+
 from pathlib import Path
 
 from workflows import get_workflow, list_workflows
@@ -58,6 +60,7 @@ def main():
         workflow_func(str(config_path))
     except Exception as e:
         logger.error(f"[FATAL] Workflow '{workflow_name}' failed: {e}")
+        traceback.print_exc()
         sys.exit(1)
 
 

@@ -1,0 +1,90 @@
+TESTAPP: Test application for job control
+Fri Feb 13 12:00:05 2026
+Jobname: localhost
+Taskname: localhost
+JobId: 26f38844-08cb-11f1-b168-a8a15995a17b
+Launched from host turing at 2026-02-13-12:00:05
+Running on host turing
+Jobdir: /scratch/corey.taylor/jobs/26f38844-08cb-11f1-b168-a8a15995a17b
+OutputFile: localhost.out
+[run for 10 seconds]
+
+Cwd: /scratch/corey.taylor/jobs/26f38844-08cb-11f1-b168-a8a15995a17b
+[93211504640 Mb available disk space]
+
+JobDirFiles: .26f38844-08cb-11f1-b168-a8a15995a17b-job-server-config
+JobDirFiles: .26f38844-08cb-11f1-b168-a8a15995a17b-job-supervisor-access
+JobDirFiles: 26f38844-08cb-11f1-b168-a8a15995a17b-sysinfo.json
+JobDirFiles: 26f38844-08cb-11f1-b168-a8a15995a17b.nodes
+JobDirFiles: localhost.log
+JobDirFiles: mpiNodefile.265405079
+JobDirFiles: supv-26f38844-08cb-11f1-b168-a8a15995a17b.log
+JobDirFiles: supv-stderr-26f38844-08cb-11f1-b168-a8a15995a17b.log
+JobDirFiles: supv-stdout-26f38844-08cb-11f1-b168-a8a15995a17b.log
+JobDirFiles: workdir
+
+Env: HOME=/home/corey.taylor
+Env: LD_LIBRARY_PATH=/opt/schrodinger2025-4/internal/lib/ssl:/opt/schrodinger2025-4/internal/lib:/opt/schrodinger2025-4/mmshare-v7.2/lib/Linux-x86_64:/opt/schrodinger2025-4/internal/lib/python3.11/site-packages:/opt/schrodinger2025-4/maestro-v14.6/lib/Linux-x86_64/gl:/opt/schrodinger2025-4/maestro-v14.6/lib/Linux-x86_64:/opt/schrodinger2025-4/desmond-v8.4/lib/Linux-x86_64:/opt/schrodinger2025-4/canvas-v6.6/lib/Linux-x86_64
+Env: MMSHARE_EXEC=/opt/schrodinger2025-4/mmshare-v7.2/bin/Linux-x86_64
+Env: PATH=/opt/schrodinger2025-4/internal/bin:/opt/schrodinger2025-4/mmshare-v7.2/bin/Linux-x86_64:/opt/schrodinger2025-4/maestro-v14.6/bin/Linux-x86_64:/home/corey.taylor/software/orca_6_1_1:/home/corey.taylor/miniconda3/bin:/home/corey.taylor/miniconda3/condabin:/opt/mmseqs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/opt/aime-ml-containers
+Env: PERL5LIB=/opt/schrodinger2025-4/mmshare-v7.2/bin/Linux-x86_64:/opt/schrodinger2025-4/internal/bin:/opt/schrodinger2025-4/mmshare-v7.2/lib/Linux-x86_64/perl5:/opt/schrodinger2025-4/mmshare-v7.2/lib/Linux-x86_64/perl5/site_perl:/opt/schrodinger2025-4/maestro-v14.6/bin/Linux-x86_64
+Env: PERLLIB=/opt/schrodinger2025-4/mmshare-v7.2/bin/Linux-x86_64:/opt/schrodinger2025-4/internal/bin:/opt/schrodinger2025-4/mmshare-v7.2/lib/Linux-x86_64/perl5:/opt/schrodinger2025-4/mmshare-v7.2/lib/Linux-x86_64/perl5/site_perl:/opt/schrodinger2025-4/maestro-v14.6/bin/Linux-x86_64
+Env: PYTHONHOME=/opt/schrodinger2025-4/internal
+Env: SCHRODINGER=/opt/schrodinger2025-4
+Env: SCHRODINGER_APP_EXEC=MMSHARE_EXEC
+Env: SCHRODINGER_FEATURE_FLAGS=0
+Env: SCHRODINGER_JOBDIR=/scratch/corey.taylor/jobs/26f38844-08cb-11f1-b168-a8a15995a17b
+Env: SCHRODINGER_JOBID=26f38844-08cb-11f1-b168-a8a15995a17b
+Env: SCHRODINGER_MPI_NODEFILE=/scratch/corey.taylor/jobs/26f38844-08cb-11f1-b168-a8a15995a17b/mpiNodefile.265405079
+Env: SCHRODINGER_NODEFILE=/scratch/corey.taylor/jobs/26f38844-08cb-11f1-b168-a8a15995a17b/26f38844-08cb-11f1-b168-a8a15995a17b.nodes
+Env: SCHRODINGER_PRODUCT=mmshare
+Env: USER=corey.taylor
+Env: no_grpc_proxy=localhost
+
+--------------------------------------------------------------------------------
+NVIDIA Management Library Driver Version: 565.57.01
+CUDA_VISIBLE_DEVICES is not set
+
+0:   Device Name:             NVIDIA RTX A6000
+     Device UUID:             GPU-03534663-9fab-15bb-aebb-fce2c72cfe36
+     Compute Capability:      8.6
+     Total Cores:             10752
+     Discounted Cores:        10752
+     Compute Mode:            EXCLUSIVE_PROCESS
+
+1:   Device Name:             NVIDIA RTX A6000
+     Device UUID:             GPU-e13f5880-00c0-5926-d61c-80f1ac069c74
+     Compute Capability:      8.6
+     Total Cores:             10752
+     Discounted Cores:        10752
+     Compute Mode:            EXCLUSIVE_PROCESS
+
+2:   Device Name:             NVIDIA RTX A6000
+     Device UUID:             GPU-13214508-dfa6-ebdd-6931-d6b1320af191
+     Compute Capability:      8.6
+     Total Cores:             10752
+     Discounted Cores:        10752
+     Compute Mode:            EXCLUSIVE_PROCESS
+--------------------------------------------------------------------------------
+.... Job started
+[0] working...
+[1] working...
+[2] working...
+[3] working...
+[4] working...
+[5] working...
+** step 1 completed **
+
+[6] working...
+[7] working...
+[8] working...
+[9] working...
+[10] working...
+** step 2 completed **
+
+writing output file...
+Outputs will be copied back to /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/instcheck-turing-ok5ntht5/localhost on 
+Done.
+
+Run time: 11 sec
+Fri Feb 13 12:00:16 2026

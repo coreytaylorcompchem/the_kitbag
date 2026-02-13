@@ -30,7 +30,7 @@ logger = setup_logger(
 )
 
 def run_single_ligand(ligand, backend, config, workflow_steps):
-    FORBIDDEN_LIGAND_TASKS = {"prepare_receptor_pdbqt"}
+    FORBIDDEN_LIGAND_TASKS = {"prepare_receptor_pdbqt", "prepare_receptor_grid"}
     docking_outputs = []
 
     for step in workflow_steps:
@@ -57,20 +57,15 @@ def run_single_ligand(ligand, backend, config, workflow_steps):
     all_scores = []
 
     for entry in docking_outputs:
-        docked_outputs = entry.get("docked_output")
+        if isinstance(entry, dict):
+            docked_files = entry.get("docked_output", [])
+        else:
+            docked_files = [entry]
 
-        if not docked_outputs:
-            continue
-
-        if not isinstance(docked_outputs, (list, tuple)):
-            docked_outputs = [docked_outputs]
-
-        for sdf_path in docked_outputs:
+        for sdf_path in docked_files:
             scores = extract_scores_from_docking_output(sdf_path)
-
             for s in scores:
                 s["sdf_path"] = str(sdf_path)
-
             all_scores.extend(scores)
 
     if all_scores:
@@ -204,6 +199,7 @@ def run(config_path: str):
         "generate_conformers",
         "cluster_conformers",
         "save_final_conformers",
+        "prepare_ligand_glide",
         "convert_to_pdbqt",
         "dock",
     ])
@@ -247,6 +243,14 @@ def run(config_path: str):
 
     if "receptor_pdbqt" not in backend.cache:
         raise RuntimeError("Receptor preparation failed — pdbqt not found in backend cache.")
+    
+    # -----------------------------
+    # GLOBAL: Prepare Glide receptor grid
+    # -----------------------------
+    grid_task = get_task("prepare_receptor_grid")
+    grid_file = grid_task(backend, ligand=None, config=config)
+    backend.cache["receptor_grid"] = grid_file
+    logger.info(f"Glide receptor grid ready: {grid_file}")
 
     # parallel code; divides jobs per-ligand
     # TODO: create batches of ligands to run on available cores

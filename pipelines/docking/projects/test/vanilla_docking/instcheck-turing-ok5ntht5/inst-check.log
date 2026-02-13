@@ -1,0 +1,45 @@
+Schrodinger installation check
+------------------------------
+SCHRODINGER: /opt/schrodinger2025-4
+Hosts file: /opt/schrodinger2025-4/schrodinger.hosts
+* saved output of '/opt/schrodinger2025-4/gfxinfo' in file 'gfxinfo.log'
+* saved output of '/opt/schrodinger2025-4/machid' in file 'machid.log'
+* saved output of 'ls -lL /opt/schrodinger2025-4 /opt/schrodinger2025-4/utilities' in file 'toplevel.log'
+* saved output of '/opt/schrodinger2025-4/internal/bin/lictool qconf' in file 'license-tokens.log'
+* saved output of '/opt/schrodinger2025-4/licadmin info' in file 'licadmin-info.log'
+* saved output of 'env' in file 'env.log'
+* saved output of '/opt/schrodinger2025-4/jsc hosts list -vv' in file 'hosts.log'
+* saved output of 'nvidia-smi -q' in file 'nvidia-smi.log'
+* saved output of '/opt/schrodinger2025-4/utilities/query_gpgpu -a' in file 'query-gpgpu.log'
+- Failed to run cmd 'quota': 'No such file or directory: quota'
+- Failed to run cmd 'sestatus -v -b': 'No such file or directory: sestatus'
+* saved output of 'bash -c "ulimit -a"' in file 'ulimit.log'
+* saved output of 'curl -s ifconfig.me' in file 'public-ip.log'
+* saved queue config file diffs in file './queue-diff.log'
+
+Running subjobs on hosts:
+  localhost (Max: 1)
+Number of jobs:       1
+Max retries per job:  0
+Max allowed failures: unlimited
+Verbosity:            normal
+
+Starting JobDJ...
+
+Keep one job on driver host: False
+JobDJ columns:
+  C: Number of completed subjobs
+  A: Number of active subjobs (e.g., submitted, running)
+  W: Number of waiting/pending subjobs
+
+C A W | Activity  JobId  JobName  JobHost
+- - - | --------- -----------------------
+0 1 0 | launched  26f38844-08cb-11f1-b168-a8a15995a17b localhost localhost [turing]
+1 0 0 | finished  26f38844-08cb-11f1-b168-a8a15995a17b localhost localhost [turing]
+
+All jobs have completed.
+
+1 of 1 job(s) succeeded; 0 job(s) failed.
+
+* Running postmortem
+* Archiving results

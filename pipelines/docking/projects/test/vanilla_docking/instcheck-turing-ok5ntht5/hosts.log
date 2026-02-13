@@ -1,0 +1,12 @@
+Configured hosts:
+  localhost:45003
+    Hosts for /opt/schrodinger2025-4 (Source: determined by the launch-time SCHRODINGER value):
+      localhost
+        Name: localhost
+        QueueArgs: 
+        TmpDir: /scratch
+        Processors: 128
+        ProcessorsPerNode: 0
+        Env:
+        GPGPU:
+        CudaCores: 0

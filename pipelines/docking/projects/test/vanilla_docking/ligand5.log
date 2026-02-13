@@ -1,0 +1,43 @@
+--------------------------------------------------------------------------------
+JobId          : 6d23e9a5-08c9-11f1-a666-a8a15995a17b
+Name           : ligand5
+Program        : LigPrep
+ClientVersion  : 2025-4 build 125
+Host           : turing
+Dir            : /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking
+HostEntry      : localhost
+JobHost        : turing
+JobDir         : /scratch/corey.taylor/jobs/6d23e9a5-08c9-11f1-a666-a8a15995a17b
+JobSchrodinger : /opt/schrodinger2025-4
+Commandline    : /opt/schrodinger2025-4/ligprep -isd /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/ligand5.sdf -omae /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/ligand5.mae -WAIT -ph 7.4 -s 1
+StartTime      : 2026-02-13-11:47:44
+Version        : 2025-4 build 125
+--------------------------------------------------------------------------------
+LigPrep (version 76125). Copyright Schrodinger, LLC. All rights reserved.
+
+LigPrep command:
+$SCHRODINGER/ligprep -ph 7.4 -s 1 -isd /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/ligand5.sdf -omae output_glide/ligand5.mae
+
+Processing steps:
+$DO.sd_ingest -bad -orig_file_index 0 -orig_file /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/ligand5.sdf /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/ligand5.sdf
+$DO.sdstereoexpander -add_hydrogens -max_output 1 -max_generated 32 <infile.mae> <outfile.mae>
+$DO.htreat -t All-None -a all -s -l 200 <infile.mae> <outfile.mae>
+$DO.desalter <infile.mae> <outfile.mae>
+$DO.neutralizer -m 200 <infile.mae> <outfile.mae>
+$DO.guard <infile.mae> <outfile.mae>
+$DO.tautomerizer -n 8 -ma 200 <infile.mae> <outfile.mae>
+$DO.stereoizer -label_specified_chiralities -n 1 <infile.mae> <outfile.mae>
+$DO.cgx -optimize -ffld 14 -epsilon 10.0 <infile.mae> <outfile.mae>
+$DO.filterstereo -max_stereo 1 <infile.mae> <outfile.mae>
+
+DO=$SCHRODINGER/run python3 -m schrodinger.application.macromodel.packages.ligprep3
+
+# counts of output and dropped structures after processing steps
+# index  sdstex  htreat  desalt  neutra   guard  tautom  stereo    cgx   filter  title
+WARNING: entry #1: empty title, assigning generic '/home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/ligand5.sdf:1'.
+       1   1/0     1/0     1/0     1/0     1/0     1/0     1/0     1/0     1/0   '/home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/ligand5.sdf:1'
+
+# of processed structures in "output_glide/ligand5.mae" : 1
+# of dropped structures in "ligand5-dropped.sdf" : 0
+
+backend run time: 0 hours 0 minutes 1.385 seconds

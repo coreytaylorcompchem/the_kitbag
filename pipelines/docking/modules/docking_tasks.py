@@ -131,7 +131,7 @@ class ProteinPreparer:
         logger.info(f"[ProteinPreparer] Receptor PDBQT saved at: {self.pdbqt_path}")
         return self.pdbqt_path
     
-    def prepare_for_glide(self, output_dir: Path, grid_name: str = "receptor_grid"):
+    def prepare_for_glide(self, backend, output_dir: Path, grid_name="receptor_grid"):
         """
         Prepare protein for Glide docking.
         - ProteinPrepWizard for H-bond optimization
@@ -150,28 +150,46 @@ class ProteinPreparer:
 
         logger.info(f"[ProteinPreparer] Preparing protein for Glide: {self.pdb_path.name}")
 
-        # ProteinPrepWizard step
+        # ProteinPrepWizard command with all options
         cmd_prepwizard = [
-            "prepwizard",
-            str(self.pdb_path),
-            str(prepared_protein),
+            backend._exe("prepwizard"),
+            str(self.pdb_path),       # input PDB
+            str(prepared_protein),    # output .mae
+            "-fillsidechains",
+            "-disulfides",
+            "-assign_all_residues",
+            "-rehtreat",
+            "-max_states", "1",
+            "-epik_pH", str(self.pH),
+            "-epik_pHt", "2.0",
+            "-antibody_cdr_scheme", "Kabat",
+            "-samplewater",
+            "-include_epik_states",
+            "-propka_pH", str(self.pH),
+            "-f", "S-OPLS",
+            "-rmsd", "0.3",
+            "-watdist", "5.0",
+            "-JOBNAME", f"{self.name}_prep",
+            "-HOST", "localhost:4",
             "-WAIT"
         ]
+
         result = subprocess.run(cmd_prepwizard, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"ProteinPrepWizard failed:\n{result.stderr}")
+            logger.error(f"ProteinPrepWizard failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
             raise RuntimeError("ProteinPrepWizard failed.")
 
-        # Glide Receptor Grid Generation
+        # Glide receptor grid (modern versions only need the PrepWizard output)
         cmd_grid = [
-            "glide",
-            "-HOST", "localhost",
+            backend._exe("glide"),
+            "-HOST", "localhost:4",
             "-IN", str(prepared_protein),
             "-GRID", str(grid_file)
         ]
+
         result = subprocess.run(cmd_grid, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"Glide receptor grid generation failed:\n{result.stderr}")
+            logger.error(f"Glide receptor grid generation failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
             raise RuntimeError("Glide receptor grid generation failed.")
 
         self.prepared_protein = prepared_protein
@@ -179,16 +197,6 @@ class ProteinPreparer:
         logger.info(f"[ProteinPreparer] Glide receptor grid saved: {grid_file}")
         return grid_file
 
-    # @staticmethod
-    # def _remove_conect_records(pdb_path: Path):
-    #     """Strip all CONECT lines from a PDB file in-place."""
-    #     tmp_path = pdb_path.with_suffix(".tmp")
-    #     with open(pdb_path) as f_in, open(tmp_path, 'w') as f_out:
-    #         for line in f_in:
-    #             if not line.startswith("CONECT"):
-    #                 f_out.write(line)
-    #     shutil.move(tmp_path, pdb_path)
-    #     logger.debug(f"[ProteinPreparer] Removed CONECT records from {pdb_path.name}")
 
 
 def get_ligand_preparer(backend, ligand):
@@ -374,7 +382,7 @@ class LigandPreparer:
 
         return pdbqt_paths
     
-    def prepare_for_glide(self, output_dir: Path):
+    def prepare_for_glide(self, backend, output_dir: Path):
         """
         Prepare ligand for Glide using LigPrep.
         Stores path in self.glide_input
@@ -385,7 +393,7 @@ class LigandPreparer:
         if ligand_file.exists():
             self.glide_input = ligand_file
             logger.debug(f"[LigandPreparer] Using existing Glide ligand file: {ligand_file}")
-            return ligand_file
+            return str(ligand_file)  # <-- ensure a string path
 
         # Save SMILES to temporary SDF for LigPrep
         tmp_sdf = output_dir / f"{self.name}.sdf"
@@ -394,9 +402,9 @@ class LigandPreparer:
         writer.close()
 
         cmd_ligprep = [
-            "ligprep",
-            "-i", str(tmp_sdf),
-            "-o", str(ligand_file),
+            backend._exe("ligprep"),
+            "-isd", str(tmp_sdf),
+            "-omae", str(ligand_file),
             "-WAIT",
             "-ph", "7.4",
             "-s", "1"
@@ -505,55 +513,59 @@ def convert_to_pdbqt(backend, ligand, config, **kwargs):
 
 @register_task("dock", category='Docking', description="Dock with backend specified.")
 def dock(backend, ligand, config, **kwargs):
-    pdbqt_paths = ligand.get("pdbqt_paths", [])
-    if not pdbqt_paths:
-        logger.warning(f"No PDBQT paths found for ligand {ligand['name']}, skipping docking.")
-        return []
-
-    docking_mode = config.get("docking", {}).get("docking_mode", "ensemble").lower()
     output_dir = Path(config['output_dir'])
-    pocket_id = kwargs.get("pocket_id", None)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    docking_outputs = []
+    if backend.__class__.__name__.lower() == "glidebackend":
+        # Make sure glide_input is a str path
+        glide_input = ligand.get("glide_input")
+        if glide_input is None:
+            logger.warning(f"No Glide input found for ligand {ligand['name']}, skipping docking.")
+            return []
 
-    if docking_mode == "lowest_energy":
-        pdbqt_path = pdbqt_paths[0]
-        ligand["pdbqt_path"] = pdbqt_path
-        output_filename = f"{ligand['name']}_pocket{pocket_id}_docked.sdf" if pocket_id else f"{ligand['name']}_docked.sdf"
-        output_path = output_dir / output_filename
+        if isinstance(glide_input, dict):
+            # <-- key fix: take 'path' key if glide_input is a dict
+            glide_input = glide_input.get("path")
+            if glide_input is None:
+                raise RuntimeError(f"Ligand {ligand['name']} glide_input dict has no 'path'")
 
-        try:
-            output_path = backend.dock(ligand, config, output_path=output_path)
-            docking_outputs.append({
-                "conformer": 0,
-                "pdbqt": str(pdbqt_path),
-                "docked_output": output_path,
-            })
-        except Exception as e:
-            logger.error(f"❌ Docking failed for {ligand['name']}: {e}")
+        ligand_inputs = [Path(glide_input)] if isinstance(glide_input, (str, Path)) else list(glide_input)
 
-    elif docking_mode == "ensemble":
-        logger.debug(f"Docking ligand {ligand['name']} with {len(pdbqt_paths)} conformers...")
+        docked_outputs = []
 
+        for idx, ligand_file in enumerate(ligand_inputs):
+            output_file = output_dir / f"{ligand['name']}_conf{idx}_docked.sdf"
+            try:
+                # Ensure we pass the actual path string to backend.dock
+                result_paths = backend.dock(ligand, config, output_path=output_file)
+                docked_outputs.extend([str(p) for p in result_paths])
+            except Exception as e:
+                logger.error(f"❌ Glide docking failed for {ligand['name']} conf {idx}: {e}")
+
+        ligand["docked_outputs"] = docked_outputs
+        return docked_outputs
+
+    # Gnina or other backends
+    else:
+        pdbqt_paths = ligand.get("pdbqt_paths", [])
+        if not pdbqt_paths:
+            logger.warning(f"No PDBQT paths found for ligand {ligand['name']}, skipping docking.")
+            return []
+
+        docking_outputs = []
         for idx, pdbqt_path in enumerate(pdbqt_paths):
             ligand["pdbqt_path"] = pdbqt_path
-            output_filename = f"{ligand['name']}_conf{idx}_pocket{pocket_id}_docked.sdf" if pocket_id is not None else f"{ligand['name']}_conf{idx}_docked.sdf"
-            output_path = output_dir / output_filename
-
+            output_file = output_dir / f"{ligand['name']}_conf{idx}_docked.sdf"
             try:
-                output_path = backend.dock(ligand, config, output_path=output_path)
-                docking_outputs.append({
-                    "conformer": idx,
-                    "pdbqt": str(pdbqt_path),
-                    "docked_output": output_path,
-                })
+                result_paths = backend.dock(ligand, config, output_path=output_file)
+                docking_outputs.extend([str(p) for p in result_paths])
             except Exception as e:
-                logger.error(f"❌ Docking failed for ligand {ligand['name']} conformer {idx}: {e}")
+                logger.error(f"❌ Docking failed for {ligand['name']} conf {idx}: {e}")
 
-    else:
-        raise ValueError(f"Unknown docking_mode: {docking_mode}")
+        ligand["docked_outputs"] = docking_outputs
+        return docking_outputs
 
-    return docking_outputs
+
 
 @register_task(
     "prepare_ligand_glide",
@@ -565,11 +577,12 @@ def prepare_ligand_glide(backend, ligand, config, **kwargs):
     output_dir = Path(config.get("output_dir", "output"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    mae_file = preparer.prepare_for_glide(output_dir)
+    mae_file = preparer.prepare_for_glide(backend, output_dir)
+
+    # Only store .mae for Glide docking
     ligand['glide_input'] = str(mae_file)
     logger.info(f"Ligand {ligand['name']} prepared for Glide: {mae_file}")
-    return mae_file
-
+    return str(mae_file)
 
 @register_task(
     "prepare_receptor_grid",
@@ -583,6 +596,7 @@ def prepare_receptor_grid(backend, ligand, config, **kwargs):
     output_dir = Path(config.get("output_dir", "output"))
     preparer = get_protein_preparer(backend, config)
 
-    grid_file = preparer.prepare_for_glide(output_dir)
+    # This now calls the fixed ProteinPreparer.prepare_for_glide
+    grid_file = preparer.prepare_for_glide(backend, output_dir)
     backend.cache["receptor_grid"] = grid_file
     return grid_file
