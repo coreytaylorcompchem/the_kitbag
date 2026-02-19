@@ -55,7 +55,12 @@ def evaluate_with_bootstrap(
 ):
     # --- Embed once on the correct device ---
     X = embed_fn(df_eval["sequence"].tolist())
-    X_pca = pca.transform(X)
+
+    if pca is not None:
+        X_pca = pca.transform(X)
+    else:
+        # Already PCA-transformed
+        X_pca = X
 
     # Precompute predictions for all sequences
     preds = {
