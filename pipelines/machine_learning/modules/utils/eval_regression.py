@@ -145,11 +145,10 @@ def evaluate_with_bootstrap(
 
 def save_evaluation(result, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
-
     plots_dir = out_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
 
-    # Metrics
+    # --- Metrics ---
     serialisable = {
         prop: {
             k: vars(v) if hasattr(v, "__dict__") else v
@@ -161,42 +160,35 @@ def save_evaluation(result, out_dir):
     with open(out_dir / "metrics.yaml", "w") as f:
         yaml.safe_dump(serialisable, f)
 
-    # Predictions
+    # --- Predictions ---
     df_full = result.predictions.copy()
 
+    # --- Fill experimental NaNs with predictions ---
+    for prop in result.metrics.keys():
+        exp_col = prop
+        pred_col = f"{prop}_pred"
+        if exp_col in df_full.columns and pred_col in df_full.columns:
+            mask = ~np.isfinite(df_full[exp_col])
+            df_full.loc[mask, exp_col] = df_full.loc[mask, pred_col]
+
     # Save full prediction surface (ALL rows × ALL predicted properties)
-    df_full.to_csv(
-        out_dir / "all_predictions_all_properties.csv",
-        index=False
-    )
+    df_full.to_csv(out_dir / "all_predictions_all_properties.csv", index=False)
 
     # Save masked predictions (only rows with at least one experimental value)
     mask_any = np.zeros(len(df_full), dtype=bool)
-
     for col in df_full.columns:
         if not col.endswith("_pred") and col not in ["sequence", "ancestor_id"]:
             mask_any |= np.isfinite(df_full[col].values)
-
     df_masked = df_full.loc[mask_any].copy()
+    df_masked.to_csv(out_dir / "predictions.csv", index=False)
 
-    df_masked.to_csv(
-        out_dir / "predictions.csv",
-        index=False
-    )
-    
-    # Save full prediction table (all sequences × all predicted properties)
-    result.predictions.to_csv(
-        out_dir / "all_predictions_all_properties.csv",
-        index=False
-    )
-
-    # Plots
+    # --- Plots ---
     for prop, metrics in result.metrics.items():
-        if prop not in result.predictions:
+        if prop not in df_full:
             continue
 
-        y_true = result.predictions[prop].values
-        y_pred = result.predictions[f"{prop}_pred"].values
+        y_true = df_full[prop].values
+        y_pred = df_full[f"{prop}_pred"].values
         mask = np.isfinite(y_true)
 
         if mask.sum() < 5:
@@ -223,6 +215,7 @@ def save_evaluation(result, out_dir):
             prop,
             plots_dir / f"{fname}_error.png"
         )
+
 
 def plot_parity(
     y_true,
