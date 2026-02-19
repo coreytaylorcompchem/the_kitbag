@@ -163,18 +163,21 @@ def save_evaluation(result, out_dir):
     # --- Predictions ---
     df_full = result.predictions.copy()
 
-    # --- Fill experimental NaNs with predictions ---
+    # --- Prepare the all-properties CSV ---
+    df_all_props = df_full.copy()
+    # Fill experimental NaNs with predictions only for the all-properties CSV
     for prop in result.metrics.keys():
         exp_col = prop
         pred_col = f"{prop}_pred"
-        if exp_col in df_full.columns and pred_col in df_full.columns:
-            mask = ~np.isfinite(df_full[exp_col])
-            df_full.loc[mask, exp_col] = df_full.loc[mask, pred_col]
+        if exp_col in df_all_props.columns and pred_col in df_all_props.columns:
+            mask = ~np.isfinite(df_all_props[exp_col])
+            df_all_props.loc[mask, exp_col] = df_all_props.loc[mask, pred_col]
 
     # Save full prediction surface (ALL rows × ALL predicted properties)
-    df_full.to_csv(out_dir / "all_predictions_all_properties.csv", index=False)
+    df_all_props.to_csv(out_dir / "all_predictions_all_properties.csv", index=False)
 
-    # Save masked predictions (only rows with at least one experimental value)
+    # --- Prepare the masked predictions CSV ---
+    # This remains purely sequences that had at least one experimental value
     mask_any = np.zeros(len(df_full), dtype=bool)
     for col in df_full.columns:
         if not col.endswith("_pred") and col not in ["sequence", "ancestor_id"]:
@@ -215,6 +218,7 @@ def save_evaluation(result, out_dir):
             prop,
             plots_dir / f"{fname}_error.png"
         )
+
 
 
 def plot_parity(
