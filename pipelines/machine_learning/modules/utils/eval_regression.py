@@ -157,8 +157,28 @@ def save_evaluation(result, out_dir):
         yaml.safe_dump(serialisable, f)
 
     # Predictions
-    result.predictions.to_csv(out_dir / "predictions.csv", index=False)
+    df_full = result.predictions.copy()
 
+    # Save full prediction surface (ALL rows × ALL predicted properties)
+    df_full.to_csv(
+        out_dir / "all_predictions_all_properties.csv",
+        index=False
+    )
+
+    # Save masked predictions (only rows with at least one experimental value)
+    mask_any = np.zeros(len(df_full), dtype=bool)
+
+    for col in df_full.columns:
+        if not col.endswith("_pred") and col not in ["sequence", "ancestor_id"]:
+            mask_any |= np.isfinite(df_full[col].values)
+
+    df_masked = df_full.loc[mask_any].copy()
+
+    df_masked.to_csv(
+        out_dir / "predictions.csv",
+        index=False
+    )
+    
     # Save full prediction table (all sequences × all predicted properties)
     result.predictions.to_csv(
         out_dir / "all_predictions_all_properties.csv",
