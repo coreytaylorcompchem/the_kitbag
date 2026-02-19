@@ -53,10 +53,11 @@ def evaluate_with_bootstrap(
     n_boot=500,
     min_n=20
 ):
-    # --- Embed ---
+    # --- Embed once on the correct device ---
     X = embed_fn(df_eval["sequence"].tolist())
     X_pca = pca.transform(X)
 
+    # Precompute predictions for all sequences
     preds = {
         prop: model.predict(X_pca)
         for prop, model in models.items()
@@ -79,16 +80,16 @@ def evaluate_with_bootstrap(
         yt = y_true[mask]
         yp = y_pred[mask]
 
-        # Bootstrap metrics (RMSEA, MAE, etc.)
+        # --- Bootstrapping using numpy (CPU only) ---
         rmse = _bootstrap_metric(
             yt, yp,
-            lambda a, b: root_mean_squared_error(a, b),
+            lambda a, b: np.sqrt(np.mean((a - b) ** 2)),
             n_boot=n_boot
         )
 
         mae = _bootstrap_metric(
             yt, yp,
-            lambda a, b: mean_absolute_error(a, b),
+            lambda a, b: np.mean(np.abs(a - b)),
             n_boot=n_boot
         )
 
@@ -112,6 +113,7 @@ def evaluate_with_bootstrap(
 
         # Calibration (point estimates only)
         slope, intercept = np.polyfit(yp, yt, 1)
+        r2 = np.corrcoef(yp, yt)[0, 1] ** 2  # simple R²
 
         metrics[prop] = {
             "rmse": rmse,
@@ -122,12 +124,13 @@ def evaluate_with_bootstrap(
             "calibration": {
                 "slope": float(slope),
                 "intercept": float(intercept),
-                "r2": float(r2_score(yt, yp)),
+                "r2": float(r2),
             },
             "n": int(mask.sum()),
         }
 
     return EvaluationResult(metrics=metrics, predictions=df_pred)
+
 
 
 def save_evaluation(result, out_dir):

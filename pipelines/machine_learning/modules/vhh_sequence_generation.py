@@ -491,4 +491,3 @@ def active_learning_rounds(config, context):
 
     logger.info("Active learning rounds complete")
     return context
-

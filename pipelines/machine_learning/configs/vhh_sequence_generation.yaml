@@ -34,9 +34,9 @@ load_esm_model:
   batch_size: 32
 
 active_learning_rounds:
-  n_rounds: 2
-  samples_per_seed: 10
-  top_candidates_per_round: 10
+  n_rounds: 10
+  samples_per_seed: 100
+  top_candidates_per_round: 100
   max_mutants: 3
   batch_size: 32
   expected_len: 125   # expected VHH sequence length
