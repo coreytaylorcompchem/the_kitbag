@@ -469,12 +469,22 @@ def active_learning_rounds(config, context):
         ignore_index=True
     )
 
+    # ------------------------------------------------
+    # Precompute embeddings + PCA for all sequences
+    # ------------------------------------------------
+    logger.info("Precomputing embeddings for round-wise evaluation...")
+
+    all_sequences = df_all_rounds["sequence"].tolist()
+    X_all_emb = esm_embed_cached(all_sequences)
+    X_all_pca = pca.transform(X_all_emb)
+
     eval_dir = plots_dir / "evaluation"
 
     df_metrics = run_roundwise_evaluation(
         models=models,
         pca=pca,
         embed_fn=esm_embed_cached,
+        X_all_pca = X_all_pca,
         df_all=df_all_rounds,
         properties=multi_condition_props,
         out_dir=eval_dir,
