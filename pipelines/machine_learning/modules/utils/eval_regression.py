@@ -154,7 +154,13 @@ def save_evaluation(result, out_dir):
     # Predictions
     result.predictions.to_csv(out_dir / "predictions.csv", index=False)
 
-        # Plots
+    # Save full prediction table (all sequences × all predicted properties)
+    result.predictions.to_csv(
+        out_dir / "all_predictions_all_properties.csv",
+        index=False
+    )
+
+    # Plots
     for prop, metrics in result.metrics.items():
         if prop not in result.predictions:
             continue
