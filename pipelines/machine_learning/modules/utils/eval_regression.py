@@ -7,6 +7,10 @@ from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_sco
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
 @dataclass
 class BootstrapMetric:
     mean: float
@@ -79,7 +83,8 @@ def evaluate_with_bootstrap(
         y_pred = df_pred[f"{prop}_pred"].values
         mask = np.isfinite(y_true)
 
-        if mask.sum() < min_n:
+        if mask.sum() < 2:
+            logger.warning(f"Skipping {prop}: not enough data to fit even minimal model")
             continue
 
         yt = y_true[mask]
