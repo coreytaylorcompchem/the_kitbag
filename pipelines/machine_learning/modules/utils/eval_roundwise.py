@@ -12,6 +12,7 @@ def run_roundwise_evaluation(
     *,
     models,
     pca,
+    embed_fn,
     X_all_pca,  # precomputed PCA embeddings for all sequences
     df_all,
     properties,
