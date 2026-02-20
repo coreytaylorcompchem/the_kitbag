@@ -250,12 +250,17 @@ def active_learning_rounds(config, context):
             models=models,
             pca=pca,
             embed_fn=esm_embed_cached,
-            df_eval=df_eval,
+            df_eval=df_eval,  # experimental sequences
             properties=multi_condition_props,
             n_boot=config.get("eval_bootstrap", 500)
         )
 
-        save_evaluation(eval_result, eval_dir)
+        save_evaluation(
+            eval_result,
+            eval_dir,
+            score_config=config.get("scoring", None),  # pass the scoring config
+            train_stats=df_labeled[multi_condition_props].agg(["mean", "std"])  # compute training stats
+        )
 
         logger.info(
             f"[Eval R{round_idx}] "
@@ -544,7 +549,7 @@ def active_learning_rounds(config, context):
     # Final evaluation + executive summary
     # ============================================================
 
-    logger.info("Running round-wise evaluation with bootstrapping...")
+    logger.info("Evaluation: running round-wise evaluation with bootstrapping...")
 
     df_all_rounds = pd.concat(
         [pd.read_csv(data_dir / f"round{r}_candidates.csv")

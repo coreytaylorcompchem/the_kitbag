@@ -206,7 +206,7 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
             # fallback: single-property simple score
             scores = df_full.get("Tm1 (°C)", 0) - mutation_penalty * df_full.get("mut_count", 0)
 
-        df_full["composite_score"] = scores
+        df_full["composite_score"] = scores  # <--- add column before saving
 
     # --- Prepare the all-properties CSV ---
     df_all_props = df_full.copy()
