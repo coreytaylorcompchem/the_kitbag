@@ -332,8 +332,91 @@ def active_learning_rounds(config, context):
 
         logger.info("Selecting top candidates based on score and Pareto fronts...")
 
-        df_candidates["pareto_flag"] = compute_multi_condition_pareto(df_candidates, multi_condition_props)
-        df_candidates["score"] = df_candidates["Tm1 (°C)"] - 0.5 * df_candidates["mut_count"]
+        # ==========================================================
+        # Multi-strategy scoring
+        # ==========================================================
+
+        df_candidates["pareto_flag"] = compute_multi_condition_pareto(
+            df_candidates, multi_condition_props
+        )
+
+        scoring_cfg = config.get("scoring", {})
+        method = scoring_cfg.get("method", "simple")
+        mutation_penalty = scoring_cfg.get("mutation_penalty", 0.1)
+        opt_direction = scoring_cfg.get("optimisation_direction", {})
+        prop_weights = scoring_cfg.get("property_weights", {})
+        use_novelty = scoring_cfg.get("use_novelty_bonus", False)
+        novelty_weight = scoring_cfg.get("novelty_weight", 0.05)
+
+        # ------------------------------------------------------------------
+        # SIMPLE (original behaviour)
+        # ------------------------------------------------------------------
+        if method == "simple":
+            df_candidates["score"] = (
+                df_candidates["Tm1 (°C)"]
+                - mutation_penalty * df_candidates["mut_count"]
+            )
+
+        # ------------------------------------------------------------------
+        # Z-SCORED MULTI-PROPERTY UTILITY (recommended)
+        # ------------------------------------------------------------------
+        elif method == "zscore_weighted":
+
+            train_stats = df_labeled[multi_condition_props].agg(["mean", "std"])
+
+            utility = np.zeros(len(df_candidates))
+
+            for prop in multi_condition_props:
+                if prop not in df_candidates:
+                    continue
+
+                mu = train_stats.loc["mean", prop]
+                sigma = train_stats.loc["std", prop] + 1e-8
+
+                z = (df_candidates[prop] - mu) / sigma
+
+                direction = opt_direction.get(prop, 1)
+                weight = prop_weights.get(prop, 1.0)
+
+                utility += weight * direction * z
+
+            df_candidates["score"] = utility - mutation_penalty * df_candidates["mut_count"]
+
+        # ------------------------------------------------------------------
+        # PARETO-RANK SCORING
+        # ------------------------------------------------------------------
+        elif method == "pareto_rank":
+
+            # Percentile rank across properties
+            ranked = []
+
+            for prop in multi_condition_props:
+                direction = opt_direction.get(prop, 1)
+                r = df_candidates[prop].rank(pct=True)
+
+                if direction == -1:
+                    r = 1 - r
+
+                ranked.append(r)
+
+            mean_rank = np.vstack(ranked).mean(axis=0)
+
+            df_candidates["score"] = (
+                2.0 * df_candidates["pareto_flag"].astype(float)
+                + mean_rank
+                - mutation_penalty * df_candidates["mut_count"]
+            )
+
+        else:
+            raise ValueError(f"Unknown scoring method: {method}")
+
+        # ------------------------------------------------------------------
+        # Optional novelty bonus
+        # ------------------------------------------------------------------
+        if use_novelty:
+            centroid = X_train_pca.mean(axis=0)
+            novelty = np.linalg.norm(X_cand_pca - centroid, axis=1)
+            df_candidates["score"] += novelty_weight * novelty
 
         # Ancestor-aware selection
         selected = [df_a.sort_values("score", ascending=False).head(min_per_ancestor)

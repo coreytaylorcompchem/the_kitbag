@@ -43,6 +43,28 @@ active_learning_rounds:
   min_per_ancestor: 5
   noise_scale: 1.0
 
+  scoring:
+    method: zscore_weighted   # simple | zscore_weighted | pareto_rank
+    mutation_penalty: 0.1     # weight for mut_count penalty
+    use_novelty_bonus: false
+    novelty_weight: 0.05
+
+    # Optimisation direction per property
+    optimisation_direction:
+      Tm1 (°C): 1
+      Pre-peak Sec cats: -1
+      Heparin rel ret time (%): 1
+      yield (mg/L): 1
+      HIC rel ret time (%): 1
+
+    # Optional weights (used for zscore_weighted)
+    property_weights:
+      Tm1 (°C): 1.0
+      Pre-peak Sec cats: 1.0
+      Heparin rel ret time (%): 1.0
+      yield (mg/L): 1.0
+      HIC rel ret time (%): 1.0
+
   # CatBoost training
   catboost_params:
     loss_function: RMSE
