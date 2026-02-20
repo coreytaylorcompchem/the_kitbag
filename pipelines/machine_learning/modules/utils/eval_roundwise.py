@@ -20,6 +20,7 @@ def run_roundwise_evaluation(
     out_dir,
     n_boot=500,
     min_n=20,
+    score_config=None,
 ):
     """
     Runs per-round evaluation:
@@ -74,6 +75,60 @@ def run_roundwise_evaluation(
             save_evaluation(future_eval, out_dir / f"round{r}" / "future")
         else:
             future_eval = None
+        
+        # ----------------------------------------------------------
+        # Composite score evaluation
+        # ----------------------------------------------------------
+        if score_config and future_eval and len(df_future) >= min_n:
+
+            # Predictions dataframe returned by evaluate_with_bootstrap
+            df_pred = future_eval.predictions.copy()
+
+            train_stats = df_train[properties].agg(["mean", "std"])
+
+            lower_is_better = set(score_config.get("lower_is_better", []))
+            weights = score_config.get("weights", {})
+
+            scores = np.zeros(len(df_pred))
+
+            for prop in properties:
+                if prop not in df_pred:
+                    continue
+
+                if prop not in train_stats.columns:
+                    continue
+
+                mu = train_stats.loc["mean", prop]
+                sigma = train_stats.loc["std", prop] + 1e-8
+
+                z = (df_pred[prop] - mu) / sigma
+
+                # Flip direction if lower is better
+                if prop in lower_is_better:
+                    z = -z
+
+                w = weights.get(prop, 1.0)
+                scores += w * z
+
+            df_pred["composite_score"] = scores
+
+            # Evaluate correlation of score with each TRUE property
+            for prop in properties:
+                mask = df_pred[prop].notna()
+
+                if mask.sum() >= min_n:
+                    corr = df_pred.loc[mask, "composite_score"].corr(
+                        df_pred.loc[mask, prop],
+                        method="spearman"
+                    )
+                else:
+                    corr = None
+
+                summary_rows.append({
+                    "round": r,
+                    "property": prop,
+                    "score_vs_true_spearman": corr,
+                })
 
         # Flatten metrics for plotting
         for prop, m in train_eval.metrics.items():

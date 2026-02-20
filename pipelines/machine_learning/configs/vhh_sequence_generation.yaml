@@ -58,6 +58,7 @@ active_learning_rounds:
       HIC rel ret time (%): 1
 
     # Optional weights (used for zscore_weighted)
+    # All are currently equally weighted. This could be adusted.
     property_weights:
       Tm1 (°C): 1.0
       Pre-peak Sec cats: 1.0
