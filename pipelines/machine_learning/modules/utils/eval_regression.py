@@ -168,30 +168,43 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
     # ----------------------------------------------------------
     if score_config is not None and train_stats is not None:
 
+        method = score_config.get("method", "simple")
+        mutation_penalty = score_config.get("mutation_penalty", 0.0)
+        prop_weights = score_config.get("property_weights", {})
+        opt_direction = score_config.get("optimisation_direction", {})
         lower_is_better = set(score_config.get("lower_is_better", []))
-        weights = score_config.get("weights", {})
 
         scores = np.zeros(len(df_full))
 
-        for prop in result.metrics.keys():
-            pred_col = f"{prop}_pred"
+        if method == "zscore_weighted":
+            for prop in result.metrics.keys():
+                pred_col = f"{prop}_pred"
 
-            if pred_col not in df_full.columns:
-                continue
+                if pred_col not in df_full.columns:
+                    continue
 
-            if prop not in train_stats.columns:
-                continue
+                if prop not in train_stats.columns:
+                    continue
 
-            mu = train_stats.loc["mean", prop]
-            sigma = train_stats.loc["std", prop] + 1e-8
+                mu = train_stats.loc["mean", prop]
+                sigma = train_stats.loc["std", prop] + 1e-8
 
-            z = (df_full[pred_col] - mu) / sigma
+                z = (df_full[pred_col] - mu) / sigma
 
-            if prop in lower_is_better:
-                z = -z
+                # flip if lower is better
+                direction = opt_direction.get(prop, 1)
+                if prop in lower_is_better:
+                    direction *= -1
 
-            w = weights.get(prop, 1.0)
-            scores += w * z
+                weight = prop_weights.get(prop, 1.0)
+                scores += weight * direction * z
+
+            # apply mutation penalty if available
+            scores -= mutation_penalty * df_full.get("mut_count", 0)
+
+        elif method == "simple":
+            # fallback: single-property simple score
+            scores = df_full.get("Tm1 (°C)", 0) - mutation_penalty * df_full.get("mut_count", 0)
 
         df_full["composite_score"] = scores
 
@@ -209,7 +222,6 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
     df_all_props.to_csv(out_dir / "all_predictions_all_properties.csv", index=False)
 
     # --- Prepare the masked predictions CSV ---
-    # This remains purely sequences that had at least one experimental value
     mask_any = np.zeros(len(df_full), dtype=bool)
     for col in df_full.columns:
         if not col.endswith("_pred") and col not in ["sequence", "ancestor_id"]:

@@ -45,7 +45,9 @@ def run_roundwise_evaluation(
         X_train_pca = X_all_pca[train_indices]
         X_future_pca = X_all_pca[future_indices]
 
+        # ------------------------------
         # Train-set evaluation
+        # ------------------------------
         train_eval = evaluate_with_bootstrap(
             models=models,
             pca=None,  # embeddings are already PCA-transformed
@@ -55,7 +57,23 @@ def run_roundwise_evaluation(
             n_boot=n_boot,
             min_n=min_n,
         )
-        save_evaluation(train_eval, out_dir / f"round{r}" / "train")
+
+        # ------------------------------
+        # --- INSERT SCORING HERE ---
+        # Compute mean/std of training properties for z-score weighting
+        train_stats = df_train[properties].agg(["mean", "std"])
+        
+        score_config = {
+            "method": "zscore_weighted",
+            "mutation_penalty": 0.0,  # no mutation penalty needed here
+            "property_weights": {p: 1.0 for p in properties},
+            "optimisation_direction": {p: 1 for p in properties},  # adjust as needed
+            "lower_is_better": [],  # e.g., ["Pre-peak Sec cats"]
+        }
+
+        save_evaluation(train_eval, out_dir / f"round{r}/train",
+                        score_config=score_config, train_stats=train_stats)
+        # ------------------------------
 
         # Future-only evaluation
         if len(df_future) >= min_n:
@@ -68,7 +86,10 @@ def run_roundwise_evaluation(
                 n_boot=n_boot,
                 min_n=min_n,
             )
-            save_evaluation(future_eval, out_dir / f"round{r}" / "future")
+
+            # Apply scoring to future eval as well
+            save_evaluation(future_eval, out_dir / f"round{r}/future",
+                            score_config=score_config, train_stats=train_stats)
         else:
             future_eval = None
         
