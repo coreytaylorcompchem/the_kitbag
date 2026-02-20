@@ -143,7 +143,7 @@ def evaluate_with_bootstrap(
 
 
 
-def save_evaluation(result, out_dir):
+def save_evaluation(result, out_dir, score_config=None, train_stats=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     plots_dir = out_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
@@ -162,6 +162,38 @@ def save_evaluation(result, out_dir):
 
     # --- Predictions ---
     df_full = result.predictions.copy()
+
+    # ----------------------------------------------------------
+    # Composite scoring (optional)
+    # ----------------------------------------------------------
+    if score_config is not None and train_stats is not None:
+
+        lower_is_better = set(score_config.get("lower_is_better", []))
+        weights = score_config.get("weights", {})
+
+        scores = np.zeros(len(df_full))
+
+        for prop in result.metrics.keys():
+            pred_col = f"{prop}_pred"
+
+            if pred_col not in df_full.columns:
+                continue
+
+            if prop not in train_stats.columns:
+                continue
+
+            mu = train_stats.loc["mean", prop]
+            sigma = train_stats.loc["std", prop] + 1e-8
+
+            z = (df_full[pred_col] - mu) / sigma
+
+            if prop in lower_is_better:
+                z = -z
+
+            w = weights.get(prop, 1.0)
+            scores += w * z
+
+        df_full["composite_score"] = scores
 
     # --- Prepare the all-properties CSV ---
     df_all_props = df_full.copy()

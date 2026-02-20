@@ -1,9 +1,5 @@
 from pathlib import Path
-import pandas as pd
-
-from modules.utils.eval_regression import evaluate_with_bootstrap, save_evaluation
-
-from pathlib import Path
+import numpy as np
 import pandas as pd
 
 from modules.utils.eval_regression import evaluate_with_bootstrap, save_evaluation
@@ -85,6 +81,23 @@ def run_roundwise_evaluation(
             df_pred = future_eval.predictions.copy()
 
             train_stats = df_train[properties].agg(["mean", "std"])
+
+            # Call save_evaluation with scoring
+            save_evaluation(
+                train_eval,
+                out_dir / f"round{r}" / "train",
+                score_config=score_config,
+                train_stats=train_stats
+            )
+
+            # Future eval
+            if future_eval is not None:
+                save_evaluation(
+                    future_eval,
+                    out_dir / f"round{r}" / "future",
+                    score_config=score_config,
+                    train_stats=train_stats
+                )
 
             lower_is_better = set(score_config.get("lower_is_better", []))
             weights = score_config.get("weights", {})
