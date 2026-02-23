@@ -292,8 +292,6 @@ def active_learning_rounds(config, context):
             n_boot=config.get("eval_bootstrap", 500)
         )
 
-        print(eval_result)
-
         save_evaluation(
             eval_result,
             eval_dir,

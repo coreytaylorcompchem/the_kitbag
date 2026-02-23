@@ -58,6 +58,10 @@ def evaluate_with_bootstrap(
     n_boot=500,
     min_n=20
 ):
+    
+    for prop in properties:
+        df_eval[prop] = pd.to_numeric(df_eval[prop], errors='coerce')
+        
     # --- Embed once on the correct device ---
     X = embed_fn(df_eval["sequence"].tolist())
 
