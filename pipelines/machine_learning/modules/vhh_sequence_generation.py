@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import time
 
 from tqdm import tqdm
 
@@ -245,6 +246,7 @@ def active_learning_rounds(config, context):
     pca = None
 
     for round_idx in range(1, n_rounds+1):
+        round_start_time = time.perf_counter()
         logger.info(f"=== Round {round_idx} ===")
 
         # Embed labeled sequences
@@ -599,10 +601,19 @@ def active_learning_rounds(config, context):
         # Radar plot
         plot_round_radar(df_candidates, round_idx, plots_dir / f"round{round_idx}_radar.png", multi_condition_props)
 
-        logger.info(f"Round {round_idx} complete.\n")
+        round_elapsed = time.perf_counter() - round_start_time
+
         logger.info(f"Round {round_idx} stats: median Tm={df_candidates['Tm1 (°C)'].median():.2f}, "
             f"mean score={df_candidates['score'].mean():.2f}, "
             f"Pareto count={int(df_candidates['pareto_flag'].sum())}")
+        
+        logger.info(
+            f"Round {round_idx} timing: "
+            f"{round_elapsed:.1f}s "
+            f"({round_elapsed/60:.2f} min)"
+        )
+        
+        logger.info(f"Round {round_idx} complete.\n")        
         
         round_stat = {
             "round": round_idx,
