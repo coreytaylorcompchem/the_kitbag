@@ -214,6 +214,8 @@ def generate_summary_plots(
 
     df_stats = pd.DataFrame(context["round_stats"])
 
+    print(df_stats.columns)
+
     # Infer property names from keys like "median_<prop>"
     median_cols = [c for c in df_stats.columns if c.startswith("median_")]
 

@@ -275,7 +275,7 @@ def active_learning_rounds(config, context):
 
         for i, prop in enumerate(multi_condition_props):
 
-            logger.info(f"Adding and training {prop}")
+            logger.info(f"Training model for: {prop}")
 
             y_i = y_train[:, i]
 
