@@ -46,16 +46,18 @@ def load_seed_dataset(config, context):
     expected_len = config.get("expected_len", 125)
     df = df[df["sequence"].str.len() == expected_len].reset_index(drop=True)
 
+    # Convert multi-condition property columns to numeric (leave text columns untouched)
+    for prop in config["multi_condition_props"]:
+        df[prop] = pd.to_numeric(df[prop], errors="coerce")
+
     seeds = df["sequence"].tolist()
     seed_ids = list(range(len(df)))
     seq_len = len(seeds[0])
 
     # CDR positions from YAML
-
     cdr_regions = config.get("cdr_regions")
     if cdr_regions is None:
         raise ValueError("cdr_regions must be explicitly defined in YAML for VHHs")
-
     if len(cdr_regions) != 3:
         raise ValueError("Expected exactly 3 CDR regions for VHHs (CDR1–3)")
 
@@ -73,12 +75,9 @@ def load_seed_dataset(config, context):
     for start, end in framework_ranges_tuples:
         framework_positions_flat.extend(range(start, end))
 
-    cdr_regions = config["cdr_regions"]
-
     mutable_positions = []
     for start, end in cdr_regions.values():
         mutable_positions.extend(range(start, end))
-
     mutable_positions = sorted(set(mutable_positions))
 
     context.update({
@@ -214,7 +213,7 @@ def active_learning_rounds(config, context):
 
         # Embed labeled sequences
         X_train_full = esm_embed_cached(df_labeled["sequence"].tolist())
-        y_train = df_labeled[multi_condition_props].values
+        y_train = df_labeled[multi_condition_props].values.astype(float)
 
         logger.info(f"Embedding {len(df_labeled)} labeled sequences...")
 
@@ -353,10 +352,6 @@ def active_learning_rounds(config, context):
 
         logger.info(f"Predicting properties for {len(df_candidates)} candidates...")
 
-        # preds = np.column_stack([model.predict(X_cand_pca) for model in models.values()])
-        # df_preds = pd.DataFrame(preds, columns=multi_condition_props)
-        # df_candidates = pd.concat([df_candidates.reset_index(drop=True), df_preds], axis=1)
-
         pred_mean = {}
         pred_std = {}
 
@@ -380,11 +375,11 @@ def active_learning_rounds(config, context):
                 pred_mean[prop] + 1.96 * pred_std[prop]
             )
 
-        # Add CIs
-        for prop in multi_condition_props:
-            df_candidates[f"{prop}_pred_std"] = pred_std[prop]
-            df_candidates[f"{prop}_pred_lci"] = pred_mean[prop] - 1.96 * pred_std[prop]
-            df_candidates[f"{prop}_pred_uci"] = pred_mean[prop] + 1.96 * pred_std[prop]
+        # # Add CIs
+        # for prop in multi_condition_props:
+        #     df_candidates[f"{prop}_pred_std"] = pred_std[prop]
+        #     df_candidates[f"{prop}_pred_lci"] = pred_mean[prop] - 1.96 * pred_std[prop]
+        #     df_candidates[f"{prop}_pred_uci"] = pred_mean[prop] + 1.96 * pred_std[prop]
 
         # Pareto and scoring
 
@@ -497,6 +492,10 @@ def active_learning_rounds(config, context):
         for prop in multi_condition_props:
             df_measured[prop] += np.random.normal(0, noise_scale, size=len(df_measured))
         df_labeled = pd.concat([df_labeled, df_measured[["sequence"] + multi_condition_props]], ignore_index=True)
+
+        # Ensure all multi-condition columns are numeric
+        for prop in multi_condition_props:
+            df_labeled[prop] = pd.to_numeric(df_labeled[prop], errors="coerce")
 
         # Save CSVs
         df_candidates.to_csv(data_dir / f"round{round_idx}_candidates.csv", index=False)

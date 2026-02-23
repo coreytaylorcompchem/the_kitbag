@@ -37,6 +37,7 @@ active_learning_rounds:
   n_rounds: 2
   samples_per_seed: 10
   top_candidates_per_round: 100
+  n_model_ensemble: 5
   max_mutants: 3
   batch_size: 32
   expected_len: 125   # expected VHH sequence length
@@ -82,7 +83,6 @@ active_learning_rounds:
     verbose: False
     allow_writing_files: False
     gpu_cat_features_storage: GpuRam
-    n_model_ensemble: 5
 
   early_stopping_rounds: 50
   val_fraction: 0.1
