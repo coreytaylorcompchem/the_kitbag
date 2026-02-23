@@ -213,6 +213,9 @@ def active_learning_rounds(config, context):
 
         # Embed labeled sequences
         X_train_full = esm_embed_cached(df_labeled["sequence"].tolist())
+        for prop in multi_condition_props:
+            df_labeled[prop] = pd.to_numeric(df_labeled[prop], errors="coerce")
+
         y_train = df_labeled[multi_condition_props].values.astype(float)
 
         logger.info(f"Embedding {len(df_labeled)} labeled sequences...")
