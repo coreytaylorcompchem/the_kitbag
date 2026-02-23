@@ -13,7 +13,7 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def debug_numeric_array(name, arr, max_examples=5):
-    logger.info(f"[DEBUG] {name}: dtype={arr.dtype}, shape={arr.shape}")
+    logger.debug(f"{name}: dtype={arr.dtype}, shape={arr.shape}")
 
     # Check if object dtype
     if arr.dtype == object:
@@ -32,7 +32,7 @@ def debug_numeric_array(name, arr, max_examples=5):
     # Test np.isfinite safely
     try:
         mask = np.isfinite(arr)
-        logger.info(f"[DEBUG] {name} np.isfinite OK, finite_count={mask.sum()}")
+        logger.debug(f"{name} np.isfinite OK, finite_count={mask.sum()}")
     except Exception as e:
         logger.error(f"[DEBUG] np.isfinite FAILED on {name}: {e}")
 
@@ -345,7 +345,6 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
             if pd.api.types.is_numeric_dtype(df_all_props[exp_col]):
                 mask = ~np.isfinite(df_all_props[exp_col].values)
                 df_all_props.loc[mask, exp_col] = df_all_props.loc[mask, pred_col]
-            df_all_props.loc[mask, exp_col] = df_all_props.loc[mask, pred_col]
 
     # Save full prediction surface (ALL rows × ALL predicted properties)
     df_all_props.to_csv(out_dir / "all_predictions_all_properties.csv", index=False)

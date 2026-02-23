@@ -211,15 +211,38 @@ def generate_summary_plots(
     # ------------------------------------------------------------------
     # 3. Round-over-round performance
     # ------------------------------------------------------------------
+
     df_stats = pd.DataFrame(context["round_stats"])
-    plt.figure(figsize=(8, 5))
-    plt.plot(df_stats["round"], df_stats["median_Tm"], marker="o")
-    plt.xlabel("Round")
-    plt.ylabel("Median Tm (°C)")
-    plt.title("Round-over-round property improvement")
-    plt.tight_layout()
-    plt.savefig(plots_dir / "round_over_round_Tm.png", dpi=150)
-    plt.close()
+
+    # Infer property names from keys like "median_<prop>"
+    median_cols = [c for c in df_stats.columns if c.startswith("median_")]
+
+    if len(median_cols) == 0:
+        logger.warning("No median_* columns found in round_stats")
+    else:
+        n_props = len(median_cols)
+
+        fig, axes = plt.subplots(
+            n_props, 1,
+            figsize=(8, 4 * n_props),
+            sharex=True
+        )
+
+        if n_props == 1:
+            axes = [axes]
+
+        for ax, col in zip(axes, median_cols):
+            prop = col.replace("median_", "")
+            ax.plot(df_stats["round"], df_stats[col], marker="o")
+            ax.set_ylabel(f"Median {prop}")
+            ax.set_title(f"{prop} improvement across rounds")
+            ax.grid(True)
+
+        axes[-1].set_xlabel("Round")
+
+        plt.tight_layout()
+        plt.savefig(plots_dir / "round_over_round_all_properties.png", dpi=150)
+        plt.close()
 
     # ------------------------------------------------------------------
     # 4. Per-ancestor plot families
