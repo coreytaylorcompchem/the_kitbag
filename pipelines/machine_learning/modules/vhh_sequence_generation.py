@@ -647,7 +647,6 @@ def active_learning_rounds(config, context):
         [pd.read_csv(data_dir / f"round{r}_candidates.csv") for r in range(1, n_rounds + 1)],
         ignore_index=True
     )
-    df_all_rounds = ensure_numeric(df_all_rounds, multi_condition_props)
 
     # ------------------------------------------------
     # Precompute embeddings + PCA for all sequences

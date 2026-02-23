@@ -342,7 +342,9 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
         exp_col = prop
         pred_col = f"{prop}_pred"
         if exp_col in df_all_props.columns and pred_col in df_all_props.columns:
-            mask = ~np.isfinite(df_all_props[exp_col])
+            if np.issubdtype(df_all_props[exp_col].dtype, np.number):
+                mask = ~np.isfinite(df_all_props[exp_col].values)
+                df_all_props.loc[mask, exp_col] = df_all_props.loc[mask, pred_col]
             df_all_props.loc[mask, exp_col] = df_all_props.loc[mask, pred_col]
 
     # Save full prediction surface (ALL rows × ALL predicted properties)
@@ -350,8 +352,14 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
 
     # --- Prepare the masked predictions CSV ---
     mask_any = np.zeros(len(df_full), dtype=bool)
+
     for col in df_full.columns:
-        if not col.endswith("_pred") and col not in ["sequence", "ancestor_id"]:
+
+        # Skip non-numeric columns entirely
+        if not np.issubdtype(df_full[col].dtype, np.number):
+            continue
+
+        if not col.endswith("_pred"):
             mask_any |= np.isfinite(df_full[col].values)
     df_masked = df_full.loc[mask_any].copy()
     df_masked.to_csv(out_dir / "predictions.csv", index=False)
