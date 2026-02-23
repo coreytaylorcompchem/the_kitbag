@@ -12,6 +12,30 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+def debug_numeric_array(name, arr, max_examples=5):
+    logger.info(f"[DEBUG] {name}: dtype={arr.dtype}, shape={arr.shape}")
+
+    # Check if object dtype
+    if arr.dtype == object:
+        logger.error(f"[DEBUG] {name} is OBJECT dtype")
+
+        # Find first few non-numeric entries
+        bad = []
+        for i, v in enumerate(arr):
+            if not isinstance(v, (int, float, np.integer, np.floating)) and not pd.isna(v):
+                bad.append((i, type(v), v))
+            if len(bad) >= max_examples:
+                break
+
+        logger.error(f"[DEBUG] {name} sample non-numeric entries: {bad}")
+
+    # Test np.isfinite safely
+    try:
+        mask = np.isfinite(arr)
+        logger.info(f"[DEBUG] {name} np.isfinite OK, finite_count={mask.sum()}")
+    except Exception as e:
+        logger.error(f"[DEBUG] np.isfinite FAILED on {name}: {e}")
+
 @dataclass
 class BootstrapMetric:
     mean: float
@@ -95,7 +119,16 @@ def evaluate_with_bootstrap(
     for prop in properties:
         y_true = df_pred[prop].values
         y_pred = df_pred[f"{prop}_pred"].values
-        mask = np.isfinite(y_true)
+
+        logger.info(f"[DEBUG] Eval property {prop}")
+        debug_numeric_array(f"eval_{prop}_y_true", y_true)
+
+        try:
+            mask = np.isfinite(y_true)
+        except Exception as e:
+            logger.error(f"[FATAL DEBUG] np.isfinite crashed in evaluation for {prop}")
+            debug_numeric_array(f"eval_{prop}_CRASH", y_true)
+            raise
 
         if mask.sum() < 2:
             logger.warning(f"Skipping {prop}: not enough data to fit even minimal model")
