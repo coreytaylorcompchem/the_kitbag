@@ -230,21 +230,45 @@ def active_learning_rounds(config, context):
         logger.info("Training CatBoost models for properties...")
         
         models = {}
+
+        n_ensemble = config.get("n_model_ensemble", 5)
+
         for i, prop in enumerate(multi_condition_props):
+
             y_i = y_train[:, i]
             mask = np.isfinite(y_i)
             X_i, y_i = X_train_pca[mask], y_i[mask]
-            X_train, X_val, y_train_i, y_val_i = train_test_split(X_i, y_i, test_size=config.get("val_fraction", 0.1), random_state=42)
-            model = CatBoostRegressor(**catboost_params, random_seed=round_idx)
-            model.fit(X_train, y_train_i, eval_set=(X_val, y_val_i),
-                      early_stopping_rounds=config.get("early_stopping_rounds", 50), verbose=False)
-            models[prop] = model
+
+            X_train, X_val, y_train_i, y_val_i = train_test_split(
+                X_i, y_i,
+                test_size=config.get("val_fraction", 0.1),
+                random_state=42
+            )
+
+            prop_models = []
+
+            for k in range(n_ensemble):
+                model = CatBoostRegressor(
+                    **catboost_params,
+                    random_seed=round_idx * 100 + k
+                )
+
+                model.fit(
+                    X_train, y_train_i,
+                    eval_set=(X_val, y_val_i),
+                    early_stopping_rounds=config.get("early_stopping_rounds", 50),
+                    verbose=False
+                )
+
+                prop_models.append(model)
+
+            models[prop] = prop_models
 
         # Bootstrapped eval.
         
         eval_dir = plots_dir / "evaluation" / f"round{round_idx}"
 
-        df_eval = context["df_seeds"][["sequence", "ancestor_id"] + multi_condition_props]
+        df_eval = context["df_seeds"][["sequence", "ancestor_id", "source"] + multi_condition_props]
 
         eval_result = evaluate_with_bootstrap(
             models=models,
@@ -329,9 +353,38 @@ def active_learning_rounds(config, context):
 
         logger.info(f"Predicting properties for {len(df_candidates)} candidates...")
 
-        preds = np.column_stack([model.predict(X_cand_pca) for model in models.values()])
-        df_preds = pd.DataFrame(preds, columns=multi_condition_props)
-        df_candidates = pd.concat([df_candidates.reset_index(drop=True), df_preds], axis=1)
+        # preds = np.column_stack([model.predict(X_cand_pca) for model in models.values()])
+        # df_preds = pd.DataFrame(preds, columns=multi_condition_props)
+        # df_candidates = pd.concat([df_candidates.reset_index(drop=True), df_preds], axis=1)
+
+        pred_mean = {}
+        pred_std = {}
+
+        for prop, model_list in models.items():
+
+            all_preds = np.column_stack([
+                m.predict(X_cand_pca) for m in model_list
+            ])
+
+            pred_mean[prop] = all_preds.mean(axis=1)
+            pred_std[prop]  = all_preds.std(axis=1)
+
+        for prop in multi_condition_props:
+            df_candidates[prop] = pred_mean[prop]
+
+            df_candidates[f"{prop}_pred_std"] = pred_std[prop]
+            df_candidates[f"{prop}_pred_lci"] = (
+                pred_mean[prop] - 1.96 * pred_std[prop]
+            )
+            df_candidates[f"{prop}_pred_uci"] = (
+                pred_mean[prop] + 1.96 * pred_std[prop]
+            )
+
+        # Add CIs
+        for prop in multi_condition_props:
+            df_candidates[f"{prop}_pred_std"] = pred_std[prop]
+            df_candidates[f"{prop}_pred_lci"] = pred_mean[prop] - 1.96 * pred_std[prop]
+            df_candidates[f"{prop}_pred_uci"] = pred_mean[prop] + 1.96 * pred_std[prop]
 
         # Pareto and scoring
 
