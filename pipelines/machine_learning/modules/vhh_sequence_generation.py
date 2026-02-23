@@ -472,10 +472,23 @@ def active_learning_rounds(config, context):
 
         # Simulated measurement noise
         df_measured = df_selected.copy()
+
         for prop in multi_condition_props:
+            # Ensure numeric before adding noise
+            df_measured[prop] = pd.to_numeric(df_measured[prop], errors="coerce").astype(float)
+            # Add Gaussian noise
             df_measured[prop] += np.random.normal(0, noise_scale, size=len(df_measured))
-        df_labeled = pd.concat([df_labeled, df_measured[["sequence"] + multi_condition_props]], ignore_index=True)
-        df_labeled[multi_condition_props] = df_labeled[multi_condition_props].apply(pd.to_numeric, errors="coerce")
+
+        # Concatenate into df_labeled
+        df_labeled = pd.concat(
+            [df_labeled, df_measured[["sequence"] + multi_condition_props]],
+            ignore_index=True
+        )
+
+        # Final enforcement: ensure all multi-condition columns are float
+        df_labeled[multi_condition_props] = df_labeled[multi_condition_props].apply(pd.to_numeric, errors="coerce").astype(float)
+
+        # Update y_train
         y_train = df_labeled[multi_condition_props].values.astype(float)
 
         # Ensure all multi-condition columns are numeric
