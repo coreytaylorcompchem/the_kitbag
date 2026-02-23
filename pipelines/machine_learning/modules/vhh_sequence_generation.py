@@ -279,10 +279,9 @@ def active_learning_rounds(config, context):
         # Bootstrapped evaluation
         # ------------------------
 
-        print("poop")
-
         eval_dir = plots_dir / "evaluation" / f"round{round_idx}"
         df_eval = context["df_seeds"][["sequence", "ancestor_id", "source"] + multi_condition_props].copy()
+        print("poop")
         df_eval[multi_condition_props] = df_eval[multi_condition_props].apply(pd.to_numeric, errors="coerce")
 
         eval_result = evaluate_with_bootstrap(
