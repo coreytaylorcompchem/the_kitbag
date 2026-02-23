@@ -254,7 +254,7 @@ def active_learning_rounds(config, context):
         df_labeled[multi_condition_props] = df_labeled[multi_condition_props].apply(pd.to_numeric, errors="coerce")
         y_train = df_labeled[multi_condition_props].values
 
-        logger.info("[DEBUG] Checking full y_train matrix")
+        logger.debug("[DEBUG] Checking whether y_train matrix is numeric")
         debug_numeric_array("y_train_flat", y_train.flatten())
 
         logger.info(f"Embedding {len(df_labeled)} labeled sequences...")
@@ -273,7 +273,7 @@ def active_learning_rounds(config, context):
         models = {}
         n_ensemble = config.get("n_model_ensemble", 5)      
 
-        logger.info(f"Training {n_ensemble} model ensembles.")
+        logger.info(f"Number of model ensembles: {n_ensemble}")
 
         for i, prop in enumerate(multi_condition_props):
 
