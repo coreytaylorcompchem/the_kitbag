@@ -244,9 +244,7 @@ def active_learning_rounds(config, context):
         # ------------------------
         logger.info("Training CatBoost models for properties...")
         models = {}
-        n_ensemble = config.get("n_model_ensemble", 5)
-
-        print(multi_condition_props)
+        n_ensemble = config.get("n_model_ensemble", 5)      
 
         for i, prop in enumerate(multi_condition_props):
             y_i = y_train[:, i]
@@ -264,6 +262,9 @@ def active_learning_rounds(config, context):
 
             prop_models = []
             for k in range(n_ensemble):
+
+                print(catboost_params)
+
                 model = CatBoostRegressor(**catboost_params, random_seed=round_idx * 100 + k)
                 model.fit(
                     X_train_split, y_train_i,
