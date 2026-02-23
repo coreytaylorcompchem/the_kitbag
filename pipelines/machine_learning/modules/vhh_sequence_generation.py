@@ -492,6 +492,8 @@ def active_learning_rounds(config, context):
         # Final enforcement: ensure all multi-condition columns are float
         df_labeled_numeric[multi_condition_props] = df_labeled_numeric[multi_condition_props].apply(pd.to_numeric, errors="coerce")
 
+        print(df_labeled_numeric.columns)
+
         # Update y_train
         y_train = df_labeled_numeric[multi_condition_props].values
         X_train_full = esm_embed_cached(df_labeled_numeric["sequence"].tolist())
