@@ -37,12 +37,19 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+def ensure_numeric(df, props):
+    """Force multi-condition property columns to numeric float dtype."""
+    for prop in props:
+        df[prop] = pd.to_numeric(df[prop], errors="coerce")
+    return df
+
 @register_task("load_seed_dataset", category="VHH generation", description="Load seed sequences and initialize context")
 def load_seed_dataset(config, context):
 
     log_pipeline_config(config, context)
 
     df = pd.read_csv(config["csv_path"])
+    df = ensure_numeric(df, config["multi_condition_props"])
     expected_len = config.get("expected_len", 125)
     df = df[df["sequence"].str.len() == expected_len].reset_index(drop=True)
 
@@ -270,7 +277,8 @@ def active_learning_rounds(config, context):
         
         eval_dir = plots_dir / "evaluation" / f"round{round_idx}"
 
-        df_eval = context["df_seeds"][["sequence", "ancestor_id", "source"] + multi_condition_props]
+        df_eval = context["df_seeds"][["sequence", "ancestor_id", "source"] + multi_condition_props].copy()
+        df_eval = ensure_numeric(df_eval, multi_condition_props)
 
         eval_result = evaluate_with_bootstrap(
             models=models,
@@ -494,7 +502,10 @@ def active_learning_rounds(config, context):
         df_measured = df_selected.copy()
         for prop in multi_condition_props:
             df_measured[prop] += np.random.normal(0, noise_scale, size=len(df_measured))
+
         df_labeled = pd.concat([df_labeled, df_measured[["sequence"] + multi_condition_props]], ignore_index=True)
+        df_labeled = ensure_numeric(df_labeled, multi_condition_props)
+        y_train = df_labeled[multi_condition_props].values.astype(float)
 
         # Ensure all multi-condition columns are numeric
         for prop in multi_condition_props:
@@ -607,10 +618,10 @@ def active_learning_rounds(config, context):
     logger.info("Evaluation: running round-wise evaluation with bootstrapping...")
 
     df_all_rounds = pd.concat(
-        [pd.read_csv(data_dir / f"round{r}_candidates.csv")
-        for r in range(1, n_rounds + 1)],
+        [pd.read_csv(data_dir / f"round{r}_candidates.csv") for r in range(1, n_rounds + 1)],
         ignore_index=True
     )
+    df_all_rounds = ensure_numeric(df_all_rounds, multi_condition_props)
 
     # ------------------------------------------------
     # Precompute embeddings + PCA for all sequences
