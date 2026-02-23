@@ -49,7 +49,8 @@ def load_seed_dataset(config, context):
     log_pipeline_config(config, context)
 
     df = pd.read_csv(config["csv_path"])
-    df = ensure_numeric(df, config["multi_condition_props"])
+    # Force numeric only on the physchem columns
+    df[config["multi_condition_props"]] = df[config["multi_condition_props"]].apply(pd.to_numeric, errors="coerce").astype(float)
     expected_len = config.get("expected_len", 125)
     df = df[df["sequence"].str.len() == expected_len].reset_index(drop=True)
 
@@ -247,6 +248,9 @@ def active_learning_rounds(config, context):
 
         for i, prop in enumerate(multi_condition_props):
             y_i = y_train[:, i]
+            # ensure float dtype
+            if not np.issubdtype(y_i.dtype, np.floating):
+                y_i = y_i.astype(float)
             mask = np.isfinite(y_i)
             X_i, y_i = X_train_pca[mask], y_i[mask]
 
