@@ -165,7 +165,9 @@ def active_learning_rounds(config, context):
 
     centroid_history = context["centroid_history"]
 
+    # ------------------------
     # Helpers
+    # ------------------------
     def generate_mutants(seq):
         mutants = set()
         for k in range(1, max_mutants+1):
@@ -212,7 +214,9 @@ def active_learning_rounds(config, context):
 
         return np.vstack(all_embeddings)
 
+    # ------------------------
     # PCA setup
+    # ------------------------
     pca = None
 
     for round_idx in range(1, n_rounds+1):
@@ -220,9 +224,9 @@ def active_learning_rounds(config, context):
 
         # Embed labeled sequences
         X_train_full = esm_embed_cached(df_labeled["sequence"].tolist())
-        for prop in multi_condition_props:
-            df_labeled[prop] = pd.to_numeric(df_labeled[prop], errors="coerce")
 
+        # Ensure multi-condition props are numeric (only those columns)
+        df_labeled[multi_condition_props] = df_labeled[multi_condition_props].apply(pd.to_numeric, errors="coerce")
         y_train = df_labeled[multi_condition_props].values.astype(float)
 
         logger.info(f"Embedding {len(df_labeled)} labeled sequences...")
@@ -234,57 +238,49 @@ def active_learning_rounds(config, context):
             pca.fit(X_train_full)
         X_train_pca = pca.transform(X_train_full)
 
-        # Train CatBoost per property 
-
+        # ------------------------
+        # Train CatBoost per property
+        # ------------------------
         logger.info("Training CatBoost models for properties...")
-        
         models = {}
-
         n_ensemble = config.get("n_model_ensemble", 5)
 
         for i, prop in enumerate(multi_condition_props):
-
             y_i = y_train[:, i]
             mask = np.isfinite(y_i)
             X_i, y_i = X_train_pca[mask], y_i[mask]
 
-            X_train, X_val, y_train_i, y_val_i = train_test_split(
+            X_train_split, X_val, y_train_i, y_val_i = train_test_split(
                 X_i, y_i,
                 test_size=config.get("val_fraction", 0.1),
                 random_state=42
             )
 
             prop_models = []
-
             for k in range(n_ensemble):
-                model = CatBoostRegressor(
-                    **catboost_params,
-                    random_seed=round_idx * 100 + k
-                )
-
+                model = CatBoostRegressor(**catboost_params, random_seed=round_idx * 100 + k)
                 model.fit(
-                    X_train, y_train_i,
+                    X_train_split, y_train_i,
                     eval_set=(X_val, y_val_i),
                     early_stopping_rounds=config.get("early_stopping_rounds", 50),
                     verbose=False
                 )
-
                 prop_models.append(model)
 
             models[prop] = prop_models
 
-        # Bootstrapped eval.
-        
+        # ------------------------
+        # Bootstrapped evaluation
+        # ------------------------
         eval_dir = plots_dir / "evaluation" / f"round{round_idx}"
-
         df_eval = context["df_seeds"][["sequence", "ancestor_id", "source"] + multi_condition_props].copy()
-        df_eval = ensure_numeric(df_eval, multi_condition_props)
+        df_eval[multi_condition_props] = df_eval[multi_condition_props].apply(pd.to_numeric, errors="coerce")
 
         eval_result = evaluate_with_bootstrap(
             models=models,
             pca=pca,
             embed_fn=esm_embed_cached,
-            df_eval=df_eval,  # experimental sequences
+            df_eval=df_eval,
             properties=multi_condition_props,
             n_boot=config.get("eval_bootstrap", 500)
         )
@@ -292,8 +288,8 @@ def active_learning_rounds(config, context):
         save_evaluation(
             eval_result,
             eval_dir,
-            score_config=config.get("scoring", None),  # pass the scoring config
-            train_stats=df_labeled[multi_condition_props].agg(["mean", "std"])  # compute training stats
+            score_config=config.get("scoring", None),
+            train_stats=df_labeled[multi_condition_props].agg(["mean", "std"])
         )
 
         logger.info(
@@ -305,36 +301,33 @@ def active_learning_rounds(config, context):
                 for p in eval_result.metrics
             )
         )
-        
-        # Generate candidates
 
+        # ------------------------
+        # Candidate generation
+        # ------------------------
         logger.info(f"Generating candidate mutants for {len(current_seeds)} seeds...")
-
         seed_id_to_ancestor = dict(zip(current_seed_ids, current_ancestor_ids))
         candidate_seqs, candidate_meta = [], []
+
         for sid, seq in zip(current_seed_ids, current_seeds):
             muts = generate_mutants(seq)
             candidate_seqs.extend(muts)
-            candidate_meta.extend([{"seed_id": sid, "ancestor_id": seed_id_to_ancestor[sid], "parent_round": round_idx} for _ in muts])
+            candidate_meta.extend([
+                {"seed_id": sid, "ancestor_id": seed_id_to_ancestor[sid], "parent_round": round_idx} for _ in muts
+            ])
+
         df_candidates = pd.DataFrame(candidate_meta)
         df_candidates["sequence"] = candidate_seqs
         df_candidates["round"] = round_idx
 
-        # VERIFY CDR-ONLY MUTATIONS
-        # Build arrays: candidates × sequence length
+        # Ensure mutations are only in CDRs
         seed_id_to_parent = dict(zip(current_seed_ids, current_seeds))
         candidate_array = np.array([list(seq) for seq in candidate_seqs])
         parent_array = np.array([list(seed_id_to_parent[sid]) for sid in df_candidates["seed_id"]])
-
-        # Boolean mask: True where candidate differs from parent
         mut_mask = candidate_array != parent_array
-
-        # Boolean mask: True where mutation is illegal (outside mutable_positions/CDRs)
         allowed_mask = np.zeros(candidate_array.shape[1], dtype=bool)
         allowed_mask[mutable_positions] = True
         illegal_mut_mask = mut_mask & (~allowed_mask)
-
-        # Check if any illegal mutation exists
         illegal_positions = np.where(illegal_mut_mask)
         if illegal_positions[0].size > 0:
             idx = illegal_positions[0][0]
@@ -355,42 +348,21 @@ def active_learning_rounds(config, context):
             mut_counts.extend(counts)
         df_candidates["mut_count"] = mut_counts
 
-        # Embed candidates
+        # Embed candidates and predict properties
         X_emb = esm_embed_cached(df_candidates["sequence"].tolist())
         X_cand_pca = pca.transform(X_emb)
 
-        # Predict physchem properties
-
-        logger.info(f"Predicting properties for {len(df_candidates)} candidates...")
-
-        pred_mean = {}
-        pred_std = {}
-
+        pred_mean, pred_std = {}, {}
         for prop, model_list in models.items():
-
-            all_preds = np.column_stack([
-                m.predict(X_cand_pca) for m in model_list
-            ])
-
+            all_preds = np.column_stack([m.predict(X_cand_pca) for m in model_list])
             pred_mean[prop] = all_preds.mean(axis=1)
-            pred_std[prop]  = all_preds.std(axis=1)
+            pred_std[prop] = all_preds.std(axis=1)
 
         for prop in multi_condition_props:
             df_candidates[prop] = pred_mean[prop]
-
             df_candidates[f"{prop}_pred_std"] = pred_std[prop]
-            df_candidates[f"{prop}_pred_lci"] = (
-                pred_mean[prop] - 1.96 * pred_std[prop]
-            )
-            df_candidates[f"{prop}_pred_uci"] = (
-                pred_mean[prop] + 1.96 * pred_std[prop]
-            )
-
-        # # Add CIs
-        # for prop in multi_condition_props:
-        #     df_candidates[f"{prop}_pred_std"] = pred_std[prop]
-        #     df_candidates[f"{prop}_pred_lci"] = pred_mean[prop] - 1.96 * pred_std[prop]
-        #     df_candidates[f"{prop}_pred_uci"] = pred_mean[prop] + 1.96 * pred_std[prop]
+            df_candidates[f"{prop}_pred_lci"] = pred_mean[prop] - 1.96 * pred_std[prop]
+            df_candidates[f"{prop}_pred_uci"] = pred_mean[prop] + 1.96 * pred_std[prop]
 
         # Pareto and scoring
 
@@ -502,9 +474,8 @@ def active_learning_rounds(config, context):
         df_measured = df_selected.copy()
         for prop in multi_condition_props:
             df_measured[prop] += np.random.normal(0, noise_scale, size=len(df_measured))
-
         df_labeled = pd.concat([df_labeled, df_measured[["sequence"] + multi_condition_props]], ignore_index=True)
-        df_labeled = ensure_numeric(df_labeled, multi_condition_props)
+        df_labeled[multi_condition_props] = df_labeled[multi_condition_props].apply(pd.to_numeric, errors="coerce")
         y_train = df_labeled[multi_condition_props].values.astype(float)
 
         # Ensure all multi-condition columns are numeric
