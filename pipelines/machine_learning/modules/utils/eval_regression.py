@@ -120,7 +120,7 @@ def evaluate_with_bootstrap(
         y_true = df_pred[prop].values
         y_pred = df_pred[f"{prop}_pred"].values
 
-        logger.info(f"[DEBUG] Eval property {prop}")
+        logger.debug(f"[DEBUG] Eval property {prop}")
         debug_numeric_array(f"eval_{prop}_y_true", y_true)
 
         try:

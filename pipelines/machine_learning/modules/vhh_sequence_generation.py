@@ -44,7 +44,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 #     return df
 
 def debug_numeric_array(name, arr, max_examples=5):
-    logger.info(f"[DEBUG] {name}: dtype={arr.dtype}, shape={arr.shape}")
+    logger.debug(f"[DEBUG] {name}: dtype={arr.dtype}, shape={arr.shape}")
 
     # Check if object dtype
     if arr.dtype == object:
@@ -63,7 +63,7 @@ def debug_numeric_array(name, arr, max_examples=5):
     # Test np.isfinite safely
     try:
         mask = np.isfinite(arr)
-        logger.info(f"[DEBUG] {name} np.isfinite OK, finite_count={mask.sum()}")
+        logger.debug(f"[DEBUG] {name} np.isfinite OK, finite_count={mask.sum()}")
     except Exception as e:
         logger.error(f"[DEBUG] np.isfinite FAILED on {name}: {e}")
 
@@ -274,9 +274,16 @@ def active_learning_rounds(config, context):
         n_ensemble = config.get("n_model_ensemble", 5)      
 
         for i, prop in enumerate(multi_condition_props):
+
+            logger.info(f"Adding and training {prop}")
+
             y_i = y_train[:, i]
-            logger.info(f"[DEBUG] Property {prop}")
+
+            # Debug numeric columns
+
+            logger.debug(f"[DEBUG] Property {prop}")
             debug_numeric_array(f"{prop}_y_i_before_mask", y_i)
+            
             # ensure float dtype
             if not np.issubdtype(y_i.dtype, np.floating):
                 y_i = y_i.astype(float)
@@ -295,6 +302,7 @@ def active_learning_rounds(config, context):
             )
 
             prop_models = []
+
             for k in range(n_ensemble):             
 
                 model = CatBoostRegressor(**catboost_params, random_seed=round_idx * 100 + k)
