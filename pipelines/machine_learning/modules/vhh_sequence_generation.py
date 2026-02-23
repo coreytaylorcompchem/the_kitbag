@@ -273,6 +273,8 @@ def active_learning_rounds(config, context):
         models = {}
         n_ensemble = config.get("n_model_ensemble", 5)      
 
+        logger.info(f"Training {n_ensemble} model ensembles.")
+
         for i, prop in enumerate(multi_condition_props):
 
             logger.info(f"Training model for: {prop}")
@@ -602,12 +604,37 @@ def active_learning_rounds(config, context):
             f"mean score={df_candidates['score'].mean():.2f}, "
             f"Pareto count={int(df_candidates['pareto_flag'].sum())}")
         
-        context["round_stats"].append({
+        round_stat = {
             "round": round_idx,
-            "median_Tm": df_candidates["Tm1 (°C)"].median(),
             "mean_score": df_candidates["score"].mean(),
             "pareto_count": int(df_candidates["pareto_flag"].sum())
-        })
+        }
+
+        for prop in multi_condition_props:
+
+            if prop not in df_candidates.columns:
+                continue
+
+            # Median experimental
+            round_stat[f"median_{prop}"] = df_candidates[prop].median()
+            round_stat[f"mean_{prop}"]   = df_candidates[prop].mean()
+
+            # --- Predicted uncertainty aggregation ---
+            lci_col = f"{prop}_pred_lci"
+            uci_col = f"{prop}_pred_uci"
+
+            if lci_col in df_candidates.columns:
+                round_stat[f"median_{prop}_lci"] = df_candidates[lci_col].median()
+                round_stat[f"median_{prop}_uci"] = df_candidates[uci_col].median()
+
+            # --- Pareto-only summaries ---
+            df_p = df_candidates[df_candidates["pareto_flag"]]
+
+            if not df_p.empty:
+                round_stat[f"pareto_median_{prop}"] = df_p[prop].median()
+                round_stat[f"pareto_mean_{prop}"]   = df_p[prop].mean()
+
+        context["round_stats"].append(round_stat)
 
     context.update({
         "df_labeled": df_labeled,

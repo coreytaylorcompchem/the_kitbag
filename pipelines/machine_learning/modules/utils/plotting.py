@@ -209,42 +209,72 @@ def generate_summary_plots(
     logger.info("Ancestor prioritisation summary saved")
 
     # ------------------------------------------------------------------
-    # 3. Round-over-round performance
+    # 3. Round-over-round performance (physchem + CI + Pareto)
     # ------------------------------------------------------------------
 
     df_stats = pd.DataFrame(context["round_stats"])
 
-    print(df_stats.columns)
+    props = [
+        c.replace("median_", "")
+        for c in df_stats.columns
+        if c.startswith("median_") and not c.endswith("_lci") and not c.endswith("_uci")
+    ]
 
-    # Infer property names from keys like "median_<prop>"
-    median_cols = [c for c in df_stats.columns if c.startswith("median_")]
+    n_props = len(props)
 
-    if len(median_cols) == 0:
-        logger.warning("No median_* columns found in round_stats")
-    else:
-        n_props = len(median_cols)
+    fig, axes = plt.subplots(
+        n_props, 1,
+        figsize=(8, 4 * n_props),
+        sharex=True
+    )
 
-        fig, axes = plt.subplots(
-            n_props, 1,
-            figsize=(8, 4 * n_props),
-            sharex=True
+    if n_props == 1:
+        axes = [axes]
+
+    for ax, prop in zip(axes, props):
+
+        med_col = f"median_{prop}"
+        lci_col = f"{med_col}_lci"
+        uci_col = f"{med_col}_uci"
+        pareto_col = f"pareto_median_{prop}"
+
+        # Main median line
+        ax.plot(
+            df_stats["round"],
+            df_stats[med_col],
+            marker="o",
+            label="All candidates"
         )
 
-        if n_props == 1:
-            axes = [axes]
+        # CI shading
+        if lci_col in df_stats and uci_col in df_stats:
+            ax.fill_between(
+                df_stats["round"],
+                df_stats[lci_col],
+                df_stats[uci_col],
+                alpha=0.25
+            )
 
-        for ax, col in zip(axes, median_cols):
-            prop = col.replace("median_", "")
-            ax.plot(df_stats["round"], df_stats[col], marker="o")
-            ax.set_ylabel(f"Median {prop}")
-            ax.set_title(f"{prop} improvement across rounds")
-            ax.grid(True)
+        # Pareto overlay
+        if pareto_col in df_stats:
+            ax.plot(
+                df_stats["round"],
+                df_stats[pareto_col],
+                linestyle="--",
+                marker="s",
+                label="Pareto only"
+            )
 
-        axes[-1].set_xlabel("Round")
+        ax.set_ylabel(prop)
+        ax.set_title(f"{prop} across rounds")
+        ax.grid(True)
+        ax.legend()
 
-        plt.tight_layout()
-        plt.savefig(plots_dir / "round_over_round_all_properties.png", dpi=150)
-        plt.close()
+    axes[-1].set_xlabel("Round")
+
+    plt.tight_layout()
+    plt.savefig(plots_dir / "round_over_round_all_properties.png", dpi=150)
+    plt.close()
 
     # ------------------------------------------------------------------
     # 4. Per-ancestor plot families
