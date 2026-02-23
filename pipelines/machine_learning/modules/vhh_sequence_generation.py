@@ -246,6 +246,8 @@ def active_learning_rounds(config, context):
         models = {}
         n_ensemble = config.get("n_model_ensemble", 5)
 
+        print(multi_condition_props)
+
         for i, prop in enumerate(multi_condition_props):
             y_i = y_train[:, i]
             # ensure float dtype
@@ -491,8 +493,6 @@ def active_learning_rounds(config, context):
 
         # Final enforcement: ensure all multi-condition columns are float
         df_labeled_numeric[multi_condition_props] = df_labeled_numeric[multi_condition_props].apply(pd.to_numeric, errors="coerce")
-
-        print(df_labeled_numeric.columns)
 
         # Update y_train
         y_train = df_labeled_numeric[multi_condition_props].values
