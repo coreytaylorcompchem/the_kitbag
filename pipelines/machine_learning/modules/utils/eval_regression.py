@@ -388,7 +388,7 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
             prop,
             metrics["rmse"],
             plots_dir / f"{fname}_parity.png",
-            df_full=df_full.loc[mask]
+            df_subset=df_full.loc[mask]
         )
 
         # Error plot
