@@ -342,7 +342,7 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
         exp_col = prop
         pred_col = f"{prop}_pred"
         if exp_col in df_all_props.columns and pred_col in df_all_props.columns:
-            if np.issubdtype(df_all_props[exp_col].dtype, np.number):
+            if pd.api.types.is_numeric_dtype(df_all_props[exp_col]):
                 mask = ~np.isfinite(df_all_props[exp_col].values)
                 df_all_props.loc[mask, exp_col] = df_all_props.loc[mask, pred_col]
             df_all_props.loc[mask, exp_col] = df_all_props.loc[mask, pred_col]
@@ -356,7 +356,7 @@ def save_evaluation(result, out_dir, score_config=None, train_stats=None):
     for col in df_full.columns:
 
         # Skip non-numeric columns entirely
-        if not np.issubdtype(df_full[col].dtype, np.number):
+        if not pd.api.types.is_numeric_dtype(df_full[col]):
             continue
 
         if not col.endswith("_pred"):
