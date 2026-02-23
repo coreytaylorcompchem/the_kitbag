@@ -261,9 +261,7 @@ def active_learning_rounds(config, context):
             )
 
             prop_models = []
-            for k in range(n_ensemble):
-
-                print(catboost_params)
+            for k in range(n_ensemble):             
 
                 model = CatBoostRegressor(**catboost_params, random_seed=round_idx * 100 + k)
                 model.fit(
@@ -272,6 +270,8 @@ def active_learning_rounds(config, context):
                     early_stopping_rounds=config.get("early_stopping_rounds", 50),
                     verbose=False
                 )
+
+                print(model)
                 prop_models.append(model)
 
             models[prop] = prop_models
