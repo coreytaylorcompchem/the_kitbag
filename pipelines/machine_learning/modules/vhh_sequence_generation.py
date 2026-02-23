@@ -484,16 +484,17 @@ def active_learning_rounds(config, context):
             df_measured[prop] += np.random.normal(0, noise_scale, size=len(df_measured))
 
         # Concatenate into df_labeled
-        df_labeled = pd.concat(
+        df_labeled_numeric = pd.concat(
             [df_labeled, df_measured[["sequence"] + multi_condition_props]],
             ignore_index=True
         )
 
         # Final enforcement: ensure all multi-condition columns are float
-        df_labeled[multi_condition_props] = df_labeled[multi_condition_props].apply(pd.to_numeric, errors="coerce").astype(float)
+        df_labeled_numeric[multi_condition_props] = df_labeled_numeric[multi_condition_props].apply(pd.to_numeric, errors="coerce")
 
         # Update y_train
-        y_train = df_labeled[multi_condition_props].values.astype(float)
+        y_train = df_labeled_numeric[multi_condition_props].values
+        X_train_full = esm_embed_cached(df_labeled_numeric["sequence"].tolist())
 
         # Ensure all multi-condition columns are numeric
         for prop in multi_condition_props:
