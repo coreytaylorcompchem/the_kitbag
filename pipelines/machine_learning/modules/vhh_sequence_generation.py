@@ -37,11 +37,35 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def ensure_numeric(df, props):
-    """Force multi-condition property columns to numeric float dtype."""
-    for prop in props:
-        df[prop] = pd.to_numeric(df[prop], errors="coerce")
-    return df
+# def ensure_numeric(df, props):
+#     """Force multi-condition property columns to numeric float dtype."""
+#     for prop in props:
+#         df[prop] = pd.to_numeric(df[prop], errors="coerce")
+#     return df
+
+def debug_numeric_array(name, arr, max_examples=5):
+    logger.info(f"[DEBUG] {name}: dtype={arr.dtype}, shape={arr.shape}")
+
+    # Check if object dtype
+    if arr.dtype == object:
+        logger.error(f"[DEBUG] {name} is OBJECT dtype")
+
+        # Find first few non-numeric entries
+        bad = []
+        for i, v in enumerate(arr):
+            if not isinstance(v, (int, float, np.integer, np.floating)) and not pd.isna(v):
+                bad.append((i, type(v), v))
+            if len(bad) >= max_examples:
+                break
+
+        logger.error(f"[DEBUG] {name} sample non-numeric entries: {bad}")
+
+    # Test np.isfinite safely
+    try:
+        mask = np.isfinite(arr)
+        logger.info(f"[DEBUG] {name} np.isfinite OK, finite_count={mask.sum()}")
+    except Exception as e:
+        logger.error(f"[DEBUG] np.isfinite FAILED on {name}: {e}")
 
 @register_task("load_seed_dataset", category="VHH generation", description="Load seed sequences and initialize context")
 def load_seed_dataset(config, context):
@@ -228,7 +252,10 @@ def active_learning_rounds(config, context):
 
         # Ensure multi-condition props are numeric (only those columns)
         df_labeled[multi_condition_props] = df_labeled[multi_condition_props].apply(pd.to_numeric, errors="coerce")
-        y_train = df_labeled[multi_condition_props].values.astype(float)
+        y_train = df_labeled[multi_condition_props].values
+
+        logger.info("[DEBUG] Checking full y_train matrix")
+        debug_numeric_array("y_train_flat", y_train.flatten())
 
         logger.info(f"Embedding {len(df_labeled)} labeled sequences...")
 
@@ -248,10 +275,17 @@ def active_learning_rounds(config, context):
 
         for i, prop in enumerate(multi_condition_props):
             y_i = y_train[:, i]
+            logger.info(f"[DEBUG] Property {prop}")
+            debug_numeric_array(f"{prop}_y_i_before_mask", y_i)
             # ensure float dtype
             if not np.issubdtype(y_i.dtype, np.floating):
                 y_i = y_i.astype(float)
-            mask = np.isfinite(y_i)
+            try:
+                mask = np.isfinite(y_i)
+            except Exception as e:
+                logger.error(f"[FATAL DEBUG] np.isfinite crashed for property {prop}")
+                debug_numeric_array(f"{prop}_y_i_CRASH", y_i)
+                raise
             X_i, y_i = X_train_pca[mask], y_i[mask]
 
             X_train_split, X_val, y_train_i, y_val_i = train_test_split(
