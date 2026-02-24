@@ -77,6 +77,11 @@ def load_seed_dataset(config, context, full_config=None):
 
     # Pass the full YAML to the logger
     log_pipeline_config(config, context, full_config=full_config)
+
+    # read in exp data csv
+
+    df = pd.read_csv(config["csv_path"])
+    
     # Force numeric only on the physchem columns
     df[config["multi_condition_props"]] = df[config["multi_condition_props"]].apply(pd.to_numeric, errors="coerce").astype(float)
     expected_len = config.get("expected_len", 125)
