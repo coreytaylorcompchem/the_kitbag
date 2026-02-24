@@ -76,6 +76,8 @@ def load_seed_dataset(config, context, full_config=None):
     """
 
     # Pass the full YAML to the logger
+
+    print(config)
     log_pipeline_config(config, context, full_config=full_config)
 
     # read in exp data csv
