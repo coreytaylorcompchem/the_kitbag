@@ -65,19 +65,19 @@ def debug_numeric_array(name, arr, max_examples=5):
         logger.error(f"[DEBUG] np.isfinite FAILED on {name}: {e}")
 
 @register_task("load_seed_dataset", category="VHH generation", description="Load seed sequences and initialize context")
-def load_seed_dataset(config, context, full_config=None):
+def load_seed_dataset(config, context):
     """
     Load seed sequences and initialize context.
 
     Args:
-        config (dict): Task-specific YAML slice (load_seed_dataset section).
+        config (dict): Task-specific YAML slice.
         context (dict): Runtime context.
         full_config (dict, optional): Entire YAML config for logging workflow-level info.
     """
 
     # Pass the full YAML to the logger
 
-    print(context)
+    full_config = context.get("full_config", {})
     log_pipeline_config(config, context, full_config=full_config)
 
     # read in exp data csv

@@ -84,18 +84,22 @@ def run_vhh_active_learning(config_path: str):
             raise ValueError(f"Task '{task_name}' not found in registry.")
 
         task_config = config.get(task_name, {})
+
+        # Pass full YAML in context
+        context = {"full_config": config}
+
         logger.info(f">>>>>>>>>> Running task: {task_name}")
 
         try:
-            result = task_func(task_config, current_data)
+            result = task_func(task_config, context)
         except Exception as e:
             logger.error(f"❌ Task '{task_name}' failed: {e}")
             raise
 
         if isinstance(result, dict):
-            current_data.update(result)
+            context.update(result)
         elif result is not None:
-            current_data[task_name] = result
+            context[task_name] = result
 
         gc.collect()
 
