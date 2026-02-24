@@ -409,8 +409,6 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     require_hdi_positive = params.get("require_hdi_positive", True)
     physchem_filters = params.get("physchem_filters", {})
 
-    print(posterior_cutoff, require_hdi_positive)
-
     logger.info(
         "[del_hit_picker] Physchem filters requested (YAML keys): %s",
         list(physchem_filters.keys())
@@ -818,3 +816,160 @@ def del_qc_metrics(config: dict, data: dict) -> dict:
     logger.info("[del_qc_metrics] QC metrics completed")
 
     return {"qc_metrics": qc, "df": df, "trace": trace}
+
+@register_task(
+    "del_compare_datasets",
+    category="DEL",
+    description="Compare raw DEL data to processed DEL data and report missing synthons."
+)
+def del_compare_datasets(config: dict, data: dict) -> dict:
+    params = config.get("del_compare_datasets", {})
+    processed_input = params.get("processed_input")
+    check_values = params.get("check_values", False)
+    output_cfg = params.get("output", {})
+
+    out_dir = Path(output_cfg.get("directory", "outputs/del_compare"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # -------------------
+    # Load RAW (long format)
+    # -------------------
+    input_file = data.get("input_file")
+    if not input_file:
+        logger.error("No input_file found in postprocess data.")
+        return {}
+
+    raw_df = pd.read_parquet(input_file)
+    if raw_df.empty:
+        logger.warning("Aggregated raw dataframe is empty.")
+        return {}
+
+    raw_df["NsynthonID"] = raw_df["NsynthonID"].astype(str).str.strip()
+    raw_unique = raw_df[["NsynthonID"]].drop_duplicates()
+    logger.info(f"Raw unique synthons: {len(raw_unique)}")
+
+    # -------------------
+    # Load PROCESSED (wide format)
+    # -------------------
+    processed_files = list(Path(processed_input).glob("*.csv"))
+    if not processed_files:
+        raise ValueError("No processed CSV files found.")
+
+    processed_df = pd.concat(
+        [pd.read_csv(f, low_memory=False) for f in processed_files],
+        ignore_index=True
+    )
+    processed_df["NsynthonID"] = processed_df["NsynthonID"].astype(str).str.strip()
+    processed_unique = processed_df[["NsynthonID"]].drop_duplicates()
+    logger.info(f"Processed unique synthons: {len(processed_unique)}")
+
+    # -------------------
+    # Check for duplicates
+    # -------------------
+    raw_dupes = raw_df["NsynthonID"].duplicated().sum()
+    processed_dupes = processed_df["NsynthonID"].duplicated().sum()
+    if raw_dupes:
+        logger.warning(f"Raw dataset has {raw_dupes} duplicate NsynthonIDs")
+    if processed_dupes:
+        logger.warning(f"Processed dataset has {processed_dupes} duplicate NsynthonIDs")
+
+    # -------------------
+    # Compare IDs
+    # -------------------
+    raw_ids = set(raw_unique["NsynthonID"])
+    processed_ids = set(processed_unique["NsynthonID"])
+    intersection = raw_ids & processed_ids
+    missing_ids = raw_ids - processed_ids
+
+    logger.info(f"Raw ID count: {len(raw_ids)}")
+    logger.info(f"Processed ID count: {len(processed_ids)}")
+    logger.info(f"Intersection size: {len(intersection)}")
+    logger.info(f"Missing synthons: {len(missing_ids)}")
+
+    # -------------------
+    # Output missing IDs
+    # -------------------
+    missing_df = pd.DataFrame({"NsynthonID": list(missing_ids)})
+    missing_outfile = out_dir / output_cfg.get("filename_missing", "missing_in_processed.csv")
+    missing_df.to_csv(missing_outfile, index=False)
+
+    # -------------------
+    # Optional value comparison (wide, condition-by-condition)
+    # -------------------
+    if check_values:
+        raw_df.columns = raw_df.columns.str.strip()
+        processed_df.columns = processed_df.columns.str.strip()
+
+        # Identify copy/enrichment columns in processed wide dataset
+        copy_cols = [c for c in processed_df.columns if c.startswith("copy(")]
+        enrich_cols = [c for c in processed_df.columns if c.startswith("enrichment(")]
+
+        # Map raw columns correctly
+        raw_copy_col = "post_count"
+        raw_enrich_col = "enrichment_mean"
+
+        # Ensure raw columns are numeric
+        if raw_copy_col in raw_df.columns:
+            raw_df[raw_copy_col] = pd.to_numeric(raw_df[raw_copy_col], errors="coerce").fillna(0)
+        if raw_enrich_col in raw_df.columns:
+            raw_df[raw_enrich_col] = pd.to_numeric(raw_df[raw_enrich_col], errors="coerce").fillna(0)
+
+        # Ensure processed columns are numeric
+        for col in copy_cols + enrich_cols:
+            processed_df[col] = pd.to_numeric(processed_df[col], errors="coerce").fillna(0)
+
+        # Pivot raw data long -> wide
+        if raw_copy_col in raw_df.columns:
+            raw_copy_wide = raw_df.pivot_table(
+                index="NsynthonID",
+                columns="condition",
+                values=raw_copy_col,
+                aggfunc="sum",
+                fill_value=0
+            )
+            raw_copy_wide.columns.name = None
+            raw_copy_wide = raw_copy_wide.reset_index()
+        else:
+            logger.warning(f"Raw dataframe has no '{raw_copy_col}' column. Skipping copy comparison.")
+            raw_copy_wide = pd.DataFrame({"NsynthonID": raw_df["NsynthonID"].unique()})
+
+        if raw_enrich_col in raw_df.columns:
+            raw_enrich_wide = raw_df.pivot_table(
+                index="NsynthonID",
+                columns="condition",
+                values=raw_enrich_col,
+                aggfunc="mean",
+                fill_value=0
+            )
+            raw_enrich_wide.columns.name = None
+            raw_enrich_wide = raw_enrich_wide.reset_index()
+        else:
+            logger.warning(f"Raw dataframe has no '{raw_enrich_col}' column. Skipping enrichment comparison.")
+            raw_enrich_wide = pd.DataFrame({"NsynthonID": raw_df["NsynthonID"].unique()})
+
+        # Map processed columns to raw condition names (strip prefix like "20528_")
+        copy_col_map = {col.split("(")[-1][:-1].split("_", 1)[-1]: col for col in copy_cols}
+        enrich_col_map = {col.split("(")[-1][:-1].split("_", 1)[-1]: col for col in enrich_cols}
+
+        # Merge processed and raw pivoted data
+        merged = processed_df[["NsynthonID"] + copy_cols + enrich_cols].merge(
+            raw_copy_wide, on="NsynthonID", how="inner"
+        )
+
+        diff_records = []
+        # Compute differences for copy
+        for cond, proc_col in copy_col_map.items():
+            if cond in raw_copy_wide.columns:
+                merged[f"{proc_col}_diff"] = merged[proc_col].astype(float) - merged[cond].astype(float)
+                diff_records.append(f"{proc_col}_diff")
+        # Compute differences for enrichment
+        for cond, proc_col in enrich_col_map.items():
+            if cond in raw_enrich_wide.columns:
+                merged[f"{proc_col}_diff"] = merged[proc_col].astype(float) - merged[cond].astype(float)
+                diff_records.append(f"{proc_col}_diff")
+
+        mismatch_outfile = out_dir / output_cfg.get("filename_mismatch", "value_mismatches.csv")
+        merged[["NsynthonID"] + diff_records].to_csv(mismatch_outfile, index=False)
+        logger.info(f"[COMPARE] Value mismatches exported per condition")
+
+    return {}
