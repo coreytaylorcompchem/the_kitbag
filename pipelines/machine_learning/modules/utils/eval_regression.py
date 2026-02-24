@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 

@@ -63,13 +63,14 @@ def run_roundwise_evaluation(
         # Compute mean/std of training properties for z-score weighting
         train_stats = df_train[properties].agg(["mean", "std"])
         
-        score_config = {
-            "method": "zscore_weighted",
-            "mutation_penalty": 0.0,  # no mutation penalty needed here
-            "property_weights": {p: 1.0 for p in properties},
-            "optimisation_direction": {p: 1 for p in properties},  # adjust as needed
-            "lower_is_better": [],  # e.g., ["Pre-peak Sec cats"]
-        }
+        if score_config is None:
+            score_config = {
+                "method": "zscore_weighted",
+                "mutation_penalty": 0.0,
+                "property_weights": {p: 1.0 for p in properties},
+                "optimisation_direction": {p: 1 for p in properties},
+                "lower_is_better": [],
+            }
 
         save_evaluation(train_eval, out_dir / f"round{r}/train",
                         score_config=score_config, train_stats=train_stats)
