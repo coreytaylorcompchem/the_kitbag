@@ -5,14 +5,12 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 def log_pipeline_config(config, context):
     """
     Logs key configuration and context values at the start of the VHH active learning workflow.
+    `config` must be the full YAML dict.
     """
 
-    workflow_name = config.get("workflow_name", "VHH_active_learning")
-    workflow_steps = config.get("workflow", [])
-
     logger.info("-" * 60)
-    logger.info(f"Workflow: {workflow_name}")
-    logger.info(f"Workflow steps: {workflow_steps}")
+    logger.info(f"Workflow: {config.get('workflow_name', 'VHH_active_learning')}")
+    logger.info(f"Workflow steps: {config.get('workflow', [])}")
 
     # ----------------------
     # Dataset settings
@@ -41,13 +39,10 @@ def log_pipeline_config(config, context):
     logger.info(f"Data directory: {al_cfg.get('data_dir', 'data_vhh')}")
     logger.info(f"Plots directory: {al_cfg.get('plots_dir', 'plots_vhh')}")
 
-    # Optional debug info
+    # Debug info
     logger.debug(f"CatBoost params: {al_cfg.get('catboost_params', {})}")
     logger.debug(f"PCA components: {al_cfg.get('n_components', 512)}")
     logger.debug(f"UMAP settings: n_neighbors={al_cfg.get('umap_n_neighbors', 15)}, "
                  f"min_dist={al_cfg.get('umap_min_dist', 0.1)}, n_epochs={al_cfg.get('umap_n_epochs', 50)}")
-
-    # Multi-condition properties from context
-    logger.debug(f"Multi-condition properties in context: {context.get('multi_condition_props', [])}")
 
     logger.info("-" * 60)
