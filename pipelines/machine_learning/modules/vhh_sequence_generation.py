@@ -39,12 +39,6 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-# def ensure_numeric(df, props):
-#     """Force multi-condition property columns to numeric float dtype."""
-#     for prop in props:
-#         df[prop] = pd.to_numeric(df[prop], errors="coerce")
-#     return df
-
 def debug_numeric_array(name, arr, max_examples=5):
     logger.debug(f"[DEBUG] {name}: dtype={arr.dtype}, shape={arr.shape}")
 
@@ -321,6 +315,25 @@ def active_learning_rounds(config, context):
                 prop_models.append(model)
 
             models[prop] = prop_models
+
+            # --------------------------------------------------
+            # Save round models (checkpoint)
+            # --------------------------------------------------
+            if config.get("save_round_models", True):
+                model_dir = data_dir / "models" / f"round_{round_idx}"
+                model_dir.mkdir(parents=True, exist_ok=True)
+
+                for prop, model_list in models.items():
+                    for m_idx, m in enumerate(model_list):
+                        m.save_model(
+                            str(model_dir / f"{prop.replace('/', '_')}_model_{m_idx}.cbm")
+                        )
+
+                # Save PCA
+                import joblib
+                joblib.dump(pca, model_dir / "pca.joblib")
+
+                logger.info(f"Saved round {round_idx} models to {model_dir}")
 
         # ------------------------
         # Bootstrapped evaluation
@@ -649,7 +662,7 @@ def active_learning_rounds(config, context):
         context["round_stats"].append(round_stat)
 
     context.update({
-        "df_labeled": df_labeled,
+        "df_labeled": df_labeled_numeric,
         "current_seeds": current_seeds,
         "current_seed_ids": current_seed_ids,
         "current_ancestor_ids": current_ancestor_ids,
@@ -726,4 +739,61 @@ def active_learning_rounds(config, context):
     logger.info("All plots and evaluations complete")
 
     logger.info("Active learning rounds complete")
+
+    # ============================================================
+    # Train final production model on ALL labeled data
+    # ============================================================
+
+    if config.get("train_final_model", True):
+
+        logger.info("Training final production models on full dataset...")
+
+        # Re-embed all labeled sequences
+        df_full = context["df_labeled"].copy()
+        X_full_emb = esm_embed_cached(df_full["sequence"].tolist())
+        X_full_pca = pca.transform(X_full_emb)
+
+        final_models = {}
+        n_ensemble = config.get("n_model_ensemble", 5)
+
+        for i, prop in enumerate(multi_condition_props):
+
+            y = pd.to_numeric(df_full[prop], errors="coerce").astype(float).values
+            mask = np.isfinite(y)
+            X_i, y_i = X_full_pca[mask], y[mask]
+
+            prop_models = []
+
+            for k in range(n_ensemble):
+                model = CatBoostRegressor(
+                    **catboost_params,
+                    random_seed=9999 + k
+                )
+                model.fit(X_i, y_i, verbose=False)
+                prop_models.append(model)
+
+            final_models[prop] = prop_models
+
+        # Save final production bundle
+        prod_dir = data_dir / "models" / "production"
+        prod_dir.mkdir(parents=True, exist_ok=True)
+
+        for prop, model_list in final_models.items():
+            for m_idx, m in enumerate(model_list):
+                m.save_model(
+                    str(prod_dir / f"{prop.replace('/', '_')}_model_{m_idx}.cbm")
+                )
+
+        joblib.dump(pca, prod_dir / "pca.joblib")
+
+        import json
+        with open(prod_dir / "metadata.json", "w") as f:
+            json.dump({
+                "properties": multi_condition_props,
+                "n_ensemble": n_ensemble,
+                "catboost_params": catboost_params,
+            }, f, indent=2)
+
+        logger.info(f"Saved final production model to {prod_dir}")
+        
     return context
