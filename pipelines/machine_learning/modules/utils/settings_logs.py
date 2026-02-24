@@ -2,47 +2,46 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def log_pipeline_config(config, context):
-    """
-    Logs key configuration and context values at the start of the VHH active learning workflow.
-    `config` must be the full YAML dict.
-    """
-
+def log_pipeline_config(config, context, full_config=None):
     logger.info("-" * 60)
-    logger.info(f"Workflow: {config.get('workflow_name', 'VHH_active_learning')}")
-    logger.info(f"Workflow steps: {config.get('workflow', [])}")
 
-    # ----------------------
-    # Dataset settings
-    # ----------------------
-    ds_cfg = config.get("load_seed_dataset", {})
-    logger.info(f"CSV path: {ds_cfg.get('csv_path', 'Unknown')}")
-    logger.info(f"Expected sequence length: {ds_cfg.get('expected_len', 'Unknown')}")
-    logger.info(f"Multi-condition properties: {ds_cfg.get('multi_condition_props', [])}")
+    # Workflow-level info
+    if full_config:
+        logger.info(f"Workflow: {full_config.get('workflow_name', 'VHH_active_learning')}")
+        logger.info(f"Workflow steps: {full_config.get('workflow', [])}")
 
-    # ----------------------
-    # ESM model settings
-    # ----------------------
-    esm_cfg = config.get("load_esm_model", {})
-    logger.info(f"ESM device: {esm_cfg.get('device', 'cpu')}")
-    logger.info(f"Pretrained model: {esm_cfg.get('pretrained_model', 'esm1b_t33_650M_UR50S')}")
-    logger.info(f"Batch size: {esm_cfg.get('batch_size', 32)}")
+    # Task-level info
+    keys_to_log = [
+        "csv_path",
+        "expected_len",
+        "multi_condition_props",
+        "n_rounds",
+        "samples_per_seed",
+        "top_candidates_per_round",
+        "min_per_ancestor",
+        "noise_scale",
+        "batch_size",
+        "n_model_ensemble",
+        "max_mutants",
+        "data_dir",
+        "plots_dir",
+    ]
+    for key in keys_to_log:
+        value = config.get(key)
+        if value is None and full_config:
+            # fallback to task slice in full_config
+            value = full_config.get("active_learning_rounds", {}).get(key)
+        logger.info(f"{key.replace('_', ' ').capitalize()}: {value}")
 
-    # ----------------------
-    # Active learning settings
-    # ----------------------
-    al_cfg = config.get("active_learning_rounds", {})
-    logger.info(f"Number of rounds: {al_cfg.get('n_rounds', 3)}")
-    logger.info(f"Samples per seed: {al_cfg.get('samples_per_seed', 100)}")
-    logger.info(f"Top candidates per round: {al_cfg.get('top_candidates_per_round', 1000)}")
+    # Model info
+    catboost_params = config.get("catboost_params")
+    if catboost_params is None and full_config:
+        catboost_params = full_config.get("active_learning_rounds", {}).get("catboost_params")
     logger.info(f"Model type: CatBoostRegressor")
-    logger.info(f"Data directory: {al_cfg.get('data_dir', 'data_vhh')}")
-    logger.info(f"Plots directory: {al_cfg.get('plots_dir', 'plots_vhh')}")
+    logger.debug(f"CatBoost params: {catboost_params}")
 
-    # Debug info
-    logger.debug(f"CatBoost params: {al_cfg.get('catboost_params', {})}")
-    logger.debug(f"PCA components: {al_cfg.get('n_components', 512)}")
-    logger.debug(f"UMAP settings: n_neighbors={al_cfg.get('umap_n_neighbors', 15)}, "
-                 f"min_dist={al_cfg.get('umap_min_dist', 0.1)}, n_epochs={al_cfg.get('umap_n_epochs', 50)}")
+    # Device info
+    logger.info(f"ESM device: {context.get('device', 'Unknown')}")
+    logger.info(f"Pretrained model: {context.get('esm_model', 'Unknown')}")
 
     logger.info("-" * 60)
