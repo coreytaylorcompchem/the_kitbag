@@ -65,11 +65,18 @@ def debug_numeric_array(name, arr, max_examples=5):
         logger.error(f"[DEBUG] np.isfinite FAILED on {name}: {e}")
 
 @register_task("load_seed_dataset", category="VHH generation", description="Load seed sequences and initialize context")
-def load_seed_dataset(config, context):
+def load_seed_dataset(config, context, full_config=None):
+    """
+    Load seed sequences and initialize context.
 
-    log_pipeline_config(config, context)
+    Args:
+        config (dict): Task-specific YAML slice (load_seed_dataset section).
+        context (dict): Runtime context.
+        full_config (dict, optional): Entire YAML config for logging workflow-level info.
+    """
 
-    df = pd.read_csv(config["csv_path"])
+    # Pass the full YAML to the logger
+    log_pipeline_config(config, context, full_config=full_config)
     # Force numeric only on the physchem columns
     df[config["multi_condition_props"]] = df[config["multi_condition_props"]].apply(pd.to_numeric, errors="coerce").astype(float)
     expected_len = config.get("expected_len", 125)

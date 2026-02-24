@@ -2,47 +2,29 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def log_pipeline_config(config, context):
+def log_pipeline_config(config, context, full_config=None):
     """
     Logs key configuration and context values at the start of the VHH active learning workflow.
-    `config` must be the full YAML dict.
+    
+    Args:
+        config (dict): Task-specific YAML slice.
+        context (dict): Runtime context.
+        full_config (dict, optional): Full YAML dict, for workflow-level logging.
     """
-
     logger.info("-" * 60)
-    logger.info(f"Workflow: {config.get('workflow_name', 'VHH_active_learning')}")
-    logger.info(f"Workflow steps: {config.get('workflow', [])}")
 
-    # ----------------------
-    # Dataset settings
-    # ----------------------
-    ds_cfg = config.get("load_seed_dataset", {})
-    logger.info(f"CSV path: {ds_cfg.get('csv_path', 'Unknown')}")
-    logger.info(f"Expected sequence length: {ds_cfg.get('expected_len', 'Unknown')}")
-    logger.info(f"Multi-condition properties: {ds_cfg.get('multi_condition_props', [])}")
+    if full_config:
+        logger.info(f"Workflow: {full_config.get('workflow_name', 'VHH_active_learning')}")
+        logger.info(f"Workflow steps: {full_config.get('workflow', [])}")
 
-    # ----------------------
-    # ESM model settings
-    # ----------------------
-    esm_cfg = config.get("load_esm_model", {})
-    logger.info(f"ESM device: {esm_cfg.get('device', 'cpu')}")
-    logger.info(f"Pretrained model: {esm_cfg.get('pretrained_model', 'esm1b_t33_650M_UR50S')}")
-    logger.info(f"Batch size: {esm_cfg.get('batch_size', 32)}")
+    # Task-specific info
+    logger.info(f"CSV path: {config.get('csv_path', 'Unknown')}")
+    logger.info(f"Expected sequence length: {config.get('expected_len', 'Unknown')}")
+    logger.info(f"Multi-condition properties: {config.get('multi_condition_props', [])}")
 
-    # ----------------------
-    # Active learning settings
-    # ----------------------
-    al_cfg = config.get("active_learning_rounds", {})
-    logger.info(f"Number of rounds: {al_cfg.get('n_rounds', 3)}")
-    logger.info(f"Samples per seed: {al_cfg.get('samples_per_seed', 100)}")
-    logger.info(f"Top candidates per round: {al_cfg.get('top_candidates_per_round', 1000)}")
+    # Model / training info
     logger.info(f"Model type: CatBoostRegressor")
-    logger.info(f"Data directory: {al_cfg.get('data_dir', 'data_vhh')}")
-    logger.info(f"Plots directory: {al_cfg.get('plots_dir', 'plots_vhh')}")
-
-    # Debug info
-    logger.debug(f"CatBoost params: {al_cfg.get('catboost_params', {})}")
-    logger.debug(f"PCA components: {al_cfg.get('n_components', 512)}")
-    logger.debug(f"UMAP settings: n_neighbors={al_cfg.get('umap_n_neighbors', 15)}, "
-                 f"min_dist={al_cfg.get('umap_min_dist', 0.1)}, n_epochs={al_cfg.get('umap_n_epochs', 50)}")
+    logger.info(f"Data directory: {config.get('data_dir', 'data_vhh')}")
+    logger.info(f"Plots directory: {config.get('plots_dir', 'plots_vhh')}")
 
     logger.info("-" * 60)
