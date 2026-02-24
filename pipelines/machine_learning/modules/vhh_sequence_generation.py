@@ -1,6 +1,7 @@
 import random
 from collections import defaultdict
 from pathlib import Path
+import joblib
 
 import numpy as np
 import pandas as pd
@@ -330,10 +331,9 @@ def active_learning_rounds(config, context):
                         )
 
                 # Save PCA
-                import joblib
+                
                 joblib.dump(pca, model_dir / "pca.joblib")
-
-                logger.info(f"Saved round {round_idx} models to {model_dir}")
+                logger.debug(f"Saved round {round_idx} models to {model_dir}")
 
         # ------------------------
         # Bootstrapped evaluation
