@@ -845,6 +845,48 @@ def del_compare_datasets(config: dict, data: dict) -> dict:
         return {}
 
     raw_df["NsynthonID"] = raw_df["NsynthonID"].astype(str).str.strip()
+
+    # Ensure counts are numeric
+    if "post_count" in raw_df.columns:
+        # Ensure counts numeric
+        raw_df["post_count"] = pd.to_numeric(raw_df["post_count"], errors="coerce").fillna(0)
+
+        # Pivot counts wide
+        raw_count_wide = raw_df.pivot_table(
+            index="NsynthonID",
+            columns="condition",
+            values="post_count",
+            aggfunc="sum",
+            fill_value=0
+        )
+
+        raw_count_wide.columns.name = None
+
+        # -------------------
+        # Filter 1: remove compounds with zero total counts
+        # -------------------
+        total_counts = raw_count_wide.sum(axis=1)
+        mask_nonzero_total = total_counts > 0
+
+        logger.info(f"Filtered synthons with count = 0 in all conditions."
+            f"Remaining after threshold filtering: {len(mask_nonzero_total)}"
+            )
+
+        # -------------------
+        # Filter 2: remove compounds with < 2 in ALL conditions
+        # -------------------
+        threshold = 2
+        mask_threshold = (raw_count_wide >= threshold).any(axis=1)
+
+        # Combine filters
+        valid_ids = raw_count_wide.index[mask_nonzero_total & mask_threshold]
+
+        raw_df = raw_df[raw_df["NsynthonID"].isin(valid_ids)]
+
+        logger.info(f"Filtered synthons with count < {threshold} in all conditions."
+            f"Remaining after threshold filtering: {len(valid_ids)}"
+            )
+
     raw_unique = raw_df[["NsynthonID"]].drop_duplicates()
     logger.info(f"Raw unique synthons: {len(raw_unique)}")
 
@@ -887,11 +929,50 @@ def del_compare_datasets(config: dict, data: dict) -> dict:
     logger.info(f"Missing synthons: {len(missing_ids)}")
 
     # -------------------
-    # Output missing IDs
+    # Output missing IDs with per-condition data
     # -------------------
-    missing_df = pd.DataFrame({"NsynthonID": list(missing_ids)})
-    missing_outfile = out_dir / output_cfg.get("filename_missing", "missing_in_processed.csv")
-    missing_df.to_csv(missing_outfile, index=False)
+    if missing_ids:
+
+        # Ensure enrichment numeric
+        raw_df["enrichment_mean"] = pd.to_numeric(raw_df["enrichment_mean"], errors="coerce").fillna(0)
+
+        # Pivot counts
+        raw_count_wide = raw_df.pivot_table(
+            index="NsynthonID",
+            columns="condition",
+            values="post_count",
+            aggfunc="sum",
+            fill_value=0
+        )
+
+        raw_count_wide.columns = [f"count_{c}" for c in raw_count_wide.columns]
+        raw_count_wide.reset_index(inplace=True)
+
+        # Pivot enrichment
+        raw_enrich_wide = raw_df.pivot_table(
+            index="NsynthonID",
+            columns="condition",
+            values="enrichment_mean",
+            aggfunc="mean",
+            fill_value=0
+        )
+
+        raw_enrich_wide.columns = [f"enrichment_{c}" for c in raw_enrich_wide.columns]
+        raw_enrich_wide.reset_index(inplace=True)
+
+        # Merge
+        raw_wide = raw_count_wide.merge(raw_enrich_wide, on="NsynthonID", how="left")
+
+        # Filter to missing
+        missing_df = raw_wide[raw_wide["NsynthonID"].isin(missing_ids)].copy()
+
+        missing_outfile = out_dir / output_cfg.get("filename_missing", "missing_in_processed.csv")
+        missing_df.to_csv(missing_outfile, index=False)
+
+        logger.info("Missing synthons exported with per-condition counts and enrichment.")
+
+    else:
+        logger.info("No missing synthons to export.")
 
     # -------------------
     # Optional value comparison (wide, condition-by-condition)

@@ -675,8 +675,6 @@ def plot_del_qc_metrics(
     # Plot 3: Posterior enrichment vs effect size
     # ----------------------------
 
-    print(df.columns)
-
     if {"beta_mean", "enrichment_mean"}.issubset(df.columns):
         plot_df = df.copy()
 
