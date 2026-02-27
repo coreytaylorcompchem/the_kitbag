@@ -79,6 +79,11 @@ def del_stream_aggregate_counts(config: dict, data: dict) -> dict:
             "AVG(enrichment) AS enrichment_mean",  # for reporting only
             "COUNT(*) AS n_compounds",
         ]
+    
+    # --- ADD THIS: propagate product (SMILES) ---
+    if "product" in df.columns:
+        agg_exprs.append("ANY_VALUE(product) AS product")
+        
     for col in physchem_cols:
         if col in df.columns:
             agg_exprs.append(f"AVG({col}) AS {col}_mean")
@@ -960,8 +965,16 @@ def del_compare_datasets(config: dict, data: dict) -> dict:
         raw_enrich_wide.columns = [f"enrichment_{c}" for c in raw_enrich_wide.columns]
         raw_enrich_wide.reset_index(inplace=True)
 
-        # Merge
+        # Merge count + enrichment
         raw_wide = raw_count_wide.merge(raw_enrich_wide, on="NsynthonID", how="left")
+
+        # --- ADD THIS: merge product SMILES ---
+        if "product" in raw_df.columns:
+            product_df = (
+                raw_df[["NsynthonID", "product"]]
+                .drop_duplicates()
+            )
+            raw_wide = raw_wide.merge(product_df, on="NsynthonID", how="left")
 
         # Filter to missing
         missing_df = raw_wide[raw_wide["NsynthonID"].isin(missing_ids)].copy()
