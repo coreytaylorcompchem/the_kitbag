@@ -89,9 +89,13 @@ def load_seed_dataset(config, context):
     expected_len = config.get("expected_len", 125)
     df = df[df["sequence"].str.len() == expected_len].reset_index(drop=True)
 
-    # Convert multi-condition property columns to numeric (leave text columns untouched)
+    # Convert multi-condition property columns to numeric
     for prop in config["multi_condition_props"]:
         df[prop] = pd.to_numeric(df[prop], errors="coerce")
+
+    # Add ID number
+
+    df["vhh_num"] = pd.to_numeric(df["vhh_num"], errors="coerce")
 
     seeds = df["sequence"].tolist()
     seed_ids = list(range(len(df)))
@@ -134,6 +138,7 @@ def load_seed_dataset(config, context):
         "current_seeds": seeds.copy(),
         "current_seed_ids": seed_ids.copy(),
         "current_ancestor_ids": df["ancestor_id"].tolist(),
+        "vhh_number": df["VHH dotm "].tolist(),
         "round_stats": [],
         "centroid_history": defaultdict(list)
     })
@@ -183,7 +188,7 @@ def active_learning_rounds(config, context):
     current_seeds = context["current_seeds"]
     current_seed_ids = context["current_seed_ids"]
     current_ancestor_ids = context["current_ancestor_ids"]
-    df_labeled = context["df_seeds"][["sequence"] + multi_condition_props].copy()
+    df_labeled = context["df_seeds"][["sequence", "ancestor_id", "vhh_num"] + multi_condition_props].copy()
     mutable_positions = context["mutable_positions"]
     esm_model = context["esm_model"]
     batch_converter = context["batch_converter"]
@@ -400,6 +405,11 @@ def active_learning_rounds(config, context):
         df_candidates = pd.DataFrame(candidate_meta)
         df_candidates["sequence"] = candidate_seqs
         df_candidates["round"] = round_idx
+        ancestor_to_dotm = dict(
+            zip(context["df_seeds"]["ancestor_id"], context["df_seeds"]["vhh_num"])
+        )
+
+        df_candidates["vhh_num"] = df_candidates["ancestor_id"].map(ancestor_to_dotm)
 
         # Ensure mutations are only in CDRs
         seed_id_to_parent = dict(zip(current_seed_ids, current_seeds))

@@ -136,7 +136,7 @@ def evaluate_with_bootstrap(
         yt = y_true[mask]
         yp = y_pred[mask]
 
-        # --- Bootstrapping using numpy (CPU only) ---
+        # --- Bootstrapping using numpy ---
         rmse = _bootstrap_metric(
             yt, yp,
             lambda a, b: np.sqrt(np.mean((a - b) ** 2)),
