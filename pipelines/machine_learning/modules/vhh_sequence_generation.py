@@ -138,7 +138,6 @@ def load_seed_dataset(config, context):
         "current_seeds": seeds.copy(),
         "current_seed_ids": seed_ids.copy(),
         "current_ancestor_ids": df["ancestor_id"].tolist(),
-        "vhh_number": df["VHH dotm "].tolist(),
         "round_stats": [],
         "centroid_history": defaultdict(list)
     })
