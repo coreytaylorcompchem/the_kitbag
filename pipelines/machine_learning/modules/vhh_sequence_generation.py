@@ -127,6 +127,8 @@ def load_seed_dataset(config, context):
         mutable_positions.extend(range(start, end))
     mutable_positions = sorted(set(mutable_positions))
 
+    print(df.head())
+
     context.update({
         "df_seeds": df,
         "seeds": seeds,
