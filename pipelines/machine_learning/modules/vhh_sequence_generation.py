@@ -571,7 +571,7 @@ def active_learning_rounds(config, context):
 
         # Concatenate into df_labeled
         df_labeled_numeric = pd.concat(
-            [df_labeled, df_measured[["sequence"] + multi_condition_props]],
+            [df_labeled, df_measured[["sequence", "ancestor_id", "vhh_num"] + multi_condition_props]],
             ignore_index=True
         )
 
