@@ -95,7 +95,7 @@ def load_seed_dataset(config, context):
 
     # Add ID number
 
-    df["vhh_num"] = pd.to_numeric(df["vhh_num"], errors="coerce")
+    df["vhh_num"] = df["vhh_num"].astype(str)
 
     seeds = df["sequence"].tolist()
     seed_ids = list(range(len(df)))
@@ -126,8 +126,6 @@ def load_seed_dataset(config, context):
     for start, end in cdr_regions.values():
         mutable_positions.extend(range(start, end))
     mutable_positions = sorted(set(mutable_positions))
-
-    print(df.head())
 
     context.update({
         "df_seeds": df,
