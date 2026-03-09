@@ -386,46 +386,44 @@ def plot_del_hits(
         full_hits_df["NsynthonID"].nunique()
     )
 
-    # UpSet plot
+    # ----------------------------
+    # UpSet plot: hit overlaps across conditions
+    # ----------------------------
     if full_hits_df.empty:
         logger.warning("[plot_del_hits] UpSet plot skipped: no hits available.")
     else:
-
         conds = full_hits_df["condition"].unique()
-
         try:
             condition_order = sorted(conds, key=lambda x: int(x.split('_')[0][1:]))
         except Exception:
             condition_order = sorted(conds)
 
-        indicator_df = pd.DataFrame(
-            False,
-            index=full_hits_df["NsynthonID"].unique(),
-            columns=condition_order
-        )
+        # Create boolean DataFrame: rows = unique synthons, columns = conditions
+        indicator_df = pd.DataFrame(False, index=full_hits_df["NsynthonID"].unique(),
+                                    columns=condition_order)
 
         for cond in condition_order:
-            synthons_in_cond = full_hits_df.loc[
-                full_hits_df["condition"] == cond,
-                "NsynthonID"
-            ].unique()
-
+            synthons_in_cond = full_hits_df.loc[full_hits_df["condition"] == cond, "NsynthonID"].unique()
             indicator_df.loc[synthons_in_cond, cond] = True
 
-        if indicator_df.empty:
-            logger.warning("[plot_del_hits] UpSet plot skipped: empty indicator matrix.")
-        else:
-            upset_data = from_indicators(indicator_df.columns, indicator_df)
+        indicator_df = indicator_df[~indicator_df.index.duplicated(keep="first")]
 
-            plt.figure(figsize=(10, 6))
+        if indicator_df.empty or indicator_df.sum().sum() == 0:
+            logger.warning("[plot_del_hits] UpSet plot skipped: no TRUE entries in indicator matrix.")
+        else:
+            # Convert boolean DataFrame to UpSet data
+            upset_data = from_indicators(indicator_df.columns.tolist(), indicator_df)
+
+            # Plot UpSet
+            plt.figure(figsize=(12, 6))
             UpSet(upset_data, show_counts=True, sort_by="cardinality").plot()
             plt.suptitle("Overlap of hits across conditions")
 
             upset_file = output_dir / "hits_upset.png"
             plt.savefig(upset_file, dpi=300)
             plt.close()
-
             plot_files["upset"] = upset_file
+            logger.info("[plot_del_hits] UpSet plot saved: %s", upset_file)
 
     # ----------------------------
     # Ridgeline plots vs physchem

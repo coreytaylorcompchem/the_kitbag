@@ -94,8 +94,12 @@ def del_stream_aggregate_counts(config: dict, data: dict) -> dict:
     query = f"SELECT {select_str} FROM del_df GROUP BY {group_str}"
     out_df = con.execute(query).df()
 
-    if min_pre > 0 and "total_count" in out_df.columns:
-        out_df = out_df[out_df["total_count"] >= min_pre]
+    if min_pre > 0 and "post_count" in out_df.columns:
+        n_before = len(out_df)
+        out_df = out_df[out_df["post_count"] >= min_pre]
+        n_after = len(out_df)
+        logger.info("[del_stream_aggregate_counts] Applied min_pre_count=%d: %d → %d rows",
+                    min_pre, n_before, n_after)
 
     # Propagate parquet path set by workflow runner
     parquet_path = data.get("output_path")  # workflow runner sets this
@@ -172,6 +176,15 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
     min_pre = params.get("min_pre_count", 5)  # Increase for debugging stability
     df = df[df["copy"] >= min_pre]
 
+    n_before_filter = len(df)
+    df = df[df["copy"] >= min_pre]
+    n_after_filter = len(df)
+    logger.info("[del_bayesian_model] min_pre_count=%d applied: %d → %d rows remaining",
+                min_pre, n_before_filter, n_after_filter)
+
+    if n_after_filter == 0:
+        raise ValueError("[del_bayesian_model] No rows left after min_pre_count filtering.")
+
     if df.empty:
         raise ValueError("[del_bayesian_model] No rows left after min_pre_count filtering.")
 
@@ -185,6 +198,10 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
             n_compounds=("copy", "count"),
         )
     )
+
+    logger.info("[del_bayesian_model] Number of conditions: %d, Number of unique synthons: %d",
+            model_df["condition"].nunique(),
+            model_df["NsynthonID"].nunique())
 
     logger.info(
         "[del_bayesian_model] Collapsed %d rows → %d synthon-condition rows",
@@ -428,12 +445,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
 
     posterior_cutoff = params.get("posterior_cutoff", 0.95)
     require_hdi_positive = params.get("require_hdi_positive", True)
-    physchem_filters = params.get("physchem_filters", {})
-
-    logger.info(
-        "[del_hit_picker] Physchem filters requested (YAML keys): %s",
-        list(physchem_filters.keys())
-    )
+    physchem_filters = params.get("physchem_filters") or {}
 
     if physchem_filters:
         logger.info(
@@ -462,6 +474,13 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             n_start,
         )
         mask &= mask_hdi
+
+    if require_hdi_positive:
+        logger.info("[del_hit_picker] HDI positive filter: %d rows pass",
+                    (df['beta_hdi_lower'] > 0).sum())
+        
+    logger.info("[del_hit_picker] Rows remaining after Bayesian filters: %d / %d",
+            mask.sum(), len(df))
 
     # ----------------------------
     # Apply physchem filters if provided
@@ -492,6 +511,13 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             "[del_hit_picker] Physchem filter applied: %s → %s in [%.2f, %.2f] | %d → %d rows",
             base_col, col, low, high, before, after
         )
+    
+    # before_physchem = mask.sum()
+    # mask_phys = df[col].between(low, high)
+    # mask &= mask_phys
+    # after_physchem = mask.sum()
+    # logger.info("[del_hit_picker] Cumulative rows after %s filter: %d → %d",
+    #             col, before_physchem, after_physchem)
 
     # ----------------------------
     # Filtered hits
@@ -660,7 +686,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             output_dir=plot_dir,
             top_n=params.get("top_n_per_condition", 10),
             physchem_cols=physchem_cols,
-            physchem_filters=physchem_filters,  # NEW
+            physchem_filters=physchem_filters, 
             heatmap_top_n=50
         )
 
