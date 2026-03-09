@@ -3,74 +3,70 @@
 task: workflow
 workflow_name: chembl_adme_data
 
-readout:
-  - LogD
-  - mhCLint # include microsomes and heps - to be filtered later
-  - Solubility
-  - Caco-2 Permeability
-  - hPPB
+assay_keywords:
+  Caco-2:
+    - caco-2
+    - caco2
+    - papp
+    - apparent permeability
+    - permeability
+    - a-b permeability
+    - b-a permeability
+    - intestinal permeability
 
-filters:
-  global:
-    relation: "="
-    # assay_type: A
-  LogD:
-    assay_type: P
-  mhCLint:
-    assay_type: A
-    # assay_organism: Homo sapiens
+  MDCK:
+    - mdck
+    - mdckii
+    - apparent permeability
+    - permeability
+  
+  PAMPA: 
+    - pampa
+    - parallel artificial membrane
+    - artificial membrane permeability
+
+  P-gp:
+    - p-gp
+    - p-glycoprotein
+    - pgp
+    - mdr1
+    - abcb1
+    - efflux ratio
+    - efflux
+
+  BCRP:
+    - bcrp
+    - breast cancer resistance protein
+    - abcg2
+
+  MRP:
+    - mrp
+    - multidrug resistance protein
+    - abcc
+
   Solubility:
-    assay_type: P
-  Caco-2 Permeability:
-    assay_type: A
-  hPPB:
-    assay_type: B
-    assay_organism: Homo sapiens
+    - solubility
+    - kinetic solubility
+    - aqueous solubility
 
-cleaning:
-  column_map:
-    compound_id: molecule_chembl_id
-    concentration: standard_value
-    units: standard_units
-    assay_name: readout
+  LogP:
+    - logp
+    - log p
+    - partition coefficient
 
-  default_units: # Add more if needed
-    - uM
-    - µM
-    - ug/mL
-    - uL min-1 mg-1 # met stab
-    - uL/(min.pmol)
-    - uL min-1e6 cells  
-    - mg/mL        # Solubility   
-    - logS         
-    - cm s-1       # Caco-2 units for Papp
-    - '%'          # PPB: % bound
-  unit_overrides:  # per-readout overrides, as LogD has no units and we don't want to put 'None' for other readouts
-    LogD:
-      - None
-  min_value: 0.01
-  max_value: 10000
-  required_columns:
-    - molecule_chembl_id
-    - standard_value
-    - standard_units
+  LogD:
+    - logd
+    - distribution coefficient
 
 workflow:
-  - retrieve_chembl_adme_data
-  - clean_adme_data
-  - retrieve_compound_smiles
+  - retrieve_chembl_assays
+  - filter_assays_by_keywords
+  - retrieve_assay_activities
+  - enrich_activity_metadata
+  - harmonise_permeability_units
+  - build_multitask_dataset
+  - generate_diagnostics
 
 output:
   directory: outputs/adme
-  filename: combined_adme_data.csv
-  overwrite: true
-
-output_columns:
-  - molecule_chembl_id
-  - target_chembl_id
-  - assay_description
-  - document_year
-  - smiles
-  - standard_value
-  - standard_units
-  - normalized_units
+  filename: chembl_mtl_dataset.csv

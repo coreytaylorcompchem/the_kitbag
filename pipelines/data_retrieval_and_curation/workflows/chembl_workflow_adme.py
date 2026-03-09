@@ -3,7 +3,6 @@ import pandas as pd
 from copy import deepcopy
 from pipeline.task_registry import get_task
 from workflows import register_workflow
-from pipeline.parallel_runner import ParallelWorkflowRunner
 
 from pipeline.logger import setup_logger
 
@@ -13,92 +12,38 @@ logger = setup_logger(
     simple_format=True
 )
 
-from workflows.utils import process_readout_dataframe
 
-def run_adme_pipeline_for_readout(config: dict) -> dict:
-    """
-    Run pipeline for a single ADME readout specified in config['readout'].
-
-    Args:
-        config (dict): Config dict containing at least the 'readout' key.
-
-    Returns:
-        dict: {'readout': <readout_name>, 'df': <resulting_dataframe>}
-    """
-    readout = str(config.get("readout"))
-    if not readout:
-        raise ValueError("No readout specified in config['readout'].")
-
+@register_workflow(
+    "chembl_adme_data",
+    description="Retrieve and construct multi-task ADME dataset from ChEMBL."
+)
+def run_chembl_mtl_workflow(config):
     local_config = deepcopy(config)
-
-    readout_filters = local_config.get("filters", {}).get(readout)
-    if readout_filters:
-        local_config.update(readout_filters)
-
     data = None
+
     for step in local_config.get("workflow", []):
         task_func = get_task(step)
+
         if not task_func:
             raise ValueError(f"Task '{step}' not found in registry.")
+
+        logger.info(f"Running task: {step}")
+
         data = task_func(local_config, data)
 
     if isinstance(data, dict) and "df" in data:
         df = data["df"]
     else:
-        df = data
+        raise ValueError("Final workflow output did not return a dataframe.")
 
-    # Apply check for empty dataframes from querying here
+    output_cfg = local_config.get("output", {})
+    out_dir = output_cfg.get("directory", "outputs/adme")
+    filename = output_cfg.get("filename", "chembl_mtl_dataset.csv")
 
-    if isinstance(data, dict) and "df" in data:
-        df = data["df"]
-    else:
-        df = data
+    os.makedirs(out_dir, exist_ok=True)
+    output_path = os.path.join(out_dir, filename)
+    df.to_csv(output_path, index=False)
 
-    df = process_readout_dataframe(readout, df)
+    logger.info(f"Saved dataset to: {output_path}")
 
-    return {"readout": readout, "df": df}
-
-# Checks the YAML file for mistakes and errors out if there's missing readout data retrieve (e.g. no assay_type)
-
-def validate_filters_section(config):
-    filters = config.get("filters", {})
-    readouts = config.get("readout", [])
-    if isinstance(readouts, str):
-        readouts = [readouts]
-
-    for readout, filter_set in filters.items():
-        if readout not in readouts:
-            logger.info(f"[Info] Skipping validation for non-readout filter key: '{readout}'")
-            continue
-
-        if not isinstance(filter_set, dict):
-            raise ValueError(f"[Config Error] Filter for '{readout}' must be a dictionary, got {type(filter_set)}.")
-
-        if "assay_type" not in filter_set:
-            raise ValueError(f"[Config Error] Filter for readout '{readout}' is missing required 'assay_type'.")
-
-
-@register_workflow("chembl_adme_data", description="Retrieve, standardise and collate ADME data - ChEMBL.")
-def run_chembl_adme_workflow(config):
-    readouts = config.get("readout", [])
-    if isinstance(readouts, str):
-        readouts = [readouts]
-    if not readouts:
-        raise ValueError("No readouts specified in config['readout'].")
-    
-    validate_filters_section(config)  # Here's where the YAML check is run
-
-    local_config = deepcopy(config)
-    local_config["readout"] = readouts
-
-    runner = ParallelWorkflowRunner(
-        workflow_func=run_adme_pipeline_for_readout,
-        config=local_config,
-        input_key="readout",
-        output_key="readout",
-        output_dir=local_config.get("output", {}).get("directory", "outputs/adme"),
-        filename_pattern="{readout}_adme.csv",
-        combined_filename=local_config.get("output", {}).get("filename", "combined_adme_data.csv"),
-    )
-
-    return runner.run()
+    return {"df": df, "path": output_path}
