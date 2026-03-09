@@ -12,6 +12,9 @@ from upsetplot import from_indicators, UpSet
 from scipy.stats import gaussian_kde
 from itertools import combinations
 
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import pdist
+
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
@@ -94,6 +97,14 @@ def plot_del_hits(
     full_df = full_hits_df.copy()   # complete hits
     full_df["condition"] = full_df["condition"].astype(str)
 
+    # ----------------------------
+    # Unique synthon dataset
+    # ----------------------------
+    if "NsynthonID" in full_df.columns:
+        syn_df = full_df.drop_duplicates("NsynthonID").copy()
+    else:
+        syn_df = full_df.copy()
+
     plot_col = "p_active_cond" if "p_active_cond" in hits_df.columns else "p_active"
     hits_df[plot_col] = pd.to_numeric(hits_df[plot_col], errors="coerce")
 
@@ -144,9 +155,6 @@ def plot_del_hits(
 
     # Heatmap (clustered)
 
-    from scipy.cluster.hierarchy import linkage, leaves_list
-    from scipy.spatial.distance import pdist
-
     df_unique = reduced_df.groupby(
         ["NsynthonID", "condition"],
         as_index=False
@@ -181,9 +189,6 @@ def plot_del_hits(
     # -----------------------------
     if heat_norm.shape[0] > 1:
 
-        from scipy.cluster.hierarchy import linkage, leaves_list
-        from scipy.spatial.distance import pdist
-
         row_dist = pdist(heat_norm.values, metric="euclidean")
         row_linkage = linkage(row_dist, method="ward")
         row_order = leaves_list(row_linkage)
@@ -217,8 +222,6 @@ def plot_del_hits(
 
     plot_files["heatmap"] = heatmap_file
 
-
-
     # ----------------------------
     # Box + strip plot by condition
     # ----------------------------
@@ -231,9 +234,9 @@ def plot_del_hits(
         x="condition",
         y=plot_col,
         order=condition_order,
-        whis=1.5,          # whisker length
+        whis=1.5,         
         color="lightgray",
-        fliersize=0        # hide outliers (we'll show them via strip)
+        fliersize=0    
     )
 
     # Overlay stripplot for individual points
@@ -260,6 +263,88 @@ def plot_del_hits(
     plot_files["box_stripplot"] = box_strip_file
 
     logger.info("[plot_del_hits] Box + strip plot saved: %s", box_strip_file)
+
+    # ----------------------------
+    # UMAP colored by SMARTS severity
+    # ----------------------------
+    if {"umap_x", "umap_y", "smarts_severity"}.issubset(syn_df.columns):
+
+        plt.figure(figsize=(7,6))
+
+        sns.scatterplot(
+            data=syn_df,
+            x="umap_x",
+            y="umap_y",
+            hue="smarts_severity",
+            palette={
+                "GREEN": "seagreen",
+                "ORANGE": "orange",
+                "RED": "crimson"
+            },
+            s=30,
+            alpha=0.85
+        )
+
+        plt.title("Chemical space colored by SMARTS severity")
+        plt.xlabel("UMAP 1")
+        plt.ylabel("UMAP 2")
+
+        plt.legend(title="SMARTS severity", frameon=False)
+
+        plt.tight_layout()
+
+        sev_umap_file = output_dir / "umap_smarts_severity.png"
+        plt.savefig(sev_umap_file, dpi=300)
+        plt.close()
+
+        plot_files["umap_smarts_severity"] = sev_umap_file
+
+    else:
+        logger.warning("[plot_del_hits] Missing columns for SMARTS UMAP plot")
+
+    # ----------------------------
+    # SMARTS composition per cluster
+    # ----------------------------
+    if {"cluster_id", "smarts_severity"}.issubset(syn_df.columns):
+
+        cluster_sev = (
+            syn_df
+            .groupby(["cluster_id", "smarts_severity"])
+            .size()
+            .unstack(fill_value=0)
+        )
+
+        cluster_sev = cluster_sev.div(cluster_sev.sum(axis=1), axis=0)
+
+        cluster_sev = cluster_sev.reindex(columns=["GREEN","ORANGE","RED"], fill_value=0)
+
+        cluster_sev.plot(
+            kind="bar",
+            stacked=True,
+            figsize=(8,6),
+            color={
+                "GREEN": "seagreen",
+                "ORANGE": "orange",
+                "RED": "crimson"
+            }
+        )
+
+        plt.ylabel("Fraction of synthons")
+        plt.xlabel("UMAP cluster")
+        plt.title("SMARTS composition per chemical cluster")
+
+        plt.legend(title="SMARTS severity", frameon=False)
+
+        plt.tight_layout()
+
+        cluster_smarts_file = output_dir / "cluster_smarts_composition.png"
+        plt.savefig(cluster_smarts_file, dpi=300)
+        plt.close()
+
+        plot_files["cluster_smarts_composition"] = cluster_smarts_file
+
+    else:
+        logger.warning("[plot_del_hits] Missing columns for cluster SMARTS plot")
 
 
     # Top-x barplot across conditions
@@ -301,31 +386,46 @@ def plot_del_hits(
         full_hits_df["NsynthonID"].nunique()
     )
 
-    # UpSet plot 
-    # Use the ordered list of conditions for columns
-    conds = full_hits_df["condition"].unique()
+    # UpSet plot
+    if full_hits_df.empty:
+        logger.warning("[plot_del_hits] UpSet plot skipped: no hits available.")
+    else:
 
-    # Natural sort
-    condition_order = sorted(conds, key=lambda x: int(x.split('_')[0][1:]))
+        conds = full_hits_df["condition"].unique()
 
-    indicator_df = pd.DataFrame(
-        False,
-        index=full_hits_df["NsynthonID"].unique(),
-        columns=condition_order
-    )
+        try:
+            condition_order = sorted(conds, key=lambda x: int(x.split('_')[0][1:]))
+        except Exception:
+            condition_order = sorted(conds)
 
-    for cond in condition_order:
-        synthons_in_cond = full_hits_df.loc[full_hits_df["condition"] == cond, "NsynthonID"].unique()
-        indicator_df.loc[synthons_in_cond, cond] = True
+        indicator_df = pd.DataFrame(
+            False,
+            index=full_hits_df["NsynthonID"].unique(),
+            columns=condition_order
+        )
 
-    upset_data = from_indicators(indicator_df.columns, indicator_df)
-    plt.figure(figsize=(10, 6))
-    UpSet(upset_data, show_counts=True, sort_by="cardinality").plot()
-    plt.suptitle("Overlap of hits across conditions")
-    upset_file = output_dir / "hits_upset.png"
-    plt.savefig(upset_file, dpi=300)
-    plt.close()
-    plot_files["upset"] = upset_file
+        for cond in condition_order:
+            synthons_in_cond = full_hits_df.loc[
+                full_hits_df["condition"] == cond,
+                "NsynthonID"
+            ].unique()
+
+            indicator_df.loc[synthons_in_cond, cond] = True
+
+        if indicator_df.empty:
+            logger.warning("[plot_del_hits] UpSet plot skipped: empty indicator matrix.")
+        else:
+            upset_data = from_indicators(indicator_df.columns, indicator_df)
+
+            plt.figure(figsize=(10, 6))
+            UpSet(upset_data, show_counts=True, sort_by="cardinality").plot()
+            plt.suptitle("Overlap of hits across conditions")
+
+            upset_file = output_dir / "hits_upset.png"
+            plt.savefig(upset_file, dpi=300)
+            plt.close()
+
+            plot_files["upset"] = upset_file
 
     # ----------------------------
     # Ridgeline plots vs physchem
@@ -376,7 +476,7 @@ def plot_del_hits(
                 logger.debug(f"[plot_del_hits] Skipping condition {cond} for {col}: insufficient or constant values")
                 continue
 
-            # Gaussian KDE with adaptive bandwidth (min bw 0.1)
+            # Gaussian KDE with adaptive bandwidth (otherwise Ridge plots can squish to the left or right)
             bw = max(0.1, min(0.5, 1.0 / np.sqrt(len(vals))))
             kde = gaussian_kde(vals, bw_method=bw)
             y = kde(x_range)
@@ -391,7 +491,7 @@ def plot_del_hits(
 
         plt.xlabel(col)
         plt.ylabel("Condition")
-        plt.yticks([])  # remove all y-axis ticks
+        plt.yticks([])  # remove y-axis ticks
         plt.title(f"Ridgeline plot of {col} per condition")
         plt.tight_layout()
 
@@ -590,7 +690,7 @@ def plot_del_qc_metrics(
     output_dir: str = "outputs/plots_qc",
 ):
     """
-    Generate DEL QC plots intended for chemists:
+    Generate DEL QC plots to analyse quality of evidence:
     - Effect size vs uncertainty
     - HDI overlap with zero
     - Pre vs post count enrichment
@@ -707,7 +807,6 @@ def plot_del_qc_metrics(
         logger.info(
             "[QC] posterior enrichment not present — skipping enrichment vs effect plot"
         )
-
 
     # ----------------------------
     # Plot 4: Hit consistency across conditions

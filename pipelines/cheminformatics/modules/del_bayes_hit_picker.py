@@ -1,6 +1,7 @@
 import os
 import psutil
 import time
+from rdkit import Chem
 
 MAX_THREADS = min(16, psutil.cpu_count(logical=True))
 
@@ -80,7 +81,7 @@ def del_stream_aggregate_counts(config: dict, data: dict) -> dict:
             "COUNT(*) AS n_compounds",
         ]
     
-    # --- ADD THIS: propagate product (SMILES) ---
+    # Propagate product (SMILES) through Bayes model
     if "product" in df.columns:
         agg_exprs.append("ANY_VALUE(product) AS product")
         
@@ -224,7 +225,7 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
         n_cond = len(cond_codes)
         n_obs = len(model_df)
         
-        # --- HIERARCHICAL PARTIAL POOLING ---
+        # HIERARCHICAL PARTIAL POOLING 
         # Number of unique synthons
         n_syn = int(syn_idx.max()) + 1
 
@@ -279,6 +280,21 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
     # Posterior summaries
     # ----------------------------
     summary_df = model_df[["NsynthonID", "condition"]].copy()
+
+    # ----------------------------
+    # Propagate product SMILES
+    # ----------------------------
+    if "product" in df.columns:
+        smiles_df = (
+            df.groupby(["NsynthonID", "condition"], as_index=False)
+            .agg(product=("product", "first"))
+        )
+
+        summary_df = summary_df.merge(
+            smiles_df,
+            on=["NsynthonID", "condition"],
+            how="left"
+        )
 
     beta_post = trace.posterior["beta_syn_cond"]  # (chain, draw, obs)
 
@@ -366,7 +382,7 @@ def del_bayesian_model(config: dict, data: dict) -> dict:
 def del_hit_picker(config: dict, data: dict) -> dict:
     
     params = config.get("del_hit_picker", {})
-    df = data.get("df")  # Model output from del_bayesian_model
+    df = data.get("df")  # Output from del_bayesian_model
 
     if df is None or len(df) == 0:
         raise ValueError("[del_hit_picker] Input dataframe is empty.")
@@ -477,7 +493,6 @@ def del_hit_picker(config: dict, data: dict) -> dict:
             base_col, col, low, high, before, after
         )
 
-
     # ----------------------------
     # Filtered hits
     # ----------------------------
@@ -559,7 +574,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     # UMAP embedding on unique synthons
     # ----------------------------
 
-    # 1Aggregate to one row per NsynthonID
+    # Aggregate to one row per NsynthonID
     umap_base_df = hits_df.groupby("NsynthonID", as_index=False).agg({
         "beta_mean": "max",
         "p_active": "max",
@@ -569,12 +584,12 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     # Extract library
     umap_base_df["library"] = umap_base_df["NsynthonID"].str.split("-", n=1).str[0]
 
-    # 2Compute library weights (inverse frequency)
+    # Compute library weights (inverse frequency)
     lib_counts = umap_base_df["library"].value_counts()
     umap_base_df["umap_weight"] = 1.0 / lib_counts[umap_base_df["library"]].values
 
     # Sample for UMAP (weighted, unique synthons only)
-    n_umap_samples = min(len(umap_base_df), params.get("max_plot_hits", 10000))
+    n_umap_samples = min(len(umap_base_df), params.get("max_umap_points", 10000))
     umap_sample_df = umap_base_df.sample(
         n=n_umap_samples,
         weights="umap_weight",
@@ -599,13 +614,12 @@ def del_hit_picker(config: dict, data: dict) -> dict:
     )
 
     # Merge UMAP coordinates back safely into full hits_df
-    # Only one row per NsynthonID, so no duplicates introduced
+    # Only one row per NsynthonID to avoid dups
     hits_df = hits_df.merge(
         umap_sample_df[["NsynthonID", "umap_x", "umap_y", "cluster_id"]],
         on="NsynthonID",
         how="left"
     )
-
 
     # ----------------------------
     # Reduce hits for plotting only
@@ -664,7 +678,7 @@ def del_hit_picker(config: dict, data: dict) -> dict:
 @register_task(
     "del_qc_metrics",
     category="DEL",
-    description="Ad-hoc QC diagnostics for DEL Bayesian model (non-blocking)."
+    description="Ad-hoc QC diagnostics for DEL Bayesian model."
 )
 def del_qc_metrics(config: dict, data: dict) -> dict:
 
@@ -674,7 +688,7 @@ def del_qc_metrics(config: dict, data: dict) -> dict:
     trace = data.get("trace")
 
     if df is None or trace is None:
-        logger.warning("[del_qc_metrics] Missing df or trace — skipping QC")
+        logger.warning("[del_qc_metrics] Missing df or trace - skipping QC")
         return {"qc_metrics": {}}
 
     df = df.copy()
@@ -823,6 +837,97 @@ def del_qc_metrics(config: dict, data: dict) -> dict:
     return {"qc_metrics": qc, "df": df, "trace": trace}
 
 @register_task(
+    "del_smarts_filter",
+    category="DEL",
+    description="Match molecules against toxic/reactive SMARTS patterns, assign traffic-light severity."
+)
+def del_smarts_filter(config: dict, data: dict) -> dict:
+
+    params = config.get("del_smarts_filter", {})
+
+    smarts_file = params.get("smarts_file")
+    smiles_col = params.get("smiles_column", "product")
+
+    severity_col = params.get("output_columns", {}).get("severity", "smarts_severity")
+    matches_col = params.get("output_columns", {}).get("matches", "smarts_matches")
+
+    df = data.get("df")
+
+    if df is None or len(df) == 0:
+        logger.warning("[del_smarts_filter] Empty dataframe")
+        return {"df": df}
+
+    df = df.copy()
+
+    if smiles_col not in df.columns:
+        logger.warning("[del_smarts_filter] SMILES column '%s' not found — skipping SMARTS filter", smiles_col)
+        df[severity_col] = "GREEN"
+        df[matches_col] = ""
+        return {"df": df}
+
+    logger.info("[del_smarts_filter] Loading SMARTS from %s", smarts_file)
+
+    smarts_df = pd.read_csv(smarts_file)
+
+    patterns = []
+
+    for _, row in smarts_df.iterrows():
+        patt = Chem.MolFromSmarts(row["SMARTS"])
+        if patt is None:
+            logger.warning("[del_smarts_filter] Invalid SMARTS skipped: %s", row["SMARTS"])
+            continue
+
+        patterns.append({
+            "name": row["PATTERN_NAME"],
+            "pattern": patt,
+            "severity": row["SEVERITY_COMMENT"].upper()
+        })
+
+    logger.info("[del_smarts_filter] Loaded %d SMARTS patterns", len(patterns))
+
+    severities = []
+    matches_list = []
+
+    for smi in df[smiles_col].astype(str):
+
+        mol = Chem.MolFromSmiles(smi)
+
+        if mol is None:
+            severities.append("GREEN")
+            matches_list.append("")
+            continue
+
+        matched_names = []
+        matched_severities = []
+
+        for p in patterns:
+            if mol.HasSubstructMatch(p["pattern"]):
+                matched_names.append(p["name"])
+                matched_severities.append(p["severity"])
+
+        if "REJECT" in matched_severities:
+            sev = "RED"
+        elif "FLAG" in matched_severities:
+            sev = "ORANGE"
+        else:
+            sev = "GREEN"
+
+        severities.append(sev)
+        matches_list.append(",".join(matched_names))
+
+    df[severity_col] = severities
+    df[matches_col] = matches_list
+
+    logger.info(
+        "[del_smarts_filter] Results: GREEN=%d ORANGE=%d RED=%d",
+        (df[severity_col] == "GREEN").sum(),
+        (df[severity_col] == "ORANGE").sum(),
+        (df[severity_col] == "RED").sum(),
+    )
+
+    return {"df": df}
+
+@register_task(
     "del_compare_datasets",
     category="DEL",
     description="Compare raw DEL data to processed DEL data and report missing synthons."
@@ -896,7 +1001,7 @@ def del_compare_datasets(config: dict, data: dict) -> dict:
     logger.info(f"Raw unique synthons: {len(raw_unique)}")
 
     # -------------------
-    # Load PROCESSED (wide format)
+    # Load processed (wide format)
     # -------------------
     processed_files = list(Path(processed_input).glob("*.csv"))
     if not processed_files:
@@ -968,7 +1073,7 @@ def del_compare_datasets(config: dict, data: dict) -> dict:
         # Merge count + enrichment
         raw_wide = raw_count_wide.merge(raw_enrich_wide, on="NsynthonID", how="left")
 
-        # --- ADD THIS: merge product SMILES ---
+        # merge product SMILES
         if "product" in raw_df.columns:
             product_df = (
                 raw_df[["NsynthonID", "product"]]
@@ -988,7 +1093,7 @@ def del_compare_datasets(config: dict, data: dict) -> dict:
         logger.info("No missing synthons to export.")
 
     # -------------------
-    # Optional value comparison (wide, condition-by-condition)
+    # Value comparison (wide, condition-by-condition) - WIP
     # -------------------
     if check_values:
         raw_df.columns = raw_df.columns.str.strip()
@@ -1041,7 +1146,7 @@ def del_compare_datasets(config: dict, data: dict) -> dict:
             logger.warning(f"Raw dataframe has no '{raw_enrich_col}' column. Skipping enrichment comparison.")
             raw_enrich_wide = pd.DataFrame({"NsynthonID": raw_df["NsynthonID"].unique()})
 
-        # Map processed columns to raw condition names (strip prefix like "20528_")
+        # Map processed columns to raw condition names
         copy_col_map = {col.split("(")[-1][:-1].split("_", 1)[-1]: col for col in copy_cols}
         enrich_col_map = {col.split("(")[-1][:-1].split("_", 1)[-1]: col for col in enrich_cols}
 
