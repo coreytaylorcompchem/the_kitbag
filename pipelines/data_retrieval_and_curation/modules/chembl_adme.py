@@ -3,6 +3,9 @@ import asyncio
 import nest_asyncio
 import os
 import json
+import requests
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from chembl_webresource_client.new_client import new_client
 
@@ -27,11 +30,6 @@ logger = setup_logger(
     description="Retrieve assay metadata from CHEMBL API"
 )
 def retrieve_chembl_assays(config, data=None):
-
-    import requests
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from tqdm import tqdm
-    import pandas as pd
 
     BASE_URL = "https://www.ebi.ac.uk/chembl/api/data/assay.json"
     LIMIT = config.get("limit", 1000)
@@ -129,61 +127,57 @@ def retrieve_assay_activities(config, assay_ids=None):
     MAX_CONCURRENT_REQUESTS = config.get("max_concurrent_requests", 10)
 
     RELEVANT_TYPES = {
-        "papp", "apparent permeability", "permeability",
-        "solubility", "logp", "logd", "efflux ratio"
+        "papp",
+        "permeability",
+        "apparent permeability",
+        "solubility",
+        "logp",
+        "logd",
+        "clint",
+        "intrinsic clearance",
+        "clearance",
+        "half life",
+        "t1/2",
+        "fraction unbound",
+        "fu",
+        "% unbound",
+        "% bound",
+        "plasma protein binding",
+        "efflux ratio"
     }
 
     def build_url(batch):
         base = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
-        assay_filter = "&".join([f"assay_chembl_id__in={aid}" for aid in batch])
-        fields = (
-            "activity_id,assay_chembl_id,molecule_chembl_id,"
-            "standard_type,standard_units,relation,standard_value,target_chembl_id"
-        )
+        assay_filter = f"assay_chembl_id__in={','.join(batch)}"
+        fields = "activity_id,assay_chembl_id,molecule_chembl_id,standard_type,standard_units,relation,standard_value,target_chembl_id"
         url = f"{base}?{assay_filter}&only={fields}&limit=1000"
+
         return url
 
     async def fetch_batch(session, batch):
-
         url = build_url(batch)
+        results = []
 
-        for attempt in range(3):
-            try:
-                async with session.get(url) as response:
+        while url:
+            async with session.get(url) as response:
+                data = await response.json()
+                results.extend(data.get("activities", []))
 
-                    if response.status == 200:
-                        data = await response.json()
-                        acts = data.get("activities", [])
+                next_url = data["page_meta"].get("next")
+                if next_url and next_url.startswith("/"):
+                    next_url = "https://www.ebi.ac.uk" + next_url
 
-                        return [
-                            a for a in acts
-                            if a.get("standard_type", "").lower().strip() in RELEVANT_TYPES
-                        ]
+                url = next_url
 
-                    await asyncio.sleep(2 ** attempt)
-
-            except Exception:
-                await asyncio.sleep(2 ** attempt)
-
-        return []
+        return results
 
     async def fetch_all_batches(batches):
-
         connector = aiohttp.TCPConnector(limit_per_host=MAX_CONCURRENT_REQUESTS)
-
         async with aiohttp.ClientSession(connector=connector) as session:
-
             tasks = [fetch_batch(session, b) for b in batches]
-
             results = []
-
-            for f in tqdm(
-                asyncio.as_completed(tasks),
-                total=len(tasks),
-                desc="Fetching activities"
-            ):
+            for f in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching activities"):
                 results.extend(await f)
-
             return results
 
     async def run_retrieval():
@@ -222,10 +216,11 @@ def enrich_activity_metadata(config, activities=None):
     """
     Enrich per-assay activity records with molecule SMILES, assay description/type, and target organism.
 
-    Saves per-assay JSONL files to OUTPUT_DIR so progress can be resumed.
+    Uses in-memory caching so each molecule/assay/target is only fetched once.
     """
+
     BASE_URL = "https://www.ebi.ac.uk/chembl/api/data"
-    MAX_CONCURRENT = config.get("max_concurrent", 20)
+    MAX_CONCURRENT = config.get("max_concurrent", 30)
     BATCH_SIZE = config.get("batch_size", 100)
     OUTPUT_DIR = config.get("output", {}).get("directory", "outputs/adme")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -244,10 +239,15 @@ def enrich_activity_metadata(config, activities=None):
     if activities is None:
         raise ValueError("No activities provided to enrich_activity_metadata()")
 
-    # unwrap if wrapped by previous task
     if isinstance(activities, dict) and "activities" in activities:
         activities = activities["activities"]
 
+    # CACHES 
+    mol_cache = {}
+    assay_cache = {}
+    target_cache = {}
+
+    # Robust async fetch 
     async def fetch_json(session, url, max_retries=3, base_delay=1.0):
         for attempt in range(max_retries + 1):
             try:
@@ -263,8 +263,9 @@ def enrich_activity_metadata(config, activities=None):
         return None
 
     async def enrich_activity_api(session, act):
-        """Enrich a single activity record safely with molecule, assay, and target info."""
+
         record = {field: act.get(field) for field in RELEVANT_FIELDS}
+
         record.update({
             "smiles": None,
             "assay_description": None,
@@ -274,23 +275,46 @@ def enrich_activity_metadata(config, activities=None):
         })
 
         try:
-            if record.get("molecule_chembl_id"):
-                mol_url = f"{BASE_URL}/molecule/{record['molecule_chembl_id']}.json"
-                mol_json = await fetch_json(session, mol_url)
-                record["smiles"] = (mol_json or {}).get("molecule_structures", {}).get("canonical_smiles")
 
-            if record.get("assay_chembl_id"):
-                assay_url = f"{BASE_URL}/assay/{record['assay_chembl_id']}.json"
-                assay_json = await fetch_json(session, assay_url)
-                if assay_json:
-                    record["assay_description"] = assay_json.get("description")
-                    record["assay_type"] = assay_json.get("assay_type")
+            mol_id = record.get("molecule_chembl_id")
+            assay_id = record.get("assay_chembl_id")
+            target_id = record.get("target_chembl_id")
 
-            if record.get("target_chembl_id"):
-                target_url = f"{BASE_URL}/target/{record['target_chembl_id']}.json"
-                target_json = await fetch_json(session, target_url)
-                if target_json:
-                    record["target_organism"] = target_json.get("organism")
+            # MOLECULE 
+            if mol_id:
+                if mol_id not in mol_cache:
+                    mol_url = f"{BASE_URL}/molecule/{mol_id}.json"
+                    mol_json = await fetch_json(session, mol_url)
+                    mol_cache[mol_id] = (
+                        (mol_json or {})
+                        .get("molecule_structures", {})
+                        .get("canonical_smiles")
+                    )
+                record["smiles"] = mol_cache[mol_id]
+
+            # ASSAY 
+            if assay_id:
+                if assay_id not in assay_cache:
+                    assay_url = f"{BASE_URL}/assay/{assay_id}.json"
+                    assay_json = await fetch_json(session, assay_url)
+
+                    assay_cache[assay_id] = {
+                        "description": (assay_json or {}).get("description"),
+                        "assay_type": (assay_json or {}).get("assay_type"),
+                    }
+
+                record["assay_description"] = assay_cache[assay_id]["description"]
+                record["assay_type"] = assay_cache[assay_id]["assay_type"]
+
+            # TARGET 
+            if target_id:
+                if target_id not in target_cache:
+                    target_url = f"{BASE_URL}/target/{target_id}.json"
+                    target_json = await fetch_json(session, target_url)
+
+                    target_cache[target_id] = (target_json or {}).get("organism")
+
+                record["target_organism"] = target_cache[target_id]
 
         except Exception as e:
             record["error"] = str(e)
@@ -298,9 +322,10 @@ def enrich_activity_metadata(config, activities=None):
         return record
 
     def load_existing_records(assay_name):
-        """Load previously saved JSONL records for a given assay."""
+
         enriched_cat = []
-        outfile = os.path.join(OUTPUT_DIR, f"{assay_name}.json")
+        outfile = os.path.join(OUTPUT_DIR, f"{assay_name}.jsonl")
+
         if os.path.exists(outfile):
             with open(outfile, "r") as f:
                 for line in f:
@@ -308,27 +333,38 @@ def enrich_activity_metadata(config, activities=None):
                         enriched_cat.append(json.loads(line))
                     except Exception:
                         continue
+
         return enriched_cat
 
     async def enrich_category(assay_name, acts):
-        """Enrich a single assay's activities asynchronously, in batches."""
-        
+
         acts = [a for a in acts if isinstance(a, dict)]
 
         enriched_cat = load_existing_records(assay_name)
         processed_ids = {r["activity_id"] for r in enriched_cat}
 
-        remaining_acts = [a for a in acts if a.get("activity_id") not in processed_ids]
-        total_acts = len(remaining_acts)
-        pbar = tqdm(total=total_acts, desc=assay_name, unit="activity")
-        outfile = os.path.join(OUTPUT_DIR, f"{assay_name}.jsonl")
+        remaining_acts = [
+            a for a in acts if a.get("activity_id") not in processed_ids
+        ]
 
+        total_acts = len(remaining_acts)
+
+        pbar = tqdm(total=total_acts, desc=assay_name, unit="activity")
+
+        outfile = os.path.join(OUTPUT_DIR, f"{assay_name}.jsonl")
         connector = aiohttp.TCPConnector(limit_per_host=MAX_CONCURRENT)
+
         async with aiohttp.ClientSession(connector=connector) as session:
             with open(outfile, "a") as f_out:
                 for i in range(0, total_acts, BATCH_SIZE):
+
                     batch = remaining_acts[i:i + BATCH_SIZE]
-                    tasks = [enrich_activity_api(session, act) for act in batch]
+
+                    tasks = [
+                        enrich_activity_api(session, act)
+                        for act in batch
+                    ]
+
                     for fut in asyncio.as_completed(tasks):
                         enriched = await fut
                         enriched_cat.append(enriched)
@@ -337,14 +373,19 @@ def enrich_activity_metadata(config, activities=None):
                         pbar.update(1)
 
         pbar.close()
+
         return enriched_cat
 
     async def run_all():
         results = {}
+
         for assay_name, acts in activities.items():
+            logger.info(f"Enriching {assay_name}")
             results[assay_name] = await enrich_category(assay_name, acts)
         return results
 
+    logger.info("Supplementing ADME activities with assay metadata")
+
     enriched_data = asyncio.run(run_all())
-    
+
     return enriched_data

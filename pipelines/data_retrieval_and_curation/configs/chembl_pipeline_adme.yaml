@@ -7,30 +7,52 @@ assay_keywords:
   Caco-2:
     - caco-2
     - caco2
+    - caco 2
+    - caco-2 permeability
+    - caco-2 papp
+    - caco-2 transport
     - papp
     - apparent permeability
     - permeability
     - a-b permeability
     - b-a permeability
+    - a to b permeability
+    - b to a permeability
     - intestinal permeability
+    - caco-2 cell permeability
+    - caco2 permeability
 
   MDCK:
     - mdck
     - mdckii
+    - mdck ii
+    - mdck permeability
+    - mdck transport
+    - mdck papp
+    - mdck-mdr1
+    - mdck mdr1
     - apparent permeability
     - permeability
   
   PAMPA: 
     - pampa
+    - pampa permeability
+    - pampa papp
     - parallel artificial membrane
     - artificial membrane permeability
+    - artificial membrane permeability assay
+    - bbb pampa
+    - gi pampa
 
   P-gp:
     - p-gp
+    - p glycoprotein
     - p-glycoprotein
     - pgp
     - mdr1
     - abcb1
+    - p-gp efflux
+    - pgp efflux
     - efflux ratio
     - efflux
 
@@ -38,32 +60,96 @@ assay_keywords:
     - bcrp
     - breast cancer resistance protein
     - abcg2
+    - bcrp efflux
+    - abcg2 transporter
 
   MRP:
     - mrp
     - multidrug resistance protein
     - abcc
+    - abcc1
+    - abcc2
+    - mrp1
+    - mrp2
 
   Solubility:
     - solubility
-    - kinetic solubility
     - aqueous solubility
+    - kinetic solubility
+    - thermodynamic solubility
+    - intrinsic solubility
+    - solubility ph
+    - shake flask solubility
+    - log s
 
   LogP:
     - logp
     - log p
+    - alogp
+    - clogp
     - partition coefficient
+    - octanol water partition
+    - octanol-water partition coefficient
+    - lipophilicity
 
   LogD:
     - logd
+    - log d
     - distribution coefficient
+    - logd7.4
+    - logd 7.4
+  
+  Microsomal Stability:
+    - microsomal stability
+    - microsome stability
+    - microsomal clearance
+    - microsome clearance
+    - microsomal intrinsic clearance
+    - intrinsic clearance
+    - microsomal clint
+    - clint
+    - microsomal half life
+    - microsomal t1/2
+    - microsome half life
+    - human liver microsome
+    - rat liver microsome
+    - mouse liver microsome
+    - hlm
+    - rlm
+    - mlm
+
+  Hepatocyte Stability:
+    - hepatocyte stability
+    - hepatocyte clearance
+    - hepatocyte intrinsic clearance
+    - hepatic clearance
+    - hepatocyte half life
+    - hepatocyte t1/2
+    - human hepatocytes
+    - rat hepatocytes
+    - mouse hepatocytes
+    - hepatocyte metabolism
+    - hepatocyte stability assay
+  
+  PPB:
+    - plasma protein binding
+    - plasma binding
+    - protein binding
+    - binding to plasma proteins
+    - fraction unbound
+    - fu plasma
+    - fu,p
+    - unbound fraction
+    - percent bound
+    - plasma protein bound
+    - serum protein binding
 
 workflow:
   - retrieve_chembl_assays
   - filter_assays_by_keywords
   - retrieve_assay_activities
   - enrich_activity_metadata
-  - harmonise_permeability_units
+  - harmonise_units
   - build_multitask_dataset
   - generate_diagnostics
 
