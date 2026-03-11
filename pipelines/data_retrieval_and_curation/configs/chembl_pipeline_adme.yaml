@@ -143,6 +143,73 @@ assay_keywords:
     - percent bound
     - plasma protein bound
     - serum protein binding
+  
+  hERG:
+    - herg
+    - kcnq1
+    - kcnq1ot1
+    - kcnq
+    - kv11.1
+    - potassium channel herg
+    - ik r
+    - ikr
+    - qt prolongation
+
+  CYP3A4:
+    - cyp3a4
+    - cyp 3a4
+    - cyp-3a4
+    - cytochrome p450 3a4
+    - p450 3a4
+
+  CYP2D6:
+    - cyp2d6
+    - cyp 2d6
+    - cyp-2d6
+    - cytochrome p450 2d6
+    - p450 2d6
+
+  CYP2C9:
+    - cyp2c9
+    - cyp 2c9
+    - cyp-2c9
+    - cytochrome p450 2c9
+    - p450 2c9
+
+  CYP2C19:
+    - cyp2c19
+    - cyp 2c19
+    - cyp-2c19
+    - cytochrome p450 2c19
+    - p450 2c19
+
+  CYP1A2:
+    - cyp1a2
+    - cyp 1a2
+    - cyp-1a2
+    - cytochrome p450 1a2
+    - p450 1a2
+
+  CYP2B6:
+    - cyp2b6
+    - cyp 2b6
+    - cyp-2b6
+    - cytochrome p450 2b6
+    - p450 2b6
+
+  CYP2C8:
+    - cyp2c8
+    - cyp 2c8
+    - cyp-2c8
+    - cytochrome p450 2c8
+    - p450 2c8
+
+  CYP3A5:
+    - cyp3a5
+    - cyp 3a5
+    - cyp-3a5
+    - cytochrome p450 3a5
+    - p450 3a5
 
 workflow:
   - retrieve_chembl_assays

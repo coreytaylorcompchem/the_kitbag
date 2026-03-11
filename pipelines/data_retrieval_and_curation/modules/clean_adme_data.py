@@ -12,7 +12,6 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import Draw, AllChem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.Chem import rdMolDescriptors
-from rdkit.Chem import Descriptors
 
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
@@ -20,6 +19,23 @@ RDLogger.DisableLog('rdApp.*')
 from sklearn.manifold import TSNE
 from PIL import Image, ImageDraw
 import networkx as nx
+
+from modules.utils.convert_adme import (
+    convert_permeability, 
+    convert_met_stab,
+    convert_herg, 
+    convert_cyp_activity, 
+    convert_logp_logd, 
+    convert_ppb,
+    convert_solubility
+
+)
+
+from modules.utils.detect_adme import (
+    detect_metstab_system,
+    detect_papp_direction,
+    build_dual_endpoint_dataset
+)
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
@@ -30,175 +46,16 @@ logger = setup_logger(
     simple_format=True
 )
 
-from pipeline.task_registry import register_task
+# TODO: re-factor this to store in a dict or something.
 
-def detect_papp_direction(description):
-        if not description:
-            return None
-        desc = description.lower().replace("→", "->").replace("–", "-").replace("—", "-")
-        ab_patterns = [r"a\s*->\s*b", r"apical\s*(?:to|->|-)\s*basolateral", r"\bab\b"]
-        ba_patterns = [r"b\s*->\s*a", r"basolateral\s*(?:to|->|-)\s*apical", r"\bba\b"]
-        for p in ab_patterns:
-            if re.search(p, desc):
-                return "AB"
-        for p in ba_patterns:
-            if re.search(p, desc):
-                return "BA"
-        return None
-
-def convert_permeability(value, unit):
-    """
-    Convert various permeability units to canonical 10^-6 cm/s.
-    Returns (float_value, canonical_unit) or (None, None) if unconvertible.
-    """
-    if value is None or unit is None:
-        return None, None
-
-    u = unit.lower().replace(" ", "").replace("'", "").replace("*", "").replace("^", "-").strip()
-
-    # Canonical unit
-    canonical = "10^-6 cm/s"
-
-    # Map known variants directly
-    direct_map = {
-        "10-6cm/s": canonical,
-        "10^-6cm/s": canonical,
-        "10e-6cm/s": canonical,
-        "10-6cms": canonical,
-        "10^-6cms": canonical,
-        "10e-6cms": canonical,
-        "ucm/s": canonical,
-        "papp10e6cm/s": canonical,
-        "10^6cm/s": canonical,
-        "10-7cm/s": canonical,   # convert to 0.1 * 10^-6 cm/s
-        "10^-7cm/s": canonical,  # same here
-        "10-8cm/s": canonical,   # 0.01 * 10^-6 cm/s
-        "10^-8cm/s": canonical,
-    }
-
-    if u in direct_map:
-        factor = 1.0
-        if u in ["10-7cm/s", "10^-7cm/s"]:
-            factor = 0.1
-        elif u in ["10-8cm/s", "10^-8cm/s"]:
-            factor = 0.01
-        return float(value) * factor, canonical
-
-    # Convert cm/s, nm/s, um/s
-    if "cms" in u:
-        return float(value) * 1e6, canonical
-    if "nm/s" in u:
-        return float(value) * 1e-1, canonical  # 1 nm/s = 0.1 * 10^-6 cm/s
-    if "um/s" in u or "μm/s" in u:
-        return float(value) * 1e-2, canonical
-    if "cmhr-1" in u:
-        return float(value) * 2.778e-6, canonical  # cm/hr → cm/s × 10^-6
-
-    # Reject obviously incompatible units
-    reject_patterns = ["%", "pmol", "nmol", "min", "sec", "umol", "ug", "a.u.", "uL/hr/cm2"]
-    if any(r in u for r in reject_patterns):
-        return None, None
-
-    # Fallback: unhandled
-    return None, None
-
-def convert_solubility(value, unit, smiles):
-    if value is None or unit is None:
-        return None
-
-    try:
-        value = float(value)
-    except:
-        return None
-
-    unit = unit.lower().strip()
-
-    # nM -> mol/L
-    if unit == "nm":
-        mol_l = value * 1e-9
-
-    # ug/mL -> mol/L (requires MW)
-    elif unit in ["ug/ml", "ug.mL-1", "µg/ml"]:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None
-
-        mw = Descriptors.MolWt(mol)
-        mol_l = (value / mw) * 1e-3
-
-    else:
-        return None
-
-    # Convert to logS
-    if mol_l <= 0:
-        return None
-
-    return np.log10(mol_l)
-
-def convert_met_stab(value, unit):
-    """
-    Convert microsomal/hepatocyte clearance units to canonical mL/min/g liver or uL/min/10^6 cells.
-    Returns (float_value, canonical_unit) or (None, None) if unconvertible.
-    """
-    if value is None or unit is None:
-        return None, None
-
-    u = str(unit).lower().replace(" ", "").replace("*","").replace("^","-").replace("(","").replace(")","").strip()
-
-    # Canonical units
-    if "cell" in u:
-        canonical = "uL/min/10^6 cells"
-    else:
-        canonical = "mL/min/g liver"
-
-    try:
-        val = float(value)
-    except:
-        return None, None
-
-    # Mapping known variants
-    direct_map = {
-        "ul/min": 1.0 if canonical=="uL/min/10^6 cells" else None,
-        "ul.min-1.(10^6cells)-1":1.0,
-        "uL/min/1e6cells":1.0,
-        "ml.min-1.kg-1": 1.0,   # assume mL/min/g conversion will be handled later
-        "ml.min-1.g-1": 1.0,
-        "hr": None,  # needs half-life conversion, skip for now
-        "min": 1.0,
-    }
-
-    for k,v in direct_map.items():
-        if k in u and v is not None:
-            return val * v, canonical
-
-    # Reject obviously incompatible units
-    reject_patterns = ["%", "nmol", "nM", "ug", "mM", "pmol"]
-    if any(r in u for r in reject_patterns):
-        return None, None
-
-    return val, canonical
-
-def convert_ppb(value, unit):
-    """
-    Convert PPB to fraction unbound (0-1)
-    """
-    if value is None or unit is None:
-        return None
-
-    try:
-        val = float(value)
-    except:
-        return None
-
-    u = str(unit).lower().replace(" ", "").strip()
-
-    if u in ["%", "percent", "%bound"]:
-        return val / 100.0
-    elif u in ["fu","fractionunbound","fraction_unbound"]:
-        return val
-    else:
-        # units like ug/mL, pmol, etc are ignored
-        return None
+permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
+solubility_assays = ["solubility", "logS", "logs"]
+metstab_assays = ["microsomal", "microsomes", "hepato", "hepatocyte", "hepatic"]
+ppb_assays = ["plasma protein binding", "ppb", "protein binding"]
+logp_assays = ["logp", "log p", "partition coefficient"]
+logd_assays = ["logd", "distribution coefficient"]
+herg_assays = ["herg", "kcnq1", "ikrv", "ether-a-go-go"]
+cyp_assays = ["cyp1a2", "cyp2c9", "cyp2c19", "cyp2d6", "cyp3a4", "cyp3a5", "cyp2b6", "cyp2e1"]
 
 @register_task(
     "harmonise_units",
@@ -219,11 +76,6 @@ def harmonise_units(config, enriched=None):
     os.makedirs(plots_dir, exist_ok=True)
     
     cleaned = {}
-    
-    permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
-    solubility_assays = ["solubility", "logS", "logs"]
-    metstab_assays = ["microsomal", "microsomes", "hepato", "hepatocyte", "hepatic"]
-    ppb_assays = ["plasma protein binding", "ppb", "protein binding"]
 
     # Helper; extract species from description
     def extract_species(text):
@@ -279,16 +131,31 @@ def harmonise_units(config, enriched=None):
                 unit = r.get("standard_units")
                 smiles = r.get("smiles")
                 new_val = convert_solubility(val, unit, smiles)
+
                 if new_val is None:
                     continue
                 r["standard_value"] = new_val
                 r["standard_units"] = "log10(mol/L)"
+
+                new_records.append(r)
+        elif any(x in lname for x in logp_assays + logd_assays):
+            for r in records:
+                val = r.get("standard_value")
+                unit = r.get("standard_units")
+                new_val = convert_logp_logd(val, unit)
+
+                if new_val is None:
+                    continue
+                r["standard_value"] = new_val
+                r["standard_units"] = "log_unitless"
+
                 new_records.append(r)
 
         elif any(x in lname for x in metstab_assays):
             for r in records:
                 val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val, new_unit = convert_met_stab(val, unit)
+
                 if new_val is None:
                     continue
                 r["standard_value"] = new_val
@@ -296,8 +163,17 @@ def harmonise_units(config, enriched=None):
                 # Use target_organism if present, else extract from description
                 species_text = r.get("target_organism") or r.get("assay_description")
                 r["species"] = extract_species(species_text)
-                new_records.append(r)
 
+                system = detect_metstab_system(r.get("assay_description"))
+
+                # keep only in vitro
+                if system != "in_vitro":
+                    continue
+
+                r["metstab_system"] = system
+
+                new_records.append(r)
+        # PPB
         elif any(x in lname for x in ppb_assays):
             for r in records:
                 val, unit = r.get("standard_value"), r.get("standard_units")
@@ -310,7 +186,50 @@ def harmonise_units(config, enriched=None):
                 species_text = r.get("target_organism") or r.get("assay_description")
                 r["species"] = extract_species(species_text)
                 new_records.append(r)
+        # hERG
+        elif any(x in lname for x in herg_assays):
 
+            for r in records:
+
+                val, unit = r.get("standard_value"), r.get("standard_units")
+
+                new_val, endpoint = convert_herg(val, unit)
+
+                if new_val is None:
+                    continue
+
+                r["standard_value"] = new_val
+
+                if endpoint == "IC50_nM":
+                    r["standard_units"] = "nM"
+                    r["herg_endpoint"] = "IC50"
+
+                elif endpoint == "inhibition_pct":
+                    r["standard_units"] = "%"
+                    r["herg_endpoint"] = "inhibition"
+
+                new_records.append(r)
+        #CYP
+        elif any(x in lname for x in cyp_assays):
+            for r in records:
+                val, unit = r.get("standard_value"), r.get("standard_units")
+                new_val, endpoint, new_unit = convert_cyp_activity(val, unit)
+                if new_val is None:
+                    continue
+
+                if endpoint == "IC50":
+                    r["cyp_endpoint"] = "IC50"
+                    r["IC50"] = new_val
+                    r["IC50_unit"] = new_unit
+                elif endpoint == "inhibition":
+                    r["cyp_endpoint"] = "inhibition"
+                    r["inhibition"] = new_val
+                    r["inhibition_unit"] = new_unit
+                
+                r["standard_value"] = new_val
+                r["standard_units"] = new_unit
+
+                new_records.append(r)
         else:
             new_records = records
 
@@ -350,11 +269,7 @@ def harmonise_units(config, enriched=None):
     description="Construct multi-task learning dataset with AB/BA/unknown splitting for permeability assays, including replicate statistics"
 )
 def build_multitask_dataset(config, cleaned=None):
-    """
-    Build a multi-task dataset from cleaned/enriched activity records.
-    Captures mean, std, and replicate count for permeability and metabolic stability assays.
-    Species extracted from assay_description are used for pivoting.
-    """
+
     output_cfg = config.get("output", {})
     out_dir = output_cfg.get("directory", "outputs/adme")
     filename = output_cfg.get("filename", "chembl_mtl_dataset.csv")
@@ -363,18 +278,16 @@ def build_multitask_dataset(config, cleaned=None):
 
     dfs = []
 
-    permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
-    metstab_assays = ["microsomal", "microsomes", "hepato", "hepatocyte", "hepatic"]
-
-    # Species we care about
     allowed_species = {"Human", "Mouse", "Rat", "Monkey", "unknown"}
 
     for assay_name, records in cleaned.items():
+
         records = [r for r in records if isinstance(r, dict)]
         if not records:
             continue
 
         df = pd.DataFrame(records)
+
         df["standard_value"] = pd.to_numeric(df["standard_value"], errors="coerce")
         df = df.dropna(subset=["standard_value"])
         if df.empty:
@@ -386,10 +299,16 @@ def build_multitask_dataset(config, cleaned=None):
         if "solubility" in assay_lower or "logs" in assay_lower:
             assay_name = "logS"
 
-        # Permeability assays 
+        # -----------------------------
+        # Permeability assays
+        # -----------------------------
         if any(a in assay_lower for a in permeability_assays):
+
             if "papp_direction" not in df.columns:
-                df["papp_direction"] = df["assay_description"].apply(lambda x: detect_papp_direction(x))
+                df["papp_direction"] = df["assay_description"].apply(
+                    lambda x: detect_papp_direction(x)
+                )
+
             df["papp_direction"] = df["papp_direction"].fillna("unknown")
 
             df_grouped = (
@@ -399,18 +318,36 @@ def build_multitask_dataset(config, cleaned=None):
             )
 
             df_pivot = df_grouped.pivot(index="smiles", columns="papp_direction")
+
             df_pivot.columns = [
                 f"{assay_name}_{direction}_{stat}" for stat, direction in df_pivot.columns
             ]
+
+            ab_col = f"{assay_name}_AB_mean"
+            ba_col = f"{assay_name}_BA_mean"
+
+            if ab_col in df_pivot.columns and ba_col in df_pivot.columns:
+
+                df_pivot[f"{assay_name}_efflux_ratio"] = (
+                    df_pivot[ba_col] / df_pivot[ab_col].replace(0, np.nan)
+                )
+
+                df_pivot[f"{assay_name}_log_efflux_ratio"] = np.log10(
+                    df_pivot[f"{assay_name}_efflux_ratio"]
+                )
+
             df_pivot = df_pivot.reset_index()
+
             dfs.append(df_pivot)
 
-        # Metabolic stability assays 
+        # -----------------------------
+        # Metabolic stability
+        # -----------------------------
         elif any(a in assay_lower for a in metstab_assays):
+
             df["species"] = df.get("species", "unknown")
             df["species"] = df["species"].fillna("unknown")
 
-            # Filter unwanted species
             df = df[df["species"].isin(allowed_species)]
             if df.empty:
                 continue
@@ -422,18 +359,103 @@ def build_multitask_dataset(config, cleaned=None):
             )
 
             df_pivot = df_grouped.pivot(index="smiles", columns="species")
+
             df_pivot.columns = [
                 f"{assay_name}_{species}_{stat}" for stat, species in df_pivot.columns
             ]
+
             df_pivot = df_pivot.reset_index()
+
             dfs.append(df_pivot)
 
-        # Other assays (PPB, logP/D, etc) 
+        # -----------------------------
+        # hERG special handling TODO: Refactor this similar to CYP code
+        # -----------------------------
+        elif any(a in assay_lower for a in herg_assays):
+
+            # Recover incorrectly labelled units
+            def recover_herg_units(row):
+
+                val = row["standard_value"]
+                unit = str(row.get("standard_units", "")).lower()
+
+                # percent inhibition
+                if "%" in unit:
+                    return val, "inhibition"
+
+                # nM
+                if "nm" in unit:
+                    return val, "IC50"
+
+                # µM or mislabeled values
+                if "um" in unit or unit in ["", "none", "no unit"]:
+                    return val * 1000, "IC50"
+
+                # M
+                if "m" == unit:
+                    return val * 1e9, "IC50"
+
+                return None, None
+
+            df[["herg_value", "herg_type"]] = df.apply(
+                lambda r: pd.Series(recover_herg_units(r)), axis=1
+            )
+
+            df = df.dropna(subset=["herg_value"])
+
+            df_grouped = (
+                df.groupby(["smiles", "herg_type"])["herg_value"]
+                .agg(["mean", "std", "count"])
+                .reset_index()
+            )
+
+            df_pivot = df_grouped.pivot(index="smiles", columns="herg_type")
+
+            df_pivot.columns = [
+                f"hERG_{etype}_{stat}" for stat, etype in df_pivot.columns
+            ]
+
+            df_pivot = df_pivot.reset_index()
+
+            dfs.append(df_pivot)
+        
+        # hERG assays
+        elif any(a in assay_lower for a in herg_assays):
+
+            df_pivot = build_dual_endpoint_dataset(
+                df,
+                assay_name,
+                endpoint_col="herg_endpoint",
+                value_cols={
+                    "IC50": "IC50",
+                    "inhibition": "inhibition"
+                }
+            )
+
+            dfs.append(df_pivot)
+
+        # -----------------------------
+        # Other assays
+        # -----------------------------
+        elif any(a in assay_lower for a in cyp_assays):
+
+            df_pivot = build_dual_endpoint_dataset(
+                df,
+                assay_name,
+                endpoint_col="cyp_endpoint",
+                value_cols={
+                    "IC50": "IC50",
+                    "inhibition": "inhibition"
+                }
+            )
+
+            dfs.append(df_pivot)
         else:
+
             if "species" in df.columns:
+
                 df["species"] = df["species"].fillna("unknown")
 
-                # Filter unwanted species
                 df = df[df["species"].isin(allowed_species)]
                 if df.empty:
                     continue
@@ -445,15 +467,21 @@ def build_multitask_dataset(config, cleaned=None):
                 )
 
                 df_pivot = df_grouped.pivot(index="smiles", columns="species")
+
                 df_pivot.columns = [
                     f"{assay_name}_{species}_{stat}" for stat, species in df_pivot.columns
                 ]
+
                 df_pivot = df_pivot.reset_index()
+
                 dfs.append(df_pivot)
 
             else:
+
                 df_subset = df.groupby("smiles")["standard_value"].mean().reset_index()
+
                 df_subset = df_subset.rename(columns={"standard_value": assay_name})
+
                 dfs.append(df_subset)
 
     if not dfs:
@@ -462,7 +490,8 @@ def build_multitask_dataset(config, cleaned=None):
     mtl_df = reduce(lambda l, r: pd.merge(l, r, on="smiles", how="outer"), dfs)
 
     mtl_df.to_csv(output_path, index=False)
-    logger.info(f"Saved multi-task dataset CSV to: {output_path}")
+
+    logger.debug(f"Saved multi-task dataset CSV to: {output_path}")
 
     return mtl_df
 
@@ -552,17 +581,51 @@ def generate_diagnostics(config, mtl_df=None):
     overlap_plot.index = plot_labels
     overlap_plot.columns = plot_labels
 
-    # Clustered heatmap for better visualization
     g = sns.clustermap(
         overlap_plot.astype(float),
         cmap="viridis",
         annot=True,
         fmt=".2f",
-        figsize=(12,12)
+        figsize=(15,15)
     )
 
     g.fig.suptitle("Pairwise Assay Overlap Fraction (clustered)", y=1.02)
     plt.savefig(os.path.join(plots_dir, "pairwise_overlap_heatmap.png"), dpi=300)
+    plt.close()
+
+    # Task–Task Correlation Heatmap
+    # Only use numeric mean columns
+    numeric_cols = [c for c in mtl_df.columns if c.endswith("_mean")]
+    corr_df = mtl_df[numeric_cols].corr()
+
+    plt.figure(figsize=(12,10))
+    sns.heatmap(corr_df, cmap="coolwarm", center=0, annot=False)
+    plt.title("Task–Task Correlation Heatmap")
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, "task_correlation_heatmap.png"), dpi=300)
+    plt.close()
+
+    # Correlation vs Overlap Scatter
+    # Compute max overlap for each task pair
+    max_overlap = overlap_frac.where(~np.eye(len(overlap_frac),dtype=bool)).max(axis=0)
+
+    cor_vs_overlap = pd.DataFrame({
+        "task": numeric_cols,
+        "max_overlap": [max_overlap.get(c, np.nan) for c in numeric_cols],
+        "mean_correlation": [corr_df[c].drop(c).mean() for c in numeric_cols]
+    })
+
+    plt.figure(figsize=(8,6))
+    sns.scatterplot(
+        data=cor_vs_overlap,
+        x="max_overlap",
+        y="mean_correlation"
+    )
+    plt.xlabel("Maximum Fraction Overlap with Any Task")
+    plt.ylabel("Mean Correlation with Other Tasks")
+    plt.title("Correlation vs Overlap per Task")
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, "correlation_vs_overlap.png"), dpi=300)
     plt.close()
 
     # Task connectivity graph
@@ -600,7 +663,7 @@ def generate_diagnostics(config, mtl_df=None):
     plt.savefig(os.path.join(plots_dir, "task_connectivity_graph.png"), dpi=300)
     plt.close()
 
-    # TSNE of fingerprints
+    # TSNE of all fingerprints
     mols = [Chem.MolFromSmiles(sm) for sm in mtl_df.smiles]
     fps = [rdMolDescriptors.GetMorganFingerprintAsBitVect(m, radius=2, nBits=1024) for m in mols]
 
@@ -622,12 +685,68 @@ def generate_diagnostics(config, mtl_df=None):
     plt.savefig(os.path.join(plots_dir, "tsne_fingerprints.png"), dpi=300)
     plt.close()
 
-    # Scaffold analysis
+    # t-SNE grid with highlighted endpoints
+    # Group columns by endpoint type, include raw and _mean as needed
+    def get_group_cols(mtl_df, keywords):
+        return [c for c in mtl_df.columns if any(k.lower() in c.lower() for k in keywords)]
+
+    endpoint_groups = {
+        "PhysChem": get_group_cols(mtl_df, ["LogP", "LogD", "logS", "ppb"]),
+        "Metabolism": get_group_cols(mtl_df, ["microsomal", "hepatocyte", "hepato"]),
+        "Permeability": get_group_cols(mtl_df, ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]),
+        "Tox": get_group_cols(mtl_df, ["herg", "cyp"])
+    }
+
+    fig, axes = plt.subplots(2, 2, figsize=(16,14))
+    axes = axes.flatten()
+
+    for idx, (group_name, cols) in enumerate(endpoint_groups.items()):
+        ax = axes[idx]
+        
+        if not cols:
+            ax.scatter(fp_tsne[:,0], fp_tsne[:,1], color="lightgrey", s=30, alpha=0.5)
+            ax.set_title(f"t-SNE colored by {group_name} (no endpoints found)")
+            ax.set_xlabel("t-SNE 1")
+            ax.set_ylabel("t-SNE 2")
+            continue
+
+        # Determine which compounds have at least one value present in this group
+        present_mask = mtl_df[cols].notna().any(axis=1)
+        
+        # Plot: overlay data points with all data to highlight where the data is on the tsne
+        ax.scatter(
+            fp_tsne[present_mask,0], 
+            fp_tsne[present_mask,1], 
+            color="dodgerblue", 
+            s=20, 
+            alpha=0.35,
+            label="Present"
+        )
+
+        ax.scatter(
+            fp_tsne[~present_mask,0], 
+            fp_tsne[~present_mask,1], 
+            color="lightgrey", 
+            s=15, 
+            alpha=0.1, 
+            label="Absent"
+        )
+
+        ax.set_title(f"t-SNE highlighting {group_name}")
+        ax.set_xlabel("t-SNE 1")
+        ax.set_ylabel("t-SNE 2")
+        ax.legend(loc="upper right")
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, "tsne_grid_highlighted.png"), dpi=300)
+    plt.close()
+
+    # Histogram of scaffold frequency
+
     scaffolds = [MurckoScaffold.GetScaffoldForMol(m) for m in mols if m is not None]
     scaffold_smiles = [Chem.MolToSmiles(s) for s in scaffolds if s is not None]
     scaffold_counts = Counter(scaffold_smiles)
 
-    # Histogram of scaffold frequency
     plt.figure(figsize=(8,5))
     plt.hist(list(scaffold_counts.values()), bins=30, log=True)
     plt.xlabel("Scaffold Frequency")
@@ -638,6 +757,7 @@ def generate_diagnostics(config, mtl_df=None):
     plt.close()
 
     # Top 10 scaffolds grid
+    
     top_n = 10
     top_scaffolds = scaffold_counts.most_common(top_n)
     scaffold_mols = [Chem.MolFromSmiles(smi) for smi, _ in top_scaffolds]
