@@ -125,33 +125,14 @@ def retrieve_assay_activities(config, assay_ids=None):
 
     BATCH_SIZE = config.get("batch_size", 50)
     MAX_CONCURRENT_REQUESTS = config.get("max_concurrent_requests", 10)
+    targets = config.get("targets", {})
 
-    RELEVANT_TYPES = {
-        "papp",
-        "permeability",
-        "apparent permeability",
-        "solubility",
-        "logp",
-        "logd",
-        "clint",
-        "intrinsic clearance",
-        "clearance",
-        "half life",
-        "t1/2",
-        "fraction unbound",
-        "fu",
-        "% unbound",
-        "% bound",
-        "plasma protein binding",
-        "efflux ratio"
-    }
+    BASE_URL = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
 
     def build_url(batch):
-        base = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
         assay_filter = f"assay_chembl_id__in={','.join(batch)}"
         fields = "activity_id,assay_chembl_id,molecule_chembl_id,standard_type,standard_units,relation,standard_value,target_chembl_id"
-        url = f"{base}?{assay_filter}&only={fields}&limit=1000"
-
+        url = f"{BASE_URL}?{assay_filter}&only={fields}&limit=1000"
         return url
 
     async def fetch_batch(session, batch):
@@ -171,19 +152,81 @@ def retrieve_assay_activities(config, assay_ids=None):
 
         return results
 
+    async def fetch_target_page(session, target_id, offset):
+
+        params = {
+            "target_chembl_id": target_id,
+            "assay_type": "B",
+            "limit": 1000,
+            "offset": offset
+        }
+
+        async with session.get(BASE_URL, params=params) as response:
+            data = await response.json()
+            return data.get("activities", [])
+
     async def fetch_all_batches(batches):
         connector = aiohttp.TCPConnector(limit_per_host=MAX_CONCURRENT_REQUESTS)
+
         async with aiohttp.ClientSession(connector=connector) as session:
+
             tasks = [fetch_batch(session, b) for b in batches]
+
             results = []
-            for f in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching activities"):
+
+            for f in tqdm(
+                asyncio.as_completed(tasks),
+                total=len(tasks),
+                desc="Fetching activities"
+            ):
                 results.extend(await f)
+
+            return results
+
+    async def fetch_target_activities(target_name, target_id):
+
+        connector = aiohttp.TCPConnector(limit_per_host=MAX_CONCURRENT_REQUESTS)
+
+        async with aiohttp.ClientSession(connector=connector) as session:
+
+            # First request to determine total pages
+            params = {
+                "target_chembl_id": target_id,
+                "assay_type": "B",
+                "limit": 1000
+            }
+
+            async with session.get(BASE_URL, params=params) as response:
+                meta = await response.json()
+
+            total = meta["page_meta"]["total_count"]
+            pages = (total // 1000) + 1
+
+            logger.info(f"Retrieved {total} activity records")
+
+            offsets = [i * 1000 for i in range(pages)]
+
+            tasks = [
+                fetch_target_page(session, target_id, offset)
+                for offset in offsets
+            ]
+
+            results = []
+
+            for f in tqdm(
+                asyncio.as_completed(tasks),
+                total=len(tasks),
+                desc=f"Downloading {target_name}"
+            ):
+                results.extend(await f)
+
             return results
 
     async def run_retrieval():
 
         all_results = {}
 
+        # ---- ADME assays via keyword matching ----
         for cat, ids in assay_ids.items():
 
             logger.info(f"Fetching {cat} activities")
@@ -198,6 +241,17 @@ def retrieve_assay_activities(config, assay_ids=None):
             logger.info(f"Retrieved {len(acts)} {cat} activity records")
 
             all_results[cat] = acts
+
+        # ---- Target-based retrieval (e.g. hERG) ----
+        for target_name, target_id in targets.items():
+
+            logger.info(f"Fetching {target_name} activities via target {target_id}")
+
+            acts = await fetch_target_activities(target_name, target_id)
+
+            logger.info(f"Retrieved {len(acts)} {target_name} activity records")
+
+            all_results[target_name] = acts
 
         return all_results
 

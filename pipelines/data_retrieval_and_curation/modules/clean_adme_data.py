@@ -56,6 +56,7 @@ logp_assays = ["logp", "log p", "partition coefficient"]
 logd_assays = ["logd", "distribution coefficient"]
 herg_assays = ["herg", "kcnq1", "ikrv", "ether-a-go-go"]
 cyp_assays = ["cyp1a2", "cyp2c9", "cyp2c19", "cyp2d6", "cyp3a4", "cyp3a5", "cyp2b6", "cyp2e1"]
+tox_endpoints = {"IC50", "EC50", "Ki", "Kd", "inhibition", "potency"}
 
 @register_task(
     "harmonise_units",
@@ -186,27 +187,52 @@ def harmonise_units(config, enriched=None):
                 species_text = r.get("target_organism") or r.get("assay_description")
                 r["species"] = extract_species(species_text)
                 new_records.append(r)
-        # hERG
-        elif any(x in lname for x in herg_assays):
+        # Generic tox / pharmacology endpoints (hERG, ion channels, receptors, etc.)
+        elif str(r.get("standard_type", "")).lower() in {"ic50", "ki", "kd", "ec50"} or "%" in str(r.get("standard_units", "")):
 
             for r in records:
 
-                val, unit = r.get("standard_value"), r.get("standard_units")
+                val = r.get("standard_value")
+                unit = r.get("standard_units")
+                stype = str(r.get("standard_type", "")).lower()
 
-                new_val, endpoint = convert_herg(val, unit)
-
-                if new_val is None:
+                if val is None:
                     continue
 
-                r["standard_value"] = new_val
+                endpoint = None
 
-                if endpoint == "IC50_nM":
-                    r["standard_units"] = "nM"
-                    r["herg_endpoint"] = "IC50"
-
-                elif endpoint == "inhibition_pct":
+                # Percent inhibition
+                if unit and "%" in str(unit):
+                    endpoint = "inhibition"
                     r["standard_units"] = "%"
-                    r["herg_endpoint"] = "inhibition"
+
+                # Affinity/activity endpoints
+                elif stype in {"ic50", "ki", "kd", "ec50"}:
+
+                    try:
+                        val = float(val)
+                    except:
+                        continue
+
+                    u = str(unit).lower().replace("µ", "u")
+
+                    if "nm" in u:
+                        val = val
+                    elif "um" in u:
+                        val = val * 1000
+                    elif u == "m":
+                        val = val * 1e9
+                    else:
+                        continue
+
+                    endpoint = stype.upper()
+                    r["standard_units"] = "nM"
+
+                else:
+                    continue
+
+                r["standard_value"] = val
+                r["tox_endpoint"] = endpoint
 
                 new_records.append(r)
         #CYP
@@ -251,7 +277,7 @@ def harmonise_units(config, enriched=None):
             plt.figure(figsize=(8,4))
             plt.bar([i - width/2 for i in x], proportions_before, width=width, color='skyblue', label='Before')
             plt.bar([i + width/2 for i in x], proportions_after, width=width, color='lightgreen', label='After')
-            plt.xticks(x, all_units, rotation=45, fontsize=8)
+            plt.xticks(x, all_units, rotation=45, fontsize=6)
             plt.ylabel("Proportion of measurements")
             plt.title(f"{assay_name} unit harmonisation (before/after)")
             plt.legend()
@@ -369,120 +395,64 @@ def build_multitask_dataset(config, cleaned=None):
             dfs.append(df_pivot)
 
         # -----------------------------
-        # hERG special handling TODO: Refactor this similar to CYP code
+        # General multi-endpoint assays (hERG, CYPs, other tox targets)
         # -----------------------------
-        elif any(a in assay_lower for a in herg_assays):
+        endpoint_col = None
+        for col in ["herg_endpoint", "cyp_endpoint", "tox_endpoint"]:
+            if col in df.columns:
+                endpoint_col = col
+                break
 
-            # Recover incorrectly labelled units
-            def recover_herg_units(row):
+        if endpoint_col:
 
+            # Map endpoint values to standard column names and units
+            def recover_tox_value(row):
                 val = row["standard_value"]
-                unit = str(row.get("standard_units", "")).lower()
+                unit = str(row.get("standard_units", "")).lower() if row.get("standard_units") else ""
+                ep = row[endpoint_col]
 
-                # percent inhibition
-                if "%" in unit:
-                    return val, "inhibition"
+                # Convert ambiguous units to nM for IC50/EC50/Ki/Kd
+                if unit in ["", "none", "no unit"]:
+                    if ep in {"IC50", "EC50", "Ki", "Kd"}:
+                        val = val * 1000
+                        unit = "nM"
+                elif "um" in unit:
+                    val = val * 1000
+                    unit = "nM"
+                elif "m" == unit:
+                    val = val * 1e9
+                    unit = "nM"
 
-                # nM
-                if "nm" in unit:
-                    return val, "IC50"
+                return val, ep, unit
 
-                # µM or mislabeled values
-                if "um" in unit or unit in ["", "none", "no unit"]:
-                    return val * 1000, "IC50"
-
-                # M
-                if "m" == unit:
-                    return val * 1e9, "IC50"
-
-                return None, None
-
-            df[["herg_value", "herg_type"]] = df.apply(
-                lambda r: pd.Series(recover_herg_units(r)), axis=1
+            df[["tox_value", "tox_type", "tox_unit"]] = df.apply(
+                lambda r: pd.Series(recover_tox_value(r)), axis=1
             )
 
-            df = df.dropna(subset=["herg_value"])
+            df = df.dropna(subset=["tox_value", "tox_type"])
 
+            # Group and pivot by endpoint type
             df_grouped = (
-                df.groupby(["smiles", "herg_type"])["herg_value"]
+                df.groupby(["smiles", "tox_type"])["tox_value"]
                 .agg(["mean", "std", "count"])
                 .reset_index()
             )
 
-            df_pivot = df_grouped.pivot(index="smiles", columns="herg_type")
+            df_pivot = df_grouped.pivot(index="smiles", columns="tox_type")
 
-            df_pivot.columns = [
-                f"hERG_{etype}_{stat}" for stat, etype in df_pivot.columns
-            ]
-
+            # Flatten columns
+            df_pivot.columns = [f"{assay_name}_{etype}_{stat}" for stat, etype in df_pivot.columns]
             df_pivot = df_pivot.reset_index()
 
             dfs.append(df_pivot)
-        
-        # hERG assays
-        elif any(a in assay_lower for a in herg_assays):
 
-            df_pivot = build_dual_endpoint_dataset(
-                df,
-                assay_name,
-                endpoint_col="herg_endpoint",
-                value_cols={
-                    "IC50": "IC50",
-                    "inhibition": "inhibition"
-                }
-            )
-
-            dfs.append(df_pivot)
-
-        # -----------------------------
-        # Other assays
-        # -----------------------------
-        elif any(a in assay_lower for a in cyp_assays):
-
-            df_pivot = build_dual_endpoint_dataset(
-                df,
-                assay_name,
-                endpoint_col="cyp_endpoint",
-                value_cols={
-                    "IC50": "IC50",
-                    "inhibition": "inhibition"
-                }
-            )
-
-            dfs.append(df_pivot)
         else:
 
-            if "species" in df.columns:
+            df_subset = df.groupby("smiles")["standard_value"].mean().reset_index()
 
-                df["species"] = df["species"].fillna("unknown")
+            df_subset = df_subset.rename(columns={"standard_value": assay_name})
 
-                df = df[df["species"].isin(allowed_species)]
-                if df.empty:
-                    continue
-
-                df_grouped = (
-                    df.groupby(["smiles", "species"])["standard_value"]
-                    .agg(["mean", "std", "count"])
-                    .reset_index()
-                )
-
-                df_pivot = df_grouped.pivot(index="smiles", columns="species")
-
-                df_pivot.columns = [
-                    f"{assay_name}_{species}_{stat}" for stat, species in df_pivot.columns
-                ]
-
-                df_pivot = df_pivot.reset_index()
-
-                dfs.append(df_pivot)
-
-            else:
-
-                df_subset = df.groupby("smiles")["standard_value"].mean().reset_index()
-
-                df_subset = df_subset.rename(columns={"standard_value": assay_name})
-
-                dfs.append(df_subset)
+            dfs.append(df_subset)
 
     if not dfs:
         return pd.DataFrame()
