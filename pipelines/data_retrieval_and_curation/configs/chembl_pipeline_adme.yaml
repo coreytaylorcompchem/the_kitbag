@@ -5,49 +5,47 @@ workflow_name: chembl_adme_data
 
 targets:
   hERG: CHEMBL240
-  # Nav1.5: CHEMBL1827
-  # MAO-A: Q5UL91
-  # PDE3A: Q14432
-  # PDE4D: Q08499
-  # Lck: P06239
-  # A2A: P29274
-  # alpha1A: P35348
-  # alpha2A: P08913
-  # beta1: P08588
-  # beta2: Q9BYZ0
-  # NET: Q71UR5
-  # AR: P10275
-  # Cav1.2 (Rat): P22002
-  # CB1: P21554
-  # CB2: P34972
-  # CCK1: P32238
-  # D1: P21728
-  # D2S: P14416
-  # DAT: Q6LC27
-  # ETA: P05305
-  # GABAa (Rat): P62813
-  # GR: P04150
-  # NMDA (Rat): Q9R1M7
-  # H1: P35367
-  # H2: P25021
-  # M1: P11229
-  # M2: P08172
-  # M3: P20309
-  # delta: P41143
-  # kappa: P41145
-  # mu: P35372
-  # KV (Rat): P62483
-  # hERG: Q12809
-  # 5-HT1A: P08908
-  # 5-HT1B: P28222
-  # 5-HT2A: P28223
-  # 5-HT2B: P41595
-  # 5-HT3: P46098
-  # SERT: P31645
-  # Nav1.5: Q14524
-  # V1A: Q3S2J4
-  # nAChR (alpha4): P43681
-  # nAChR (beta2): P17787
+  Nav1.5: CHEMBL1827
+  # MAO-A: CHEMBL1951
+  # PDE3A: CHEMBL241
+  # PDE4D: CHEMBL288
+  # Lck: CHEMBL258
+  # A2A: CHEMBL251
+  # alpha1A: CHEMBL1991
+  # alpha2A: CHEMBL1867
+  # beta1: CHEMBL1945
+  # beta2: CHEMBL210
+  # NET: CHEMBL222
+  # AR: CHEMBL1871
+  # Cav1.2: CHEMBL239
+  # CB1: CHEMBL218
+  # CB2: CHEMBL253
+  # CCK1: CHEMBL1966
+  # D1: CHEMBL2056
+  # D2S: CHEMBL217
+  # DAT: CHEMBL238
+  # ETA: CHEMBL252
+  # GABAa: CHEMBL209
+  # GR: CHEMBL2034
+  # NMDA: CHEMBL2016
+  # H1: CHEMBL231
+  # H2: CHEMBL234
+  # M1: CHEMBL216
+  # M2: CHEMBL215
+  # M3: CHEMBL245
+  # delta: CHEMBL236
+  # kappa: CHEMBL237
+  # mu: CHEMBL233
+  # KV: CHEMBL240
+  # 5-HT1A: CHEMBL214
+  # 5-HT1B: CHEMBL1898
+  # 5-HT2A: CHEMBL224
+  # 5-HT2B: CHEMBL1833
+  # 5-HT3: CHEMBL1899
+  # SERT: CHEMBL228
+  # V1A: CHEMBL247
+  # nAChR_alpha4: CHEMBL1905
+  # nAChR_beta2: CHEMBL1906
 
 assay_keywords:
   Caco-2:
@@ -128,9 +126,9 @@ assay_keywords:
 #     - shake flask solubility
 #     - log s
 
-  LogP:
+  # LogP:
 #     - logp
-    - log p
+    # - log p
 #     - alogp
 #     - clogp
 #     - partition coefficient
@@ -164,9 +162,9 @@ assay_keywords:
 #     - rlm
 #     - mlm
 
-#   Hepatocyte Stability:
+  Hepatocyte Stability:
 #     - hepatocyte stability
-#     - hepatocyte clearance
+    - hepatocyte clearance
 #     - hepatocyte intrinsic clearance
 #     - hepatic clearance
 #     - hepatocyte half life
@@ -232,15 +230,15 @@ assay_keywords:
   #   - cytochrome p450 2b6
   #   - p450 2b6
 
-  # CYP2C8:
-  #   - cyp2c8
+  CYP2C8:
+    - cyp2c8
   #   - cyp 2c8
   #   - cyp-2c8
   #   - cytochrome p450 2c8
   #   - p450 2c8
 
-  # CYP3A5:
-  #   - cyp3a5
+  CYP3A5:
+    - cyp3a5
   #   - cyp 3a5
   #   - cyp-3a5
   #   - cytochrome p450 3a5

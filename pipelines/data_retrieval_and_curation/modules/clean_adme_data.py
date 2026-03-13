@@ -1,15 +1,15 @@
-import re
 import os
 
-from functools import reduce
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
+from functools import reduce
 import seaborn as sns
 from collections import Counter
 
 from rdkit import Chem, DataStructs
-from rdkit.Chem import Draw, AllChem
+from rdkit.Chem import Draw
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.Chem import rdMolDescriptors
 
@@ -20,248 +20,220 @@ from sklearn.manifold import TSNE
 from PIL import Image, ImageDraw
 import networkx as nx
 
-from modules.utils.convert_adme import (
-    convert_permeability, 
-    convert_met_stab,
-    convert_herg, 
-    convert_cyp_activity, 
-    convert_logp_logd, 
-    convert_ppb,
-    convert_solubility
-
-)
-
-from modules.utils.detect_adme import (
-    detect_metstab_system,
-    detect_papp_direction,
-    build_dual_endpoint_dataset
-)
-
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
-logger = setup_logger(
-    __name__,
-    debug_mode=False,
-    simple_format=True
+from modules.utils.convert_adme import (
+    convert_permeability,
+    convert_met_stab,
+    convert_ppb,
+    convert_solubility,
+    convert_logp_logd,
+    convert_cyp_activity,
+    convert_herg,
 )
+from modules.utils.detect_adme import detect_papp_direction, detect_metstab_system
 
-# TODO: re-factor this to store in a dict or something.
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+# Assay categories
 permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
-solubility_assays = ["solubility", "logS", "logs"]
+solubility_assays = ["solubility", "logs", "logS"]
 metstab_assays = ["microsomal", "microsomes", "hepato", "hepatocyte", "hepatic"]
 ppb_assays = ["plasma protein binding", "ppb", "protein binding"]
 logp_assays = ["logp", "log p", "partition coefficient"]
 logd_assays = ["logd", "distribution coefficient"]
-herg_assays = ["herg", "kcnq1", "ikrv", "ether-a-go-go"]
-cyp_assays = ["cyp1a2", "cyp2c9", "cyp2c19", "cyp2d6", "cyp3a4", "cyp3a5", "cyp2b6", "cyp2e1"]
-tox_endpoints = {"IC50", "EC50", "Ki", "Kd", "inhibition", "potency"}
+# herg_assays = ["herg", "kcnq1", "ikrv", "ether-a-go-go"]
+cyp_assays = ["cyp1a2","cyp2c9","cyp2c19","cyp2d6","cyp3a4","cyp3a5","cyp2b6","cyp2e1", "cyp2c8"]
 
 @register_task(
     "harmonise_units",
     category="ADME",
-    description="Harmonise units for permeability, solubility, microsomal/hepatocyte stability, and PPB with before/after proportion plots"
+    description="Harmonise units for ADME and type-B tox endpoints with before/after plots"
 )
 def harmonise_units(config, enriched=None):
-    """
-    Converts ADME units to canonical form and plots before/after unit proportions:
-      - Permeability → 10^-6 cm/s, adds AB/BA direction
-      - Solubility → log10(mol/L)
-      - Microsomal/Hepatocyte stability → canonical clearance units
-      - PPB → fraction unbound (0-1)
-    Extracts species from assay_description if target_organism is missing.
-    """
     output_dir = config.get("output", {}).get("directory", "outputs/adme")
     plots_dir = os.path.join(output_dir, "_plots")
     os.makedirs(plots_dir, exist_ok=True)
-    
+
     cleaned = {}
 
-    # Helper; extract species from description
+    # Tox assay names from config
+    config_targets = config.get("targets", {})
+    tox_assays = {k.strip().lower() for k in config_targets.keys()}
+
+    # Simple species extractor
     def extract_species(text):
-        if text is None:
+        if not text:
             return "unknown"
-
         t = str(text).lower()
-
         species_map = {
-            "human": "Human",
-            "homo sapiens": "Human",
-
-            "mouse": "Mouse",
-            "mus musculus": "Mouse",
-
-            "rat": "Rat",
-            "rattus": "Rat",
-
-            "monkey": "Monkey",
-            "macaca": "Monkey",
-            "cyno": "Monkey",
+            "human": "Human", "homo sapiens": "Human",
+            "mouse": "Mouse", "mus musculus": "Mouse",
+            "rat": "Rat", "rattus": "Rat",
+            "monkey": "Monkey", "macaca": "Monkey", "cyno": "Monkey"
         }
-
         for k, v in species_map.items():
             if k in t:
                 return v
-
         return "unknown"
 
     for assay_name, records in enriched.items():
+        logger.debug(f"Processing assay: {assay_name}")
         records = [r for r in records if isinstance(r, dict)]
         if not records:
             continue
 
-        units_before = [r.get("standard_units") for r in records if r.get("standard_units")]
-        new_records = []
         lname = assay_name.lower()
 
+        units_before = [r.get("standard_units") for r in records if r.get("standard_units")]
+        new_records = []
+
+        # -----------------------------
+        # ADME assays
+        # -----------------------------
         if any(x in lname for x in permeability_assays):
             for r in records:
                 r["papp_direction"] = detect_papp_direction(r.get("assay_description"))
                 val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val, new_unit = convert_permeability(val, unit)
-                if new_val is None:
-                    continue
-                r["standard_value"] = new_val
-                r["standard_units"] = new_unit
-                new_records.append(r)
+                if new_val is not None:
+                    r["standard_value"], r["standard_units"] = new_val, new_unit
+                    new_records.append(r)
 
         elif any(x in lname for x in solubility_assays):
             for r in records:
-                val = r.get("standard_value")
-                unit = r.get("standard_units")
+                val, unit = r.get("standard_value"), r.get("standard_units")
                 smiles = r.get("smiles")
                 new_val = convert_solubility(val, unit, smiles)
+                if new_val is not None:
+                    r["standard_value"], r["standard_units"] = new_val, "log10(mol/L)"
+                    new_records.append(r)
 
-                if new_val is None:
-                    continue
-                r["standard_value"] = new_val
-                r["standard_units"] = "log10(mol/L)"
-
-                new_records.append(r)
         elif any(x in lname for x in logp_assays + logd_assays):
             for r in records:
-                val = r.get("standard_value")
-                unit = r.get("standard_units")
+                val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val = convert_logp_logd(val, unit)
-
-                if new_val is None:
-                    continue
-                r["standard_value"] = new_val
-                r["standard_units"] = "log_unitless"
-
-                new_records.append(r)
+                if new_val is not None:
+                    r["standard_value"], r["standard_units"] = new_val, "log_unitless"
+                    new_records.append(r)
 
         elif any(x in lname for x in metstab_assays):
             for r in records:
                 val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val, new_unit = convert_met_stab(val, unit)
+                if new_val is not None:
+                    r["standard_value"], r["standard_units"] = new_val, new_unit
+                    r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+                    system = detect_metstab_system(r.get("assay_description"))
+                    if system == "in_vitro":
+                        r["metstab_system"] = system
+                        new_records.append(r)
 
-                if new_val is None:
-                    continue
-                r["standard_value"] = new_val
-                r["standard_units"] = new_unit
-                # Use target_organism if present, else extract from description
-                species_text = r.get("target_organism") or r.get("assay_description")
-                r["species"] = extract_species(species_text)
-
-                system = detect_metstab_system(r.get("assay_description"))
-
-                # keep only in vitro
-                if system != "in_vitro":
-                    continue
-
-                r["metstab_system"] = system
-
-                new_records.append(r)
-        # PPB
         elif any(x in lname for x in ppb_assays):
             for r in records:
                 val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val = convert_ppb(val, unit)
-                if new_val is None:
-                    continue
-                r["standard_value"] = new_val
-                r["standard_units"] = "fraction_unbound"
-                # Use target_organism if present, else extract from description
-                species_text = r.get("target_organism") or r.get("assay_description")
-                r["species"] = extract_species(species_text)
-                new_records.append(r)
-        # Generic tox / pharmacology endpoints (hERG, ion channels, receptors, etc.)
-        elif str(r.get("standard_type", "")).lower() in {"ic50", "ki", "kd", "ec50"} or "%" in str(r.get("standard_units", "")):
+                if new_val is not None:
+                    r["standard_value"], r["standard_units"] = new_val, "fraction_unbound"
+                    r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+                    new_records.append(r)
 
-            for r in records:
-
-                val = r.get("standard_value")
-                unit = r.get("standard_units")
-                stype = str(r.get("standard_type", "")).lower()
-
-                if val is None:
-                    continue
-
-                endpoint = None
-
-                # Percent inhibition
-                if unit and "%" in str(unit):
-                    endpoint = "inhibition"
-                    r["standard_units"] = "%"
-
-                # Affinity/activity endpoints
-                elif stype in {"ic50", "ki", "kd", "ec50"}:
-
-                    try:
-                        val = float(val)
-                    except:
-                        continue
-
-                    u = str(unit).lower().replace("µ", "u")
-
-                    if "nm" in u:
-                        val = val
-                    elif "um" in u:
-                        val = val * 1000
-                    elif u == "m":
-                        val = val * 1e9
-                    else:
-                        continue
-
-                    endpoint = stype.upper()
-                    r["standard_units"] = "nM"
-
-                else:
-                    continue
-
-                r["standard_value"] = val
-                r["tox_endpoint"] = endpoint
-
-                new_records.append(r)
-        #CYP
-        elif any(x in lname for x in cyp_assays):
+        elif any(x in lname for x in cyp_assays):  # CYPs are ADME (type A)
             for r in records:
                 val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val, endpoint, new_unit = convert_cyp_activity(val, unit)
                 if new_val is None:
                     continue
-
+                r["standard_value"], r["standard_units"] = new_val, new_unit
+                r["cyp_endpoint"] = endpoint  # e.g., IC50 or inhibition
                 if endpoint == "IC50":
-                    r["cyp_endpoint"] = "IC50"
                     r["IC50"] = new_val
                     r["IC50_unit"] = new_unit
                 elif endpoint == "inhibition":
-                    r["cyp_endpoint"] = "inhibition"
                     r["inhibition"] = new_val
                     r["inhibition_unit"] = new_unit
-                
-                r["standard_value"] = new_val
-                r["standard_units"] = new_unit
-
+                # Also keep for generic pivoting
+                r["tox_endpoint"] = endpoint
                 new_records.append(r)
+        # -----------------------------
+        # Type-B tox endpoints (hERG, Nav1.5, etc.) from config
+        # -----------------------------
+        elif any(lname == t for t in tox_assays):
+
+            for r in records:
+                val = r.get("standard_value")
+                unit = r.get("standard_units")
+                stype = str(r.get("standard_type", "")).strip().upper()
+
+                if val is None:
+                    continue
+
+                try:
+                    val = float(val)
+                except:
+                    continue
+
+                endpoint_type = None
+
+                # concentration endpoints
+                if stype in {"IC50", "EC50", "KI", "KD"}:
+                    endpoint_type = stype
+
+                # percent inhibition
+                elif "%" in str(unit).lower() or "INHIBITION" in stype:
+                    endpoint_type = "inhibition"
+
+                if endpoint_type is None:
+                    continue
+
+                # unit normalisation
+                if endpoint_type in {"IC50", "EC50", "KI", "KD"}:
+                    u = str(unit).lower()
+
+                    factor = 1
+                    if "um" in u or "μm" in u:
+                        factor = 1e3
+                    elif "mm" in u:
+                        factor = 1e6
+
+                    val = val * factor
+                    unit = "nM"
+
+                r["standard_value"] = val
+                r["standard_units"] = unit
+                r["tox_type"] = endpoint_type
+                r["endpoint"] = assay_name
+
+                # debug log for verification
+                logger.debug({
+                    "smiles": r.get("smiles"),
+                    "assay_name": assay_name,
+                    "tox_type": r["tox_type"],
+                    "standard_value": r["standard_value"],
+                    "standard_units": r["standard_units"]
+                })
+                
+                new_records.append(r)
+
+        # -----------------------------
+        # Fallback
+        # -----------------------------
         else:
-            new_records = records
+            for r in records:
+                val = r.get("standard_value")
+                if val is None:
+                    continue
+                r["endpoint"] = assay_name
+                new_records.append(r)
+
+        # -----------------------------
+        # Plot before/after proportions
+        # -----------------------------
+
+        # logger.debug(f"{assay_name} endpoint types: {Counter(r['tox_type'] for r in new_records)}")
 
         units_after = [r.get("standard_units") for r in new_records if r.get("standard_units")]
-
-        # Plot before vs after proportions
         if units_before or units_after:
             all_units = sorted(set(units_before) | set(units_after))
             before_counts = Counter(units_before)
@@ -284,6 +256,18 @@ def harmonise_units(config, enriched=None):
             plt.tight_layout()
             plt.savefig(os.path.join(plots_dir, f"{assay_name}_units_before_after.png"), dpi=300)
             plt.close()
+        
+        # debug checks of assay data
+
+        if lname in tox_assays:
+            logger.debug(f"{assay_name} example records after harmonisation:")
+            for r in new_records[:5]:
+                logger.debug({
+                    "standard_type": r.get("standard_type"),
+                    "endpoint": r.get("endpoint"),
+                    "standard_units": r.get("standard_units"),
+                    "standard_value": r.get("standard_value")
+                })
 
         cleaned[assay_name] = new_records
 
@@ -292,10 +276,9 @@ def harmonise_units(config, enriched=None):
 @register_task(
     "build_multitask_dataset",
     category="ADME",
-    description="Construct multi-task learning dataset with AB/BA/unknown splitting for permeability assays, including replicate statistics"
+    description="Construct multi-task dataset including ADME (type-A) and type-B tox endpoints"
 )
 def build_multitask_dataset(config, cleaned=None):
-
     output_cfg = config.get("output", {})
     out_dir = output_cfg.get("directory", "outputs/adme")
     filename = output_cfg.get("filename", "chembl_mtl_dataset.csv")
@@ -303,164 +286,116 @@ def build_multitask_dataset(config, cleaned=None):
     output_path = os.path.join(out_dir, filename)
 
     dfs = []
-
     allowed_species = {"Human", "Mouse", "Rat", "Monkey", "unknown"}
 
-    for assay_name, records in cleaned.items():
+    # Helper to recover tox values (IC50, inhibition, etc.)
+    def recover_tox_value(row, endpoint_col):
+        val = row["standard_value"]
+        unit = str(row.get("standard_units", "")).lower() if row.get("standard_units") else ""
+        ep = row[endpoint_col]
+        if unit in ["", "none", "no unit"] and ep in {"IC50", "EC50", "Ki", "Kd"}:
+            val = val * 1000
+            unit = "nM"
+        elif "um" in unit:
+            val = val * 1000
+            unit = "nM"
+        elif unit == "m":
+            val = val * 1e9
+            unit = "nM"
+        return val, ep, unit
 
+    for assay_name, records in cleaned.items():
         records = [r for r in records if isinstance(r, dict)]
         if not records:
             continue
 
         df = pd.DataFrame(records)
 
+        # debug checks of assay data
+
+        logger.debug(f"{assay_name} DataFrame columns after harmonisation: {df.columns.tolist()}")
+
+        logger.debug(f"Processing assay: {assay_name}")
+        logger.debug(f"df columns: {df.columns.tolist()}")
+        if len(records) > 0:
+            logger.debug(f"Sample record: {records[0]}")
+
+        if assay_name.lower() in {"herg", "nav1.5"}:
+            logger.debug(f"{assay_name} columns in DataFrame: {df.columns.tolist()}")
+            logger.debug(df[["standard_type","endpoint","standard_units"]].head())
+    
         df["standard_value"] = pd.to_numeric(df["standard_value"], errors="coerce")
         df = df.dropna(subset=["standard_value"])
         if df.empty:
             continue
 
-        assay_lower = assay_name.lower()
-
-        # Normalise solubility endpoint
-        if "solubility" in assay_lower or "logs" in assay_lower:
-            assay_name = "logS"
-
         # -----------------------------
-        # Permeability assays
+        # Type-A assays (ADME, CYPs)
         # -----------------------------
-        if any(a in assay_lower for a in permeability_assays):
+        group_cols = []
+        if "species" in df.columns:
+            group_cols.append("species")
+        if "papp_direction" in df.columns:
+            group_cols.append("papp_direction")
+        if "cyp_endpoint" in df.columns:
+            group_cols.append("cyp_endpoint")
 
-            if "papp_direction" not in df.columns:
-                df["papp_direction"] = df["assay_description"].apply(
-                    lambda x: detect_papp_direction(x)
-                )
-
-            df["papp_direction"] = df["papp_direction"].fillna("unknown")
-
-            df_grouped = (
-                df.groupby(["smiles", "papp_direction"])["standard_value"]
-                .agg(["mean", "std", "count"])
-                .reset_index()
-            )
-
-            df_pivot = df_grouped.pivot(index="smiles", columns="papp_direction")
-
+        if group_cols:
+            df[group_cols] = df[group_cols].fillna("unknown")
+            df_grouped = df.groupby(["smiles"] + group_cols)["standard_value"].agg(["mean", "std", "count"]).reset_index()
+            df_pivot = df_grouped.pivot(index="smiles", columns=group_cols)
+            # Properly join MultiIndex columns without splitting letters
             df_pivot.columns = [
-                f"{assay_name}_{direction}_{stat}" for stat, direction in df_pivot.columns
+                f"{assay_name}_{'_'.join(map(str, col))}_{stat}" if isinstance(col, tuple) else f"{assay_name}_{col}_{stat}"
+                for stat, col in df_pivot.columns
             ]
-
-            ab_col = f"{assay_name}_AB_mean"
-            ba_col = f"{assay_name}_BA_mean"
-
-            if ab_col in df_pivot.columns and ba_col in df_pivot.columns:
-
-                df_pivot[f"{assay_name}_efflux_ratio"] = (
-                    df_pivot[ba_col] / df_pivot[ab_col].replace(0, np.nan)
-                )
-
-                df_pivot[f"{assay_name}_log_efflux_ratio"] = np.log10(
-                    df_pivot[f"{assay_name}_efflux_ratio"]
-                )
-
-            df_pivot = df_pivot.reset_index()
-
-            dfs.append(df_pivot)
+            dfs.append(df_pivot.reset_index())
+            continue
 
         # -----------------------------
-        # Metabolic stability
+        # Type-B assays (tox endpoints: hERG, Nav, etc.)
         # -----------------------------
-        elif any(a in assay_lower for a in metstab_assays):
+        if "tox_type" in df.columns:
 
-            df["species"] = df.get("species", "unknown")
-            df["species"] = df["species"].fillna("unknown")
-
-            df = df[df["species"].isin(allowed_species)]
-            if df.empty:
-                continue
+            logger.debug(f"Building pivot for tox assay: {assay_name}")
+            logger.debug(
+                f"DataFrame head before grouping:\n"
+                f"{df[['smiles','tox_type','standard_value','endpoint']].head(10)}"
+            )
 
             df_grouped = (
-                df.groupby(["smiles", "species"])["standard_value"]
+                df.groupby(["smiles", "tox_type"])["standard_value"]
                 .agg(["mean", "std", "count"])
                 .reset_index()
             )
 
-            df_pivot = df_grouped.pivot(index="smiles", columns="species")
-
-            df_pivot.columns = [
-                f"{assay_name}_{species}_{stat}" for stat, species in df_pivot.columns
-            ]
-
-            df_pivot = df_pivot.reset_index()
-
-            dfs.append(df_pivot)
-
-        # -----------------------------
-        # General multi-endpoint assays (hERG, CYPs, other tox targets)
-        # -----------------------------
-        endpoint_col = None
-        for col in ["herg_endpoint", "cyp_endpoint", "tox_endpoint"]:
-            if col in df.columns:
-                endpoint_col = col
-                break
-
-        if endpoint_col:
-
-            # Map endpoint values to standard column names and units
-            def recover_tox_value(row):
-                val = row["standard_value"]
-                unit = str(row.get("standard_units", "")).lower() if row.get("standard_units") else ""
-                ep = row[endpoint_col]
-
-                # Convert ambiguous units to nM for IC50/EC50/Ki/Kd
-                if unit in ["", "none", "no unit"]:
-                    if ep in {"IC50", "EC50", "Ki", "Kd"}:
-                        val = val * 1000
-                        unit = "nM"
-                elif "um" in unit:
-                    val = val * 1000
-                    unit = "nM"
-                elif "m" == unit:
-                    val = val * 1e9
-                    unit = "nM"
-
-                return val, ep, unit
-
-            df[["tox_value", "tox_type", "tox_unit"]] = df.apply(
-                lambda r: pd.Series(recover_tox_value(r)), axis=1
-            )
-
-            df = df.dropna(subset=["tox_value", "tox_type"])
-
-            # Group and pivot by endpoint type
-            df_grouped = (
-                df.groupby(["smiles", "tox_type"])["tox_value"]
-                .agg(["mean", "std", "count"])
-                .reset_index()
-            )
+            logger.debug(f"Grouped DataFrame:\n{df_grouped.head(10)}")
 
             df_pivot = df_grouped.pivot(index="smiles", columns="tox_type")
 
-            # Flatten columns
-            df_pivot.columns = [f"{assay_name}_{etype}_{stat}" for stat, etype in df_pivot.columns]
-            df_pivot = df_pivot.reset_index()
+            # flatten MultiIndex columns
+            df_pivot.columns = [
+                f"{assay_name}_{tox}_{stat}"
+                for stat, tox in df_pivot.columns
+            ]
 
-            dfs.append(df_pivot)
+            dfs.append(df_pivot.reset_index())
+            continue
 
-        else:
-
-            df_subset = df.groupby("smiles")["standard_value"].mean().reset_index()
-
-            df_subset = df_subset.rename(columns={"standard_value": assay_name})
-
-            dfs.append(df_subset)
+        # -----------------------------
+        # Fallback for remaining assays
+        # -----------------------------
+        df_subset = df.groupby("smiles")["standard_value"].mean().reset_index()
+        df_subset.rename(columns={"standard_value": assay_name}, inplace=True)
+        dfs.append(df_subset)
 
     if not dfs:
         return pd.DataFrame()
 
+    # Merge all assay tables
+    
     mtl_df = reduce(lambda l, r: pd.merge(l, r, on="smiles", how="outer"), dfs)
-
     mtl_df.to_csv(output_path, index=False)
-
     logger.debug(f"Saved multi-task dataset CSV to: {output_path}")
 
     return mtl_df

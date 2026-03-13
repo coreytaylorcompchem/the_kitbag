@@ -33,6 +33,8 @@ def run_chembl_mtl_workflow(config):
 
     if isinstance(data, dict) and "df" in data:
         df = data["df"]
+    elif isinstance(data, pd.DataFrame):
+        df = data
     else:
         raise ValueError("Final workflow output did not return a dataframe.")
 

@@ -40,40 +40,26 @@ def convert_cyp_activity(value, unit):
     return None, None, None
 
 def convert_herg(value, unit):
-    """
-    Standardise hERG measurements.
-
-    Returns:
-        (value, endpoint_type)
-
-    endpoint_type:
-        'IC50_nM'
-        'inhibition_pct'
-    """
-
     if value is None or unit is None:
         return None, None
 
     try:
         val = float(value)
-    except Exception:
+    except:
         return None, None
 
     u = str(unit).lower()
 
     # IC50 values
-    if "nm" in u:
-        return val, "IC50_nM"
-
-    if "um" in u:
-        return val * 1000, "IC50_nM"
-
-    if "mm" in u:
-        return val * 1e6, "IC50_nM"
+    if "nm" in u or "um" in u or "mm" in u:
+        factor = 1.0
+        if "um" in u: factor = 1e3
+        if "mm" in u: factor = 1e6
+        return val * factor, "IC50"
 
     # Percent inhibition
     if "%" in u or "percent" in u:
-        return val, "inhibition_pct"
+        return val, "inhibition"
 
     return None, None
 
