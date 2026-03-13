@@ -96,28 +96,16 @@ def detect_papp_direction(description):
         return None
 
 def extract_species(text):
-    if text is None:
+    if not text:
         return "unknown"
-
     t = str(text).lower()
-
     species_map = {
-        "human": "Human",
-        "homo sapiens": "Human",
-
-        "mouse": "Mouse",
-        "mus musculus": "Mouse",
-
-        "rat": "Rat",
-        "rattus": "Rat",
-
-        "monkey": "Monkey",
-        "macaca": "Monkey",
-        "cyno": "Monkey",
+        "human": "Human", "homo sapiens": "Human",
+        "mouse": "Mouse", "mus musculus": "Mouse",
+        "rat": "Rat", "rattus": "Rat",
+        "monkey": "Monkey", "macaca": "Monkey", "cyno": "Monkey"
     }
-
     for k, v in species_map.items():
         if k in t:
             return v
-
     return "unknown"

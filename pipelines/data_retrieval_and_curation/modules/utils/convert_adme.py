@@ -39,29 +39,38 @@ def convert_cyp_activity(value, unit):
     # Unhandled unit
     return None, None, None
 
-def convert_herg(value, unit):
-    if value is None or unit is None:
+def convert_vd(value, unit):
+    """
+    Convert volume of distribution to canonical L/kg.
+    Returns (float_value, canonical_unit) or (None, None) if unconvertible.
+    """
+    if value is None:
         return None, None
 
     try:
         val = float(value)
-    except:
+    except (TypeError, ValueError):
         return None, None
 
-    u = str(unit).lower()
+    if not unit:
+        return val, "L/kg"  # assume default if missing
 
-    # IC50 values
-    if "nm" in u or "um" in u or "mm" in u:
-        factor = 1.0
-        if "um" in u: factor = 1e3
-        if "mm" in u: factor = 1e6
-        return val * factor, "IC50"
+    u = str(unit).lower().replace(" ", "").strip()
 
-    # Percent inhibition
-    if "%" in u or "percent" in u:
-        return val, "inhibition"
+    # Conversion map
+    conversions = {
+        "l/kg": 1.0,
+        "ml/kg": 1e-3,   # mL/kg → L/kg
+        "l": 1.0,        # assume per kg if no further info
+        "ml": 1e-3,
+    }
 
-    return None, None
+    for k, factor in conversions.items():
+        if k == u:
+            return val * factor, "L/kg"
+
+    # Unknown unit
+    return val, u
 
 def convert_logp_logd(value, unit):
     """

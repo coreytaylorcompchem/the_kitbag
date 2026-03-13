@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+from tqdm.auto import tqdm
 from functools import reduce
 import seaborn as sns
 from collections import Counter
@@ -30,21 +31,30 @@ from modules.utils.convert_adme import (
     convert_solubility,
     convert_logp_logd,
     convert_cyp_activity,
-    convert_herg,
+    convert_vd
 )
-from modules.utils.detect_adme import detect_papp_direction, detect_metstab_system
+from modules.utils.detect_adme import (
+    detect_papp_direction, 
+    detect_metstab_system, 
+    extract_species
+)
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 # Assay categories
 permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
+permeability_assays = ["bbb", "blood brain barrier", "brain penetration", "brain/plasma", "logbb", "permeability"]
 solubility_assays = ["solubility", "logs", "logS"]
 metstab_assays = ["microsomal", "microsomes", "hepato", "hepatocyte", "hepatic"]
 ppb_assays = ["plasma protein binding", "ppb", "protein binding"]
 logp_assays = ["logp", "log p", "partition coefficient"]
 logd_assays = ["logd", "distribution coefficient"]
-# herg_assays = ["herg", "kcnq1", "ikrv", "ether-a-go-go"]
 cyp_assays = ["cyp1a2","cyp2c9","cyp2c19","cyp2d6","cyp3a4","cyp3a5","cyp2b6","cyp2e1", "cyp2c8"]
+bioavailability_assays = ["bioavailability", "f%", "fraction absorbed", "oral bioavailability"]
+vd_assays = ["vd", "vdss", "volume of distribution"]
+mate_assays = ["mate", "multidrug and toxin extrusion", "cmax", "auc"]
+oatp_assays = ["oatp", "slco", "organic anion transporting polypeptide"]
+oct_assays = ["oct", "slc22"]
 
 @register_task(
     "harmonise_units",
@@ -62,23 +72,11 @@ def harmonise_units(config, enriched=None):
     config_targets = config.get("targets", {})
     tox_assays = {k.strip().lower() for k in config_targets.keys()}
 
-    # Simple species extractor
-    def extract_species(text):
-        if not text:
-            return "unknown"
-        t = str(text).lower()
-        species_map = {
-            "human": "Human", "homo sapiens": "Human",
-            "mouse": "Mouse", "mus musculus": "Mouse",
-            "rat": "Rat", "rattus": "Rat",
-            "monkey": "Monkey", "macaca": "Monkey", "cyno": "Monkey"
-        }
-        for k, v in species_map.items():
-            if k in t:
-                return v
-        return "unknown"
-
-    for assay_name, records in enriched.items():
+    for assay_name, records in tqdm(
+            enriched.items(),
+            desc="Harmonising assays",
+            unit="assay"
+        ):
         logger.debug(f"Processing assay: {assay_name}")
         records = [r for r in records if isinstance(r, dict)]
         if not records:
@@ -156,6 +154,88 @@ def harmonise_units(config, enriched=None):
                 # Also keep for generic pivoting
                 r["tox_endpoint"] = endpoint
                 new_records.append(r)
+        # elif any(x in lname for x in bbb_assays):
+        #     for r in records:
+        #         val, unit = r.get("standard_value"), r.get("standard_units")
+        #         try:
+        #             val = float(val)
+        #         except (TypeError, ValueError):
+        #             continue
+                
+        #         # Convert units to 10^-6 cm/s if possible
+        #         if unit is not None:
+        #             val, unit = convert_permeability(val, unit)
+                
+        #         if val is not None:
+        #             r["standard_value"], r["standard_units"] = val, unit or "10^-6 cm/s"
+        #             r["harmonised_endpoint"] = "BBB_permeability"
+        #             new_records.append(r)
+
+        elif any(x in lname for x in bioavailability_assays):
+            for r in records:
+                val = r.get("standard_value")
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    continue
+                # Assume %; store species if available
+                r["standard_value"], r["standard_units"] = val, "%"
+                r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+                r["harmonised_endpoint"] = "F_percent"
+                new_records.append(r)
+
+        elif any(x in lname for x in vd_assays):
+            for r in records:
+                val = r.get("standard_value")
+                unit = r.get("standard_units")
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    continue
+                val, unit = convert_vd(val, unit)
+                r["standard_value"], r["standard_units"] = val, unit
+                r["harmonised_endpoint"] = "Vd"
+                new_records.append(r)
+
+        elif any(x in lname for x in mate_assays):
+            for r in records:
+                val = r.get("standard_value")
+                unit = r.get("standard_units")
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    continue
+                # Optionally: convert units to nM / ng/mL if needed
+                r["standard_value"], r["standard_units"] = val, unit
+                r["harmonised_endpoint"] = "MATE_exposure"
+                r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+                new_records.append(r)
+
+        elif any(x in lname for x in oatp_assays):
+            for r in records:
+                val = r.get("standard_value")
+                unit = r.get("standard_units")
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    continue
+                r["standard_value"], r["standard_units"] = val, unit
+                r["harmonised_endpoint"] = "OATP_transport"
+                r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+                new_records.append(r)
+
+        elif any(x in lname for x in oct_assays):
+            for r in records:
+                val = r.get("standard_value")
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    val = None  # Keep the entry but numeric value may be missing
+                r["standard_value"] = val
+                r["standard_units"] = r.get("standard_units")
+                r["harmonised_endpoint"] = "OCT_transport"
+                r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+                new_records.append(r)                
         # -----------------------------
         # Type-B tox endpoints (hERG, Nav1.5, etc.) from config
         # -----------------------------
@@ -304,7 +384,11 @@ def build_multitask_dataset(config, cleaned=None):
             unit = "nM"
         return val, ep, unit
 
-    for assay_name, records in cleaned.items():
+    for assay_name, records in tqdm(
+            cleaned.items(),
+            desc="Building multitask dataset",
+            unit="assay"
+        ):
         records = [r for r in records if isinstance(r, dict)]
         if not records:
             continue
@@ -425,44 +509,7 @@ def generate_diagnostics(config, mtl_df=None):
     plots_dir = os.path.join(output_dir, "_plots")
     os.makedirs(plots_dir, exist_ok=True)
 
-    # # Pairwise overlap
-    # # Only include original assay columns, exclude computed statistics
-    # stat_suffixes = ["_std", "_min", "_max", "_count"]
-    # task_cols = [
-    #     c for c in mtl_df.columns
-    #     if c != 'smiles' and not any(c.endswith(suffix) for suffix in stat_suffixes)
-    # ]
-    # mask = mtl_df[task_cols].notna()
-
-    # overlap_counts = pd.DataFrame(index=task_cols, columns=task_cols, dtype=int)
-    # overlap_frac = pd.DataFrame(index=task_cols, columns=task_cols, dtype=float)
-
-    # for t1 in task_cols:
-    #     for t2 in task_cols:
-    #         both = (mask[t1] & mask[t2]).sum()
-    #         overlap_counts.loc[t1, t2] = both
-    #         min_count = min(mask[t1].sum(), mask[t2].sum())
-    #         overlap_frac.loc[t1, t2] = both / min_count if min_count > 0 else np.nan
-
-    # overlap_counts.to_csv(os.path.join(plots_dir, "pairwise_overlap_counts.csv"))
-    # overlap_frac.to_csv(os.path.join(plots_dir, "pairwise_overlap_fraction.csv"))
-
-    # # Clean labels for plotting (remove "_mean")
-    # plot_labels = [c.replace("_mean", "") for c in task_cols]
-
-    # overlap_plot = overlap_frac.copy()
-    # overlap_plot.index = plot_labels
-    # overlap_plot.columns = plot_labels
-
-    # plt.figure(figsize=(10,8))
-    # sns.heatmap(overlap_plot.astype(float), annot=True, fmt=".2f", cmap="viridis")
-    # plt.title("Pairwise Assay Overlap Fraction")
-    # plt.tight_layout()
-    # plt.savefig(os.path.join(plots_dir, "pairwise_overlap_heatmap.png"), dpi=300)
-    # plt.close()
-
     # Pairwise overlap
-    # Only include mean columns (ignore other stats)
     task_cols = [c for c in mtl_df.columns if c.endswith("_mean")]
     mask = mtl_df[task_cols].notna()
 
@@ -480,22 +527,73 @@ def generate_diagnostics(config, mtl_df=None):
     overlap_counts.to_csv(os.path.join(plots_dir, "pairwise_overlap_counts.csv"))
     overlap_frac.to_csv(os.path.join(plots_dir, "pairwise_overlap_fraction.csv"))
 
-    # Clean labels for plotting (remove "_mean")
+    # Clean labels
     plot_labels = [c.replace("_mean", "") for c in task_cols]
     overlap_plot = overlap_frac.copy()
     overlap_plot.index = plot_labels
     overlap_plot.columns = plot_labels
 
-    g = sns.clustermap(
-        overlap_plot.astype(float),
-        cmap="viridis",
-        annot=True,
-        fmt=".2f",
-        figsize=(15,15)
-    )
+    n_tasks = len(plot_labels)
 
-    g.fig.suptitle("Pairwise Assay Overlap Fraction (clustered)", y=1.02)
-    plt.savefig(os.path.join(plots_dir, "pairwise_overlap_heatmap.png"), dpi=300)
+    if n_tasks < 10:
+        # Small: simple heatmap, big font
+        figsize = max(6, n_tasks * 0.8)
+        annot = True
+        annot_fontsize = 12
+        g = sns.heatmap(
+            overlap_plot.astype(float),
+            cmap="viridis",
+            annot=annot,
+            fmt=".2f",
+            cbar_kws={"label": "Overlap fraction"},
+            linewidths=0.5
+        )
+        plt.xticks(rotation=45, ha="right", fontsize=annot_fontsize)
+        plt.yticks(rotation=0, fontsize=annot_fontsize)
+        plt.title("Pairwise Assay Overlap Fraction", fontsize=14)
+        plt.tight_layout()
+
+    elif n_tasks <= 35:
+        # Medium: clustermap with annotations, dynamic figure size
+        cell_size = 0.45  # inches per cell
+        figsize = max(8, n_tasks * cell_size + 3)  # extra for dendrograms
+        annot = True
+        annot_fontsize = max(6, 12 - n_tasks * 0.15)
+        g = sns.clustermap(
+            overlap_plot.astype(float),
+            cmap="viridis",
+            annot=annot,
+            fmt=".2f",
+            figsize=(figsize, figsize),
+            annot_kws={"size": annot_fontsize},
+            cbar_kws={"label": "Overlap fraction"},
+            dendrogram_ratio=(0.15, 0.15)
+        )
+        plt.setp(g.ax_heatmap.get_xticklabels(), rotation=45, ha="right")
+        plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
+        g.fig.suptitle("Pairwise Assay Overlap Fraction (clustered)", y=1.02)
+
+    else:
+        # Large: clustermap without annotations to avoid clutter
+        cell_size = 0.45
+        figsize = max(12, n_tasks * cell_size + 3)
+        g = sns.clustermap(
+            overlap_plot.astype(float),
+            cmap="viridis",
+            annot=False,
+            figsize=(figsize, figsize),
+            cbar_kws={"label": "Overlap fraction"},
+            dendrogram_ratio=(0.1, 0.1)
+        )
+        plt.setp(g.ax_heatmap.get_xticklabels(), rotation=90)
+        plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
+        g.fig.suptitle("Pairwise Assay Overlap Fraction (clustered)", y=1.02)
+
+    plt.savefig(
+        os.path.join(plots_dir, "pairwise_overlap_heatmap.png"),
+        dpi=300,
+        bbox_inches="tight"
+    )
     plt.close()
 
     # Task–Task Correlation Heatmap
@@ -503,8 +601,14 @@ def generate_diagnostics(config, mtl_df=None):
     numeric_cols = [c for c in mtl_df.columns if c.endswith("_mean")]
     corr_df = mtl_df[numeric_cols].corr()
 
+    # Clean labels: remove '_mean' for display
+    plot_labels = [c.replace("_mean", "") for c in numeric_cols]
+    corr_df_plot = corr_df.copy()
+    corr_df_plot.index = plot_labels
+    corr_df_plot.columns = plot_labels
+
     plt.figure(figsize=(12,10))
-    sns.heatmap(corr_df, cmap="coolwarm", center=0, annot=False)
+    sns.heatmap(corr_df_plot, cmap="PiYG", center=0, annot=False)
     plt.title("Task–Task Correlation Heatmap")
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "task_correlation_heatmap.png"), dpi=300)
@@ -569,8 +673,15 @@ def generate_diagnostics(config, mtl_df=None):
     plt.close()
 
     # TSNE of all fingerprints
-    mols = [Chem.MolFromSmiles(sm) for sm in mtl_df.smiles]
-    fps = [rdMolDescriptors.GetMorganFingerprintAsBitVect(m, radius=2, nBits=1024) for m in mols]
+    mols = [
+        Chem.MolFromSmiles(sm)
+        for sm in tqdm(mtl_df.smiles, desc="Parsing SMILES", unit="mol")
+    ]
+    fps = [
+        rdMolDescriptors.GetMorganFingerprintAsBitVect(m, radius=2, nBits=1024)
+        if m is not None else None
+        for m in tqdm(mols, desc="Generating fingerprints", unit="mol")
+    ]
 
     def fp_to_array(fp):
         arr = np.zeros((fp.GetNumBits(),), dtype=np.uint8)
@@ -591,23 +702,41 @@ def generate_diagnostics(config, mtl_df=None):
     plt.close()
 
     # t-SNE grid with highlighted endpoints
-    # Group columns by endpoint type, include raw and _mean as needed
+    # Helper to get columns containing any keyword (case-insensitive)
     def get_group_cols(mtl_df, keywords):
-        return [c for c in mtl_df.columns if any(k.lower() in c.lower() for k in keywords)]
+        cols = []
+        for c in mtl_df.columns:
+            for kw in keywords:
+                if kw.lower() in c.lower():  # match anywhere in column name
+                    cols.append(c)
+                    break
+        return cols
 
+    # Define endpoint groups using exhaustive YAML keywords
     endpoint_groups = {
-        "PhysChem": get_group_cols(mtl_df, ["LogP", "LogD", "logS", "ppb"]),
-        "Metabolism": get_group_cols(mtl_df, ["microsomal", "hepatocyte", "hepato"]),
-        "Permeability": get_group_cols(mtl_df, ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]),
-        "Tox": get_group_cols(mtl_df, ["herg", "cyp"])
+        "PhysChem": get_group_cols(mtl_df, ["logp", "logd", "logS", "solubility"]),
+        "Permeability": get_group_cols(mtl_df, [
+            "caco", "mdck", "pampa", "p-gp", "bcrp", "mrp", "bbb",
+            "blood brain barrier", "brain penetration", "logbb", "brain/plasma"
+        ]),
+        "Metabolism": get_group_cols(mtl_df, ["metstab", "microsomal", "hepatocyte", "cyp"]),
+        "Tox": get_group_cols(mtl_df, ["herg", "nav1.5", "cav1.2"]),
+        "Transporters": get_group_cols(mtl_df, ["oatp", "slco", "oct", "slc22", "mate"]),
+        "PK": get_group_cols(mtl_df, ["vd", "bioavailability", "f%", "fraction_unbound", "ppb"])
     }
 
-    fig, axes = plt.subplots(2, 2, figsize=(16,14))
+    # Debug: print detected columns for sanity check (trim suffixes)
+    for group_name, cols in endpoint_groups.items():
+        clean_cols = [c.replace("_mean","").replace("_std","").replace("_count","") for c in cols]
+        logger.debug(f"{group_name}: {clean_cols}")
+
+    # Create 6-panel grid
+    fig, axes = plt.subplots(3, 2, figsize=(18,18))
     axes = axes.flatten()
 
     for idx, (group_name, cols) in enumerate(endpoint_groups.items()):
         ax = axes[idx]
-        
+
         if not cols:
             ax.scatter(fp_tsne[:,0], fp_tsne[:,1], color="lightgrey", s=30, alpha=0.5)
             ax.set_title(f"t-SNE colored by {group_name} (no endpoints found)")
@@ -617,27 +746,20 @@ def generate_diagnostics(config, mtl_df=None):
 
         # Determine which compounds have at least one value present in this group
         present_mask = mtl_df[cols].notna().any(axis=1)
-        
-        # Plot: overlay data points with all data to highlight where the data is on the tsne
-        ax.scatter(
-            fp_tsne[present_mask,0], 
-            fp_tsne[present_mask,1], 
-            color="dodgerblue", 
-            s=20, 
-            alpha=0.35,
-            label="Present"
-        )
 
+        # Plot highlighted points
         ax.scatter(
             fp_tsne[~present_mask,0], 
             fp_tsne[~present_mask,1], 
-            color="lightgrey", 
-            s=15, 
-            alpha=0.1, 
-            label="Absent"
+            color="lightgrey", s=15, alpha=0.1, label="Absent"
+        )
+        ax.scatter(
+            fp_tsne[present_mask,0], 
+            fp_tsne[present_mask,1], 
+            color="dodgerblue", s=20, alpha=0.35, label="Present"
         )
 
-        ax.set_title(f"t-SNE highlighting {group_name}")
+        ax.set_title(f"t-SNE colored by {group_name}")
         ax.set_xlabel("t-SNE 1")
         ax.set_ylabel("t-SNE 2")
         ax.legend(loc="upper right")
@@ -648,7 +770,11 @@ def generate_diagnostics(config, mtl_df=None):
 
     # Histogram of scaffold frequency
 
-    scaffolds = [MurckoScaffold.GetScaffoldForMol(m) for m in mols if m is not None]
+    scaffolds = [
+        MurckoScaffold.GetScaffoldForMol(m)
+        for m in tqdm(mols, desc="Extracting scaffolds", unit="mol")
+        if m is not None
+    ]
     scaffold_smiles = [Chem.MolToSmiles(s) for s in scaffolds if s is not None]
     scaffold_counts = Counter(scaffold_smiles)
 
