@@ -504,13 +504,19 @@ def generate_diagnostics(config, mtl_df=None):
     if mtl_df is None or mtl_df.empty:
         logger.warning("mtl_df is None or empty - skipping diagnostics")
         return {"plots_dir": None}
-    
+
     output_dir = config.get("output", {}).get("directory", "outputs/adme")
     plots_dir = os.path.join(output_dir, "_plots")
     os.makedirs(plots_dir, exist_ok=True)
 
+    # ------------------------
     # Pairwise overlap
-    task_cols = [c for c in mtl_df.columns if c.endswith("_mean")]
+    # ------------------------
+    task_cols = [
+        c for c in mtl_df.columns
+        if not (c.endswith("_std") or c.endswith("_count")) and np.issubdtype(mtl_df[c].dtype, np.number)
+    ]
+    numeric_cols = task_cols.copy()
     mask = mtl_df[task_cols].notna()
 
     overlap_counts = pd.DataFrame(index=task_cols, columns=task_cols, dtype=int)
@@ -527,96 +533,102 @@ def generate_diagnostics(config, mtl_df=None):
     overlap_counts.to_csv(os.path.join(plots_dir, "pairwise_overlap_counts.csv"))
     overlap_frac.to_csv(os.path.join(plots_dir, "pairwise_overlap_fraction.csv"))
 
-    # Clean labels
+    # ------------------------
+    # Clean labels for plotting
+    # ------------------------
     plot_labels = [c.replace("_mean", "") for c in task_cols]
     overlap_plot = overlap_frac.copy()
     overlap_plot.index = plot_labels
     overlap_plot.columns = plot_labels
 
-    n_tasks = len(plot_labels)
+    # Make NaN-safe for clustering
+    overlap_plot_finite = overlap_plot.dropna(axis=0, how="all").dropna(axis=1, how="all").fillna(0)
+    n_tasks = len(overlap_plot_finite)
 
-    if n_tasks < 10:
-        # Small: simple heatmap, big font
-        figsize = max(6, n_tasks * 0.8)
-        annot = True
-        annot_fontsize = 12
-        g = sns.heatmap(
-            overlap_plot.astype(float),
-            cmap="viridis",
-            annot=annot,
-            fmt=".2f",
-            cbar_kws={"label": "Overlap fraction"},
-            linewidths=0.5
-        )
-        plt.xticks(rotation=45, ha="right", fontsize=annot_fontsize)
-        plt.yticks(rotation=0, fontsize=annot_fontsize)
-        plt.title("Pairwise Assay Overlap Fraction", fontsize=14)
-        plt.tight_layout()
-
-    elif n_tasks <= 35:
-        # Medium: clustermap with annotations, dynamic figure size
-        cell_size = 0.45  # inches per cell
-        figsize = max(8, n_tasks * cell_size + 3)  # extra for dendrograms
-        annot = True
-        annot_fontsize = max(6, 12 - n_tasks * 0.15)
-        g = sns.clustermap(
-            overlap_plot.astype(float),
-            cmap="viridis",
-            annot=annot,
-            fmt=".2f",
-            figsize=(figsize, figsize),
-            annot_kws={"size": annot_fontsize},
-            cbar_kws={"label": "Overlap fraction"},
-            dendrogram_ratio=(0.15, 0.15)
-        )
-        plt.setp(g.ax_heatmap.get_xticklabels(), rotation=45, ha="right")
-        plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
-        g.fig.suptitle("Pairwise Assay Overlap Fraction (clustered)", y=1.02)
-
+    if n_tasks == 0:
+        logger.warning("No valid tasks for overlap plotting after removing all-NaN rows/columns")
     else:
-        # Large: clustermap without annotations to avoid clutter
-        cell_size = 0.45
-        figsize = max(12, n_tasks * cell_size + 3)
-        g = sns.clustermap(
-            overlap_plot.astype(float),
-            cmap="viridis",
-            annot=False,
-            figsize=(figsize, figsize),
-            cbar_kws={"label": "Overlap fraction"},
-            dendrogram_ratio=(0.1, 0.1)
-        )
-        plt.setp(g.ax_heatmap.get_xticklabels(), rotation=90)
-        plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
-        g.fig.suptitle("Pairwise Assay Overlap Fraction (clustered)", y=1.02)
+        if n_tasks < 10:
+            figsize = max(6, n_tasks * 0.8)
+            annot = True
+            annot_fontsize = 12
+            g = sns.heatmap(
+                overlap_plot_finite.astype(float),
+                cmap="viridis",
+                annot=annot,
+                fmt=".2f",
+                cbar_kws={"label": "Overlap fraction"},
+                linewidths=0.5
+            )
+            plt.xticks(rotation=45, ha="right", fontsize=annot_fontsize)
+            plt.yticks(rotation=0, fontsize=annot_fontsize)
+            plt.title("Pairwise Assay Overlap Fraction", fontsize=14)
+            plt.tight_layout()
+        elif n_tasks <= 35:
+            cell_size = 0.45
+            figsize = max(8, n_tasks * cell_size + 3)
+            annot = True
+            annot_fontsize = max(6, 12 - n_tasks * 0.15)
+            g = sns.clustermap(
+                overlap_plot_finite.astype(float),
+                cmap="viridis",
+                annot=annot,
+                fmt=".2f",
+                figsize=(figsize, figsize),
+                annot_kws={"size": annot_fontsize},
+                cbar_kws={"label": "Overlap fraction"},
+                dendrogram_ratio=(0.15, 0.15)
+            )
+            plt.setp(g.ax_heatmap.get_xticklabels(), rotation=45, ha="right")
+            plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
+            g.fig.suptitle("Pairwise Assay Overlap Fraction (clustered)", y=1.02)
+        else:
+            cell_size = 0.45
+            figsize = max(12, n_tasks * cell_size + 3)
+            g = sns.clustermap(
+                overlap_plot_finite.astype(float),
+                cmap="viridis",
+                annot=False,
+                figsize=(figsize, figsize),
+                cbar_kws={"label": "Overlap fraction"},
+                dendrogram_ratio=(0.1, 0.1)
+            )
+            plt.setp(g.ax_heatmap.get_xticklabels(), rotation=90)
+            plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
+            g.fig.suptitle("Pairwise Assay Overlap Fraction (clustered)", y=1.02)
 
-    plt.savefig(
-        os.path.join(plots_dir, "pairwise_overlap_heatmap.png"),
-        dpi=300,
-        bbox_inches="tight"
-    )
-    plt.close()
+        plt.savefig(os.path.join(plots_dir, "pairwise_overlap_heatmap.png"), dpi=300, bbox_inches="tight")
+        plt.close()
 
-    # Task–Task Correlation Heatmap
-    # Only use numeric mean columns
-    numeric_cols = [c for c in mtl_df.columns if c.endswith("_mean")]
+    # ------------------------
+    # Task–Task correlation heatmap
+    # ------------------------
+    # Keep only numeric columns, exclude *_std and *_count
+    numeric_cols = [
+        c for c in mtl_df.columns
+        if not (c.endswith("_std") or c.endswith("_count")) and np.issubdtype(mtl_df[c].dtype, np.number)
+    ]
     corr_df = mtl_df[numeric_cols].corr()
 
-    # Clean labels: remove '_mean' for display
-    plot_labels = [c.replace("_mean", "") for c in numeric_cols]
     corr_df_plot = corr_df.copy()
+    plot_labels = [c.replace("_mean", "") for c in numeric_cols]
     corr_df_plot.index = plot_labels
     corr_df_plot.columns = plot_labels
 
+    # Make NaN-safe
+    corr_df_plot_finite = corr_df_plot.fillna(0)
+
     plt.figure(figsize=(12,10))
-    sns.heatmap(corr_df_plot, cmap="PiYG", center=0, annot=False)
+    sns.heatmap(corr_df_plot_finite, cmap="PiYG", center=0, annot=False)
     plt.title("Task–Task Correlation Heatmap")
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "task_correlation_heatmap.png"), dpi=300)
     plt.close()
 
+    # ------------------------
     # Correlation vs Overlap Scatter
-    # Compute max overlap for each task pair
-    max_overlap = overlap_frac.where(~np.eye(len(overlap_frac),dtype=bool)).max(axis=0)
+    # ------------------------
+    max_overlap = overlap_frac.where(~np.eye(len(overlap_frac), dtype=bool)).max(axis=0)
 
     cor_vs_overlap = pd.DataFrame({
         "task": numeric_cols,
@@ -637,29 +649,27 @@ def generate_diagnostics(config, mtl_df=None):
     plt.savefig(os.path.join(plots_dir, "correlation_vs_overlap.png"), dpi=300)
     plt.close()
 
+    # ------------------------
     # Task connectivity graph
+    # ------------------------
     G = nx.Graph()
 
-    # Add nodes
     for task in task_cols:
         G.add_node(task)
 
-    # Add edges based on overlap
+    # Only add edges with finite overlap
     for t1 in task_cols:
         for t2 in task_cols:
             if t1 == t2:
                 continue
             weight = overlap_frac.loc[t1, t2]
-            if pd.notna(weight) and weight > 0.05:  # threshold to reduce clutter
+            if pd.notna(weight) and np.isfinite(weight) and weight > 0.05:
                 G.add_edge(t1, t2, weight=weight)
 
-    # Draw graph
     plt.figure(figsize=(10,8))
-
     pos = nx.spring_layout(G, seed=42)
-
     edges = G.edges(data=True)
-    weights = [d["weight"]*5 for (_,_,d) in edges]  # scale for visibility
+    weights = [d["weight"]*5 for (_,_,d) in edges]
 
     nx.draw_networkx_nodes(G, pos, node_size=1500, node_color="lightblue")
     nx.draw_networkx_labels(G, pos, font_size=9)
@@ -668,7 +678,6 @@ def generate_diagnostics(config, mtl_df=None):
     plt.title("Task Connectivity Graph (shared compound overlap)")
     plt.axis("off")
     plt.tight_layout()
-
     plt.savefig(os.path.join(plots_dir, "task_connectivity_graph.png"), dpi=300)
     plt.close()
 
