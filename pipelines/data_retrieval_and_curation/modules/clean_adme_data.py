@@ -43,7 +43,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 # Assay categories
 permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
-permeability_assays = ["bbb", "blood brain barrier", "brain penetration", "brain/plasma", "logbb", "permeability"]
+permeability_assays += ["bbb", "blood brain barrier", "brain penetration", "brain/plasma", "logbb", "permeability"]
 solubility_assays = ["solubility", "logs", "logS"]
 metstab_assays = ["microsomal", "microsomes", "hepato", "hepatocyte", "hepatic"]
 ppb_assays = ["plasma protein binding", "ppb", "protein binding"]
@@ -83,6 +83,8 @@ def harmonise_units(config, enriched=None):
             continue
 
         lname = assay_name.lower()
+        logger.debug(f"Processing assay: '{assay_name}' -> lname: '{lname}'")
+        logger.debug(f"Permeability assays list: {permeability_assays}")
 
         units_before = [r.get("standard_units") for r in records if r.get("standard_units")]
         new_records = []
@@ -91,12 +93,16 @@ def harmonise_units(config, enriched=None):
         # ADME assays
         # -----------------------------
         if any(x in lname for x in permeability_assays):
+            logger.debug(f"Matched permeability assay: {assay_name}")
+            logger.debug(f"Number of raw records: {len(records)}")
             for r in records:
                 r["papp_direction"] = detect_papp_direction(r.get("assay_description"))
                 val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val, new_unit = convert_permeability(val, unit)
+                logger.debug(f"{assay_name}: {len(new_records)} records after harmonisation")
                 if new_val is not None:
                     r["standard_value"], r["standard_units"] = new_val, new_unit
+                    logger.debug(f"Adding {len(new_records)} records to cleaned['{assay_name}']")
                     new_records.append(r)
 
         elif any(x in lname for x in solubility_assays):
@@ -492,14 +498,39 @@ def build_multitask_dataset(config, cleaned=None):
 def generate_diagnostics(config, mtl_df=None):
     """
     Generates:
-    1. Unit distributions per assay
-    2. Pairwise assay overlap table and heatmap
-    3. Network plot to show task connectivity
-    4. t-SNE of Morgan fingerprints
-    5. Scaffold frequency histogram and top scaffold grid
+    1. Counts of data points per assay
+    2. Unit distributions per assay
+    3. Pairwise assay overlap table and heatmap
+    4. Network plot to show task connectivity
+    5. t-SNE of Morgan fingerprints
+    6. Scaffold frequency histogram and top scaffold grid
     
     Saves outputs in <output_dir>_plots
     """
+    
+    # Define endpoint groups using exhaustive YAML keywords
+    
+    # Helper to get columns containing any keyword (case-insensitive)
+    def get_group_cols(mtl_df, keywords):
+        cols = []
+        for c in mtl_df.columns:
+            for kw in keywords:
+                if kw.lower() in c.lower():  # match anywhere in column name
+                    cols.append(c)
+                    break
+        return cols
+    
+    endpoint_groups = {
+        "PhysChem": get_group_cols(mtl_df, ["logp", "logd", "logS", "solubility"]),
+        "Permeability": get_group_cols(mtl_df, [
+            "caco", "mdck", "pampa", "p-gp", "bcrp", "mrp", "bbb",
+            "blood brain barrier", "brain penetration", "logbb", "brain/plasma"
+        ]),
+        "Metabolism": get_group_cols(mtl_df, ["metstab", "microsomal", "hepatocyte", "cyp"]),
+        "Tox": get_group_cols(mtl_df, ["herg", "nav1.5", "cav1.2"]),
+        "Transporters": get_group_cols(mtl_df, ["oatp", "slco", "oct", "slc22", "mate"]),
+        "PK": get_group_cols(mtl_df, ["vd", "bioavailability", "f%", "fraction_unbound", "ppb"])
+    }
 
     if mtl_df is None or mtl_df.empty:
         logger.warning("mtl_df is None or empty - skipping diagnostics")
@@ -509,15 +540,49 @@ def generate_diagnostics(config, mtl_df=None):
     plots_dir = os.path.join(output_dir, "_plots")
     os.makedirs(plots_dir, exist_ok=True)
 
-    # ------------------------
-    # Pairwise overlap
-    # ------------------------
     task_cols = [
         c for c in mtl_df.columns
         if not (c.endswith("_std") or c.endswith("_count")) and np.issubdtype(mtl_df[c].dtype, np.number)
     ]
     numeric_cols = task_cols.copy()
     mask = mtl_df[task_cols].notna()
+
+    # ------------------------
+    # Number of data points per assay (panelled by endpoint group)
+    # ------------------------
+    fig, axes = plt.subplots(3, 2, figsize=(18, 18))
+    axes = axes.flatten()
+
+    for idx, (group_name, cols) in enumerate(endpoint_groups.items()):
+        ax = axes[idx]
+
+        if not cols:
+            ax.text(0.5, 0.5, "No endpoints found", ha='center', va='center', fontsize=12)
+            ax.set_title(f"{group_name}")
+            ax.axis("off")
+            continue
+
+        # Count non-NaN values per assay
+        counts = mtl_df[cols].notna().sum().sort_values(ascending=False)
+
+        sns.barplot(
+            x=counts.index.str.replace("_mean","").str.replace("_std","").str.replace("_count",""),
+            y=counts.values,
+            ax=ax,
+            palette="Blues_d",
+            ci=None
+        )
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=10)
+        ax.set_ylabel("Number of Data Points")
+        ax.set_title(f"{group_name}")
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, "assay_data_counts_grid.png"), dpi=300)
+    plt.close()
+
+    # ------------------------
+    # Pairwise overlap
+    # ------------------------
 
     overlap_counts = pd.DataFrame(index=task_cols, columns=task_cols, dtype=int)
     overlap_frac = pd.DataFrame(index=task_cols, columns=task_cols, dtype=float)
@@ -711,29 +776,6 @@ def generate_diagnostics(config, mtl_df=None):
     plt.close()
 
     # t-SNE grid with highlighted endpoints
-    # Helper to get columns containing any keyword (case-insensitive)
-    def get_group_cols(mtl_df, keywords):
-        cols = []
-        for c in mtl_df.columns:
-            for kw in keywords:
-                if kw.lower() in c.lower():  # match anywhere in column name
-                    cols.append(c)
-                    break
-        return cols
-
-    # Define endpoint groups using exhaustive YAML keywords
-    endpoint_groups = {
-        "PhysChem": get_group_cols(mtl_df, ["logp", "logd", "logS", "solubility"]),
-        "Permeability": get_group_cols(mtl_df, [
-            "caco", "mdck", "pampa", "p-gp", "bcrp", "mrp", "bbb",
-            "blood brain barrier", "brain penetration", "logbb", "brain/plasma"
-        ]),
-        "Metabolism": get_group_cols(mtl_df, ["metstab", "microsomal", "hepatocyte", "cyp"]),
-        "Tox": get_group_cols(mtl_df, ["herg", "nav1.5", "cav1.2"]),
-        "Transporters": get_group_cols(mtl_df, ["oatp", "slco", "oct", "slc22", "mate"]),
-        "PK": get_group_cols(mtl_df, ["vd", "bioavailability", "f%", "fraction_unbound", "ppb"])
-    }
-
     # Debug: print detected columns for sanity check (trim suffixes)
     for group_name, cols in endpoint_groups.items():
         clean_cols = [c.replace("_mean","").replace("_std","").replace("_count","") for c in cols]
