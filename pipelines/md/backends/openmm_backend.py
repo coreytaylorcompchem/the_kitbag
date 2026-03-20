@@ -230,9 +230,12 @@ class OpenMMBackend:
     def _pre_minimise_termini(self, steps=200):
         """
         Pre-minimise terminal caps:
-        - OXT atoms are free to move, all other atoms are strongly restrained
+        - Only restrain canonical protein backbone/heavy atoms.
+        - N-terminal hydrogens and OXT atoms are free.
+        - Works regardless of membrane, ligands, or waters.
         """
         from openmm import CustomExternalForce, VerletIntegrator, Context, LocalEnergyMinimizer
+        from openmm import unit, Vec3
 
         logger.info("Starting minimisation of termini")
 
@@ -240,64 +243,75 @@ class OpenMMBackend:
         topology = self.topology
         positions = self.positions
 
-        termini_indices = [atom.index for atom in topology.atoms() if atom.name == "OXT"]
-        logger.info(f"Found {len(termini_indices)} terminal atoms (OXT)")
+        # Identify protein residues (canonical AAs)
+        canonical_aas = {
+            'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE',
+            'LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL'
+        }
 
-        # Step 1: Strong restraints on non-terminal
+        # Collect atoms to restrain (all protein heavy atoms, excluding termini H/OXT)
+        restrain_atoms = []
+        for chain in topology.chains():
+            residues = [r for r in chain.residues() if r.name.upper() in canonical_aas]
+            if not residues:
+                continue
+
+            # N-terminal: skip hydrogens
+            n_term = residues[0]
+            n_term_h = {atom.index for atom in n_term.atoms() if atom.element.symbol == 'H'}
+
+            # C-terminal: skip OXT
+            c_term = residues[-1]
+            c_term_oxt = {atom.index for atom in c_term.atoms() if atom.name == 'OXT'}
+
+            for res in residues:
+                for atom in res.atoms():
+                    if atom.index not in n_term_h and atom.index not in c_term_oxt:
+                        restrain_atoms.append(atom.index)
+
+        logger.info(f"Restraining {len(restrain_atoms)} protein atoms; termini free")
+
+        # Create per-particle harmonic restraint
         restraint = CustomExternalForce("0.5 * k * ((x-x0)^2 + (y-y0)^2 + (z-z0)^2)")
         restraint.addPerParticleParameter("x0")
         restraint.addPerParticleParameter("y0")
         restraint.addPerParticleParameter("z0")
-        restraint.addGlobalParameter("k", 5000.0)
+        restraint.addPerParticleParameter("k")
 
         for atom in topology.atoms():
-            pos = positions[atom.index]
-            restraint.addParticle(atom.index, pos.value_in_unit(unit.nanometer))
+            pos = positions[atom.index].value_in_unit(unit.nanometer)
+            k_val = 5000.0 if atom.index in restrain_atoms else 0.0
+            restraint.addParticle(atom.index, [pos[0], pos[1], pos[2], k_val])
 
         system.addForce(restraint)
-        logger.debug("Applied strong restraints to all atoms")
+        logger.debug("Applied per-particle restraints")
 
-        # Step 2: Free termini (OXT) by adding a dummy zero-force restraint 
-        if termini_indices:
-            free_force = CustomExternalForce("0.0")
-            for idx in termini_indices:
-                free_force.addParticle(idx, [])
-            system.addForce(free_force)
-            logger.debug("OXT atoms set free for relaxation")
-
-        # Step 3: Setup integrator and context
-        integrator = VerletIntegrator(0.001)
+        # Setup integrator and context
+        integrator = VerletIntegrator(0.001)  # ps timestep
         context = Context(system, integrator, self.platform)
         context.setPositions(positions)
-        logger.debug("Context created, starting minimisation...")
 
-        # Step 4: Minimisation
-
+        # Minimisation in chunks with logging
         log_interval = 5
-
         remaining_steps = steps
-        step_chunk = log_interval
         iteration = 0
-
         while remaining_steps > 0:
-            this_chunk = min(step_chunk, remaining_steps)
+            this_chunk = min(log_interval, remaining_steps)
             LocalEnergyMinimizer.minimize(context, maxIterations=this_chunk)
             iteration += this_chunk
             state = context.getState(getEnergy=True)
             energy = state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
-            logger.info(f"Step {iteration}/{steps}: potential energy = {energy:.1f} kJ/mol")
+            logger.debug(f"Step {iteration}/{steps}: potential energy = {energy:.1f} kJ/mol")
             remaining_steps -= this_chunk
 
-        # Step 5: Update positions 
-        state = context.getState(getPositions=True, getEnergy=True)
+        # Update positions
+        state = context.getState(getPositions=True)
         self.positions = state.getPositions()
-        energy = state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
-        logger.debug(f"Minimisation energy: {energy:.1f} kJ/mol")
 
-        # Step 6: Cleanup
+        # Cleanup
         del context, integrator
-        self.system.removeForce(self.system.getNumForces() - 1)
-        
+        system.removeForce(system.getNumForces() - 1)
+
         logger.info("Minimisation of termini complete")
 
     def create_system(self, modeller, forcefield_files):

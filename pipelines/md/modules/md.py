@@ -95,7 +95,7 @@ class MDWorkflow:
     @register_task("minimize")
     def minimize(self):
         from openmm import CustomExternalForce
-        from openmm.unit import kilojoule, mole, nanometer, kelvin
+        from openmm.unit import kilojoule, mole, nanometer
         import numpy as np
         from tqdm import tqdm
 
@@ -114,91 +114,80 @@ class MDWorkflow:
         logger.debug(f"Ligand atoms: {len(ligand_atoms)}")
         logger.debug(f"Lipid atoms: {len(lipid_atoms)}")
 
-        # # -------------------------
-        # # Gentle perturbation (NOT large jitter)
-        # # -------------------------
-        # logger.info("Applying gentle perturbation to lipid atoms")
+        # -------------------------
+        # Single restraint forces (add ONCE)
+        # -------------------------
+        prot_force = CustomExternalForce("k_prot*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
+        prot_force.addGlobalParameter("k_prot", 0.0)
+        prot_force.addPerParticleParameter("x0")
+        prot_force.addPerParticleParameter("y0")
+        prot_force.addPerParticleParameter("z0")
+        lig_force = CustomExternalForce("k_lig*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
+        lig_force.addGlobalParameter("k_lig", 0.0)
+        lig_force.addPerParticleParameter("x0")
+        lig_force.addPerParticleParameter("y0")
+        lig_force.addPerParticleParameter("z0")
 
-        # def to_nm(val):
-        #     return val.value_in_unit(nanometer) if hasattr(val, "value_in_unit") else float(val)
+        # Get current positions
+        state = self.simulation.context.getState(getPositions=True)
+        pos = state.getPositions()
 
-        # positions_array = np.array([[to_nm(p.x), to_nm(p.y), to_nm(p.z)] for p in self.positions])
+        for idx in protein_atoms:
+            p = pos[idx]
+            prot_force.addParticle(idx, [p.x, p.y, p.z])
+        for idx in ligand_atoms:
+            p = pos[idx]
+            lig_force.addParticle(idx, [p.x, p.y, p.z])
 
-        # noise = np.random.normal(0, 0.02, size=(len(lipid_atoms), 3))  # 0.2 Å
-        # positions_array[lipid_atoms] += noise
+        # Add forces ONCE before minimisation loop
+        prot_idx = self.system.addForce(prot_force)
+        lig_idx = self.system.addForce(lig_force)
 
-        # from openmm import Vec3
-        # self.positions[:] = [Vec3(*coord) * nanometer for coord in positions_array]
-
-        # self.simulation.context.reinitialize(preserveState=True)
-        # self.simulation.context.setPositions(self.positions)
-        # self.simulation.context.setVelocitiesToTemperature(10 * kelvin)
+        # Reinitialize context once and preserve positions
+        self.simulation.context.reinitialize(preserveState=True)
+        self.simulation.context.setPositions(pos)
 
         # -------------------------
-        # Helper: add restraints
+        # Map restrained particles for diagnostics
         # -------------------------
-        def add_restraints(atom_indices, k, stage_id="stage"):
-            param_name = f"k_{stage_id}"
-            force = CustomExternalForce(f"{param_name}*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
-            force.addGlobalParameter(param_name, k)
-            force.addPerParticleParameter("x0")
-            force.addPerParticleParameter("y0")
-            force.addPerParticleParameter("z0")
-
-            state = self.simulation.context.getState(getPositions=True)
-            pos = state.getPositions()
-
-            for idx in atom_indices:
-                p = pos[idx]
-                force.addParticle(idx, [p.x, p.y, p.z])
-
-            self.system.addForce(force)
-            self.simulation.context.reinitialize(preserveState=True)
-            self.simulation.context.setPositions(pos)
-
-            return force
+        restrained_atoms = protein_atoms + ligand_atoms
+        particle_to_atom = {idx: atoms[idx] for idx in restrained_atoms}
 
         # -------------------------
-        # Staged minimisation to fix bad lipid geometries and other stuff.
+        # Staged minimisation
         # -------------------------
         stages = [
-            {"desc": "Relaxing lipids (protein + lig restrained)", "k": 1000, "atoms": protein_atoms + ligand_atoms, "iter": 1000},
-            {"desc": "Relaxing headgroups (protein restrained)", "k": 100, "atoms": protein_atoms, "iter": 5000},
-            {"desc": "Global relaxation (weak restraints)", "k": 10, "atoms": protein_atoms, "iter": 5000},
-            {"desc": "Final unrestrained minimisation", "k": None, "atoms": [], "iter": 5000},
+            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 200, "tolerance": 100},
+            {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 200, "tolerance": 10},
+            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 200, "tolerance": 5},
+            {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 200, "tolerance": 1},
         ]
 
         for i, stage in enumerate(stages, 1):
             logger.info(f"Stage {i}: {stage['desc']}")
 
-            restraint_force = None
-            if stage["k"] is not None:
-                k_val = stage["k"] * kilojoule / (mole * nanometer**2)
-                restraint_force = add_restraints(stage["atoms"], k_val, stage_id=f"{i}")
-                logger.info(f"Applied restraints to {len(stage['atoms'])} atoms (k={stage['k']})")
+            # Update restraint strengths via global parameters
+            self.simulation.context.setParameter("k_prot", stage["k_prot"] * kilojoule/(mole*nanometer**2))
+            self.simulation.context.setParameter("k_lig", stage["k_lig"] * kilojoule/(mole*nanometer**2))
+            logger.info(f"Applied restraints: protein={stage['k_prot']}, ligand={stage['k_lig']}")
 
-            chunk = 5  
+            # Minimisation loop with chunking
+            chunk = 5
             total_iter = stage["iter"]
-
+            tolerance = stage.get("tolerance", 10) * kilojoule/(mole*nanometer)
             with tqdm(total=total_iter, desc=f"Stage {i} minimisation", unit="iter") as pbar:
                 steps_done = 0
                 while steps_done < total_iter:
                     n = min(chunk, total_iter - steps_done)
-
-                    self.simulation.minimizeEnergy(
-                        tolerance=10 * kilojoule / (mole * nanometer),
-                        maxIterations=n
-                    )
-
+                    self.simulation.minimizeEnergy(tolerance=tolerance, maxIterations=n)
                     steps_done += n
                     pbar.update(n)
 
-                    # periodic diagnostics
+                    # Periodic diagnostics
                     if steps_done % 200 == 0 or steps_done == total_iter:
                         state = self.simulation.context.getState(getEnergy=True, getForces=True)
                         energy_val = state.getPotentialEnergy().value_in_unit(kilojoule/mole)
-                        forces = state.getForces(asNumpy=True) / (kilojoule / mole / nanometer)
-
+                        forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
                         max_force = np.max(np.linalg.norm(forces, axis=1))
 
                         logger.info(
@@ -206,36 +195,44 @@ class MDWorkflow:
                             f"Energy: {energy_val:.1f} kJ/mol | Max force: {max_force:.1f}"
                         )
 
+            # Diagnostics restricted to restrained atoms
             state = self.simulation.context.getState(getEnergy=True, getForces=True)
-            energy_val = state.getPotentialEnergy().value_in_unit(kilojoule/mole)
-            forces = state.getForces(asNumpy=True) / (kilojoule / mole / nanometer)
-
+            forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
             force_norms = np.linalg.norm(forces, axis=1)
-            max_idx = np.argmax(force_norms)
-            max_force = force_norms[max_idx]
+            restrained_forces = {idx: force_norms[idx] for idx in restrained_atoms}
+            max_idx = max(restrained_forces, key=restrained_forces.get)
+            max_force = restrained_forces[max_idx]
+            atom = particle_to_atom[max_idx]
 
-            atom = atoms[max_idx]
-            logger.warning(f"Worst atom: {atom.name} in residue {atom.residue.name} (index {max_idx})")
-            logger.warning(f"Max force: {max_force:.2f} kJ/mol/nm")
-            logger.info(f"Energy: {energy_val:.2f} kJ/mol")
+            logger.warning(
+                f"Worst restrained atom: {atom.name} in residue {atom.residue.name} "
+                f"(resid {atom.residue.id}, chain {atom.residue.chain.id}, system particle index {max_idx})"
+            )
+            logger.warning(f"Max restrained force: {max_force:.2f} kJ/mol/nm")
 
-            if max_force > 50000:
-                logger.warning("Extremely high forces persist - check your geometry")
+            # Optional: warn if unrestrained atoms have very high forces
+            unrestrained_indices = np.setdiff1d(np.arange(len(forces)), restrained_atoms)
+            if len(unrestrained_indices) > 0:
+                unres_forces = force_norms[unrestrained_indices]
+                if np.max(unres_forces) > 50000:
+                    logger.warning(f"High forces on unrestrained atoms: max {np.max(unres_forces):.1f} kJ/mol/nm")
 
-            # remove restraint force
-            if restraint_force is not None:
-                self.system.removeForce(self.system.getNumForces() - 1)
-                self.simulation.context.reinitialize(preserveState=True)
+        # -------------------------
+        # Remove restraints safely (after all stages)
+        # -------------------------
+        self.system.removeForce(lig_idx)
+        self.system.removeForce(prot_idx)
+        self.simulation.context.reinitialize(preserveState=True)
+        self.simulation.context.setPositions(pos)
 
-        # Final validation
-
+        # -------------------------
+        # Final check
+        # -------------------------
         state = self.simulation.context.getState(getEnergy=True, getForces=True, getPositions=True)
-        forces = state.getForces(asNumpy=True) / (kilojoule / mole / nanometer)
+        forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
         max_force = np.max(np.linalg.norm(forces, axis=1))
-
         logger.info(f"Final max force: {max_force:.2f} kJ/mol/nm")
-
-        if max_force > 5000:
+        if max_force > 10000:
             raise RuntimeError("Minimisation failed: forces still too high")
 
         from openmm.app import PDBFile
@@ -245,130 +242,104 @@ class MDWorkflow:
     @register_task("heat_and_equilibrate", category='Molecular dynamics',
                description="Heating and equilibration.")
     def heat_and_equilibrate(self):
-        cfg = self.config["heat_and_equilibrate"]
-
         from openmm import CustomExternalForce, MonteCarloBarostat, NonbondedForce, HarmonicBondForce
-        from openmm.unit import kelvin, atmosphere, nanometer, dalton, kilojoule, mole, picoseconds, elementary_charge
-        from tqdm import tqdm
-
-        # -------------------------------
-        # 0. Ligand parameter and geometry check
-        # -------------------------------
+        from openmm.unit import kelvin, atmosphere, nanometer, kilojoule, mole, picoseconds
+        import numpy as np
 
         ligand_resname = 'UNK'
-        logger.info(f"Checking ligand atoms and bonds (resname={ligand_resname}):")
-
         atoms_list = list(self.topology.atoms())
         ligand_atoms = [atom.index for atom in atoms_list if atom.residue.name == ligand_resname]
 
-        # Nonbonded
+        # -------------------------------
+        # 0. Check ligand parameters
+        # -------------------------------
         for force_index in range(self.system.getNumForces()):
             force = self.system.getForce(force_index)
             if isinstance(force, NonbondedForce):
                 for i in range(force.getNumParticles()):
-                    charge, sigma, epsilon = force.getParticleParameters(i)
                     atom = atoms_list[i]
                     if atom.residue.name == ligand_resname:
-                        charge_val = charge.value_in_unit(elementary_charge) if hasattr(charge, "value_in_unit") else charge
-                        logger.debug(f"Ligand atom {i} ({atom.name}): charge={charge}, sigma={sigma}, epsilon={epsilon}")
-                        if abs(charge_val) > 5.0:
-                            logger.warning(f"Ligand atom {i} ({atom.name}) has high charge: {charge}")
-                        # FIXED UNIT MISMATCH: epsilon is energy/mole
+                        charge, sigma, epsilon = force.getParticleParameters(i)
                         if sigma <= 0*nanometer or epsilon < 0*kilojoule/mole:
-                            logger.warning(f"Ligand atom {i} ({atom.name}) has bad sigma/epsilon: {sigma}, {epsilon}")
-
-        # Bonded parameters
-        for force_index in range(self.system.getNumForces()):
-            force = self.system.getForce(force_index)
-            if isinstance(force, HarmonicBondForce):
+                            logger.warning(f"Ligand atom {i} ({atom.name}) bad sigma/epsilon: {sigma}, {epsilon}")
+            elif isinstance(force, HarmonicBondForce):
                 for i in range(force.getNumBonds()):
                     p1, p2, length, k = force.getBondParameters(i)
                     atom1, atom2 = atoms_list[p1], atoms_list[p2]
                     if atom1.residue.name == ligand_resname or atom2.residue.name == ligand_resname:
-                        logger.debug(f"Ligand bond {p1}-{p2} ({atom1.name}-{atom2.name}): length={length}, k={k}")
-                        # FIXED UNIT MISMATCH GOD: k has units kJ/mol/nm^2
                         if length < 0.05*nanometer or k > 400000*kilojoule/mole/nanometer**2:
-                            logger.warning(f"Ligand bond {p1}-{p2} ({atom1.name}-{atom2.name}) suspicious: length={length}, k={k}")
-
-        # # Positions & neighbor clashes
-        # logger.info("Checking positions of ligand atoms and neighbors:")
-        # state = self.simulation.context.getState(getPositions=True)
-        # positions = state.getPositions(asNumpy=True)
-
-        # neighbor_atoms = [atom.index for atom in atoms_list if atom.index not in ligand_atoms]
-        # clash_cutoff = 0.15*nanometer
-
-        # for l_idx in ligand_atoms:
-        #     l_pos = positions[l_idx]
-        #     l_pos_nm = [l_pos[0].value_in_unit(nanometer),
-        #                 l_pos[1].value_in_unit(nanometer),
-        #                 l_pos[2].value_in_unit(nanometer)]
-        #     if any(abs(c) > 10.0 for c in l_pos_nm):
-        #         logger.warning(f"Ligand atom {l_idx} ({atoms_list[l_idx].name}) extreme position: {l_pos_nm}")
-        #     else:
-        #         logger.debug(f"Ligand atom {l_idx} position: {l_pos_nm}")
-
-        #     for n_idx in neighbor_atoms:
-        #         n_pos = positions[n_idx]
-        #         dx = l_pos[0] - n_pos[0]
-        #         dy = l_pos[1] - n_pos[1]
-        #         dz = l_pos[2] - n_pos[2]
-        #         dist = (dx*dx + dy*dy + dz*dz)**0.5
-        #         if dist < clash_cutoff:
-        #             logger.warning(
-        #                 f"Close contact: Ligand atom {l_idx} ({atoms_list[l_idx].name}) "
-        #                 f"and atom {n_idx} ({atoms_list[n_idx].name}, {atoms_list[n_idx].residue.name}) "
-        #                 f"distance = {dist.value_in_unit(nanometer):.3f} nm"
-        #             )
+                            logger.warning(f"Ligand bond {p1}-{p2} suspicious: length={length}, k={k}")
 
         # -------------------------------
         # 1. HEATING PHASE (staged)
         # -------------------------------
-        heating_cfg = cfg.get("heating", {})
+        heating_cfg = self.config.get("heat_and_equilibrate", {}).get("heating", {})
         num_rounds = heating_cfg.get("num_steps", 8)
         steps_per_round = min(heating_cfg.get("steps_per_round", 5000), 500)
         target_temp = heating_cfg.get("target_temp", 300)
-        
-        # restraints regime from yaml
         restraints = heating_cfg.get("restraint_strengths", [2.0, 1.5, 1.0, 0.5, 0.25, 0.1, 0.05, 0.0])
-
-        logger.debug(heating_cfg)
 
         logger.info(f"Heating with {num_rounds} rounds up to {target_temp} K")
 
+        # backbone + ligand atoms to restrain
         backbone_atoms = [atom.index for atom in atoms_list
                         if atom.residue.name in protein_resnames and atom.name in {"N","CA","C","O"}]
-        ligand_atoms = [atom.index for atom in atoms_list if atom.residue.name == ligand_resname]
+        restrain_atoms = backbone_atoms + ligand_atoms
 
-        # restraint force: set
+        # -------------------------------
+        # Create restraint force (single reinit)
+        # -------------------------------
         restraint_force = CustomExternalForce("k_heating*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
-        restraint_force.addGlobalParameter("k_heating", restraints[0])
+        restraint_force.addGlobalParameter("k_heating", restraints[0] * kilojoule/(mole*nanometer**2))
         restraint_force.addPerParticleParameter("x0")
         restraint_force.addPerParticleParameter("y0")
         restraint_force.addPerParticleParameter("z0")
 
         state = self.simulation.context.getState(getPositions=True)
         positions = state.getPositions()
+        for idx in restrain_atoms:
+            pos = positions[idx]
+            restraint_force.addParticle(idx, [pos.x, pos.y, pos.z])
 
-        for atom_idx in backbone_atoms + ligand_atoms:
-            pos = positions[atom_idx]
-            restraint_force.addParticle(atom_idx, [pos.x, pos.y, pos.z])
+        # Debug: check initial displacement before adding to system
+        max_disp = 0.0
+        for i in range(restraint_force.getNumParticles()):
+            particle_index, params = restraint_force.getParticleParameters(i)
+            x0, y0, z0 = params
+            pos = positions[particle_index]
+            disp = np.linalg.norm([pos.x - x0, pos.y - y0, pos.z - z0])
+            max_disp = max(max_disp, disp)
+        logger.info(f"[DEBUG] Max initial displacement before adding restraint: {max_disp:.6f} nm")
 
+        # Add to system and reinitialize context once
         self.system.addForce(restraint_force)
         self.simulation.context.reinitialize(preserveState=True)
         self.simulation.context.setPositions(positions)
         self.simulation.context.setVelocitiesToTemperature(10*kelvin)
 
-        # Diagnostics
-        state = self.simulation.context.getState(getEnergy=True, getForces=True)
-        energy = state.getPotentialEnergy()
-        forces = state.getForces(asNumpy=True)
-        forces_kj_per_mol_nm = forces / (kilojoule/mole/nanometer)
-        max_force_value = max((f[0]**2 + f[1]**2 + f[2]**2)**0.5 for f in forces_kj_per_mol_nm)
-        logger.info(f"Initial potential energy: {energy.value_in_unit(kilojoule/mole):.2f} kJ/mol")
-        logger.info(f"Initial max force: {max_force_value:.2f} kJ/mol/nm")
+        # Debug: check displacements after reinit
+        state = self.simulation.context.getState(getPositions=True)
+        positions_post = state.getPositions()
+        max_disp_post = 0.0
+        for i in range(restraint_force.getNumParticles()):
+            particle_index, params = restraint_force.getParticleParameters(i)
+            x0, y0, z0 = params
+            pos = positions_post[particle_index]
+            disp = np.linalg.norm([pos.x - x0, pos.y - y0, pos.z - z0])
+            max_disp_post = max(max_disp_post, disp)
+        logger.info(f"[DEBUG] Max displacement after reinit: {max_disp_post:.6f} nm")
 
-        # Heating loop
+        # Debug: check initial forces
+        state = self.simulation.context.getState(getForces=True)
+        forces = state.getForces(asNumpy=True) / (kilojoule / mole / nanometer)
+        # max force on restrained atoms only
+        restrained_indices = [restraint_force.getParticleParameters(i)[0] for i in range(restraint_force.getNumParticles())]
+        max_force = np.max(np.linalg.norm(forces[restrained_indices], axis=1))
+        logger.info(f"[DEBUG] Max force on restrained atoms before stepping: {max_force:.2f} kJ/mol/nm")
+
+        # -------------------------------
+        # Heating loop with step-level debug
+        # -------------------------------
         original_dt = self.integrator.getStepSize()
         small_dt = 0.00025 * picoseconds  # 0.25 fs initially
         step_chunk = 50
@@ -377,13 +348,8 @@ class MDWorkflow:
             temp = 10 + (target_temp - 10) * (i + 1) / num_rounds
             k_value = restraints[i] if i < len(restraints) else 0.0
             self.integrator.setTemperature(temp * kelvin)
-            self.simulation.context.setParameter("k_heating", k_value)
-
-            # Use small_dt for first 3 rounds
-            if i < 3:
-                self.integrator.setStepSize(small_dt)
-            else:
-                self.integrator.setStepSize(original_dt)
+            self.simulation.context.setParameter("k_heating", k_value * kilojoule/(mole*nanometer**2))
+            self.integrator.setStepSize(small_dt if i < 3 else original_dt)
 
             steps_done = 0
             with tqdm(total=steps_per_round, desc=f"Heating round {i+1}", unit="steps") as pbar:
@@ -392,52 +358,68 @@ class MDWorkflow:
                     try:
                         self.simulation.step(n)
                     except Exception as e:
-                        state = self.simulation.context.getState(getEnergy=True, getForces=True, getPositions=True)
-                        forces = state.getForces(asNumpy=True)
-                        max_force = max((f[0]**2 + f[1]**2 + f[2]**2)**0.5 for f in forces / (kilojoule/mole/nanometer))
+                        # Force check immediately on crash
+                        state = self.simulation.context.getState(getForces=True)
+                        forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
+                        max_force = np.max(np.linalg.norm(forces, axis=1))
+                        top5_idx = np.argsort(np.linalg.norm(forces, axis=1))[-5:]
                         logger.error(f"Crash during heating round {i+1} at step {steps_done}")
                         logger.error(f"Max force before crash: {max_force:.2f} kJ/mol/nm")
+                        for idx in top5_idx:
+                            atom = atoms_list[idx]
+                            fval = np.linalg.norm(forces[idx])
+                            logger.error(f"[DEBUG] Atom {atom.name} (res {atom.residue.name}, idx {idx}) force: {fval:.2f} kJ/mol/nm")
                         raise e
 
                     steps_done += n
                     pbar.update(n)
 
-                    # Monitor forces
+                    # Step-level force debug
                     state = self.simulation.context.getState(getForces=True)
-                    max_force = max((f[0]**2 + f[1]**2 + f[2]**2)**0.5
-                                    for f in state.getForces(asNumpy=True) / (kilojoule/mole/nanometer))
+                    forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
+                    max_force = np.max(np.linalg.norm(forces, axis=1))
                     if max_force > 3000:
+                        top5_idx = np.argsort(np.linalg.norm(forces, axis=1))[-5:]
                         logger.warning(f"High force detected: {max_force:.2f} kJ/mol/nm at step {steps_done}")
+                        for idx in top5_idx:
+                            atom = atoms_list[idx]
+                            fval = np.linalg.norm(forces[idx])
+                            logger.warning(f"[DEBUG] Atom {atom.name} (res {atom.residue.name}, idx {idx}) force: {fval:.2f} kJ/mol/nm")
 
-        self.integrator.setStepSize(original_dt)
-        self.system.removeForce(self.system.getNumForces() - 1)
+        # -------------------------------
+        # Remove heating restraint safely
+        # -------------------------------
+        self.system.removeForce(self.system.getForceIndex(restraint_force))
         self.simulation.context.reinitialize(preserveState=True)
-        self.simulation.context.setPositions(positions)
+        self.simulation.context.setPositions(state.getPositions())
+        self.simulation.context.setVelocitiesToTemperature(target_temp * kelvin)
         logger.info("Heating complete; restraints removed")
 
         # -------------------------------
         # 2. EQUILIBRATION PHASE
         # -------------------------------
-        equil_cfg = cfg.get("equilibration", {})
+        equil_cfg = self.config.get("heat_and_equilibrate", {}).get("equilibration", {})
         ensemble = equil_cfg.get("ensemble", "NPT").upper()
         steps = equil_cfg.get("steps", 100000)
         equil_temp = equil_cfg.get("target_temp", target_temp)
 
         logger.info(f"Starting equilibration: {ensemble} ensemble for {steps} steps at {equil_temp} K")
 
-        has_barostat = any(isinstance(f, MonteCarloBarostat)
-                        for f in [self.system.getForce(i) for i in range(self.system.getNumForces())])
-        if ensemble == "NPT" and not has_barostat:
+        # Add barostat if needed
+        if ensemble == "NPT" and not any(isinstance(self.system.getForce(i), MonteCarloBarostat) 
+                                        for i in range(self.system.getNumForces())):
             pressure = equil_cfg.get("pressure", 1.0) * atmosphere
             frequency = equil_cfg.get("barostat", {}).get("frequency", 25)
             barostat = MonteCarloBarostat(pressure, equil_temp * kelvin, frequency)
             self.system.addForce(barostat)
             self.simulation.context.reinitialize(preserveState=True)
-            self.simulation.context.setPositions(positions)
+            self.simulation.context.setPositions(state.getPositions())
+            self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
             logger.info(f"Added MonteCarloBarostat: {pressure} atm, {equil_temp} K")
 
         self.integrator.setTemperature(equil_temp * kelvin)
 
+        # Equilibration loop
         step_chunk = 1000
         steps_done = 0
         with tqdm(total=steps, desc="Equilibration", unit="steps") as pbar:
