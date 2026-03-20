@@ -47,7 +47,7 @@ class MDWorkflow:
         self.positions = pdb.positions
         self.system = system
 
-        logger.info("Loaded prepared system from disk")
+        logger.info(f"Loaded prepared {system_path} from disk")
 
     @register_task("prepare_system", category='Molecular dynamics',
                    description="Load inputs, cap chains, parameterise ligand and protein, solvate and save final topology.")
@@ -114,31 +114,30 @@ class MDWorkflow:
         logger.debug(f"Ligand atoms: {len(ligand_atoms)}")
         logger.debug(f"Lipid atoms: {len(lipid_atoms)}")
 
-        # -------------------------
-        # Gentle perturbation (NOT large jitter)
-        # -------------------------
-        logger.info("Applying gentle perturbation to lipid atoms")
+        # # -------------------------
+        # # Gentle perturbation (NOT large jitter)
+        # # -------------------------
+        # logger.info("Applying gentle perturbation to lipid atoms")
 
-        def to_nm(val):
-            return val.value_in_unit(nanometer) if hasattr(val, "value_in_unit") else float(val)
+        # def to_nm(val):
+        #     return val.value_in_unit(nanometer) if hasattr(val, "value_in_unit") else float(val)
 
-        positions_array = np.array([[to_nm(p.x), to_nm(p.y), to_nm(p.z)] for p in self.positions])
+        # positions_array = np.array([[to_nm(p.x), to_nm(p.y), to_nm(p.z)] for p in self.positions])
 
-        noise = np.random.normal(0, 0.02, size=(len(lipid_atoms), 3))  # 0.2 Å
-        positions_array[lipid_atoms] += noise
+        # noise = np.random.normal(0, 0.02, size=(len(lipid_atoms), 3))  # 0.2 Å
+        # positions_array[lipid_atoms] += noise
 
-        from openmm import Vec3
-        self.positions[:] = [Vec3(*coord) * nanometer for coord in positions_array]
+        # from openmm import Vec3
+        # self.positions[:] = [Vec3(*coord) * nanometer for coord in positions_array]
 
-        self.simulation.context.reinitialize(preserveState=True)
-        self.simulation.context.setPositions(self.positions)
-        self.simulation.context.setVelocitiesToTemperature(10 * kelvin)
+        # self.simulation.context.reinitialize(preserveState=True)
+        # self.simulation.context.setPositions(self.positions)
+        # self.simulation.context.setVelocitiesToTemperature(10 * kelvin)
 
         # -------------------------
         # Helper: add restraints
         # -------------------------
         def add_restraints(atom_indices, k, stage_id="stage"):
-            # unique parameter name per stage
             param_name = f"k_{stage_id}"
             force = CustomExternalForce(f"{param_name}*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
             force.addGlobalParameter(param_name, k)
@@ -163,10 +162,10 @@ class MDWorkflow:
         # Staged minimisation to fix bad lipid geometries and other stuff.
         # -------------------------
         stages = [
-            {"desc": "Relaxing lipids (protein restrained)", "k": 1000, "atoms": protein_atoms + ligand_atoms, "iter": 500},
-            {"desc": "Relaxing headgroups and solvent", "k": 100, "atoms": protein_atoms, "iter": 5000},
-            {"desc": "Global relaxation (weak protein restraints)", "k": 10, "atoms": protein_atoms, "iter": 1000},
-            {"desc": "Final unrestrained minimisation", "k": None, "atoms": [], "iter": 1000},
+            {"desc": "Relaxing lipids (protein + lig restrained)", "k": 1000, "atoms": protein_atoms + ligand_atoms, "iter": 1000},
+            {"desc": "Relaxing headgroups (protein restrained)", "k": 100, "atoms": protein_atoms, "iter": 5000},
+            {"desc": "Global relaxation (weak restraints)", "k": 10, "atoms": protein_atoms, "iter": 5000},
+            {"desc": "Final unrestrained minimisation", "k": None, "atoms": [], "iter": 5000},
         ]
 
         for i, stage in enumerate(stages, 1):
@@ -187,7 +186,7 @@ class MDWorkflow:
                     n = min(chunk, total_iter - steps_done)
 
                     self.simulation.minimizeEnergy(
-                        tolerance=1 * kilojoule / (mole * nanometer),
+                        tolerance=10 * kilojoule / (mole * nanometer),
                         maxIterations=n
                     )
 
@@ -228,9 +227,8 @@ class MDWorkflow:
                 self.system.removeForce(self.system.getNumForces() - 1)
                 self.simulation.context.reinitialize(preserveState=True)
 
-        # -------------------------
         # Final validation
-        # -------------------------
+
         state = self.simulation.context.getState(getEnergy=True, getForces=True, getPositions=True)
         forces = state.getForces(asNumpy=True) / (kilojoule / mole / nanometer)
         max_force = np.max(np.linalg.norm(forces, axis=1))
@@ -263,7 +261,7 @@ class MDWorkflow:
         atoms_list = list(self.topology.atoms())
         ligand_atoms = [atom.index for atom in atoms_list if atom.residue.name == ligand_resname]
 
-        # --- Nonbonded parameters ---
+        # Nonbonded
         for force_index in range(self.system.getNumForces()):
             force = self.system.getForce(force_index)
             if isinstance(force, NonbondedForce):
@@ -279,7 +277,7 @@ class MDWorkflow:
                         if sigma <= 0*nanometer or epsilon < 0*kilojoule/mole:
                             logger.warning(f"Ligand atom {i} ({atom.name}) has bad sigma/epsilon: {sigma}, {epsilon}")
 
-        # --- Bond parameters ---
+        # Bonded parameters
         for force_index in range(self.system.getNumForces()):
             force = self.system.getForce(force_index)
             if isinstance(force, HarmonicBondForce):
@@ -292,7 +290,7 @@ class MDWorkflow:
                         if length < 0.05*nanometer or k > 400000*kilojoule/mole/nanometer**2:
                             logger.warning(f"Ligand bond {p1}-{p2} ({atom1.name}-{atom2.name}) suspicious: length={length}, k={k}")
 
-        # # --- Positions & neighbor clashes ---
+        # # Positions & neighbor clashes
         # logger.info("Checking positions of ligand atoms and neighbors:")
         # state = self.simulation.context.getState(getPositions=True)
         # positions = state.getPositions(asNumpy=True)
@@ -327,10 +325,11 @@ class MDWorkflow:
         # 1. HEATING PHASE (staged)
         # -------------------------------
         heating_cfg = cfg.get("heating", {})
-        num_rounds = heating_cfg.get("num_steps", 8)  # increased for gentler ramp
+        num_rounds = heating_cfg.get("num_steps", 8)
         steps_per_round = min(heating_cfg.get("steps_per_round", 5000), 500)
         target_temp = heating_cfg.get("target_temp", 300)
-        # stronger initial restraints and more gradual decay
+        
+        # restraints regime from yaml
         restraints = heating_cfg.get("restraint_strengths", [2.0, 1.5, 1.0, 0.5, 0.25, 0.1, 0.05, 0.0])
 
         logger.debug(heating_cfg)
@@ -341,7 +340,7 @@ class MDWorkflow:
                         if atom.residue.name in protein_resnames and atom.name in {"N","CA","C","O"}]
         ligand_atoms = [atom.index for atom in atoms_list if atom.residue.name == ligand_resname]
 
-        # restraint force
+        # restraint force: set
         restraint_force = CustomExternalForce("k_heating*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
         restraint_force.addGlobalParameter("k_heating", restraints[0])
         restraint_force.addPerParticleParameter("x0")
@@ -360,7 +359,7 @@ class MDWorkflow:
         self.simulation.context.setPositions(positions)
         self.simulation.context.setVelocitiesToTemperature(10*kelvin)
 
-        # Diagnostics BEFORE heating
+        # Diagnostics
         state = self.simulation.context.getState(getEnergy=True, getForces=True)
         energy = state.getPotentialEnergy()
         forces = state.getForces(asNumpy=True)
@@ -490,7 +489,7 @@ class MDWorkflow:
         # Get backbone atom indices
         backbone_atoms = [atom.index for atom in self.topology.atoms() if atom.name in {"N", "CA", "C", "O"}]
 
-        # Compute Center of Mass
+        # Compute com
         com = np.mean(coords[backbone_atoms], axis=0)
 
         # Compute solvent box lengths
@@ -500,7 +499,7 @@ class MDWorkflow:
             box_vectors[2][2].value_in_unit(nanometer) if hasattr(box_vectors[2][2], "value_in_unit") else float(box_vectors[2][2])
         ], dtype=float)
 
-        # Compute shift vs COM
+        # shift vs com
         shift = box_lengths / 2 - com
 
         # Apply shift to positions
@@ -508,7 +507,7 @@ class MDWorkflow:
             x, y, z = coords[i] + shift
             positions[i] = Vec3(x, y, z) * nanometer
 
-        # Update simulation context
+        # Update context
         self.simulation.context.setPositions(positions)
         self.simulation.context.setVelocities(velocities)
         self.simulation.context.setPeriodicBoxVectors(*box_vectors)
@@ -536,7 +535,7 @@ class MDWorkflow:
         total_steps = int(ns * steps_per_ns)
 
         # Output control
-        split_ns = cfg.get("output_split_ns", ns)          # new trajectory every N ns
+        split_ns = cfg.get("output_split_ns", ns) 
         split_steps = int(split_ns * steps_per_ns)
         n_segments = int(np.ceil(ns / split_ns))
 
@@ -561,7 +560,7 @@ class MDWorkflow:
             log_file = os.path.join(output_dir, f"log_{seg:03d}.txt")
             chk_file = os.path.join(output_dir, f"restart_{seg:03d}.chk")
 
-            # Attach new reporters for this segment
+            # Attach reporters
             self.simulation.reporters.clear()
             self.simulation.reporters.append(DCDReporter(traj_file, output_freq))
             self.simulation.reporters.append(StateDataReporter(
