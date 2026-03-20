@@ -1,12 +1,16 @@
 # from backends.utils.add_terminal_caps import CapTermini
 # from backends.utils.load_ligand import load_ligand_from_sdf
 
+import builtins
+
 import os
 import sys
 import subprocess
 import threading
 import time
 import itertools
+
+import numpy as np
 
 from openff.toolkit.topology import Molecule
 from openff.toolkit.typing.engines.smirnoff import ForceField as OFFForceField
@@ -31,7 +35,27 @@ from backends.utils.orient_gpcr import orient_gpcr_with_ligand
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+
+def compute_rigid_transform(A, B):
+    centroid_A = A.mean(axis=0)
+    centroid_B = B.mean(axis=0)
+
+    AA = A - centroid_A
+    BB = B - centroid_B
+
+    H = AA.T @ BB
+    U, S, Vt = np.linalg.svd(H)
+
+    R = Vt.T @ U.T
+
+    if np.linalg.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt.T @ U.T
+
+    t = centroid_B - R @ centroid_A
+
+    return R, t
 
 class Spinner:
     def __init__(self, message="Working"):
@@ -69,6 +93,215 @@ class OpenMMBackend:
 
     def load_pdb(self, pdb_file):
         return PDBFile(pdb_file)
+
+    def cap_internal_chain_breaks(self, modeller, dist_threshold=0.16*unit.nanometer):
+        """
+        Split chains at internal breaks, add OXT to upstream C-terminal,
+        and rebuild downstream residues with N-terminal Hs.
+        Heavy sidechains cannot be rebuilt automatically in OpenMM; use PDBFixer if needed.
+        """
+        from openmm.app import Topology, Element, Modeller
+        from openmm import Vec3, unit
+        import numpy as np
+        import string
+
+        logger.info("Checking for internal protein chain breaks and fixing termini...")
+
+        old_top = modeller.topology
+        old_pos = modeller.positions
+        pos_np = [p.value_in_unit(unit.nanometer) for p in old_pos]
+
+        breakpoints = []
+
+        # Detect internal chain breaks
+        for chain in old_top.chains():
+            residues = list(chain.residues())
+            for i in range(len(residues) - 1):
+                res_curr = residues[i]
+                res_next = residues[i + 1]
+                c_atom = next((a for a in res_curr.atoms() if a.name == "C"), None)
+                n_atom = next((a for a in res_next.atoms() if a.name == "N"), None)
+                if c_atom is None or n_atom is None:
+                    continue
+                dist = np.linalg.norm(pos_np[c_atom.index] - pos_np[n_atom.index])
+                if dist > dist_threshold.value_in_unit(unit.nanometer):
+                    logger.info(f"Internal chain break detected: {res_curr} -> {res_next} (C–N distance = {dist:.3f} nm)")
+                    breakpoints.append((res_curr, res_next))
+
+        if not breakpoints:
+            logger.info("No internal chain breaks found.")
+            return modeller
+
+        used_chain_ids = set(c.id for c in old_top.chains())
+        available_chain_ids = [ch for ch in string.ascii_uppercase if ch not in used_chain_ids]
+
+        new_top = Topology()
+        new_pos = []
+        atom_map = {}
+
+        for chain in old_top.chains():
+            residues = list(chain.residues())
+            current_chain = new_top.addChain(chain.id)
+
+            for res in residues:
+                # Start a new chain if downstream of a break
+                for upstream, downstream in breakpoints:
+                    if res == downstream:
+                        if available_chain_ids:
+                            new_chain_id = available_chain_ids.pop(0)
+                        else:
+                            new_chain_id = str(len(new_top.chains()))
+                        current_chain = new_top.addChain(new_chain_id)
+
+                # Copy residue and atoms
+                new_res = new_top.addResidue(res.name, current_chain, res.id)
+                for atom in res.atoms():
+                    new_atom = new_top.addAtom(atom.name, atom.element, new_res)
+                    atom_map[atom] = new_atom
+                    pos = old_pos[atom.index].value_in_unit(unit.nanometer)
+                    new_pos.append(Vec3(*pos))
+
+                # Add OXT to upstream residues
+                # for upstream, downstream in breakpoints:
+                #     if res == upstream:
+                #         c_atom = next((a for a in res.atoms() if a.name == "C"), None)
+                #         o_atom = next((a for a in res.atoms() if a.name == "O"), None)
+                #         if c_atom and o_atom:
+                #             c_pos = old_pos[c_atom.index].value_in_unit(unit.nanometer)
+                #             o_pos = old_pos[o_atom.index].value_in_unit(unit.nanometer)
+                #             vec = np.array(c_pos) - np.array(o_pos)
+                #             oxt_pos = np.array(c_pos) + vec
+                #             oxt_atom = new_top.addAtom("OXT", Element.getBySymbol("O"), new_res)
+                #             new_pos.append(Vec3(*oxt_pos))
+                for upstream, downstream in breakpoints:
+                    if res == upstream:
+                        c_atom = next((a for a in res.atoms() if a.name == "C"), None)
+                        o_atom = next((a for a in res.atoms() if a.name == "O"), None)
+                        ca_atom = next((a for a in res.atoms() if a.name == "CA"), None)
+
+                        if c_atom and o_atom and ca_atom:
+                            c_pos = old_pos[c_atom.index].value_in_unit(unit.nanometer)
+                            o_pos = old_pos[o_atom.index].value_in_unit(unit.nanometer)
+                            ca_pos = old_pos[ca_atom.index].value_in_unit(unit.nanometer)
+
+                            c = np.array(c_pos)
+                            o = np.array(o_pos)
+                            ca = np.array(ca_pos)
+
+                            # Vector from C to O
+                            v1 = o - c
+                            v1 /= np.linalg.norm(v1)
+
+                            # Vector from C to CA (defines plane)
+                            v2 = ca - c
+                            v2 /= np.linalg.norm(v2)
+
+                            # Normal to plane
+                            normal = np.cross(v1, v2)
+                            normal /= np.linalg.norm(normal)
+
+                            # Rotate v1 by ~120° in plane to get OXT direction
+                            angle = 120.0 * np.pi / 180.0
+                            v_rot = (
+                                v1 * np.cos(angle)
+                                + np.cross(normal, v1) * np.sin(angle)
+                                + normal * np.dot(normal, v1) * (1 - np.cos(angle))
+                            )
+
+                            # Bond length ~1.25 Å = 0.125 nm
+                            bond_length = 0.125
+                            oxt_pos = c + v_rot * bond_length
+
+                            oxt_atom = new_top.addAtom("OXT", Element.getBySymbol("O"), new_res)
+                            new_pos.append(Vec3(*oxt_pos))
+
+                            logger.debug(
+                                f"Placed OXT for {res.name} {res.id} with trigonal geometry"
+                            )
+
+        # Copy bonds within each fragment
+        for bond in old_top.bonds():
+            a1, a2 = bond
+            if a1 in atom_map and a2 in atom_map:
+                new_top.addBond(atom_map[a1], atom_map[a2])
+
+        # Build new modeller and add hydrogens
+        new_modeller = Modeller(new_top, unit.Quantity(new_pos, unit.nanometer))
+        new_modeller.addHydrogens()
+
+        logger.info("Chains fixed: OXT added to upstream residues; hydrogens added downstream.")
+        return new_modeller
+
+    def _pre_minimise_termini(self, steps=200):
+        """
+        Pre-minimise terminal caps:
+        - OXT atoms are free to relax
+        - All other atoms are strongly restrained
+        - Progress is logged
+        """
+        from openmm import CustomExternalForce, VerletIntegrator, Context, LocalEnergyMinimizer
+
+        logger.info("Starting minimisation of termini")
+
+        system = self.system
+        topology = self.topology
+        positions = self.positions
+
+        # Identify terminal atoms (OXT)
+        termini_indices = [atom.index for atom in topology.atoms() if atom.name == "OXT"]
+        logger.info(f"Found {len(termini_indices)} terminal atoms (OXT)")
+
+        # --- Step 1: Restrain non-terminal atoms strongly ---
+        restraint = CustomExternalForce("0.5 * k * ((x-x0)^2 + (y-y0)^2 + (z-z0)^2)")
+        restraint.addPerParticleParameter("x0")
+        restraint.addPerParticleParameter("y0")
+        restraint.addPerParticleParameter("z0")
+        restraint.addGlobalParameter("k", 5000.0)  # strong restraint
+
+        for atom in topology.atoms():
+            pos = positions[atom.index]
+            restraint.addParticle(atom.index, pos.value_in_unit(unit.nanometer))
+
+        system.addForce(restraint)
+        logger.debug("Applied strong restraints to all atoms")
+
+        # --- Step 2: Free termini (OXT) by adding a dummy zero-force restraint ---
+        if termini_indices:
+            free_force = CustomExternalForce("0.0")  # zero energy, free to move
+            for idx in termini_indices:
+                free_force.addParticle(idx, [])
+            system.addForce(free_force)
+            logger.debug("OXT atoms set free for relaxation")
+
+        # --- Step 3: Setup integrator and context ---
+        integrator = VerletIntegrator(0.001)
+        context = Context(system, integrator, self.platform)
+        context.setPositions(positions)
+        logger.debug("Context created, starting minimisation...")
+
+        # --- Step 4: Stepwise minimisation with logging ---
+        remaining_steps = steps
+        step_chunk = log_interval
+        iteration = 0
+
+        while remaining_steps > 0:
+            this_chunk = min(step_chunk, remaining_steps)
+            LocalEnergyMinimizer.minimize(context, maxIterations=this_chunk)
+            iteration += this_chunk
+            state = context.getState(getEnergy=True)
+            energy = state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+            logger.info(f"Step {iteration}/{steps}: potential energy = {energy:.1f} kJ/mol")
+            remaining_steps -= this_chunk
+
+        # --- Step 5: Update positions ---
+        state = context.getState(getPositions=True, getEnergy=True)
+        self.positions = state.getPositions()
+        energy = state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+        logger.debug(f"Minimisation energy: {energy:.1f} kJ/mol")
+
+        # --- Step 6: Cleanup ---
+        del context, integrator
+        logger.info("Minimisation of termini complete")
 
     def create_system(self, modeller, forcefield_files):
         ff = ForceField(*forcefield_files)
@@ -169,8 +402,11 @@ class OpenMMBackend:
     def prepare_system(self, cfg):
 
         pdb_file = cfg["pdb_file"]
-        # forcefield_files = cfg.get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
-        # ligand_params = cfg.get("ligand_parameters", None)
+        ligand_cfg = cfg.get("ligand", {})
+        ligand_resname = ligand_cfg.get("resname")
+        ligand_chain = ligand_cfg.get("chain")
+        ligand_file = cfg.get("ligand_file")
+        protein_chains = set(ligand_cfg.get("protein_chains", ["A"]))
         ionic_strength = cfg.get("ionic_strength", 0.0)
         box_padding = cfg.get("box_padding", 1.0)
         ph = cfg.get("pH", 7.4)
@@ -178,273 +414,378 @@ class OpenMMBackend:
         spinner = Spinner("Preparing system")
         spinner.start()
 
-        # Step 1: Mutate unnatural residues
-        # TODO: make this work with others.
-        mutated_pdb = pdb_file.replace(".pdb", "_mutated.pdb")
-        self.mutate_residue_in_pdb(pdb_file, mutated_pdb, 'SEP', 'SER')
+        # --- Step 0: Subset PDB to protein + ligand chain ---
+        full_pdb = PDBFile(pdb_file)
+        modeller_subset = Modeller(full_pdb.topology, full_pdb.positions)
 
-        # Step 2: Fix with PDBFixer
+        residues_to_keep = [
+            r for r in modeller_subset.topology.residues()
+            if r.chain.id in protein_chains or (r.name.upper() == ligand_resname.upper() and r.chain.id == ligand_chain)
+        ]
+        atoms_to_keep = [a for r in residues_to_keep for a in r.atoms()]
+        modeller_subset.delete([a for a in modeller_subset.topology.atoms() if a not in atoms_to_keep])
+
+        subset_pdb_path = pdb_file.replace(".pdb", "_subset.pdb")
+        with open(subset_pdb_path, "w") as f:
+            PDBFile.writeFile(modeller_subset.topology, modeller_subset.positions, f)
+        logger.info(f"Saved subset PDB (protein chain(s) + ligand chain) to {subset_pdb_path}")
+
+        # --- Step 1: Mutate unnatural residues ---
+        mutated_pdb = subset_pdb_path.replace(".pdb", "_mutated.pdb")
+        self.mutate_residue_in_pdb(subset_pdb_path, mutated_pdb, 'SEP', 'SER')
+
+        # --- Step 2: Fix with PDBFixer ---
         fixed_pdb_file = self.fix_pdb(mutated_pdb, pH=ph)
         pdb = PDBFile(fixed_pdb_file)
         modeller = Modeller(pdb.topology, pdb.positions)
 
-        # Step 3: Detect ligand residues automatically
-        protein_chains = {'A'}  # Only chain A for now
-        ligand_residues = [
-            residue.name for residue in modeller.topology.residues()
-            if residue.name not in ('HOH', 'WAT', 'SOL') and residue.chain.id not in protein_chains
-        ]
-        ligand_residues = list(set(ligand_residues))
-        ligand_sdf_path = None
-        ligand_offmol = None
+        # --- NEW: cap all internal chain breaks ---
+        modeller = self.cap_internal_chain_breaks(modeller)
+        modeller.addHydrogens(pH=ph)
 
-        if ligand_residues:
-            ligand_resname = ligand_residues[0]
-            logger.info(f"Detected ligand residue name: {ligand_resname}")
+        # --- Check termini charges ---
+        def check_chain_termini_charges(modeller):
+            canonical_aas = {
+                'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE',
+                'LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL'
+            }
 
-            input_pdb_dir = os.path.dirname(fixed_pdb_file)
-            stripped_pdb_path = os.path.join(input_pdb_dir, "protein_plus_ligand.pdb")
-            ligand_sdf_path = os.path.join(input_pdb_dir, "ligand.sdf")
+            chain_charges = {}
 
-            # Step 4a: Create stripped PDB (protein + ligand only)
-            stripped_modeller = Modeller(pdb.topology, pdb.positions)
-
-            residues_to_keep = set()
-            for residue in stripped_modeller.topology.residues():
-                if residue.chain.id in protein_chains or residue.name == ligand_resname:
-                    residues_to_keep.add(residue)
-
-            atoms_to_keep = [atom for residue in residues_to_keep for atom in residue.atoms()]
-            stripped_modeller.delete([atom for atom in stripped_modeller.topology.atoms() if atom not in atoms_to_keep])
-
-            with open(stripped_pdb_path, "w") as f:
-                PDBFile.writeFile(stripped_modeller.topology, stripped_modeller.positions, f)
-            logger.info(f"Wrote stripped protein + ligand PDB to {stripped_pdb_path}")
-
-            # Step 4b: Use Open Babel to separate and filter small molecules
-            # TODO: this needs to be more robust to different PDB structures
-            cmd = [
-                "obabel", stripped_pdb_path,
-                "-O", os.path.join(input_pdb_dir, "ligand_output.sdf"),
-                "--separate", "--filter", "atoms<200" #TODO: only works with small molecules
-            ]
-            logger.debug(f"Running Open Babel command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                logger.error(f"Open Babel failed:\n{result.stderr}")
-                raise RuntimeError("Open Babel ligand extraction failed.")
-
-            # Step 4c: Identify the most likely ligand file
-            sdf_candidates = [
-                os.path.join(input_pdb_dir, f)
-                for f in os.listdir(input_pdb_dir)
-                if f.startswith("ligand_output") and f.endswith(".sdf")
-            ]
-
-            if not sdf_candidates:
-                raise RuntimeError("No SDF files were generated by Open Babel; ligand extraction failed.")
-
-            chosen_sdf = None
-            min_atoms = 99999
-            for sdf_file in sdf_candidates:
-                try:
-                    mol = Chem.SDMolSupplier(sdf_file, removeHs=False)[0]
-                    if mol is None:
-                        continue
-                    num_atoms = mol.GetNumAtoms()
-                    if 5 < num_atoms < min_atoms:
-                        min_atoms = num_atoms
-                        chosen_sdf = sdf_file
-                except Exception:
+            for chain in modeller.topology.chains():
+                residues = list(chain.residues())
+                if not residues:
                     continue
 
-            if not chosen_sdf:
-                raise RuntimeError("Failed to identify ligand SDF among separated files.")
+                # Skip non-protein chains entirely
+                if not all(res.name.upper() in canonical_aas for res in residues):
+                    continue
 
-            os.rename(chosen_sdf, ligand_sdf_path)
-            for sdf_file in sdf_candidates:
-                if os.path.exists(sdf_file) and sdf_file != ligand_sdf_path:
-                    os.remove(sdf_file)
+                # --- N-terminal ---
+                n_term = residues[0]
+                h_atoms = [atom for atom in n_term.atoms() if atom.element.symbol == 'H']
+                n_charge = +1 if len(h_atoms) >= 2 else 0
 
-            logger.info(f"Ligand extracted and written to {ligand_sdf_path}")
+                # --- C-terminal ---
+                c_term = residues[-1]
+                oxt_atoms = [atom for atom in c_term.atoms() if atom.name == 'OXT']
+                c_charge = -1 if oxt_atoms else 0
 
+                chain_charges[chain.id] = n_charge + c_charge
+
+            total_charge = builtins.sum(chain_charges.values())
+
+            logger.debug(f"Chain termini charges (protein only): {chain_charges}")
+            logger.debug(f"Total termini contribution to system charge: {total_charge}")
+
+            return total_charge
+
+        net_termini_charge = check_chain_termini_charges(modeller)
+        if net_termini_charge != 0:
+            logger.warning("System termini are not neutral, add counterions.")
         else:
-            logger.warning("No ligand residues detected; proceeding without ligand extraction.")
+            logger.info("System termini charges balanced.")
 
-        #  Step 5: Keep only protein and waters in modeller object
-        residues_to_keep = set()
+        logger.debug("=== After cap_internal_chain_breaks ===")
+        for chain in modeller.topology.chains():
+            residues = [res.name for res in chain.residues()]
+            logger.debug(f"Chain {chain.id}: {len(residues)} residues -> {residues}")
+
+        # Map YAML protein chains to all fragments created after capping
+        protein_chain_fragments = []
+
+        for chain in modeller.topology.chains():
+            # If any residue in this chain came from a YAML-specified protein chain
+            if any(res.chain.id in protein_chains for res in chain.residues()):
+                protein_chain_fragments.append(chain.id)
+
+        # logger.info(f"Protein chains to keep after capping: {protein_chain_fragments}")
+
+        logger.debug("Residues after PDBFixer:")
         for residue in modeller.topology.residues():
-            if residue.chain.id in protein_chains or residue.name in ('HOH', 'WAT', 'SOL'):
-                residues_to_keep.add(residue)
+            logger.debug(f"{residue.name} chain {residue.chain.id}")
 
-        atoms_to_keep = [atom for residue in residues_to_keep for atom in residue.atoms()]
+        # --- Step 3–4: Ligand detection ---
+        ligand_atoms = [atom for atom in modeller.topology.atoms()
+                        if atom.residue.name.upper() == ligand_resname.upper()
+                        and atom.residue.chain.id == ligand_chain]
+
+        if not ligand_atoms:
+            raise RuntimeError(f"Ligand {ligand_resname} not found in PDB after fixing!")
+
+        logger.info(f"Ligand {ligand_resname} detected in chain {ligand_chain}")
+
+        # --- Prepare protein+ligand PDB for orientation (fixed) ---
+        # Keep all protein residues, even if chain IDs changed by chain capping
+        residues_to_keep = [
+            r for r in modeller.topology.residues()
+            if r.name.upper() != ligand_resname.upper()  # all protein residues
+            or (r.name.upper() == ligand_resname.upper() and r.chain.id == ligand_chain)  # ligand only on its chain
+        ]
+        atoms_to_keep = [atom for r in residues_to_keep for atom in r.atoms()]
+
+        stripped_modeller = Modeller(modeller.topology, modeller.positions)
+        stripped_modeller.delete([atom for atom in stripped_modeller.topology.atoms() if atom not in atoms_to_keep])
+
+        input_pdb_dir = os.path.dirname(fixed_pdb_file)
+        stripped_pdb_path = os.path.join(input_pdb_dir, "protein_plus_ligand.pdb")
+        with open(stripped_pdb_path, "w") as f:
+            PDBFile.writeFile(stripped_modeller.topology, stripped_modeller.positions, f)
+
+        logger.debug("=== After creating protein_plus_ligand.pdb ===")
+        for chain in stripped_modeller.topology.chains():
+            residues = [res.name for res in chain.residues()]
+            logger.debug(f"Chain {chain.id}: {len(residues)} residues -> {residues}")
+
+        # Capture **all ligand atoms** BEFORE orientation
+        ligand_coords_pre = np.array([
+            pos.value_in_unit(unit.angstrom)
+            for atom, pos in zip(stripped_modeller.topology.atoms(), stripped_modeller.positions)
+            if atom.residue.name.upper() == ligand_resname.upper()
+        ])
+        logger.debug(f"Ligand atoms pre-orientation: {ligand_coords_pre.shape}")
+        logger.info(f"Wrote stripped protein+ligand PDB to {stripped_pdb_path}")
+
+        # --- Step 4: Determine ligand SDF source ---
+        ligand_sdf_path = None
+        if ligand_file and os.path.exists(ligand_file):
+            ligand_sdf_path = ligand_file
+            logger.info(f"Using user-provided ligand SDF: {ligand_sdf_path}")
+        else:
+            logger.info("No ligand_file provided - extracting ligand from PDB")
+            ligand_atom_indices = [atom.index for atom in ligand_atoms]
+            ligand_topology = self.extract_sub_topology(modeller.topology, ligand_atom_indices)
+            ligand_positions = unit.Quantity(
+                [modeller.positions[i].value_in_unit(unit.nanometer) for i in ligand_atom_indices],
+                unit.nanometer
+            )
+            ligand_pdb_path = os.path.join(input_pdb_dir, f"{ligand_resname}_extracted.pdb")
+            with open(ligand_pdb_path, "w") as f:
+                PDBFile.writeFile(ligand_topology, ligand_positions, f)
+            logger.debug(f"Extracted ligand PDB saved to {ligand_pdb_path}")
+
+            ligand_sdf_path = os.path.join(input_pdb_dir, f"{ligand_resname}_extracted.sdf")
+            mol = Chem.MolFromPDBFile(ligand_pdb_path, removeHs=False)
+            if mol is None:
+                raise RuntimeError("RDKit failed to read ligand from extracted PDB")
+            Chem.MolToMolFile(mol, ligand_sdf_path)
+            logger.debug(f"Generated ligand SDF: {ligand_sdf_path}")
+
+        # --- Step 5: Keep only protein + waters ---
+        residues_to_keep = [
+            r for r in modeller.topology.residues()
+            if r.chain.id in protein_chain_fragments or r.name in ('HOH', 'WAT', 'SOL')
+        ]
+        atoms_to_keep = [atom for r in residues_to_keep for atom in r.atoms()]
         modeller.delete([atom for atom in modeller.topology.atoms() if atom not in atoms_to_keep])
+        logger.debug("Kept protein and waters only; ligand removed for parameterisation")
 
-        logger.debug("Kept protein and waters only; ligand and other hetero atoms removed.")
+        logger.debug("=== After removing ligand, keeping protein + waters ===")
+        for chain in modeller.topology.chains():
+            residues = [res.name for res in chain.residues()]
+            logger.debug(f"Chain {chain.id}: {len(residues)} residues -> {residues}")
 
-        # Step 6: Parameterize ligand and merge
-        if ligand_sdf_path and os.path.exists(ligand_sdf_path):
-            try:
-                rdkit_supplier = Chem.SDMolSupplier(ligand_sdf_path, removeHs=False)
-                rdkit_mol = next((m for m in rdkit_supplier if m is not None), None)
-                if rdkit_mol is None:
-                    raise RuntimeError("RDKit failed to load ligand from SDF")
+        ligand_offmol = None
+        ligand_positions_oriented = None
 
-                ligand_offmol = Molecule.from_rdkit(rdkit_mol, allow_undefined_stereo=True)
-
-                if not ligand_offmol.conformers:
-                    raise RuntimeError("Ligand SDF has no 3D coordinates; cannot add to system.")
-
-                # Convert ligand coordinates to OpenMM units
-                conf = ligand_offmol.conformers[0]
-                coords_array = conf.to('angstrom').magnitude
-                ligand_positions = unit.Quantity(coords_array, unit.angstrom).in_units_of(unit.nanometer)
-
-                # Add ligand topology and positions to modeller
-                ligand_topology = ligand_offmol.to_topology().to_openmm()
-                modeller.add(ligand_topology, ligand_positions)
-
-                logger.info(f"Ligand {ligand_resname} successfully merged into the modeller.")
-
-            except Exception as e:
-                logger.exception(f"Failed to load or parameterise ligand: {e}")
-                ligand_offmol = None
-
-        # Step 7: Create hybrid Anber/OFF ForceField 
-        # Load Amber for protein/water
-        logger.debug(f"Calculating forcefield parameters for ligand {ligand_resname}.")
-
+        # --- Step 6: Forcefield ---
         protein_ff_files = cfg.get("forcefield", ["amber14-all.xml", "amber14/tip3p.xml"])
-        
-        logger.debug(f'Protein forcefield files loaded: {protein_ff_files}')
-        
         ligand_ff_name = cfg.get("ligand_parameters", "openff-2.0.0.offxml")
-
-        logger.debug(f'Ligand forcefield files loaded: {ligand_ff_name}')
-
-        # If user wrote "openff-2.0.0" instead of "openff-2.0.0.offxml", fix it
         if not ligand_ff_name.endswith(".offxml"):
             ligand_ff_name = f"{ligand_ff_name}.offxml"
-
-        logger.debug(f"Using ligand parameters: {ligand_ff_name}")
-
         forcefield = ForceField(*protein_ff_files)
 
+        # --- Step 7a: Orient GPCR for membrane ---
+        if cfg.get("membrane", False):
+            oriented_pdb_path = os.path.join(input_pdb_dir, "protein_plus_ligand_oriented.pdb")
+            logger.info("Orienting GPCR for membrane embedding")
+            orient_gpcr_with_ligand(
+                pdb_path=stripped_pdb_path,
+                output_path=oriented_pdb_path,
+                ligand_resnames=[ligand_resname] if ligand_sdf_path else None
+            )
+
+            pdb_oriented = PDBFile(oriented_pdb_path)
+            modeller = Modeller(pdb_oriented.topology, pdb_oriented.positions)
+
+            # --- FIX: detect protein chains dynamically post-orientation ---
+            protein_chains_after_orient = [
+                chain.id for chain in modeller.topology.chains()
+                if any(res.name not in ('HOH', 'WAT', 'SOL') and res.name.upper() != ligand_resname.upper()
+                    for res in chain.residues())
+            ]
+            logger.debug(f"Protein chains detected post-orientation: {protein_chains_after_orient}")
+
+            # Keep protein + water + ligand
+            residues_to_keep = [
+                r for r in modeller.topology.residues()
+                if r.chain.id in protein_chains_after_orient
+                or r.name in ('HOH', 'WAT', 'SOL')
+                or r.name.upper() == ligand_resname.upper()
+            ]
+            atoms_to_keep = [a for r in residues_to_keep for a in r.atoms()]
+            modeller.delete([a for a in modeller.topology.atoms() if a not in atoms_to_keep])
+
+            # Ligand coordinates post-orientation (all atoms)
+            ligand_coords_post = np.array([
+                pos.value_in_unit(unit.angstrom)
+                for atom, pos in zip(modeller.topology.atoms(), modeller.positions)
+                if atom.residue.name.upper() == ligand_resname.upper()
+            ])
+            R, t = compute_rigid_transform(ligand_coords_pre, ligand_coords_post)
+            logger.debug(f"Ligand atoms post-orientation: {ligand_coords_post.shape}")
+
+        # --- Step 7b: Parameterize ligand ---
+        if ligand_sdf_path and os.path.exists(ligand_sdf_path):
+            rdkit_supplier = Chem.SDMolSupplier(ligand_sdf_path, removeHs=False)
+            rdkit_mol = next((m for m in rdkit_supplier if m is not None), None)
+            if rdkit_mol is None:
+                raise RuntimeError("RDKit failed to load ligand from SDF")
+            ligand_offmol = Molecule.from_rdkit(rdkit_mol, allow_undefined_stereo=True)
+            if not ligand_offmol.conformers:
+                raise RuntimeError("Ligand SDF has no 3D coordinates")
+
+        # --- Step 7c: Remove ligand before membrane ---
+        # --- FIX: use dynamically detected protein chains instead of old IDs ---
+        residues_to_keep = [
+            r for r in modeller.topology.residues()
+            if r.chain.id in protein_chains_after_orient or r.name in ('HOH', 'WAT', 'SOL')
+        ]
+        atoms_to_keep = [a for r in residues_to_keep for a in r.atoms()]
+        modeller.delete([a for a in modeller.topology.atoms() if a not in atoms_to_keep])
+        logger.debug("Removed ligand and other molecules prior to membrane insertion")
+        logger.debug(f"Chains retained before membrane insertion: {[c.id for c in modeller.topology.chains()]}")
+
+        logger.debug("=== Before membrane insertion ===")
+        for chain in modeller.topology.chains():
+            residues = [res.name for res in chain.residues()]
+            logger.debug(f"Chain {chain.id}: {len(residues)} residues -> {residues}")
+
+        # --- Step 7d: Add membrane (protein-only) ---
+        if cfg.get("membrane", False):
+            lipid_type = cfg.get("lipid_type", "POPC")
+            padding = cfg.get("membrane_padding", 1.0) * unit.nanometer
+            logger.info(f"Adding membrane: {lipid_type}")
+
+            # Make a copy for membrane insertion
+            temp_modeller = Modeller(modeller.topology, modeller.positions)
+
+            # --- NEW: keep only canonical protein residues + water ---
+            canonical_aas = {
+                'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE',
+                'LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL'
+            }
+            residues_to_keep = [
+                res for res in temp_modeller.topology.residues()
+                if res.name.upper() in canonical_aas or res.name in ('HOH', 'WAT', 'SOL')
+            ]
+            atoms_to_keep = [atom for res in residues_to_keep for atom in res.atoms()]
+
+            # Delete everything else (ligand, glycans, ions, NAG, etc.)
+            temp_modeller.delete([atom for atom in temp_modeller.topology.atoms() if atom not in atoms_to_keep])
+
+            logger.debug(f"Chains retained before membrane insertion: {[c.id for c in temp_modeller.topology.chains()]}")
+            logger.debug("=== Before membrane insertion ===")
+            for chain in temp_modeller.topology.chains():
+                residues = [res.name for res in chain.residues()]
+                logger.debug(f"Chain {chain.id}: {len(residues)} residues -> {residues}")
+
+            # Add membrane around protein
+            temp_modeller.addMembrane(forcefield, lipidType=lipid_type, minimumPadding=padding)
+
+            # Replace modeller with membrane-inserted protein; ligand will be re-added later
+            modeller = temp_modeller
+            logger.info("Membrane successfully added around protein; ligands and glycans preserved for reinsertion")
+
+        logger.debug("=== After membrane insertion and ligand re-addition ===")
+        for chain in modeller.topology.chains():
+            residues = [res.name for res in chain.residues()]
+            logger.debug(f"Chain {chain.id}: {len(residues)} residues -> {residues}")
+
+        # --- Step 7e: Re-add ligand with full coordinates ---
+        if cfg.get("membrane", False) and ligand_offmol is not None:
+            coords_array = ligand_offmol.conformers[0].to('angstrom').magnitude
+            coords_array = (R @ coords_array.T).T + t
+            ligand_positions_oriented = unit.Quantity([Vec3(*c) for c in coords_array], unit.angstrom).in_units_of(unit.nanometer)
+            ligand_topology = ligand_offmol.to_topology().to_openmm()
+            modeller.add(ligand_topology, ligand_positions_oriented)
+            logger.debug(f"Re-added ligand {ligand_resname} with {len(ligand_positions_oriented)} atoms after membrane insertion")
+
+        # --- Register ligand template if using SMIRNOFF ---
         if ligand_offmol is not None:
             smirnoff_generator = SMIRNOFFTemplateGenerator(
                 molecules=[ligand_offmol],
                 forcefield=ligand_ff_name
             )
             forcefield.registerTemplateGenerator(smirnoff_generator.generator)
-            logger.debug("Registered SMIRNOFFTemplateGenerator for ligand.")
-        
-        # Step 7a: Orient protein for membrane
-        if cfg.get("membrane", False):
-            oriented_pdb_path = os.path.join(input_pdb_dir, "protein_oriented.pdb")
-            logger.info("Orienting GPCR for membrane embedding (will take several minutes)...")
-            orient_gpcr_with_ligand(
-                pdb_path=stripped_pdb_path,
-                output_path=oriented_pdb_path,
-                ligand_resnames=[ligand_resname] if ligand_offmol else None
+            logger.debug(f"Registered SMIRNOFF ligand {ligand_resname} with forcefield before solvation")
+
+        if not cfg.get("membrane", False):
+            logger.info(f"Adding solvent with padding={box_padding} nm...")
+            modeller.addSolvent(
+                forcefield,
+                model='tip3p',
+                ionicStrength=ionic_strength * unit.molar,
+                padding=box_padding * unit.nanometer
             )
+        else:
+            logger.info("Skipping addSolvent because membrane system is already solvated")
 
-            # Reload oriented structure into modeller
-            pdb_oriented = PDBFile(oriented_pdb_path)
-            modeller = Modeller(pdb_oriented.topology, pdb_oriented.positions)
+        logger.info(f"Solvent addition complete. Total atoms after solvation: {len(list(modeller.topology.atoms()))}")
 
-            ligand_atoms = []
-            ligand_positions = []
+        logger.info(f"Creating final system ...")
 
-            if ligand_offmol:
-                for atom, pos in zip(modeller.topology.atoms(), modeller.positions):
-                    if atom.residue.name == ligand_resname:
-                        ligand_atoms.append(atom)
-                        ligand_positions.append(pos)
-
-            # Filthy hack: remove then re-add ligand using OpenFF topology and coordinates
-
-            if ligand_atoms:
-                modeller.delete(ligand_atoms)
-                logger.info("Removed ligand for membrane insertion")
-
-            # Remove pre-existing ligand residue from the oriented PDB
-            # if ligand_offmol:
-            #     atoms_to_delete = [atom for atom in modeller.topology.atoms() if atom.residue.name == ligand_resname]
-            #     if atoms_to_delete:
-            #         modeller.delete(atoms_to_delete)
-            #         logger.debug(f"Removed pre-existing ligand {ligand_resname} from oriented PDB")
-
-            #     # Hack: re-add ligand using OpenFF topology and coordinates
-            #     ligand_topology = ligand_offmol.to_topology().to_openmm()
-            #     conf = ligand_offmol.conformers[0]
-            #     coords_array = conf.to('angstrom').magnitude
-            #     ligand_positions = unit.Quantity(coords_array, unit.angstrom).in_units_of(unit.nanometer)
-            #     modeller.add(ligand_topology, ligand_positions)
-            #     logger.debug(f"Re-added ligand {ligand_resname} using OpenFF template")
-
-        #  Step 7b: Add membrane and re-insert ligand
-        if cfg.get("membrane", False):
-            lipid_type = cfg.get("lipid_type", "POPC")
-            padding = cfg.get("membrane_padding", 1.0) * unit.nanometer
-            logger.info(f"Adding membrane: {lipid_type}")
-            modeller.addMembrane(forcefield, lipidType=lipid_type, minimumPadding=padding)
-
-        # End of filthy hack: re-add ligand with re-oriented topology and coordinates
-
-        if ligand_atoms:
-            ligand_topology = ligand_offmol.to_topology().to_openmm()
-            modeller.add(ligand_topology, ligand_positions)
-            logger.info("Re-added ligand using oriented coordinates")
-
-        # Step 8: Solvate system
-        ionic_strength = cfg.get("ionic_strength", 0.0)
-        box_padding = cfg.get("box_padding", 1.0)
-        modeller.addSolvent(
-            forcefield,
-            model='tip3p',
-            ionicStrength=ionic_strength * unit.molar,
-            padding=box_padding * unit.nanometer
-        )
-
-        # Step 9: Create final OpenMM System
+        # --- Step 9: Create OpenMM system ---
         self.system = forcefield.createSystem(
             modeller.topology,
             nonbondedMethod=PME,
             constraints=HBonds
         )
-
         self.topology = modeller.topology
         self.positions = modeller.positions
 
-        # Step 10: Save prepared topology
+        # Short minimisation of terminal caps.
+        
+        self._pre_minimise_termini()
+
+        logger.info(f"Final system created. Saving topology.")
+
+        # --- Step 10: Save topology ---
         output_trajectory = cfg.get("output_trajectory")
         if output_trajectory and not os.path.exists(output_trajectory):
             os.makedirs(output_trajectory)
         topology_path = os.path.join(output_trajectory, "topology.pdb")
         with open(topology_path, "w") as f:
             PDBFile.writeFile(self.topology, self.positions, f, keepIds=True)
-
         logger.info(f"Saved prepared protein + ligand system topology to {topology_path}")
-        
+
+        from openmm import XmlSerializer
+
+        system_xml = os.path.join(output_trajectory, "system.xml")
+
+        with open(system_xml, "w") as f:
+            f.write(XmlSerializer.serialize(self.system))
+
+        logger.info(f"Saved OpenMM system to {system_xml}")
+
         spinner.stop()
 
         # Debug; check parameters
         logger.debug("\n=== ForceField contents ===")
-        logger.debug("Files loaded:", protein_ff_files)
+        logger.debug("Files loaded: %s", protein_ff_files)
         if ligand_ff_name:
-            logger.debug("Ligand FF:", ligand_ff_name)
+            logger.debug("Ligand FF: %s", ligand_ff_name)
 
         logger.debug("\nRegistered template generators:")
         for gen in forcefield._templateGenerators:
-            logger.debug(" ", gen)
+            logger.debug("  %s", gen)
 
         logger.debug("\nForces included in ForceField:")
         for force_name in forcefield._forces:
-            logger.debug(" ", force_name)
+            logger.debug("  %s", force_name)
 
-        # --- Inspect created System ---
         logger.debug("\n=== Created System Forces ===")
         for force in self.system.getForces():
-            logger.debug(type(force))
+            logger.debug("%s", type(force))
             if isinstance(force, openmm.NonbondedForce):
-                logger.debug("  Num particles:", force.getNumParticles())
+                logger.debug("  Num particles: %d", force.getNumParticles())

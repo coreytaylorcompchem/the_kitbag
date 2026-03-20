@@ -1,0 +1,85 @@
+REMARK   1 CREATED WITH OPENMM 8.2, 2026-03-20
+HETATM    1 CL1  VIS E   1       0.427  56.081 -42.310  1.00  0.00          Cl  
+HETATM    2  C11 VIS E   1       1.751  55.965 -41.197  1.00  0.00           C  
+HETATM    3  C10 VIS E   1       1.489  56.131 -39.845  1.00  0.00           C  
+HETATM    4  H1  VIS E   1       0.433  56.649 -39.741  1.00  0.00           H  
+HETATM    5  C9  VIS E   1       2.520  56.047 -38.925  1.00  0.00           C  
+HETATM    6  H2  VIS E   1       2.535  56.755 -37.971  1.00  0.00           H  
+HETATM    7  C12 VIS E   1       3.053  55.703 -41.653  1.00  0.00           C  
+HETATM    8  C14 VIS E   1       3.360  55.504 -43.094  1.00  0.00           C  
+HETATM    9  N1  VIS E   1       3.719  54.257 -43.459  1.00  0.00           N  
+HETATM   10  C18 VIS E   1       4.060  54.055 -44.743  1.00  0.00           C  
+HETATM   11  H3  VIS E   1       4.621  53.029 -44.938  1.00  0.00           H  
+HETATM   12  C17 VIS E   1       4.053  55.050 -45.703  1.00  0.00           C  
+HETATM   13  H4  VIS E   1       4.802  54.698 -46.549  1.00  0.00           H  
+HETATM   14  C16 VIS E   1       3.678  56.318 -45.317  1.00  0.00           C  
+HETATM   15  H5  VIS E   1       3.666  57.160 -46.146  1.00  0.00           H  
+HETATM   16  C15 VIS E   1       3.326  56.560 -44.001  1.00  0.00           C  
+HETATM   17  H6  VIS E   1       3.211  57.695 -43.690  1.00  0.00           H  
+HETATM   18  C13 VIS E   1       4.078  55.623 -40.709  1.00  0.00           C  
+HETATM   19  H7  VIS E   1       5.084  56.069 -41.152  1.00  0.00           H  
+HETATM   20  C8  VIS E   1       3.822  55.801 -39.353  1.00  0.00           C  
+HETATM   21  N   VIS E   1       4.896  55.809 -38.434  1.00  0.00           N  
+HETATM   22  H8  VIS E   1       5.099  54.740 -37.966  1.00  0.00           H  
+HETATM   23  C7  VIS E   1       5.839  56.772 -38.303  1.00  0.00           C  
+HETATM   24  O2  VIS E   1       5.918  57.741 -39.053  1.00  0.00           O  
+HETATM   25  C4  VIS E   1       6.769  56.621 -37.138  1.00  0.00           C  
+HETATM   26  C3  VIS E   1       6.249  56.171 -35.921  1.00  0.00           C  
+HETATM   27  H9  VIS E   1       5.102  56.409 -35.740  1.00  0.00           H  
+HETATM   28  C2  VIS E   1       7.037  56.102 -34.786  1.00  0.00           C  
+HETATM   29  H10 VIS E   1       6.758  55.476 -33.816  1.00  0.00           H  
+HETATM   30  C5  VIS E   1       8.118  56.977 -37.181  1.00  0.00           C  
+HETATM   31 CL   VIS E   1       8.859  57.513 -38.655  1.00  0.00          Cl  
+HETATM   32  C6  VIS E   1       8.920  56.916 -36.057  1.00  0.00           C  
+HETATM   33  H11 VIS E   1       9.847  57.647 -35.989  1.00  0.00           H  
+HETATM   34  C1  VIS E   1       8.367  56.489 -34.860  1.00  0.00           C  
+HETATM   35  S   VIS E   1       9.364  56.487 -33.401  1.00  0.00           S  
+HETATM   36  O   VIS E   1       9.154  55.245 -32.715  1.00  0.00           O  
+HETATM   37  O1  VIS E   1      10.705  56.834 -33.774  1.00  0.00           O  
+HETATM   38  C   VIS E   1       8.708  57.782 -32.422  1.00  0.00           C  
+HETATM   39  H12 VIS E   1       7.721  58.195 -32.939  1.00  0.00           H  
+HETATM   40  H13 VIS E   1       9.654  58.498 -32.413  1.00  0.00           H  
+HETATM   41  H14 VIS E   1       8.388  57.042 -31.553  1.00  0.00           H  
+TER      42      VIS E   1
+CONECT    1    2
+CONECT    2    1    3    7
+CONECT    3    2    4    5
+CONECT    4    3
+CONECT    5    3    6   20
+CONECT    6    5
+CONECT    7    2    8   18
+CONECT    8    7    9   16
+CONECT    9    8   10
+CONECT   10    9   11   12
+CONECT   11   10
+CONECT   12   10   13   14
+CONECT   13   12
+CONECT   14   12   15   16
+CONECT   15   14
+CONECT   16    8   14   17
+CONECT   17   16
+CONECT   18    7   19   20
+CONECT   19   18
+CONECT   20    5   18   21
+CONECT   21   20   22   23
+CONECT   22   21
+CONECT   23   21   24   25
+CONECT   24   23
+CONECT   25   23   26   30
+CONECT   26   25   27   28
+CONECT   27   26
+CONECT   28   26   29   34
+CONECT   29   28
+CONECT   30   25   31   32
+CONECT   31   30
+CONECT   32   30   33   34
+CONECT   33   32
+CONECT   34   28   32   35
+CONECT   35   34   36   37   38
+CONECT   36   35
+CONECT   37   35
+CONECT   38   35   39   40   41
+CONECT   39   38
+CONECT   40   38
+CONECT   41   38
+END
