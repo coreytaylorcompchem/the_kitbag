@@ -110,9 +110,8 @@ class MDWorkflow:
 
         atoms = list(self.topology.atoms())
 
-        # -------------------------
-        # Identify groups
-        # -------------------------
+        # Minimisation groups
+
         protein_atoms = [a.index for a in atoms if a.residue.name in protein_resnames]
         ligand_atoms = [a.index for a in atoms if a.residue.name == "UNK"]
         lipid_atoms = [a.index for a in atoms if a.residue.name == "POP"]
@@ -121,9 +120,9 @@ class MDWorkflow:
         logger.debug(f"Ligand atoms: {len(ligand_atoms)}")
         logger.debug(f"Lipid atoms: {len(lipid_atoms)}")
 
-        # -------------------------
-        # Single restraint forces (add ONCE)
-        # -------------------------
+
+        # Add restraints
+
         prot_force = CustomExternalForce("k_prot*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
         prot_force.addGlobalParameter("k_prot", 0.0)
         prot_force.addPerParticleParameter("x0")
@@ -146,7 +145,7 @@ class MDWorkflow:
             p = pos[idx]
             lig_force.addParticle(idx, [p.x, p.y, p.z])
 
-        # Add forces ONCE before minimisation loop
+        # Add forces once before minimisation loop
         prot_idx = self.system.addForce(prot_force)
         lig_idx = self.system.addForce(lig_force)
 
@@ -154,9 +153,9 @@ class MDWorkflow:
         self.simulation.context.reinitialize(preserveState=True)
         self.simulation.context.setPositions(pos)
 
-        # -------------------------
+
         # Map restrained particles for diagnostics
-        # -------------------------
+
         restrained_atoms = protein_atoms + ligand_atoms
         particle_to_atom = {idx: atoms[idx] for idx in restrained_atoms}
 
@@ -217,24 +216,24 @@ class MDWorkflow:
             )
             logger.debug(f"Max restrained force: {max_force:.2f} kJ/mol/nm")
 
-            # Optional: warn if unrestrained atoms have very high forces
+            # Warn if unrestrained atoms have very high forces
             unrestrained_indices = np.setdiff1d(np.arange(len(forces)), restrained_atoms)
             if len(unrestrained_indices) > 0:
                 unres_forces = force_norms[unrestrained_indices]
                 if np.max(unres_forces) > 50000:
                     logger.warning(f"High forces on unrestrained atoms: max {np.max(unres_forces):.1f} kJ/mol/nm")
 
-        # -------------------------
-        # Remove restraints safely (after all stages)
-        # -------------------------
+
+        # Remove restraints
+
         self.system.removeForce(lig_idx)
         self.system.removeForce(prot_idx)
         self.simulation.context.reinitialize(preserveState=True)
         self.simulation.context.setPositions(pos)
 
-        # -------------------------
+
         # Final check
-        # -------------------------
+
         state = self.simulation.context.getState(getEnergy=True, getForces=True, getPositions=True)
         forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
         max_force = np.max(np.linalg.norm(forces, axis=1))
@@ -279,11 +278,11 @@ class MDWorkflow:
                             logger.warning(f"Ligand bond {p1}-{p2} suspicious: length={length}, k={k}")
 
         # -------------------------------
-        # 1. HEATING PHASE (staged)
+        # 1. HEATING PHASE
         # -------------------------------
         heating_cfg = self.config.get("heat_and_equilibrate", {}).get("heating", {})
         num_rounds = heating_cfg.get("num_steps", 8)
-        steps_per_round = heating_cfg.get("steps_per_round", 5000)  # use exactly what's in YAML
+        steps_per_round = heating_cfg.get("steps_per_round", 5000)
         target_temp = heating_cfg.get("target_temp", 300)
         restraints = heating_cfg.get("restraint_strengths", [2.0, 1.5, 1.0, 0.5, 0.25, 0.1, 0.05, 0.0])
 
@@ -295,7 +294,7 @@ class MDWorkflow:
         restrain_atoms = backbone_atoms + ligand_atoms
 
         # -------------------------------
-        # Create restraint force (single reinit)
+        # Create restraint force (one reinit)
         # -------------------------------
         restraint_force = CustomExternalForce("k_heating*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
         restraint_force.addGlobalParameter("k_heating", restraints[0] * kilojoule/(mole*nanometer**2))
@@ -309,7 +308,7 @@ class MDWorkflow:
             pos = positions[idx]
             restraint_force.addParticle(idx, [pos.x, pos.y, pos.z])
 
-        # Debug: check initial displacement before adding to system
+        # Debug: check initial displacement before adding to system TODO: this is broken
         max_disp = 0.0
         for i in range(restraint_force.getNumParticles()):
             particle_index, params = restraint_force.getParticleParameters(i)
@@ -319,7 +318,7 @@ class MDWorkflow:
             max_disp = max(max_disp, disp)
         logger.debug(f"Max initial displacement before adding restraint: {max_disp:.6f} nm")
 
-        # Add to system and reinitialize context once
+        # Add to system and reinitialise context once
         restraint_index = self.system.addForce(restraint_force)
         self.simulation.context.reinitialize(preserveState=True)
         self.simulation.context.setPositions(positions)
@@ -346,11 +345,11 @@ class MDWorkflow:
         logger.debug(f"Max force on restrained atoms before stepping: {max_force:.2f} kJ/mol/nm")
 
         # -------------------------------
-        # Heating loop with step-level debug
+        # Heating loop
         # -------------------------------
         original_dt = self.integrator.getStepSize()
         small_dt = 0.00025 * picoseconds  # 0.25 fs initially
-        heat_step_chunk = 50 # how often to update and record data (too small does slow this down)
+        heat_step_chunk = 50 # how often to update and record data (too small does slow this down) TODO: tweak it a bit
 
         heating_data = {
             "step": [],
@@ -388,7 +387,7 @@ class MDWorkflow:
                     steps_done += n
                     pbar.update(n)
 
-                    # Step-level force debug
+                    # Force debugs in eahc stage
                     state = self.simulation.context.getState(getForces=True)
                     forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
                     max_force = np.max(np.linalg.norm(forces, axis=1))
@@ -410,9 +409,9 @@ class MDWorkflow:
                     heating_data["temperature"].append(temp_inst)
                     heating_data["potential_energy"].append(pot_energy)
 
-        # -------------------------------
-        # Remove heating restraint safely
-        # -------------------------------
+
+        # Remove heating restraint
+
         state = self.simulation.context.getState(getPositions=True)
 
         self.system.removeForce(restraint_index)
@@ -433,7 +432,7 @@ class MDWorkflow:
 
         logger.info(f"Starting equilibration: {ensemble} ensemble for {steps} steps at {equil_temp} K")
 
-        # Add barostat if needed
+        # Add barostat
         if ensemble == "NPT" and not any(isinstance(self.system.getForce(i), MonteCarloBarostat) 
                                         for i in range(self.system.getNumForces())):
             pressure = equil_cfg.get("pressure", 1.0) * atmosphere
@@ -447,7 +446,7 @@ class MDWorkflow:
 
         self.integrator.setTemperature(equil_temp * kelvin)
 
-        lipid_resnames = {"POP"}  # adjust if needed
+        lipid_resnames = {"POP"}  # should match topology
 
         lipid_residues = [
             res for res in self.topology.residues()
@@ -478,7 +477,7 @@ class MDWorkflow:
                 pbar.update(n)
 
                 # -------------------------
-                # Diagnostics collection
+                # Diagnostics
                 # -------------------------
                 state = self.simulation.context.getState(getEnergy=True, getPositions=True)
 
@@ -498,7 +497,7 @@ class MDWorkflow:
 
                 volume_nm3 = lx * ly * lz
 
-                # APL calculation
+                # APL
                 if n_lipids > 0:
                     apl = (lx * ly) / (n_lipids / 2.0)
                 else:
@@ -511,7 +510,7 @@ class MDWorkflow:
 
                 anisotropy = lz / ((lx + ly) / 2.0)
 
-                # Append to DataFrame
+                # Append all diags to DataFrame
                 equil_df.loc[len(equil_df)] = [steps_done, temp_inst, pot_energy, volume_nm3, density,
                                         lx, ly, lz, apl, anisotropy]
 
@@ -569,7 +568,7 @@ class MDWorkflow:
                 labels=p.get("labels", False),
             )
         
-        #output equilibrated pdb
+        # output equilibrated pdb
         
         equilibrated_pdb_path = os.path.join(output_dir, "equilibrated_system.pdb")
         state = self.simulation.context.getState(getPositions=True)
@@ -632,7 +631,6 @@ class MDWorkflow:
             self.simulation.context.setPeriodicBoxVectors(*box_vectors)
             logger.info(f"Added MonteCarloBarostat: {pressure} atm, {target_temp} K")
 
-        # Steps calculations
         timestep = self.integrator.getStepSize()
         timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0
         steps_per_ns = int(1.0 / timestep_ns)
@@ -703,7 +701,7 @@ class MDWorkflow:
                     mass = sum([self.system.getParticleMass(i) for i in range(self.system.getNumParticles())]).value_in_unit(dalton) * 1.66054e-24
                     density = mass / (volume * 1e-21)
 
-                    # Log warnings if thresholds exceeded
+                    # Log warnings if defined thresholds are exceeded
                     if max_force > max_force_thresh:
                         logger.warning(f"High force detected: {max_force:.1f} kJ/mol/nm at step {self.simulation.currentStep}")
                     if abs(temp_inst - target_temp) > max_temp_dev:
