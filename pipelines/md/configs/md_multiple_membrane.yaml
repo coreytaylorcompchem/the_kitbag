@@ -6,7 +6,7 @@ workflow:
   - setup_simulation
   - minimize
   - heat_and_equilibrate
-  # - production
+  - production
   # - post_processing
 
 prepare_system:
@@ -33,18 +33,19 @@ setup_simulation:
 heat_and_equilibrate:
   heating:
     num_steps: 8
-    steps_per_round: 5000
+    steps_per_round: 500 # 5000 for prod
     target_temp: 298
     restraint_strengths: [2.0, 1.5, 1.0, 0.5, 0.25, 0.1, 0.05, 0.0] # number of values here should match num_steps
   equilibration:
     ensemble: NPT
-    steps: 100000
+    steps: 1000 # 100000 for prod
     target_temp: 298
     pressure: 1.0
     barostat:
       type: Anisotropic          # Options: MonteCarlo, Anisotropic, Andersen
       frequency: 25             # Attempt volume changes every N steps
       anisotropic: true        # Only used if type=Anisotropic. For membrane sims
+  output_dir: "output_multiple_membrane"
 
 production:
   length_ns: 10                 # total simulation length

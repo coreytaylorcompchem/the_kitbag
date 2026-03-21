@@ -1,0 +1,16 @@
+*.dcd
+*.csv
+*.pqr
+*.pdb
+*.sdf
+*.chk
+*.chkpt
+*.pdbqt
+*.sqlite
+*.jsonl
+*.xml
+maize_workflow_docking.log
+*.pyc
+**/projects/**
+!**/projects/test/
+!**/projects/test/**
