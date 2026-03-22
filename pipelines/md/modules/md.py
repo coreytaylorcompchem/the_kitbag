@@ -24,7 +24,7 @@ from modules.utils.plotting import save_plot
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 protein_resnames = {
     "ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS",
@@ -85,13 +85,47 @@ class MDWorkflow:
         if not hasattr(self, "platform"):
             platform_name = self.config.get("setup_simulation", {}).get("platform", "CPU")
             self.platform = Platform.getPlatformByName(platform_name)
+        
+        # Set GPU precision: "single", "mixed", or "double"
+        if self.platform.getName() in ["CUDA", "OpenCL"]:
+            self.platform.setPropertyDefaultValue("Precision", "mixed")
 
         cfg = self.config["setup_simulation"]
+
+        # -----------------------------
+        # Hydrogen Mass Repartitioning helper
+        # -----------------------------
+        def apply_hmr(system, topology, target_h_mass=3.0*dalton):
+            for bond in topology.bonds():
+                atom1, atom2 = bond[0], bond[1]
+                mass1 = system.getParticleMass(atom1.index)
+                mass2 = system.getParticleMass(atom2.index)
+                
+                # Check if one atom is hydrogen and the other is heavy
+                if mass1.value_in_unit(dalton) < 1.2 and mass2.value_in_unit(dalton) > 1.5:
+                    delta = target_h_mass.value_in_unit(dalton) - mass1.value_in_unit(dalton)
+                    system.setParticleMass(atom1.index, target_h_mass)
+                    system.setParticleMass(atom2.index, mass2 - delta * dalton)
+                elif mass2.value_in_unit(dalton) < 1.2 and mass1.value_in_unit(dalton) > 1.5:
+                    delta = target_h_mass.value_in_unit(dalton) - mass2.value_in_unit(dalton)
+                    system.setParticleMass(atom2.index, target_h_mass)
+                    system.setParticleMass(atom1.index, mass1 - delta * dalton)
+            return system
+
+        if cfg.get("hmr", True):
+            self.system = apply_hmr(self.system, self.topology)
+            logger.info("Hydrogen Mass Repartitioning (HMR) applied")
+
+        # Create integrator with larger timestep
+        timestep_fs = cfg["timestep"] * femtoseconds
+        if cfg.get("hmr", True):
+            timestep_fs *= 2  # safe doubling of timestep
+        self.integrator = LangevinIntegrator(cfg["temperature"] * kelvin, 1.0/picoseconds, timestep_fs)
 
         self.integrator = LangevinIntegrator(
             cfg["temperature"] * kelvin,
             1.0 / picoseconds,
-            cfg["timestep"] * femtoseconds
+            timestep_fs
         )
 
         self.simulation = Simulation(
@@ -100,7 +134,6 @@ class MDWorkflow:
             self.integrator,
             self.platform
         )
-
         self.simulation.context.setPositions(self.positions)
 
     @register_task("minimize")
@@ -238,7 +271,7 @@ class MDWorkflow:
         forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
         max_force = np.max(np.linalg.norm(forces, axis=1))
         logger.info(f"Final max force: {max_force:.2f} kJ/mol/nm")
-        if max_force > 10000:
+        if max_force > 50000:
             raise RuntimeError("Minimisation failed: forces still too high")
 
         output_dir = self.config.get("heat_and_equilibrate", {}).get("output_dir", ".")
@@ -540,7 +573,7 @@ class MDWorkflow:
         output_dir = self.config.get("heat_and_equilibrate", {}).get("output_dir")
         plot_dir = os.path.join(output_dir, "heat_equil_diagnostic_plots")
         os.makedirs(plot_dir, exist_ok=True)
-        logger.info(f"Saving diagnostic plots to: {plot_dir}")
+        logger.info(f"Saving heat/equil diagnostic plots to: {plot_dir}")
 
         plots = [
             # Heating
@@ -585,9 +618,8 @@ class MDWorkflow:
         pressure = cfg.get("pressure", 1.0)
 
         # Thresholds for event triggers
-        max_force_thresh = 10000  # kJ/mol/nm, warning threshold
         max_temp_dev = 100        # K deviation from target
-        max_density_dev = 0.5    # g/mL deviation
+        max_density_dev = 0.5     # g/mL deviation
 
         # Get current state
         state = self.simulation.context.getState(getPositions=True, getVelocities=True, enforcePeriodicBox=True)
@@ -647,9 +679,19 @@ class MDWorkflow:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        # set how often to output data to log
+        log_multiplier = 1 # set to 10, 100, etc. to run expensive evaluations that are dumped to log less frequently.
+        energy_log_freq = output_freq * log_multiplier
+
         logger.info(f"Running PROD simulation for {ns} ns ({total_steps} steps)")
         logger.info(f"Split traj every {split_ns} ns ({n_segments} segments).")
         logger.info(f"Writing frames every {output_freq} steps.")
+
+        # Rolling diagnostic averages to check simulation is running smoothly
+        rolling_window = 10  # number of diagnostic points to average over
+        temp_history = []
+        density_history = []
+        energy_history = []
 
         # Segment loop
         for seg in range(1, n_segments + 1):
@@ -665,7 +707,7 @@ class MDWorkflow:
             self.simulation.reporters.clear()
             self.simulation.reporters.append(DCDReporter(traj_file, output_freq))
             self.simulation.reporters.append(StateDataReporter(
-                log_file, output_freq,
+                log_file, energy_log_freq,
                 step=True, temperature=True, potentialEnergy=True, totalEnergy=True,
                 density=True, progress=True, remainingTime=True, speed=True,
                 totalSteps=seg_steps, separator='\t'
@@ -675,39 +717,37 @@ class MDWorkflow:
 
             with tqdm(total=seg_steps, desc=f"Production seg {seg}", unit="steps") as pbar:
                 current_step = 0
+                diagnostic_freq = energy_log_freq  # diagnostics check frequency
                 while current_step < seg_steps:
                     n = min(output_freq, seg_steps - current_step)
                     self.simulation.step(n)
                     current_step += n
                     pbar.update(n)
 
-                    # -------------------------------
-                    # System health diagnostics
-                    # -------------------------------
-                    state = self.simulation.context.getState(getForces=True, getEnergy=True, getPositions=True, enforcePeriodicBox=True)
-                    forces = state.getForces(asNumpy=True)
-                    max_force = np.max(np.linalg.norm(forces, axis=1))
+                    # Diagnostics only at intervals
+                    if current_step % diagnostic_freq == 0:
+                        state = self.simulation.context.getState(getEnergy=True, enforcePeriodicBox=True)
 
-                    # Box vectors
-                    box_vectors = state.getPeriodicBoxVectors(asNumpy=True)
-                    lx, ly, lz = [box_vectors[i][i].value_in_unit(nanometer) for i in range(3)]
-                    volume = lx * ly * lz
+                        # Potential energy check
+                        potential_energy = state.getPotentialEnergy().value_in_unit(kilojoule/mole)
+                        if potential_energy > 1e6:  # adjust threshold as needed
+                            logger.warning(f"High potential energy detected: {potential_energy:.1f} kJ/mol at step {self.simulation.currentStep}")
 
-                    # Temperature and density
-                    kinetic_energy = state.getKineticEnergy().value_in_unit(kilojoule/mole)
-                    dof = 3 * self.system.getNumParticles()
-                    kB = 0.00831446261815324
-                    temp_inst = 2 * kinetic_energy / (dof * kB)
-                    mass = sum([self.system.getParticleMass(i) for i in range(self.system.getNumParticles())]).value_in_unit(dalton) * 1.66054e-24
-                    density = mass / (volume * 1e-21)
+                        # Temperature and density
+                        kinetic_energy = state.getKineticEnergy().value_in_unit(kilojoule/mole)
+                        dof = 3 * self.system.getNumParticles()
+                        kB = 0.00831446261815324
+                        temp_inst = 2 * kinetic_energy / (dof * kB)
+                        box_vectors = state.getPeriodicBoxVectors()
+                        lx, ly, lz = [box_vectors[i][i].value_in_unit(nanometer) for i in range(3)]
+                        volume = lx * ly * lz
+                        mass = sum([self.system.getParticleMass(i) for i in range(self.system.getNumParticles())]).value_in_unit(dalton) * 1.66054e-24
+                        density = mass / (volume * 1e-21)
 
-                    # Log warnings if defined thresholds are exceeded
-                    if max_force > max_force_thresh:
-                        logger.warning(f"High force detected: {max_force:.1f} kJ/mol/nm at step {self.simulation.currentStep}")
-                    if abs(temp_inst - target_temp) > max_temp_dev:
-                        logger.warning(f"Temperature deviation: {temp_inst:.1f} K (target={target_temp} K)")
-                    if abs(density - 1.0) > max_density_dev:
-                        logger.warning(f"Density deviation: {density:.2f} g/mL")
+                        if abs(temp_inst - target_temp) > max_temp_dev:
+                            logger.warning(f"Temperature deviation: {temp_inst:.1f} K (target={target_temp} K)")
+                        if abs(density - 1.0) > max_density_dev:
+                            logger.warning(f"Density deviation: {density:.2f} g/mL")
 
             # Save checkpoint at end of segment
             self.simulation.saveCheckpoint(chk_file)

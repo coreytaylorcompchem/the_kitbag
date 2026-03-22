@@ -35,7 +35,7 @@ from backends.utils.orient_gpcr import orient_gpcr_with_ligand
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def compute_rigid_transform(A, B):
     centroid_A = A.mean(axis=0)
@@ -237,7 +237,7 @@ class OpenMMBackend:
         from openmm import CustomExternalForce, VerletIntegrator, Context, LocalEnergyMinimizer
         from openmm import unit, Vec3
 
-        logger.info("Starting minimisation of termini")
+        logger.info("Performing short minimisation of termini atoms")
 
         system = self.system
         topology = self.topology
@@ -705,7 +705,7 @@ class OpenMMBackend:
 
             # Replace modeller with membrane-inserted protein; ligand will be re-added later
             modeller = temp_modeller
-            logger.info("Membrane successfully added around protein; ligands and glycans preserved for reinsertion")
+            logger.info("Membrane successfully added around protein")
 
         logger.debug("=== After membrane insertion and ligand re-addition ===")
         for chain in modeller.topology.chains():

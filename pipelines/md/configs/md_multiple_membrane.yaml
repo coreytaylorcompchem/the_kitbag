@@ -28,6 +28,7 @@ setup_simulation:
   pH: 7.4
   timestep: 2.0  # fs
   temperature: 298  # K
+  hmr: true        # Enable Hydrogen Mass Repartitioning
   # friction: 1.0
 
 heat_and_equilibrate:
@@ -49,7 +50,7 @@ heat_and_equilibrate:
 
 production:
   length_ns: 10                 # total simulation length
-  output_frequency: 5000        # Write every 5000 steps (10 ps at 2 fs timestep)
+  output_frequency: 5000        # Write every 5000 steps (10 ps @ 2 fs timestep)
   output_split_ns: 2            # New trajectory/checkpoint every 2 ns
   output_trajectory: "output_multiple_membrane/trajectory.dcd"
   output_logfile: "output_multiple_membrane/log.txt"
