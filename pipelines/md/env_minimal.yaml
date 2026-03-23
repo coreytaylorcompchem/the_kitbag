@@ -1,0 +1,13 @@
+name: openmm
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - openmm
+  - rdkit
+  - openff-toolkit
+  - openmmforcefields
+  - pdbfixer
+  - openbabel
+  - cuda-version=12.4
+prefix: /home/ctaylor/.conda/envs/openmm
