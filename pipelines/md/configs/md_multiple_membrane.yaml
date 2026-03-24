@@ -2,7 +2,7 @@ task: workflow
 workflow_name: molecular_dynamics
 
 workflow:
-  # - prepare_system
+  #- prepare_system
   - setup_simulation
   - minimize
   - heat_and_equilibrate
@@ -11,10 +11,11 @@ workflow:
 
 prepare_system:
   pdb_file: input/5L7I.pdb
+  protein_chains: ["A"] # Mandatory; no fallback (yet) if one is not specified. Add as many as necessary / you want to keep. 
   ligand:
     resname: VIS
     chain: B
-  # ligand_file: input/VIS.sdf   # optional
+  # ligand_file: input/VIS.sdf   # BROKEN DO NOT DO THIS YET
   ligand_parameters: openff-2.0.0.offxml  # Optional but you should set it
   forcefield: ["amber14-all.xml", "amber14/tip3p.xml"] # Optional but you should set it
   ionic_strength: 0.15
@@ -34,12 +35,12 @@ setup_simulation:
 heat_and_equilibrate:
   heating:
     num_steps: 8
-    steps_per_round: 500 # 5000 for prod
+    steps_per_round: 5000 # 5000 for prod
     target_temp: 298
     restraint_strengths: [2.0, 1.5, 1.0, 0.5, 0.25, 0.1, 0.05, 0.0] # number of values here should match num_steps
   equilibration:
     ensemble: NPT
-    steps: 1000 # 100000 for prod
+    steps: 100000 # 100000 for prod
     target_temp: 298
     pressure: 1.0
     barostat:

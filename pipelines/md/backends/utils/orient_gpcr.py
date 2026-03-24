@@ -1,6 +1,10 @@
 import numpy as np
 from Bio.PDB import PDBParser, PDBIO
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+
 ## NONE OF THIS SEEMS TO BE NEEDED ANY MORE SINCE WE'RE NO LONGER USING DSSP
 # # Simple Kyte–Doolittle hydrophobicity scale - for orientation
 # HYDROPHOBICITY = {
@@ -112,5 +116,12 @@ def orient_gpcr_with_ligand(pdb_path, output_path, ligand_resnames=None, center_
     io = PDBIO()
     io.set_structure(structure)
     io.save(output_path)
+
+    ligand_atoms_debug = [
+        a for a in structure.get_atoms()
+        if a.get_parent().resname in (ligand_resnames or [])
+    ]
+    
+    logger.debug(f"Ligand atoms seen by orienter: {len(ligand_atoms_debug)}")
 
     return output_path

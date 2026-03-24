@@ -196,10 +196,10 @@ class MDWorkflow:
         # Staged minimisation
         # -------------------------
         stages = [
-            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 200, "tolerance": 100},
-            {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 200, "tolerance": 10},
-            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 200, "tolerance": 5},
-            {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 200, "tolerance": 1},
+            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 1000, "tolerance": 100},
+            {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 5000, "tolerance": 10},
+            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 1000, "tolerance": 5},
+            {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 1000, "tolerance": 1},
         ]
 
         for i, stage in enumerate(stages, 1):
@@ -516,7 +516,8 @@ class MDWorkflow:
 
                 kinetic_energy = state.getKineticEnergy()
 
-                dof = 3 * self.system.getNumParticles()
+                dof = 3 * self.system.getNumParticles() - self.system.getNumConstraints()
+                dof -= 3  # remove com
                 kB = 0.00831446261815324  # kJ/mol/K
 
                 temp_inst = (2 * kinetic_energy.value_in_unit(kilojoule/mole)) / (dof * kB)
@@ -735,7 +736,8 @@ class MDWorkflow:
 
                         # Temperature and density
                         kinetic_energy = state.getKineticEnergy().value_in_unit(kilojoule/mole)
-                        dof = 3 * self.system.getNumParticles()
+                        dof = 3 * self.system.getNumParticles() - self.system.getNumConstraints()
+                        dof -= 3  # remove com
                         kB = 0.00831446261815324
                         temp_inst = 2 * kinetic_energy / (dof * kB)
                         box_vectors = state.getPeriodicBoxVectors()
