@@ -28,7 +28,7 @@ from rdkit.Chem import AllChem
 
 from pdbfixer import PDBFixer
 
-from backends.utils.orient_gpcr import align_to_opm_reference
+from backends.utils.orient_gpcr import align_to_opm_reference, orient_gpcr_with_ligand
 from backends.utils.transforms import compute_rigid_transform
 
 from pipeline.logger import setup_logger
