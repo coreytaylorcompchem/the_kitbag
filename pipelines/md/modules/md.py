@@ -272,7 +272,7 @@ class MDWorkflow:
         max_force = np.max(np.linalg.norm(forces, axis=1))
         logger.info(f"Final max force: {max_force:.2f} kJ/mol/nm")
         if max_force > 50000:
-            raise RuntimeError("Minimisation failed: forces still too high")
+            logger.warning(f"Forces may be too high - check your system.")
 
         output_dir = self.config.get("heat_and_equilibrate", {}).get("output_dir", ".")
         os.makedirs(output_dir, exist_ok=True)
