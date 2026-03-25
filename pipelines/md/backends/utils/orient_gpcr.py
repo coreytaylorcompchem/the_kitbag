@@ -1,9 +1,15 @@
+import os
+import tempfile
+
+import requests
 import numpy as np
 from Bio.PDB import PDBParser, PDBIO
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+from backends.utils.transforms import compute_rigid_transform
+
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 ## NONE OF THIS SEEMS TO BE NEEDED ANY MORE SINCE WE'RE NO LONGER USING DSSP
 # # Simple Kyte–Doolittle hydrophobicity scale - for orientation
@@ -66,6 +72,113 @@ logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 #         if s[0] / max(s[1], 1e-6) > elongation_ratio:
 #             helices.append(window)
 #     return helices
+
+def fetch_opm_pdb(opm_id, output_path):
+    url = f"https://opm-assets.storage.googleapis.com/pdb/{opm_id.lower()}.pdb"
+    r = requests.get(url)
+    if r.status_code != 200:
+        raise RuntimeError(f"Failed to download OPM structure {opm_id}")
+    with open(output_path, "w") as f:
+        f.write(r.text)
+    return output_path
+
+def align_to_opm_reference(
+    pdb_path,
+    output_path,
+    opm_pdb,
+    target_chain,
+    ligand_resnames=None,
+):
+
+    # Resolve OPM reference
+    if os.path.isfile(opm_pdb):
+        ref_path = opm_pdb
+    else:
+        tmp_dir = tempfile.gettempdir()
+        ref_path = os.path.join(tmp_dir, f"{opm_pdb.lower()}_opm.pdb")
+
+        if not os.path.exists(ref_path):
+            logger.info(f"Downloading OPM structure: {opm_pdb}")
+            fetch_opm_pdb(opm_pdb, ref_path)
+        else:
+            logger.debug(f"Using cached OPM structure: {ref_path}")
+
+    parser = PDBParser(QUIET=True)
+
+    mobile = parser.get_structure("mobile", pdb_path)
+    ref = parser.get_structure("ref", ref_path)
+
+    # Get CA atoms for target GPCR chain 
+    mob_atoms = [
+        a for a in mobile.get_atoms()
+        if a.get_parent().get_parent().id == target_chain and a.name == "CA"
+    ]
+
+    ref_atoms = [a for a in ref.get_atoms() if a.name == "CA"]
+
+    if len(mob_atoms) < 10 or len(ref_atoms) < 10:
+        raise RuntimeError("Not enough CA atoms for stable alignment")
+
+    # Compute principal axes 
+    def principal_axis(coords):
+        coords_centered = coords - coords.mean(axis=0)
+        _, _, vh = np.linalg.svd(coords_centered)
+        return vh[0]
+
+    A = np.array([a.coord for a in mob_atoms])
+    B = np.array([a.coord for a in ref_atoms])
+
+    axis_mobile = principal_axis(A)
+    axis_ref = principal_axis(B)
+
+    # Ensure consistent direction
+    if np.dot(axis_mobile, axis_ref) < 0:
+        axis_mobile = -axis_mobile
+
+    # Compute rotation (Rodrigues) ---
+    v = np.cross(axis_mobile, axis_ref)
+    s = np.linalg.norm(v)
+
+    if s < 1e-6:
+        R = np.eye(3)
+    else:
+        c = np.dot(axis_mobile, axis_ref)
+        vx = np.array([
+            [0, -v[2], v[1]],
+            [v[2], 0, -v[0]],
+            [-v[1], v[0], 0]
+        ])
+        R = np.eye(3) + vx + vx @ vx * ((1 - c) / (s**2))
+
+    # Apply rotation around COM 
+    all_coords = np.array([a.coord for a in mobile.get_atoms()])
+    com = all_coords.mean(axis=0)
+
+    for atom in mobile.get_atoms():
+        atom.coord = R @ (atom.coord - com)
+
+    # Center system at origin
+    new_coords = np.array([a.coord for a in mobile.get_atoms()])
+    new_com = new_coords.mean(axis=0)
+
+    for atom in mobile.get_atoms():
+        atom.coord -= new_com
+
+    # Safety check 
+    coords = np.array([a.coord for a in mobile.get_atoms()])
+    if not np.isfinite(coords).all():
+        raise RuntimeError("NaNs detected after OPM alignment")
+
+    if np.max(np.linalg.norm(coords, axis=1)) > 1e4:
+        raise RuntimeError("Structure exploded after alignment")
+
+    io = PDBIO()
+    io.set_structure(mobile)
+    io.save(output_path)
+
+    return output_path
+
+## CODE TO ALIGN WITHOUT OPM - TO BE DEPRECATED
 
 def orient_gpcr_with_ligand(pdb_path, output_path, ligand_resnames=None, center_z=True):
     parser = PDBParser(QUIET=True)

@@ -201,10 +201,10 @@ dependencies:
   - libstdcxx=15.2.0
   - libstdcxx-devel_linux-64=12.4.0
   - libstdcxx-ng=15.2.0
-  - libsystemd0=259.3
+  - libsystemd0
   - libtiff=4.7.1
   - libtorch=2.5.1
-  - libudev1=259.3
+  - libudev1
   - libuuid=1.41.5
   - libuv=1.51.0
   - libwebp-base=1.6.0

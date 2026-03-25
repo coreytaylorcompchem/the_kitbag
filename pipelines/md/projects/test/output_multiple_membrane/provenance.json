@@ -1,0 +1,17 @@
+{
+  "ensemble": "NPT",
+  "temperature": 298.0,
+  "pressure": 1.0,
+  "length_ns": 10,
+  "timestep_fs": 4.0,
+  "split_ns": 2,
+  "output_frequency": 5000,
+  "software": {
+    "python_version": "3.11.14",
+    "openmm_version": "8.2",
+    "platform": "Linux-6.8.0-106-generic-x86_64-with-glibc2.39"
+  },
+  "system": {
+    "num_particles": 294717
+  }
+}

@@ -196,9 +196,9 @@ class MDWorkflow:
         # Staged minimisation
         # -------------------------
         stages = [
-            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 1000, "tolerance": 100},
+            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 2000, "tolerance": 100},
             {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 5000, "tolerance": 10},
-            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 1000, "tolerance": 5},
+            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 2000, "tolerance": 5},
             {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 1000, "tolerance": 1},
         ]
 

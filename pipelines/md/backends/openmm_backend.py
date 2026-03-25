@@ -1,6 +1,3 @@
-# from backends.utils.add_terminal_caps import CapTermini
-# from backends.utils.load_ligand import load_ligand_from_sdf
-
 import builtins
 
 import os
@@ -31,31 +28,12 @@ from rdkit.Chem import AllChem
 
 from pdbfixer import PDBFixer
 
-from backends.utils.orient_gpcr import orient_gpcr_with_ligand
+from backends.utils.orient_gpcr import align_to_opm_reference
+from backends.utils.transforms import compute_rigid_transform
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
-
-def compute_rigid_transform(A, B):
-    centroid_A = A.mean(axis=0)
-    centroid_B = B.mean(axis=0)
-
-    AA = A - centroid_A
-    BB = B - centroid_B
-
-    H = AA.T @ BB
-    U, S, Vt = np.linalg.svd(H)
-
-    R = Vt.T @ U.T
-
-    if np.linalg.det(R) < 0:
-        Vt[-1, :] *= -1
-        R = Vt.T @ U.T
-
-    t = centroid_B - R @ centroid_A
-
-    return R, t
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class Spinner:
     def __init__(self, message="Working"):
@@ -155,7 +133,7 @@ class OpenMMBackend:
 
                 new_res = new_top.addResidue(res.name, current_chain, res.id)
 
-                # Determine if this is the **true last residue in the chain**
+                # Determine if this is the true last residue in the chain
                 is_chain_terminal = (i == len(residues) - 1)
 
                 # Copy atoms
@@ -619,20 +597,32 @@ class OpenMMBackend:
         forcefield = ForceField(*protein_ff_files)
 
         # Step 7a: Orient GPCR for membrane
+
+        opm_ref = cfg.get("opm_reference")
+        opm_chain = cfg.get("opm_align_chain", list(protein_chains)[0])
+
         if cfg.get("membrane", False):
             oriented_pdb_path = os.path.join(input_pdb_dir, "protein_plus_ligand_oriented.pdb")
             logger.info("Orienting GPCR for membrane embedding")
-            if has_ligand:
-                orient_gpcr_with_ligand(
+
+            if opm_ref:
+                logger.info(f"Using OPM reference for alignment: {opm_ref}")
+
+                align_to_opm_reference(
                     pdb_path=stripped_pdb_path,
                     output_path=oriented_pdb_path,
-                    ligand_resnames=[ligand_resname] if ligand_sdf_path else None
+                    opm_pdb=opm_ref,
+                    target_chain=opm_chain,
+                    ligand_resnames=[ligand_resname] if has_ligand else None
                 )
+
             else:
+                logger.info("No OPM reference provided → falling back to PCA orientation")
+
                 orient_gpcr_with_ligand(
                     pdb_path=stripped_pdb_path,
                     output_path=oriented_pdb_path,
-                    ligand_resnames=None
+                    ligand_resnames=[ligand_resname] if has_ligand else None
                 )
 
             pdb_oriented = PDBFile(oriented_pdb_path)

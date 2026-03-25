@@ -12,6 +12,7 @@ workflow:
 prepare_system:
   pdb_file: input/5L7I.pdb
   protein_chains: ["A"] # Mandatory; no fallback (yet) if one is not specified. Add as many as necessary / you want to keep. 
+  opm_reference: "7X8S"
   ligand:
     resname: VIS
     chain: B
