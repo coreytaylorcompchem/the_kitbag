@@ -3,6 +3,8 @@ import json
 import sys
 import platform
 
+from tqdm import tqdm
+
 from openmm.app import *
 from openmm.app import PDBFile
 from openmm import *
@@ -17,7 +19,8 @@ from openmm.unit import nanometer, kelvin, atmosphere, picoseconds, kilojoule, m
 import numpy as np
 import pandas as pd
 
-from tqdm import tqdm
+import MDAnalysis as mda
+from MDAnalysis.transformations import unwrap, center_in_box, wrap
 
 from modules.utils.plotting import save_plot
 
@@ -182,7 +185,7 @@ class MDWorkflow:
         prot_idx = self.system.addForce(prot_force)
         lig_idx = self.system.addForce(lig_force)
 
-        # Reinitialize context once and preserve positions
+        # Reinitialise context once and preserve positions
         self.simulation.context.reinitialize(preserveState=True)
         self.simulation.context.setPositions(pos)
 
@@ -262,8 +265,6 @@ class MDWorkflow:
         self.system.removeForce(lig_idx)
         self.system.removeForce(prot_idx)
         self.simulation.context.reinitialize(preserveState=True)
-        self.simulation.context.setPositions(pos)
-
 
         # Final check
 
@@ -286,7 +287,7 @@ class MDWorkflow:
                description="Heating and equilibration.")
     def heat_and_equilibrate(self):
 
-        ligand_resname = 'UNK'
+        ligand_resname = 'LIG'
         atoms_list = list(self.topology.atoms())
         ligand_atoms = [atom.index for atom in atoms_list if atom.residue.name == ligand_resname]
 
@@ -449,7 +450,7 @@ class MDWorkflow:
 
         self.system.removeForce(restraint_index)
         self.simulation.context.reinitialize(preserveState=True)
-        self.simulation.context.setPositions(state.getPositions())
+        # self.simulation.context.setPositions(state.getPositions())
         self.simulation.context.setVelocitiesToTemperature(target_temp * kelvin)
 
         logger.info("Heating stage complete")
@@ -473,7 +474,7 @@ class MDWorkflow:
             barostat = MonteCarloBarostat(pressure, equil_temp * kelvin, frequency)
             self.system.addForce(barostat)
             self.simulation.context.reinitialize(preserveState=True)
-            self.simulation.context.setPositions(state.getPositions())
+            # self.simulation.context.setPositions(state.getPositions())
             self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
             logger.info(f"Added MonteCarloBarostat: {pressure} atm, {equil_temp} K")
 
@@ -605,10 +606,75 @@ class MDWorkflow:
         # output equilibrated pdb
         
         equilibrated_pdb_path = os.path.join(output_dir, "equilibrated_system.pdb")
-        state = self.simulation.context.getState(getPositions=True)
-        PDBFile.writeFile(self.topology, state.getPositions(), open(equilibrated_pdb_path, "w"))
-        logger.info(f"Equilibrated PDB written: {equilibrated_pdb_path}")
+        psf_path = os.path.join(output_dir, "topology.psf")
 
+        # Write raw coordinates
+        raw_pdb = os.path.join(output_dir, "_temp_raw.pdb")
+        state = self.simulation.context.getState(getPositions=True, enforcePeriodicBox=True)
+
+        with open(raw_pdb, "w") as f:
+            PDBFile.writeFile(self.topology, state.getPositions(), f)
+
+        # Load with correct bonding
+        u = mda.Universe(psf_path, raw_pdb)
+
+        membrane = u.select_atoms("resname POP")
+        protein = u.select_atoms("protein")
+
+        anchor = membrane if len(membrane) > 0 else protein
+
+        # Writers
+        with mda.Writer(equilibrated_pdb_path, n_atoms=u.atoms.n_atoms) as W:
+            for ts in u.trajectory:
+
+                # unwrap whole molecules
+                u.atoms.unwrap(compound='fragments')
+
+                # center system 
+                center_in_box(anchor, wrap=False)(ts)
+
+                # wrap back whole molecules
+                wrap(u.atoms, compound='fragments')(ts)
+
+                W.write(u.atoms)
+
+        os.remove(raw_pdb)
+
+        logger.info(f"Equilibrated PDB written: {equilibrated_pdb_path}")
+    
+    def reimage_trajectory(self, traj_path, top_path, output_path):
+
+        logger.info(f"Re-imaging trajectory: {traj_path}")
+
+        psf_path = top_path.replace("equilibrated_system.pdb", "topology.psf")
+        u = mda.Universe(psf_path, traj_path)
+
+        membrane = u.select_atoms("resname POP")
+        protein = u.select_atoms("protein")
+
+        if len(membrane) > 0:
+            anchor = membrane
+            logger.info("Centering on membrane")
+        else:
+            anchor = protein
+            logger.warning("No membrane found, centering on protein")
+
+        with mda.Writer(output_path, n_atoms=u.atoms.n_atoms) as W:
+            for ts in u.trajectory:
+
+                # --- 1. unwrap molecules ---
+                u.atoms.unwrap(compound='fragments')
+
+                # --- 2. center ---
+                center_in_box(anchor, wrap=False)(ts)
+
+                # --- 3. wrap molecules cleanly ---
+                wrap(u.atoms, compound='fragments')(ts)
+
+                W.write(u.atoms)
+
+        logger.info(f"Saved wrapped trajectory: {output_path}")
+        
     @register_task("production", category='Molecular dynamics', description="Run production simulation.")
     def production(self):
 
@@ -637,8 +703,13 @@ class MDWorkflow:
             ]
             for p in positions
         ], dtype=float)
-        backbone_atoms = [atom.index for atom in self.topology.atoms() if atom.name in {"N", "CA", "C", "O"}]
-        com = np.mean(coords[backbone_atoms], axis=0)
+        
+        anchor_atoms = [
+            atom.index for atom in self.topology.atoms()
+            if atom.residue.name in {"POP"} or atom.residue.name == "UNK" or atom.residue.chain.id == "A"
+        ]
+        
+        com = np.mean(coords[anchor_atoms], axis=0)
         box_lengths = np.array([box_vectors[i][i].value_in_unit(nanometer) for i in range(3)])
         shift = box_lengths / 2 - com
         for i in range(len(positions)):
@@ -754,6 +825,18 @@ class MDWorkflow:
             # Save checkpoint at end of segment
             self.simulation.saveCheckpoint(chk_file)
             logger.info(f"Checkpoint saved: {chk_file}")
+
+            # Re-image trajectory after writing
+            wrapped_traj = traj_file.replace(".dcd", "_wrapped.xtc")
+
+            try:
+                self.reimage_trajectory(
+                    traj_path=traj_file,
+                    top_path=os.path.join(output_dir, "equilibrated_system.pdb"),
+                    output_path=wrapped_traj
+                )
+            except Exception as e:
+                logger.warning(f"Re-imaging failed for {traj_file}: {e}")
 
         # Save final checkpoint
         final_chk = os.path.join(output_dir, "restart_final.chk")

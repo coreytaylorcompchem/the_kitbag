@@ -16,6 +16,9 @@ prepare_system:
   ligand:
     resname: VIS
     chain: B
+    # RDKit often fails on unusual moieties (inorganics, strained moieties like bicyclo[1.1.1]pentane, cubanes, etc.). 
+    # Providing SMILES helps the ligand constructor so it's a good idea.
+    # smiles: "CCCCCC" 
   # ligand_file: input/VIS.sdf   # BROKEN DO NOT DO THIS YET
   ligand_parameters: openff-2.0.0.offxml  # Optional but you should set it
   forcefield: ["amber14-all.xml", "amber14/tip3p.xml"] # Optional but you should set it

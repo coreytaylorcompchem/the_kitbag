@@ -20,8 +20,10 @@ from openmm import unit as unit
 from openmm.app import Topology as Topology
 from openmm.app import PDBFile, Modeller, ForceField, PME, HBonds
 from openmm import unit
+from openmm import XmlSerializer
 
 from simtk.openmm.app import PDBFile
+import parmed as pmd
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -506,7 +508,7 @@ class OpenMMBackend:
         else:
             logger.info("No ligand specified → running apo workflow")
 
-        logger.info(f"Ligand {ligand_resname} detected in chain {ligand_chain}")
+        # logger.info(f"Ligand {ligand_resname} detected in chain {ligand_chain}")
 
         # Prepare protein+ligand PDB for orientation (fixed)
         # Keep all protein residues, even if chain IDs changed by chain capping
@@ -566,10 +568,49 @@ class OpenMMBackend:
                 logger.debug(f"Extracted ligand PDB saved to {ligand_pdb_path}")
 
                 ligand_sdf_path = os.path.join(input_pdb_dir, f"{ligand_resname}_extracted.sdf")
-                mol = Chem.MolFromPDBFile(ligand_pdb_path, removeHs=False)
-                if mol is None:
-                    raise RuntimeError("RDKit failed to read ligand from extracted PDB")
+
+                smiles = ligand_cfg.get("smiles")
+
+                if smiles:
+                    logger.info("SMILES provided → using template-based ligand reconstruction")
+
+                    # --- Read PDB coordinates only ---
+                    mol_pdb = Chem.MolFromPDBFile(
+                        ligand_pdb_path,
+                        removeHs=False,
+                        sanitize=False,
+                        proximityBonding=False
+                    )
+
+                    if mol_pdb is None:
+                        raise RuntimeError("RDKit failed to read ligand from extracted PDB")
+
+                    # Build from SMILES
+                    mol_template = Chem.MolFromSmiles(smiles)
+                    if mol_template is None:
+                        raise RuntimeError("Invalid SMILES provided for ligand")
+
+                    mol_template = Chem.AddHs(mol_template)
+
+                    # Needed for mapping
+                    AllChem.EmbedMolecule(mol_template, AllChem.ETKDG())
+
+                    # Assign correct bonding
+                    mol = AllChem.AssignBondOrdersFromTemplate(mol_template, mol_pdb)
+
+                    Chem.SanitizeMol(mol)
+
+                else:
+                    logger.info("No SMILES provided → using direct PDB parsing")
+
+                    mol = Chem.MolFromPDBFile(ligand_pdb_path, removeHs=False)
+
+                    if mol is None:
+                        raise RuntimeError("RDKit failed to read ligand from extracted PDB")
+
+                # Write SDF
                 Chem.MolToMolFile(mol, ligand_sdf_path)
+                
                 logger.debug(f"Generated ligand SDF: {ligand_sdf_path}")
 
         # Step 5: Keep only protein + waters
@@ -787,9 +828,12 @@ class OpenMMBackend:
         topology_path = os.path.join(output_trajectory, "topology.pdb")
         with open(topology_path, "w") as f:
             PDBFile.writeFile(self.topology, self.positions, f, keepIds=True)
-        logger.info(f"Saved prepared protein + ligand system topology to {topology_path}")
 
-        from openmm import XmlSerializer
+        structure = pmd.openmm.load_topology(self.topology, self.system, self.positions)
+        psf_path = os.path.join(output_trajectory, "topology.psf")
+        structure.save(psf_path)
+
+        logger.info(f"Saved prepared protein + ligand system topology (pdb/psf) to {topology_path}")
 
         system_xml = os.path.join(output_trajectory, "system.xml")
 
