@@ -120,7 +120,7 @@ def train(context, config):
     model_path = Path(config.get("model_path", "outputs/models/best_model.pth"))
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # ----- weighted loss setup (ONCE) -----
+    # ----- weighted loss setup -----
     loss_cfg = config.get("loss", {})
     loss_type = loss_cfg.get("type", "mse")
 

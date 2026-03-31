@@ -2,10 +2,17 @@ import importlib
 
 import pandas as pd
 import numpy as np
+from joblib import Parallel, delayed
+from tqdm import tqdm
+
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 import torch
 from torch_geometric.loader import DataLoader
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, normalize
+from sklearn.decomposition import PCA
 
 from pipeline.task_registry import register_task
 from modules.utils.plotting import plot_label_histograms
@@ -187,33 +194,160 @@ def load_smiles_dataset(config, context):
 
     return {"dataframe": df}
 
+@register_task("transform_labels", category="ADME")
+def transform_labels(config, context):
+
+    label_cols = config["label_cols"] # from the yaml
+
+    df = context["dataframe"]
+    task_cols = config["label_cols"]
+
+    for col in task_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+        if col != "Solubility":
+            df[col] = np.where(df[col] > 0, np.log1p(df[col]), np.nan)
+
+    context["task_names"] = label_cols
+
+    context["dataframe"] = df
+    return context
+
+# @register_task("compute_mtl_features", category="ADME", description="Compute global features and fingerprints for MTL")
+# def compute_mtl_features(config, context):
+#     df = context["dataframe"]
+#     smiles_list = df["smiles"].tolist()
+
+#     # =============================
+#     # 1. GLOBAL FEATURES
+#     # =============================
+#     from models.adme.mtl_adme.featurisation import process_single_mol
+
+#     inputs = list(enumerate(smiles_list))
+
+#     global_feats = Parallel(n_jobs=config.get("n_jobs", -1))(
+#         delayed(process_single_mol)((i, smi))
+#         for i, smi in tqdm(inputs, desc="Global features")
+#     )
+
+#     global_feats = np.array(global_feats, dtype=np.float32)
+
+#     scaler = StandardScaler()
+#     scaled_global_feats = scaler.fit_transform(global_feats)
+
+#     # =============================
+#     # 2. FINGERPRINTS + PCA
+#     # =============================
+#     from models.adme.mtl_adme.featurisation import compute_morgan_fp
+
+#     all_fps = []
+
+#     for smi in tqdm(smiles_list, desc="Fingerprints"):
+#         mol = Chem.MolFromSmiles(smi)
+#         if mol is None:
+#             all_fps.append(np.zeros(1024, dtype=np.float32))
+#             continue
+
+#         fp_ecfp = compute_morgan_fp(mol, n_bits=512)
+#         fp_torsion = np.array(
+#             AllChem.GetHashedTopologicalTorsionFingerprintAsBitVect(mol, nBits=512)
+#         )
+
+#         fp = np.concatenate([fp_ecfp, fp_torsion])
+#         all_fps.append(fp)
+
+#     all_fps = np.array(all_fps, dtype=np.float32)
+
+#     # PCA → 512 dims (same as notebook)
+#     pca = PCA(n_components=512)
+#     fps_pca = pca.fit_transform(all_fps)
+
+#     # Normalize
+#     fps_pca = normalize(fps_pca, norm="l2", axis=1)
+
+#     # =============================
+#     # Save to context
+#     # =============================
+#     context["scaled_global_feats"] = scaled_global_feats
+#     context["fps_pca"] = fps_pca
+
+#     return {
+#         "scaled_global_feats": scaled_global_feats,
+#         "fps_pca": fps_pca
+#     }
 
 @register_task("featurise_smiles", category="ADME", description="Featurise SMILES for graph-based models.")
 def featurise_smiles(config, context):
     df = context["dataframe"]
 
     smiles_col = config.get("smiles_col", "smiles")
-    label_col = config.get("label_col", "pIC50")
+
+    # --- NEW: support multi-task ---
+    label_cols = config.get("label_cols")
+    label_col = config.get("label_col")
+
+    if label_cols is None and label_col is None:
+        raise ValueError("Provide either 'label_col' or 'label_cols'")
 
     # Load featuriser dynamically
     feat_cfg = config["featuriser"]
     module = importlib.import_module(feat_cfg["module"])
     featuriser = getattr(module, feat_cfg["function"])
 
+    if hasattr(module, "prepare_features"):
+        module.prepare_features(df, smiles_col=smiles_col)
+
     graphs = []
-    for smi, y in zip(df[smiles_col], df[label_col]):
-        g = featuriser(smi, label=y)
-        if g is not None:
-            graphs.append(g)
+
+    # --- MULTI-TASK ---
+    if label_cols is not None:
+        labels = df[label_cols].values.astype(np.float32)
+
+        for i, (smi, y_vec) in enumerate(
+            tqdm(zip(df[smiles_col], labels),
+                total=len(df),
+                desc="Featurising molecules")
+        ):
+            g = featuriser(smi, label=y_vec, idx=i)
+            if g is not None:
+                graphs.append(g)
+
+        num_tasks = len(label_cols)
+
+    # --- SINGLE-TASK (backward compatible) ---
+    else:
+        for i, (smi, y) in enumerate(
+            tqdm(zip(df[smiles_col], df[label_col]),
+                total=len(df),
+                desc="Featurising molecules")
+        ):
+            g = featuriser(smi, label=y, idx=i)
+            if g is not None:
+                graphs.append(g)
+
+        num_tasks = 1
 
     if not graphs:
         raise ValueError("Featurisation produced zero graphs.")
 
-    # Infer dimensions for downstream tasks
+    # --- Infer dimensions ---
+    first_graph = graphs[0]
+
+    # print("Has global_features:", hasattr(first_graph, "global_features"))
+    # print("Value:", getattr(first_graph, "global_features", None))
+
+    # print("Has fp:", hasattr(first_graph, "fp"))
+    # print("Value:", getattr(first_graph, "fp", None))
+
+    global_feat = getattr(first_graph, "global_features", None)
+    fp = getattr(first_graph, "fp", None)
+
     context.update({
         "graphs": graphs,
-        "input_dim": graphs[0].x.shape[1],
-        "global_feat_dim": getattr(graphs[0], "global_features", None).shape[0]
+        "input_dim": first_graph.x.shape[1],
+        "edge_dim": first_graph.edge_attr.shape[1],
+        "global_feat_dim": global_feat.shape[-1] if global_feat is not None else 0,
+        "fp_dim": fp.shape[-1] if fp is not None else 0,
+        "num_tasks": num_tasks
     })
 
     return context
