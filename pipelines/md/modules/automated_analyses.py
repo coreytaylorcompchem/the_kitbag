@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
-
 from modules.utils.mda_utils import _bit_to_color_value, _get_inv_color_mapper, _get_color_mapper
 
 import prolif as plf
@@ -33,6 +32,7 @@ import MDAnalysis as mda
 from MDAnalysis.analysis import rms, align
 from MDAnalysis.lib.distances import distance_array
 from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis as HBA
+from MDAnalysis.transformations import unwrap, center_in_box
 
 from sklearn.decomposition import IncrementalPCA
 from sklearn.manifold import TSNE
@@ -299,6 +299,12 @@ class RMSDAnalysisTask:
         os.makedirs(self.output_dir, exist_ok=True)
         self.u = mda.Universe(self.topology, self.trajectory)
 
+        protein = self.u.select_atoms("protein")
+
+        self.u.trajectory.add_transformations(
+            unwrap(self.u.atoms),              # fix broken molecules
+            center_in_box(protein, wrap=True)  # keep protein centered
+        )
     def run(self):
         logger.debug("Starting RMSD analysis...")
 
@@ -314,7 +320,10 @@ class RMSDAnalysisTask:
             logger.warning(f"No ligand atoms found for resname {self.ligand_resname}. Skipping ligand RMSD.")
 
         # Reference (frame0)
-        ref = mda.Universe(self.topology)
+        ref = mda.Universe(self.topology, self.trajectory)
+        ref.trajectory[0]
+
+        align.AlignTraj(ref, ref, select="protein and backbone", in_memory=True).run()
         ref_protein = ref.select_atoms("protein and backbone")
         ref_ligand = ref.select_atoms(f"resname {self.ligand_resname}") if len(ligand) > 0 else None
 
@@ -522,21 +531,10 @@ class InteractionFingerprintTask:
         times_ns = []
         offset_ns = 0.0
 
-        for traj_file in self.u.trajectory.filenames:
-            traj = mda.coordinates.DCD.DCDReader(traj_file)
-            n_frames = len(traj)
-            timestep_ps = traj.dt  # ps per frame
-
-            frame_times_ns = np.arange(n_frames) * timestep_ps / 1000.0 + offset_ns
-
-            # Apply stride before concatenation
-            frame_times_ns = frame_times_ns[self.start:self.stop:self.step]
-            
-            times_ns.extend(frame_times_ns)
-            offset_ns += n_frames * timestep_ps / 1000.0  # advance offset for next file
-
-        traj.close()
-        times_ns = np.array(times_ns)
+        times_ns = np.array([
+            ts.time / 1000.0  # ps → ns
+            for ts in self.u.trajectory[self.start:self.stop:self.step]
+        ])
 
         fp_transposed = fp_df.astype(np.uint8).T.apply(_bit_to_color_value, axis=1)
 
@@ -715,11 +713,25 @@ class HydrationSiteEnergyTask:
     def run(self):
         logger.info("Detecting hydration sites via water oxygen clustering...")
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
-        water_oxygens = self.u.select_atoms(f"resname {self.water_resname} and name O and around {self.cutoff} resname {self.ligand_resname}")
+        
         coords = []
 
         for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Waters"):
-            coords.append(water_oxygens.positions.copy())
+            water_oxygens = self.u.select_atoms(
+                f"resname {self.water_resname} and name O and around {self.cutoff} group ligand",
+                ligand=ligand
+            )
+            
+            if len(water_oxygens) > 0:
+                coords.append(water_oxygens.positions.copy())
+        
+        logger.info(f"Water selection atoms: {len(water_oxygens)}")
+        logger.info(f"Ligand atoms: {len(ligand)}")
+
+        # coords = []
+
+        # for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Waters"):
+        #     coords.append(water_oxygens.positions.copy())
         coords = np.concatenate(coords, axis=0)
 
         db = DBSCAN(eps=1.5, min_samples=5).fit(coords)

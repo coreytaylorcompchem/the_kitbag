@@ -92,6 +92,25 @@ class MDPostProcessingWorkflow:
         # Collect all traj files
         trajectories = self._collect_trajectories(trajectory)
 
+        # Try to auto-detect wrapped trajectory
+        traj_dir = os.path.dirname(trajectory) or "."
+        traj_base = os.path.splitext(os.path.basename(trajectory))[0]
+
+        wrapped_pattern = os.path.join(traj_dir, f"{traj_base}*wrapped*.xtc")
+
+        wrapped_files = [
+            os.path.join(traj_dir, f)
+            for f in os.listdir(traj_dir)
+            if "wrapped" in f and f.endswith(".xtc")
+        ]
+
+        wrapped_trajectories = natsorted(wrapped_files) if wrapped_files else None
+
+        if wrapped_trajectories:
+            logger.info(f"Detected wrapped trajectories: {len(wrapped_trajectories)} file(s)")
+        else:
+            logger.warning("No wrapped trajectories found — falling back to raw DCD (may break contact analyses)")
+
         logger.info(f"Topology: {topology}")
         logger.info(f"Trajectories: {len(trajectories)} file(s)")
         if len(trajectories) == 1:
@@ -142,7 +161,7 @@ class MDPostProcessingWorkflow:
             os.makedirs(interactions_outdir, exist_ok=True)
             interactions_task = InteractionFingerprintTask(
                 topology=topology,
-                trajectory=trajectories,
+                trajectory=wrapped_trajectories or trajectories,
                 ligand_selection=f"resname {ligand_resname}",
                 protein_selection="(protein or resname WAT) and byres around 20.0 group ligand",
                 start=start,
@@ -161,7 +180,7 @@ class MDPostProcessingWorkflow:
             logger.info("Running protein–ligand community analysis...")
             task = ProteinLigandCommunityTask(
                 topology=topology,
-                trajectory=trajectories,
+                trajectory=wrapped_trajectories or trajectories,
                 ligand_resname=ligand_resname,
                 start=start,
                 stop=stop,
@@ -174,7 +193,7 @@ class MDPostProcessingWorkflow:
             logger.info("Running hydration site energy analysis...")
             task = HydrationSiteEnergyTask(
                 topology=topology,
-                trajectory=trajectories,
+                trajectory=wrapped_trajectories or trajectories,
                 ligand_resname=ligand_resname,
                 water_resname=water_resname,
                 start=start,
@@ -236,7 +255,7 @@ class MDPostProcessingWorkflow:
 
             task = HydrogenBondAnalysisTask(
                 topology=topology,
-                trajectory=trajectories,
+                trajectory=wrapped_trajectories or trajectories,
                 ligand_resname=ligand_resname,
                 water_resname=water_resname,
                 start=start,
@@ -248,6 +267,6 @@ class MDPostProcessingWorkflow:
             )
             results["solvent_hbonds"] = task.run()
         else:
-            logger.info("Solvent analysis disabled — skipping.")
+            logger.info("Solvent analysis disabled - skipping.")
 
         return results

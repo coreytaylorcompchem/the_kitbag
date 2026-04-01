@@ -125,12 +125,6 @@ class MDWorkflow:
             timestep_fs *= 2  # safe doubling of timestep
         self.integrator = LangevinIntegrator(cfg["temperature"] * kelvin, 1.0/picoseconds, timestep_fs)
 
-        self.integrator = LangevinIntegrator(
-            cfg["temperature"] * kelvin,
-            1.0 / picoseconds,
-            timestep_fs
-        )
-
         self.simulation = Simulation(
             self.topology,
             self.system,
@@ -606,37 +600,23 @@ class MDWorkflow:
         # output equilibrated pdb
         
         equilibrated_pdb_path = os.path.join(output_dir, "equilibrated_system.pdb")
-        psf_path = os.path.join(output_dir, "topology.psf")
+        # psf_path = os.path.join(output_dir, "topology.psf")
+
+        # with open(psf_path, "w") as f:
+        #     CharmmPsfFile.writeFile(self.topology, f)
+
+        # logger.info(f"PSF written: {psf_path}")
 
         # Write raw coordinates
         raw_pdb = os.path.join(output_dir, "_temp_raw.pdb")
-        state = self.simulation.context.getState(getPositions=True, enforcePeriodicBox=True)
+        state = self.simulation.context.getState(getPositions=True, enforcePeriodicBox=False)
 
         with open(raw_pdb, "w") as f:
             PDBFile.writeFile(self.topology, state.getPositions(), f)
 
         # Load with correct bonding
-        u = mda.Universe(psf_path, raw_pdb)
-
-        membrane = u.select_atoms("resname POP")
-        protein = u.select_atoms("protein")
-
-        anchor = membrane if len(membrane) > 0 else protein
-
-        # Writers
-        with mda.Writer(equilibrated_pdb_path, n_atoms=u.atoms.n_atoms) as W:
-            for ts in u.trajectory:
-
-                # unwrap whole molecules
-                u.atoms.unwrap(compound='fragments')
-
-                # center system 
-                center_in_box(anchor, wrap=False)(ts)
-
-                # wrap back whole molecules
-                wrap(u.atoms, compound='fragments')(ts)
-
-                W.write(u.atoms)
+        with open(equilibrated_pdb_path, "w") as f:
+            PDBFile.writeFile(self.topology, state.getPositions(), f)
 
         os.remove(raw_pdb)
 
@@ -646,8 +626,7 @@ class MDWorkflow:
 
         logger.info(f"Re-imaging trajectory: {traj_path}")
 
-        psf_path = top_path.replace("equilibrated_system.pdb", "topology.psf")
-        u = mda.Universe(psf_path, traj_path)
+        u = mda.Universe(top_path, traj_path)
 
         membrane = u.select_atoms("resname POP")
         protein = u.select_atoms("protein")
@@ -659,18 +638,16 @@ class MDWorkflow:
             anchor = protein
             logger.warning("No membrane found, centering on protein")
 
+        transformations = [
+            unwrap(u.atoms),  # required for your version
+            center_in_box(anchor, wrap=False),
+            wrap(u.atoms)
+        ]
+
+        u.trajectory.add_transformations(*transformations)
+
         with mda.Writer(output_path, n_atoms=u.atoms.n_atoms) as W:
             for ts in u.trajectory:
-
-                # --- 1. unwrap molecules ---
-                u.atoms.unwrap(compound='fragments')
-
-                # --- 2. center ---
-                center_in_box(anchor, wrap=False)(ts)
-
-                # --- 3. wrap molecules cleanly ---
-                wrap(u.atoms, compound='fragments')(ts)
-
                 W.write(u.atoms)
 
         logger.info(f"Saved wrapped trajectory: {output_path}")
@@ -689,32 +666,32 @@ class MDWorkflow:
         max_density_dev = 0.5     # g/mL deviation
 
         # Get current state
-        state = self.simulation.context.getState(getPositions=True, getVelocities=True, enforcePeriodicBox=True)
+        state = self.simulation.context.getState(getPositions=True, getVelocities=True)
         positions = state.getPositions()
         velocities = state.getVelocities()
         box_vectors = state.getPeriodicBoxVectors()
 
-        #### Center system in the box
-        coords = np.array([
-            [
-                p.x.value_in_unit(nanometer) if hasattr(p.x, "value_in_unit") else float(p.x),
-                p.y.value_in_unit(nanometer) if hasattr(p.y, "value_in_unit") else float(p.y),
-                p.z.value_in_unit(nanometer) if hasattr(p.z, "value_in_unit") else float(p.z)
-            ]
-            for p in positions
-        ], dtype=float)
+        # #### Center system in the box
+        # coords = np.array([
+        #     [
+        #         p.x.value_in_unit(nanometer) if hasattr(p.x, "value_in_unit") else float(p.x),
+        #         p.y.value_in_unit(nanometer) if hasattr(p.y, "value_in_unit") else float(p.y),
+        #         p.z.value_in_unit(nanometer) if hasattr(p.z, "value_in_unit") else float(p.z)
+        #     ]
+        #     for p in positions
+        # ], dtype=float)
         
-        anchor_atoms = [
-            atom.index for atom in self.topology.atoms()
-            if atom.residue.name in {"POP"} or atom.residue.name == "UNK" or atom.residue.chain.id == "A"
-        ]
+        # anchor_atoms = [
+        #     atom.index for atom in self.topology.atoms()
+        #     if atom.residue.name in {"POP"} or atom.residue.name == "UNK" or atom.residue.chain.id == "A"
+        # ]
         
-        com = np.mean(coords[anchor_atoms], axis=0)
-        box_lengths = np.array([box_vectors[i][i].value_in_unit(nanometer) for i in range(3)])
-        shift = box_lengths / 2 - com
-        for i in range(len(positions)):
-            x, y, z = coords[i] + shift
-            positions[i] = Vec3(x, y, z) * nanometer
+        # com = np.mean(coords[anchor_atoms], axis=0)
+        # box_lengths = np.array([box_vectors[i][i].value_in_unit(nanometer) for i in range(3)])
+        # shift = box_lengths / 2 - com
+        # for i in range(len(positions)):
+        #     x, y, z = coords[i] + shift
+        #     positions[i] = Vec3(x, y, z) * nanometer
 
         # Update context
         self.simulation.context.setPositions(positions)
@@ -777,7 +754,7 @@ class MDWorkflow:
 
             # Attach reporters
             self.simulation.reporters.clear()
-            self.simulation.reporters.append(DCDReporter(traj_file, output_freq))
+            self.simulation.reporters.append(DCDReporter(traj_file, output_freq, enforcePeriodicBox=True))
             self.simulation.reporters.append(StateDataReporter(
                 log_file, energy_log_freq,
                 step=True, temperature=True, potentialEnergy=True, totalEnergy=True,
@@ -798,7 +775,7 @@ class MDWorkflow:
 
                     # Diagnostics only at intervals
                     if current_step % diagnostic_freq == 0:
-                        state = self.simulation.context.getState(getEnergy=True, enforcePeriodicBox=True)
+                        state = self.simulation.context.getState(getEnergy=True)
 
                         # Potential energy check
                         potential_energy = state.getPotentialEnergy().value_in_unit(kilojoule/mole)
@@ -835,6 +812,7 @@ class MDWorkflow:
                     top_path=os.path.join(output_dir, "equilibrated_system.pdb"),
                     output_path=wrapped_traj
                 )
+                logger.info(f"Wrapped trajectory written: {wrapped_traj}")
             except Exception as e:
                 logger.warning(f"Re-imaging failed for {traj_file}: {e}")
 
