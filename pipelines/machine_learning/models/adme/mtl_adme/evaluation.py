@@ -1,0 +1,167 @@
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+import math
+import pandas as pd
+import seaborn as sns
+
+from pathlib import Path
+from sklearn.metrics import r2_score, mean_squared_error
+
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+
+def evaluate(context, config):
+    plot_dir = Path(config.get("eval_plot_dir", "outputs/eval"))
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    # -------------------------
+    # LOAD DATA (robust)
+    # -------------------------
+    if "y_pred" in context and "y_true" in context:
+        y_pred = context["y_pred"]
+        y_true = context["y_true"]
+        logger.info("Using predictions from context")
+
+    else:
+        pred_dir = Path(config.get("predictions_dir", "outputs/mtl_adme/preds"))
+
+        y_pred = np.load(pred_dir / "y_pred.npy")
+        y_true = np.load(pred_dir / "y_true.npy")
+
+        logger.info(f"Loaded predictions from {pred_dir}")
+
+    task_names = context.get("task_names", None)
+
+    # --- Fix shapes ---
+    if y_true.ndim == 3:
+        y_true = np.squeeze(y_true, axis=1)
+    if y_pred.ndim == 3:
+        y_pred = np.squeeze(y_pred, axis=1)
+
+    n_tasks = y_true.shape[1]
+
+    if task_names is None:
+        task_names = [f"Task_{i}" for i in range(n_tasks)]
+
+    # =========================
+    # 1. METRICS + COUNTS CSV
+    # =========================
+    rows = []
+
+    for i, task in enumerate(task_names):
+        mask = ~np.isnan(y_true[:, i])
+        n = np.sum(mask)
+
+        if n == 0:
+            continue
+
+        y_t = y_true[mask, i]
+        y_p = y_pred[mask, i]
+
+        r2 = r2_score(y_t, y_p)
+        rmse = np.sqrt(mean_squared_error(y_t, y_p))
+
+        logger.info(f"{task}: n={n}, R2={r2:.3f}, RMSE={rmse:.3f}")
+
+        rows.append({
+            "task": task,
+            "n_samples": int(n),
+            "r2": float(r2),
+            "rmse": float(rmse),
+        })
+
+    pd.DataFrame(rows).to_csv(plot_dir / "task_metrics.csv", index=False)
+
+    # =========================
+    # 2. TASK CORRELATION HEATMAP
+    # =========================
+    df_tasks = pd.DataFrame(y_true, columns=task_names)
+
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(df_tasks.corr(), annot=True, cmap="coolwarm_r", center=0)
+    plt.title("Task correlation matrix")
+    plt.tight_layout()
+    plt.savefig(plot_dir / "task_correlation.png", dpi=300)
+    plt.close()
+
+    # =========================
+    # 3. TRUE VS PREDICTED
+    # =========================
+    n_cols = 3
+    n_rows = math.ceil(n_tasks / n_cols)
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 5*n_rows))
+    axes = axes.flatten()
+
+    for i, task in enumerate(task_names):
+        ax = axes[i]
+
+        mask = ~np.isnan(y_true[:, i])
+        if mask.sum() == 0:
+            ax.set_title(f"{task} (no data)")
+            ax.axis('off')
+            continue
+
+        y_t = y_true[mask, i]
+        y_p = y_pred[mask, i]
+
+        ax.scatter(y_t, y_p, alpha=0.5)
+
+        min_val = min(y_t.min(), y_p.min())
+        max_val = max(y_t.max(), y_p.max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--')
+
+        r2 = r2_score(y_t, y_p)
+        ax.set_title(f"{task}\nR²={r2:.2f}")
+        ax.set_xlabel("True")
+        ax.set_ylabel("Predicted")
+        ax.grid(True)
+
+    for j in range(i+1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.savefig(plot_dir / "true_vs_pred.png", dpi=300)
+    plt.close()
+
+    # =========================
+    # 4. RESIDUALS
+    # =========================
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 5*n_rows))
+    axes = axes.flatten()
+
+    for i, task in enumerate(task_names):
+        ax = axes[i]
+
+        mask = ~np.isnan(y_true[:, i])
+        if mask.sum() == 0:
+            ax.set_title(f"{task} (no data)")
+            ax.axis('off')
+            continue
+
+        y_t = y_true[mask, i]
+        y_p = y_pred[mask, i]
+
+        residuals = y_p - y_t
+
+        ax.scatter(y_t, residuals, alpha=0.5)
+        ax.axhline(0, linestyle='--')
+
+        ax.set_title(task)
+        ax.set_xlabel("True")
+        ax.set_ylabel("Residual")
+        ax.grid(True)
+
+    for j in range(i+1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.savefig(plot_dir / "residuals.png", dpi=300)
+    plt.close()
+
+    logger.info(f"Saved evaluation plots to {plot_dir}")
+
+    return {}
