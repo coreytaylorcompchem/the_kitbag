@@ -193,10 +193,10 @@ class MDWorkflow:
         # Staged minimisation
         # -------------------------
         stages = [
-            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 200, "tolerance": 100},
-            {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 500, "tolerance": 10},
-            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 200, "tolerance": 5},
-            {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 100, "tolerance": 1},
+            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 2000, "tolerance": 100},
+            {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 5000, "tolerance": 10},
+            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 2000, "tolerance": 5},
+            {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 1000, "tolerance": 1},
         ]
 
         for i, stage in enumerate(stages, 1):
@@ -850,9 +850,11 @@ class MDWorkflow:
             self.system.addForce(barostat)
 
             self.simulation.context.reinitialize(preserveState=True)
-            self.simulation.context.setPositions(positions)
-            self.simulation.context.setVelocities(velocities)
-            self.simulation.context.setPeriodicBoxVectors(*box_vectors)
+
+            state = self.simulation.context.getState(getPositions=True, getVelocities=True)
+            self.simulation.context.setPositions(state.getPositions())
+            self.simulation.context.setVelocities(state.getVelocities())
+            self.simulation.context.setPeriodicBoxVectors(*state.getPeriodicBoxVectors())
 
             logger.info(f"Added MonteCarloMembraneBarostat: {pressure} atm, {target_temp} K")
 
@@ -898,7 +900,7 @@ class MDWorkflow:
 
             # Attach reporters
             self.simulation.reporters.clear()
-            self.simulation.reporters.append(DCDReporter(traj_file, output_freq, enforcePeriodicBox=True))
+            self.simulation.reporters.append(DCDReporter(traj_file, output_freq, enforcePeriodicBox=False))
             self.simulation.reporters.append(StateDataReporter(
                 log_file, energy_log_freq,
                 step=True, temperature=True, potentialEnergy=True, totalEnergy=True,
@@ -947,18 +949,18 @@ class MDWorkflow:
             self.simulation.saveCheckpoint(chk_file)
             logger.info(f"Checkpoint saved: {chk_file}")
 
-            # Re-image trajectory after writing
-            wrapped_traj = traj_file.replace(".dcd", "_wrapped.xtc")
+            # # Re-image trajectory after writing
+            # wrapped_traj = traj_file.replace(".dcd", "_wrapped.xtc")
 
-            try:
-                self.reimage_trajectory(
-                    traj_path=traj_file,
-                    top_path=os.path.join(output_dir, "equilibrated_system.pdb"),
-                    output_path=wrapped_traj
-                )
-                logger.info(f"Wrapped trajectory written: {wrapped_traj}")
-            except Exception as e:
-                logger.warning(f"Re-imaging failed for {traj_file}: {e}")
+            # try:
+            #     self.reimage_trajectory(
+            #         traj_path=traj_file,
+            #         top_path=os.path.join(output_dir, "equilibrated_system.pdb"),
+            #         output_path=wrapped_traj
+            #     )
+            #     logger.info(f"Wrapped trajectory written: {wrapped_traj}")
+            # except Exception as e:
+            #     logger.warning(f"Re-imaging failed for {traj_file}: {e}")
 
         # Save final checkpoint
         final_chk = os.path.join(output_dir, "restart_final.chk")
