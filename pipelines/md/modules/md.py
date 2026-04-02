@@ -27,7 +27,7 @@ from modules.utils.plotting import save_plot
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 protein_resnames = {
     "ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS",
@@ -193,10 +193,10 @@ class MDWorkflow:
         # Staged minimisation
         # -------------------------
         stages = [
-            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 2000, "tolerance": 100},
-            {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 5000, "tolerance": 10},
-            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 2000, "tolerance": 5},
-            {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 1000, "tolerance": 1},
+            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 200, "tolerance": 100},
+            {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 500, "tolerance": 10},
+            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 200, "tolerance": 5},
+            {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 100, "tolerance": 1},
         ]
 
         for i, stage in enumerate(stages, 1):
@@ -283,6 +283,21 @@ class MDWorkflow:
 
         ligand_resname = 'LIG'
         atoms_list = list(self.topology.atoms())
+
+        # -------------------------------
+        # REMOVE CENTER-OF-MASS DRIFT
+        # -------------------------------
+        from openmm import CMMotionRemover
+
+        has_cmm = any(
+            isinstance(self.system.getForce(i), CMMotionRemover)
+            for i in range(self.system.getNumForces())
+        )
+
+        if not has_cmm:
+            self.system.addForce(CMMotionRemover())
+            logger.info("Added CMMotionRemover to system")
+            
         ligand_atoms = [atom.index for atom in atoms_list if atom.residue.name == ligand_resname]
 
         # -------------------------------
@@ -470,6 +485,15 @@ class MDWorkflow:
             if atom.residue.name in protein_resnames and atom.name in {"N","CA","C","O"}
         ]
 
+        # Lipid headgroup atoms (POPC: P + N is a good minimal choice)
+        lipid_head_atoms = [
+            atom.index for atom in atoms_list
+            if atom.residue.name in {"POP"} and atom.name in {"P", "N"}
+        ]
+
+        logger.debug(f"Backbone atoms restrained: {len(backbone_atoms)}")
+        logger.debug(f"Lipid headgroup atoms restrained: {len(lipid_head_atoms)}")
+
         # Create restraint force
         equil_restraint_force = CustomExternalForce("k_eq*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
         equil_restraint_force.addGlobalParameter("k_eq", equil_restraints_cfg[0] * kilojoule/(mole*nanometer**2))
@@ -481,11 +505,17 @@ class MDWorkflow:
         state = self.simulation.context.getState(getPositions=True)
         positions = state.getPositions()
 
-        for idx in backbone_atoms:
+        # add restraints
+
+        restrain_atoms = backbone_atoms + lipid_head_atoms
+
+        for idx in restrain_atoms:
             p = positions[idx]
             equil_restraint_force.addParticle(idx, [p.x, p.y, p.z])
 
         equil_restraint_index = self.system.addForce(equil_restraint_force)
+
+        logger.info(f"Equil restraint particles: {equil_restraint_force.getNumParticles()}")
 
         # Reinitialize context
         self.simulation.context.reinitialize(preserveState=True)
@@ -528,7 +558,7 @@ class MDWorkflow:
             self.system.addForce(barostat)
             self.simulation.context.reinitialize(preserveState=True)
             self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
-            self.simulation.context.reinitialize(preserveState=True)
+            # self.simulation.context.reinitialize(preserveState=True)
             # self.simulation.context.setPositions(state.getPositions())
             self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
             logger.info(f"Added MonteCarloBarostat: {pressure} atm, {equil_temp} K")
@@ -580,7 +610,23 @@ class MDWorkflow:
                     steps_done += n
                     pbar.update(n)
 
-                    # --- KEEP YOUR EXISTING DIAGNOSTICS HERE ---
+                    # # -------------------------------
+                    # # Update restraint reference positions to prevent drift
+                    # # -------------------------------
+                    # if steps_done_stage % 1000 == 0:
+                    #     state = self.simulation.context.getState(getPositions=True)
+                    #     current_pos = state.getPositions()
+
+                    #     for i in range(equil_restraint_force.getNumParticles()):
+                    #         idx, _ = equil_restraint_force.getParticleParameters(i)
+                    #         p = current_pos[idx]
+                    #         equil_restraint_force.setParticleParameters(i, idx, [p.x, p.y, p.z])
+
+                    #     equil_restraint_force.updateParametersInContext(self.simulation.context)
+
+                    # -------------------------------
+                    # Diagnostics
+                    # -------------------------------
                     state = self.simulation.context.getState(getEnergy=True, getPositions=True)
 
                     kinetic_energy = state.getKineticEnergy()
@@ -690,7 +736,7 @@ class MDWorkflow:
 
         # Write raw coordinates
         raw_pdb = os.path.join(output_dir, "_temp_raw.pdb")
-        state = self.simulation.context.getState(getPositions=True, enforcePeriodicBox=False)
+        state = self.simulation.context.getState(getPositions=True, enforcePeriodicBox=True)
 
         with open(raw_pdb, "w") as f:
             PDBFile.writeFile(self.topology, state.getPositions(), f)
@@ -782,16 +828,33 @@ class MDWorkflow:
         self.simulation.currentStep = 0
 
         # Attach barostat if NPT
-        has_barostat = any(isinstance(f, MonteCarloBarostat) for f in
-                        [self.system.getForce(i) for i in range(self.system.getNumForces())])
+        # Check for any existing barostat (both types!)
+        has_barostat = any(
+            isinstance(self.system.getForce(i), (MonteCarloBarostat, MonteCarloMembraneBarostat))
+            for i in range(self.system.getNumForces())
+        )
+
         if ensemble == "NPT" and not has_barostat:
-            barostat = MonteCarloBarostat(pressure * atmosphere, target_temp * kelvin, 25)
+
+            logger.info("Using MonteCarloMembraneBarostat (production)")
+
+            barostat = MonteCarloMembraneBarostat(
+                pressure * atmosphere,                      # lateral pressure (XY)
+                0.0 * bar * nanometer,                      # surface tension
+                target_temp * kelvin,
+                MonteCarloMembraneBarostat.XYIsotropic,
+                MonteCarloMembraneBarostat.ZFree,
+                25
+            )
+
             self.system.addForce(barostat)
+
             self.simulation.context.reinitialize(preserveState=True)
             self.simulation.context.setPositions(positions)
             self.simulation.context.setVelocities(velocities)
             self.simulation.context.setPeriodicBoxVectors(*box_vectors)
-            logger.info(f"Added MonteCarloBarostat: {pressure} atm, {target_temp} K")
+
+            logger.info(f"Added MonteCarloMembraneBarostat: {pressure} atm, {target_temp} K")
 
         timestep = self.integrator.getStepSize()
         timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0
