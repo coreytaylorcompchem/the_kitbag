@@ -458,15 +458,76 @@ class MDWorkflow:
         steps = equil_cfg.get("steps", 100000)
         equil_temp = equil_cfg.get("target_temp", target_temp)
 
-        logger.info(f"Starting equilibration: {ensemble} ensemble for {steps} steps at {equil_temp} K")
+        equil_restraints_cfg = equil_cfg.get("restraint_schedule", [5.0, 1.0, 0.5, 0.1, 0.0])
+        equil_stages = len(equil_restraints_cfg)
+        steps_per_stage = steps // equil_stages
+
+        logger.info(f"Equilibration with {equil_stages} restraint stages")
+
+        # Backbone atoms (reuse your earlier definition logic)
+        backbone_atoms = [
+            atom.index for atom in atoms_list
+            if atom.residue.name in protein_resnames and atom.name in {"N","CA","C","O"}
+        ]
+
+        # Create restraint force
+        equil_restraint_force = CustomExternalForce("k_eq*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
+        equil_restraint_force.addGlobalParameter("k_eq", equil_restraints_cfg[0] * kilojoule/(mole*nanometer**2))
+        equil_restraint_force.addPerParticleParameter("x0")
+        equil_restraint_force.addPerParticleParameter("y0")
+        equil_restraint_force.addPerParticleParameter("z0")
+
+        # Reference positions
+        state = self.simulation.context.getState(getPositions=True)
+        positions = state.getPositions()
+
+        for idx in backbone_atoms:
+            p = positions[idx]
+            equil_restraint_force.addParticle(idx, [p.x, p.y, p.z])
+
+        equil_restraint_index = self.system.addForce(equil_restraint_force)
+
+        # Reinitialize context
+        self.simulation.context.reinitialize(preserveState=True)
+        self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
 
         # Add barostat
-        if ensemble == "NPT" and not any(isinstance(self.system.getForce(i), MonteCarloBarostat) 
-                                        for i in range(self.system.getNumForces())):
-            pressure = equil_cfg.get("pressure", 1.0) * atmosphere
-            frequency = equil_cfg.get("barostat", {}).get("frequency", 25)
-            barostat = MonteCarloBarostat(pressure, equil_temp * kelvin, frequency)
+        baro_cfg = equil_cfg.get("barostat", {})
+        baro_type = baro_cfg.get("type", "MonteCarlo")
+        frequency = baro_cfg.get("frequency", 25)
+        pressure = equil_cfg.get("pressure", 1.0) * atmosphere
+
+        has_barostat = any(
+            isinstance(self.system.getForce(i), (MonteCarloBarostat, MonteCarloMembraneBarostat))
+            for i in range(self.system.getNumForces())
+        )
+
+        if ensemble == "NPT" and not has_barostat:
+
+            if baro_type.lower() == "anisotropic":
+                logger.info("Using MonteCarloMembraneBarostat (anisotropic)")
+
+                barostat = MonteCarloMembraneBarostat(
+                    pressure,                      # lateral pressure (XY)
+                    0.0 * bar * nanometer,                    # surface tension (0 = NPT)
+                    equil_temp * kelvin,
+                    MonteCarloMembraneBarostat.XYIsotropic,
+                    MonteCarloMembraneBarostat.ZFree,
+                    frequency
+                )
+
+            else:
+                logger.info("Using isotropic MonteCarloBarostat")
+
+                barostat = MonteCarloBarostat(
+                    pressure,
+                    equil_temp * kelvin,
+                    frequency
+                )
+
             self.system.addForce(barostat)
+            self.simulation.context.reinitialize(preserveState=True)
+            self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
             self.simulation.context.reinitialize(preserveState=True)
             # self.simulation.context.setPositions(state.getPositions())
             self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
@@ -497,51 +558,66 @@ class MDWorkflow:
         equil_step_chunk = 10
         steps_done = 0
 
-        with tqdm(total=steps, desc="Equilibration", unit="steps") as pbar:
-            while steps_done < steps:
-                n = min(equil_step_chunk, steps - steps_done)
-                self.simulation.step(n)
-                steps_done += n
-                pbar.update(n)
+        for stage_idx, k_val in enumerate(equil_restraints_cfg):
 
-                # -------------------------
-                # Diagnostics
-                # -------------------------
-                state = self.simulation.context.getState(getEnergy=True, getPositions=True)
+            logger.info(f"Equil stage {stage_idx+1}/{equil_stages} with k = {k_val}")
 
-                kinetic_energy = state.getKineticEnergy()
+            self.simulation.context.setParameter(
+                "k_eq",
+                k_val * kilojoule/(mole*nanometer**2)
+            )
 
-                dof = 3 * self.system.getNumParticles() - self.system.getNumConstraints()
-                dof -= 3  # remove com
-                kB = 0.00831446261815324  # kJ/mol/K
+            stage_steps = steps_per_stage
+            steps_done_stage = 0
 
-                temp_inst = (2 * kinetic_energy.value_in_unit(kilojoule/mole)) / (dof * kB)
-                pot_energy = state.getPotentialEnergy().value_in_unit(kilojoule/mole)
+            with tqdm(total=stage_steps, desc=f"Equil stage {stage_idx+1}", unit="steps") as pbar:
 
-                box = state.getPeriodicBoxVectors(asNumpy=True)
+                while steps_done_stage < stage_steps:
+                    n = min(equil_step_chunk, stage_steps - steps_done_stage)
+                    self.simulation.step(n)
 
-                lx = box[0][0].value_in_unit(nanometer)
-                ly = box[1][1].value_in_unit(nanometer)
-                lz = box[2][2].value_in_unit(nanometer)
+                    steps_done_stage += n
+                    steps_done += n
+                    pbar.update(n)
 
-                volume_nm3 = lx * ly * lz
+                    # --- KEEP YOUR EXISTING DIAGNOSTICS HERE ---
+                    state = self.simulation.context.getState(getEnergy=True, getPositions=True)
 
-                # APL
-                if n_lipids > 0:
-                    apl = (lx * ly) / (n_lipids / 2.0)
-                else:
-                    apl = float("nan")
+                    kinetic_energy = state.getKineticEnergy()
 
-                mass = sum([self.system.getParticleMass(i) for i in range(self.system.getNumParticles())])
-                mass_g = mass.value_in_unit(dalton) * 1.66054e-24
-                volume_mL = volume_nm3 * 1e-21
-                density = mass_g / volume_mL
+                    dof = 3 * self.system.getNumParticles() - self.system.getNumConstraints()
+                    dof -= 3
+                    kB = 0.00831446261815324
 
-                anisotropy = lz / ((lx + ly) / 2.0)
+                    temp_inst = (2 * kinetic_energy.value_in_unit(kilojoule/mole)) / (dof * kB)
+                    pot_energy = state.getPotentialEnergy().value_in_unit(kilojoule/mole)
 
-                # Append all diags to DataFrame
-                equil_df.loc[len(equil_df)] = [steps_done, temp_inst, pot_energy, volume_nm3, density,
-                                        lx, ly, lz, apl, anisotropy]
+                    box = state.getPeriodicBoxVectors(asNumpy=True)
+
+                    lx = box[0][0].value_in_unit(nanometer)
+                    ly = box[1][1].value_in_unit(nanometer)
+                    lz = box[2][2].value_in_unit(nanometer)
+
+                    volume_nm3 = lx * ly * lz
+
+                    #APL
+
+                    if n_lipids > 0:
+                        apl = (lx * ly) / (n_lipids / 2.0)
+                    else:
+                        apl = float("nan")
+
+                    mass = sum([self.system.getParticleMass(i) for i in range(self.system.getNumParticles())])
+                    mass_g = mass.value_in_unit(dalton) * 1.66054e-24
+                    volume_mL = volume_nm3 * 1e-21
+                    density = mass_g / volume_mL
+
+                    anisotropy = lz / ((lx + ly) / 2.0)
+
+                    equil_df.loc[len(equil_df)] = [
+                        steps_done, temp_inst, pot_energy, volume_nm3, density,
+                        lx, ly, lz, apl, anisotropy
+                    ]
 
         # Diagnostics
         state = self.simulation.context.getState(getEnergy=True, getPositions=True)
@@ -551,6 +627,11 @@ class MDWorkflow:
         mass_g = mass.value_in_unit(dalton) * 1.66054e-24
         volume_mL = volume_nm3 * 1e-21
         density = mass_g / volume_mL
+
+        # Remove equilibration restraints
+        self.system.removeForce(equil_restraint_index)
+        self.simulation.context.reinitialize(preserveState=True)
+        logger.info("Equilibration restraints removed")
 
         logger.info(f"Equilibration stage complete. Box volume: {volume_nm3:.3f} nm³, density: {density:.3f} g/mL")
         
