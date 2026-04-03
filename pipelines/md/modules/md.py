@@ -35,6 +35,8 @@ protein_resnames = {
     "TRP","TYR","VAL"
 }
 
+K_PARAM = "k"
+
 class MDWorkflow:
     def __init__(self, backend, config):
         self.backend = backend
@@ -276,6 +278,36 @@ class MDWorkflow:
         PDBFile.writeFile(self.topology, state.getPositions(), open(minimised_pdb_path, "w"))
         
         logger.info(f"Minimised PDB written: {minimised_pdb_path}")
+    
+    def add_protein_membrane_z_restraint(self, k_value):
+        from openmm import CustomCentroidBondForce
+
+        atoms = list(self.topology.atoms())
+
+        protein_atoms = [
+            a.index for a in atoms
+            if a.residue.name in protein_resnames
+        ]
+
+        membrane_atoms = [
+            a.index for a in atoms
+            if a.residue.name in {"POP"}
+        ]
+
+        if len(protein_atoms) == 0 or len(membrane_atoms) == 0:
+            raise ValueError("Protein or membrane atoms not found for COM restraint")
+
+        force = CustomCentroidBondForce(2, "k * (z1 - z2 - z0)^2")
+
+        force.addGlobalParameter(K_PARAM, k_value * kilojoule/(mole*nanometer**2))
+        force.addGlobalParameter("z0", 0.0)
+
+        g1 = force.addGroup(protein_atoms)
+        g2 = force.addGroup(membrane_atoms)
+
+        force.addBond([g1, g2], [])
+
+        return force, len(protein_atoms), len(membrane_atoms)
 
     @register_task("heat_and_equilibrate", category='Molecular dynamics',
                description="Heating and equilibration.")
@@ -332,60 +364,72 @@ class MDWorkflow:
         logger.info(f"Heating with {num_rounds} rounds up to {target_temp} K")
 
         # backbone + ligand atoms to restrain
-        backbone_atoms = [atom.index for atom in atoms_list
-                        if atom.residue.name in protein_resnames and atom.name in {"N","CA","C","O"}]
-        restrain_atoms = backbone_atoms + ligand_atoms
+
+        # backbone_atoms = [atom.index for atom in atoms_list
+        #                 if atom.residue.name in protein_resnames and atom.name in {"N","CA","C","O"}]
+        # restrain_atoms = backbone_atoms + ligand_atoms
+        
+        initial_k = restraints[0]
+
+        z_restraint, n_prot, n_mem = self.add_protein_membrane_z_restraint(initial_k)
+
+        restraint_index = self.system.addForce(z_restraint)
+
+        # Reinitialize once
+        self.simulation.context.reinitialize(preserveState=True)
+        self.simulation.context.setVelocitiesToTemperature(10*kelvin)
 
         # -------------------------------
         # Create restraint force (one reinit)
         # -------------------------------
-        restraint_force = CustomExternalForce("k_heating*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
-        restraint_force.addGlobalParameter("k_heating", restraints[0] * kilojoule/(mole*nanometer**2))
-        restraint_force.addPerParticleParameter("x0")
-        restraint_force.addPerParticleParameter("y0")
-        restraint_force.addPerParticleParameter("z0")
+        # restraint_force = CustomExternalForce("k_heating*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
+        # restraint_force.addGlobalParameter("k_heating", restraints[0] * kilojoule/(mole*nanometer**2))
+        # self.simulation.context.setParameter("k", k_value * kilojoule/(mole*nanometer**2))
+        # restraint_force.addPerParticleParameter("x0")
+        # restraint_force.addPerParticleParameter("y0")
+        # restraint_force.addPerParticleParameter("z0")
 
-        state = self.simulation.context.getState(getPositions=True)
-        positions = state.getPositions()
-        for idx in restrain_atoms:
-            pos = positions[idx]
-            restraint_force.addParticle(idx, [pos.x, pos.y, pos.z])
+        # state = self.simulation.context.getState(getPositions=True)
+        # positions = state.getPositions()
+        # for idx in restrain_atoms:
+        #     pos = positions[idx]
+        #     restraint_force.addParticle(idx, [pos.x, pos.y, pos.z])
 
         # Debug: check initial displacement before adding to system TODO: this is broken
-        max_disp = 0.0
-        for i in range(restraint_force.getNumParticles()):
-            particle_index, params = restraint_force.getParticleParameters(i)
-            x0, y0, z0 = params
-            pos = positions[particle_index]
-            disp = np.linalg.norm([pos.x - x0, pos.y - y0, pos.z - z0])
-            max_disp = max(max_disp, disp)
-        logger.debug(f"Max initial displacement before adding restraint: {max_disp:.6f} nm")
+        # max_disp = 0.0
+        # for i in range(restraint_force.getNumParticles()):
+        #     particle_index, params = restraint_force.getParticleParameters(i)
+        #     x0, y0, z0 = params
+        #     pos = positions[particle_index]
+        #     disp = np.linalg.norm([pos.x - x0, pos.y - y0, pos.z - z0])
+        #     max_disp = max(max_disp, disp)
+        # logger.debug(f"Max initial displacement before adding restraint: {max_disp:.6f} nm")
 
-        # Add to system and reinitialise context once
-        restraint_index = self.system.addForce(restraint_force)
-        self.simulation.context.reinitialize(preserveState=True)
-        self.simulation.context.setPositions(positions)
-        self.simulation.context.setVelocitiesToTemperature(10*kelvin)
+        # # Add to system and reinitialise context once
+        # restraint_index = self.system.addForce(restraint_force)
+        # self.simulation.context.reinitialize(preserveState=True)
+        # self.simulation.context.setPositions(positions)
+        # self.simulation.context.setVelocitiesToTemperature(10*kelvin)
 
-        # Debug: check displacements after reinit
-        state = self.simulation.context.getState(getPositions=True)
-        positions_post = state.getPositions()
-        max_disp_post = 0.0
-        for i in range(restraint_force.getNumParticles()):
-            particle_index, params = restraint_force.getParticleParameters(i)
-            x0, y0, z0 = params
-            pos = positions_post[particle_index]
-            disp = np.linalg.norm([pos.x - x0, pos.y - y0, pos.z - z0])
-            max_disp_post = max(max_disp_post, disp)
-        logger.debug(f"Max displacement after reinit: {max_disp_post:.6f} nm")
+        # # Debug: check displacements after reinit
+        # state = self.simulation.context.getState(getPositions=True)
+        # positions_post = state.getPositions()
+        # max_disp_post = 0.0
+        # for i in range(restraint_force.getNumParticles()):
+        #     particle_index, params = restraint_force.getParticleParameters(i)
+        #     x0, y0, z0 = params
+        #     pos = positions_post[particle_index]
+        #     disp = np.linalg.norm([pos.x - x0, pos.y - y0, pos.z - z0])
+        #     max_disp_post = max(max_disp_post, disp)
+        # logger.debug(f"Max displacement after reinit: {max_disp_post:.6f} nm")
 
         # Debug: check initial forces
-        state = self.simulation.context.getState(getForces=True)
-        forces = state.getForces(asNumpy=True) / (kilojoule / mole / nanometer)
-        # max force on restrained atoms only
-        restrained_indices = [restraint_force.getParticleParameters(i)[0] for i in range(restraint_force.getNumParticles())]
-        max_force = np.max(np.linalg.norm(forces[restrained_indices], axis=1))
-        logger.debug(f"Max force on restrained atoms before stepping: {max_force:.2f} kJ/mol/nm")
+        # state = self.simulation.context.getState(getForces=True)
+        # forces = state.getForces(asNumpy=True) / (kilojoule / mole / nanometer)
+        # # max force on restrained atoms only
+        # restrained_indices = [restraint_force.getParticleParameters(i)[0] for i in range(restraint_force.getNumParticles())]
+        # max_force = np.max(np.linalg.norm(forces[restrained_indices], axis=1))
+        # logger.debug(f"Max force on restrained atoms before stepping: {max_force:.2f} kJ/mol/nm")
 
         # -------------------------------
         # Heating loop
@@ -404,7 +448,7 @@ class MDWorkflow:
             temp = 10 + (target_temp - 10) * (i + 1) / num_rounds
             k_value = restraints[i] if i < len(restraints) else 0.0
             self.integrator.setTemperature(temp * kelvin)
-            self.simulation.context.setParameter("k_heating", k_value * kilojoule/(mole*nanometer**2))
+            self.simulation.context.setParameter(K_PARAM, k_value * kilojoule/(mole*nanometer**2))
             self.integrator.setStepSize(small_dt if i < 3 else original_dt)
 
             steps_done = 0
@@ -491,31 +535,47 @@ class MDWorkflow:
             if atom.residue.name in {"POP"} and atom.name in {"P", "N"}
         ]
 
-        logger.debug(f"Backbone atoms restrained: {len(backbone_atoms)}")
-        logger.debug(f"Lipid headgroup atoms restrained: {len(lipid_head_atoms)}")
+        # logger.debug(f"Backbone atoms restrained: {len(backbone_atoms)}")
+        # logger.debug(f"Lipid headgroup atoms restrained: {len(lipid_head_atoms)}")
+        
+        logger.debug(f"Protein atoms in COM group: {n_prot}")
+        logger.debug(f"Membrane atoms in COM group: {n_mem}")
 
-        # Create restraint force
-        equil_restraint_force = CustomExternalForce("k_eq*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
-        equil_restraint_force.addGlobalParameter("k_eq", equil_restraints_cfg[0] * kilojoule/(mole*nanometer**2))
-        equil_restraint_force.addPerParticleParameter("x0")
-        equil_restraint_force.addPerParticleParameter("y0")
-        equil_restraint_force.addPerParticleParameter("z0")
+        # -------------------------------
+        # Relative restraint: protein vs membrane (Z)
+        # -------------------------------
 
-        # Reference positions
-        state = self.simulation.context.getState(getPositions=True)
-        positions = state.getPositions()
+        initial_k = equil_restraints_cfg[0]
 
-        # add restraints
-
-        restrain_atoms = backbone_atoms + lipid_head_atoms
-
-        for idx in restrain_atoms:
-            p = positions[idx]
-            equil_restraint_force.addParticle(idx, [p.x, p.y, p.z])
-
+        equil_restraint_force, n_prot, n_mem = self.add_protein_membrane_z_restraint(initial_k)
         equil_restraint_index = self.system.addForce(equil_restraint_force)
 
-        logger.info(f"Equil restraint particles: {equil_restraint_force.getNumParticles()}")
+        self.simulation.context.reinitialize(preserveState=True)
+        self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
+
+        # equil_restraint_force.addGlobalParameter("k_eq", equil_restraints_cfg[0] * kilojoule/(mole*nanometer**2))
+        # equil_restraint_force.addPerParticleParameter("x0")
+        # equil_restraint_force.addPerParticleParameter("y0")
+        # equil_restraint_force.addPerParticleParameter("z0")
+
+        # # Reference positions
+        # state = self.simulation.context.getState(getPositions=True)
+        # positions = state.getPositions()
+
+        # # add restraints
+
+        # restrain_atoms = backbone_atoms + lipid_head_atoms
+
+        # for idx in restrain_atoms:
+        #     p = positions[idx]
+        #     equil_restraint_force.addParticle(idx, [p.x, p.y, p.z])
+
+        # equil_restraint_index = self.system.addForce(equil_restraint_force)
+
+        logger.info(
+            f"Equil restraint groups: {equil_restraint_force.getNumGroups()}, "
+            f"bonds: {equil_restraint_force.getNumBonds()}"
+        )
 
         # Reinitialize context
         self.simulation.context.reinitialize(preserveState=True)
@@ -593,7 +653,7 @@ class MDWorkflow:
             logger.info(f"Equil stage {stage_idx+1}/{equil_stages} with k = {k_val}")
 
             self.simulation.context.setParameter(
-                "k_eq",
+                K_PARAM,
                 k_val * kilojoule/(mole*nanometer**2)
             )
 
@@ -609,20 +669,6 @@ class MDWorkflow:
                     steps_done_stage += n
                     steps_done += n
                     pbar.update(n)
-
-                    # # -------------------------------
-                    # # Update restraint reference positions to prevent drift
-                    # # -------------------------------
-                    # if steps_done_stage % 1000 == 0:
-                    #     state = self.simulation.context.getState(getPositions=True)
-                    #     current_pos = state.getPositions()
-
-                    #     for i in range(equil_restraint_force.getNumParticles()):
-                    #         idx, _ = equil_restraint_force.getParticleParameters(i)
-                    #         p = current_pos[idx]
-                    #         equil_restraint_force.setParticleParameters(i, idx, [p.x, p.y, p.z])
-
-                    #     equil_restraint_force.updateParametersInContext(self.simulation.context)
 
                     # -------------------------------
                     # Diagnostics
