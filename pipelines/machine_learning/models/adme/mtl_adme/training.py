@@ -15,14 +15,14 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 
 # =========================
-# COLLATE (IDENTICAL PATTERN)
+# COLLATE
 # =========================
 def custom_collate(batch_list):
     return Batch.from_data_list(batch_list)
 
 
 # =========================
-# LOSSES (FROM YOUR NOTEBOOK)
+# LOSSES
 # =========================
 def masked_mse_loss(pred, target):
     mask = ~torch.isnan(target)
@@ -158,7 +158,7 @@ def train(context, config):
     logger.debug(f"Number of graphs: {len(data_list)}")
 
     # -------------------------
-    # SPLIT (same as CYP)
+    # SPLIT
     # -------------------------
     train_list, val_list = train_test_split(
         data_list,
@@ -203,7 +203,7 @@ def train(context, config):
     best_model, best_loss, best_params = None, float("inf"), None
 
     # =========================
-    # GRID SEARCH (IDENTICAL STYLE)
+    # GRID SEARCH
     # =========================
     for lr, hidden_dim in itertools.product(
         config["param_grid"]["lr"],
@@ -272,7 +272,7 @@ def train(context, config):
         model.to(device)
 
         # -------------------------
-        # PLOTTING (FULLY RESTORED)
+        # PLOTTING
         # -------------------------
         train_task_hist = np.array(train_task_hist)
         val_task_hist = np.array(val_task_hist)
