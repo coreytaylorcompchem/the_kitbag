@@ -32,10 +32,11 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="MDAnalysi
 import MDAnalysis as mda
 from MDAnalysis.analysis import rms, align
 from MDAnalysis.lib.distances import distance_array
+from MDAnalysis.lib.mdamath import make_whole
 from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis as HBA
-from MDAnalysis.transformations import unwrap, center_in_box
+from MDAnalysis.transformations import unwrap, center_in_box, wrap
 
-from sklearn.decomposition import IncrementalPCA
+from sklearn.decomposition import IncrementalPCA, PCA
 from sklearn.manifold import TSNE
 from sklearn.cluster import DBSCAN
 
@@ -853,49 +854,114 @@ class ProteinLigandCommunityTask:
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
         if len(ligand) == 0:
             raise ValueError(f"No ligand found for resname {self.ligand_resname}")
-        protein = self.u.select_atoms(f"protein and around {self.binding_site_cutoff} resname {self.ligand_resname}")
+        protein = self.u.select_atoms("protein")
+
+        contact_matrix = {}  # resid -> list of 0/1 contacts over time
+        frames = list(self.u.trajectory[self.start:self.stop:self.step])
+
+        for res in protein.residues:
+            contact_matrix[res.resid] = []
+
+        for ts in tqdm.tqdm(frames, desc="Contacts"):
+            for res in protein.residues:
+                d = mda.lib.distances.distance_array(
+                    res.atoms.positions, ligand.positions
+                ).min()
+
+                # Smooth contact score instead of binary
+                contact_matrix[res.resid].append(d)
+
+        contact_freq = {
+            resid: np.mean(vals)
+            for resid, vals in contact_matrix.items()
+        }
+        
+        # ============================================================
+        # Contact persistence
+        # ============================================================
+
+        logger.info("Computing residue–ligand contact persistence...")
 
         contact_counts = {}
+        n_frames = 0
+
         for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Contacts"):
+            n_frames += 1
+
             for res in protein.residues:
-                res_atoms = res.atoms
-                d = mda.lib.distances.distance_array(res_atoms.positions, ligand.positions).min()
+                d = mda.lib.distances.distance_array(
+                    res.atoms.positions, ligand.positions
+                ).min()
+
                 if d < self.binding_site_cutoff:
-                    key = res.resid
+                    key = (res.segid, res.resid, res.resname)
                     contact_counts[key] = contact_counts.get(key, 0) + 1
 
-        G = nx.Graph()
-        for res in protein.residues:
-            G.add_node(res.resid, name=res.resname)
-        for i, j in itertools.combinations(contact_counts.keys(), 2):
-            G.add_edge(i, j, weight=(contact_counts[i] + contact_counts[j]) / 2)
+        data = []
 
-        logger.info("Detecting residue communities...")
-        
-        partition = community_louvain.best_partition(G, weight='weight')
-        nx.set_node_attributes(G, partition, "community")
+        for (chain, resid, resname), count in contact_counts.items():
+            persistence = count / n_frames
 
-        df_nodes = pd.DataFrame([
-            {"Resid": n, "Resname": G.nodes[n]["name"], "Community": G.nodes[n]["community"]}
-            for n in G.nodes
-        ])
-        out_json = os.path.join(self.output_dir, "plin_communities.json")
-        df_nodes.to_json(out_json, orient="records", indent=2)
-        logger.info(f"Saved community assignments to {out_json}")
+            data.append({
+                "Chain": chain,
+                "Residue": resid,
+                "Resname": resname,
+                "Label": f"{resname}{resid}:{chain}",
+                "Persistence": persistence
+            })
 
-        sns.set(style="white", context="talk")
-        plt.figure(figsize=(8, 6))
-        pos = nx.spring_layout(G, seed=42, weight='weight')
-        communities = [G.nodes[n]["community"] for n in G.nodes]
-        cmap = sns.color_palette("husl", len(set(communities)))
-        nx.draw(G, pos, node_color=[cmap[c] for c in communities], with_labels=True, font_size=8)
-        plt.title("Protein–Ligand Interaction Communities")
-        out_plot = os.path.join(self.output_dir, "plin_community_network.png")
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            raise ValueError("No contacts detected. Check ligand selection or cutoff.")
+
+        # Sort by importance
+        df = df.sort_values("Persistence", ascending=False)
+
+        # Save JSON
+
+        out_json = os.path.join(self.output_dir, "contact_persistence.json")
+        df.to_json(out_json, orient="records", indent=2)
+        logger.info(f"Saved contact persistence data to {out_json}")
+
+
+        # Plot
+
+        sns.set(style="whitegrid", context="talk")
+        plt.figure(figsize=(10, 6))
+
+        # Only show meaningful residues (adjust threshold if needed)
+        df_plot = df[df["Persistence"] > 0.1]
+
+        # Fallback: if nothing passes threshold, show top 20
+        if df_plot.empty:
+            df_plot = df.head(20)
+
+        sns.barplot(
+            data=df_plot,
+            x="Label",
+            y="Persistence",
+            hue="Chain"
+        )
+
+        plt.xticks(rotation=90)
+        plt.ylabel("Contact Persistence")
+        plt.xlabel("Residue")
+        plt.title("Ligand Binding Hotspots")
+
+        plt.tight_layout()
+
+        out_plot = os.path.join(self.output_dir, "contact_persistence_plot.png")
         plt.savefig(out_plot, dpi=300, bbox_inches="tight")
         plt.close()
-        logger.info(f"Saved PLIN community network to {out_plot}")
 
-        return {"communities_data": out_json, "communities_plot": out_plot}
+        logger.info(f"Saved contact persistence plot to {out_plot}")
+
+
+        return {
+            "contacts_data": out_json,
+            "contacts_plot": out_plot
+        }
 
 @register_task(
     "hydration_site_energy",
@@ -930,19 +996,76 @@ class HydrationSiteEnergyTask:
         self.u = mda.Universe(self.topology, self.trajectory)
 
     def run(self):
+        def wrap_like_vmd(ts):
+            box = ts.dimensions[:3]
+
+            # center on protein
+            com = protein.center_of_mass()
+            shift = box / 2.0 - com
+            self.u.atoms.positions += shift
+
+            # wrap residues consistently
+            for res in self.u.residues:
+                res_com = res.atoms.center_of_mass()
+                delta = (res_com // box) * box * -1
+                res.atoms.positions += delta
+
+            return ts
+
         logger.info("Detecting hydration sites via water oxygen clustering...")
+
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
+
+        protein = self.u.select_atoms("protein")
+        solvent = self.u.select_atoms(f"resname {self.water_resname}")
+
+        protein = self.u.select_atoms("protein")
+
+        self.u.trajectory.add_transformations(
+            unwrap(self.u.atoms),
+            wrap_like_vmd
+        )
         
+        # --- ALIGN ONCE ---
+        logger.info("Aligning trajectory...")
+        align.AlignTraj(
+            self.u,
+            self.u,
+            select="protein and backbone",
+            in_memory=True
+        ).run()
+
+        # --- NOW extract reference from aligned universe ---
+        ref_pdb_path = os.path.join(self.output_dir, "reference_structure.pdb")
+
+        self.u.trajectory[0]
+
+        ref = self.u.select_atoms(f"protein or resname {self.ligand_resname}").copy()
+
+        with mda.Writer(ref_pdb_path, ref.n_atoms) as W:
+            W.write(ref)
+
         coords = []
 
-        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Waters"):
+        for ts in self.u.trajectory[self.start:self.stop:self.step]:
+
             water_oxygens = self.u.select_atoms(
                 f"resname {self.water_resname} and name O and around {self.cutoff} group ligand",
                 ligand=ligand
             )
-            
-            if len(water_oxygens) > 0:
-                coords.append(water_oxygens.positions.copy())
+
+            coords.append(water_oxygens.positions.copy())
+
+        # # >>> save LAST FRAME (correctly processed)
+        # ref_u = mda.Universe(self.topology)
+        # ref = ref_u.select_atoms(f"protein or resname {self.ligand_resname}")
+
+        # ref_pdb_path = os.path.join(self.output_dir, "reference_structure.pdb")
+
+        # with mda.Writer(ref_pdb_path, ref.n_atoms) as W:
+        #     W.write(ref)
+
+        # logger.info(f"Saved reference structure to {ref_pdb_path}")
         
         logger.info(f"Water selection atoms: {len(water_oxygens)}")
         logger.info(f"Ligand atoms: {len(ligand)}")
@@ -955,26 +1078,82 @@ class HydrationSiteEnergyTask:
 
         db = DBSCAN(eps=1.5, min_samples=5).fit(coords)
         labels = db.labels_
+        clusters = {}
+
+        for label in set(labels):
+            if label == -1:
+                continue  # noise
+
+            cluster_points = coords[labels == label]
+            centroid = cluster_points.mean(axis=0)
+
+            clusters[label] = {
+                "centroid": centroid,
+                "count": len(cluster_points)
+            }
 
         df = pd.DataFrame(coords, columns=["x", "y", "z"])
         df["Cluster"] = labels
         site_counts = df["Cluster"].value_counts()
         site_probs = site_counts / site_counts.sum()
         R, T = 8.314, 300.0
-        df_energy = pd.DataFrame({
-            "Site": site_probs.index,
-            "Occupancy": site_probs.values,
-            "DeltaG_kJmol": -R * T * np.log(site_probs.values)
-        })
+        total_points = sum(c["count"] for c in clusters.values())
+
+        data = []
+
+        for label, info in clusters.items():
+            occupancy = info["count"] / total_points
+            dG = -R * T * np.log(occupancy)
+
+            data.append({
+                "Site": label,
+                "x": info["centroid"][0],
+                "y": info["centroid"][1],
+                "z": info["centroid"][2],
+                "Occupancy": occupancy,
+                "DeltaG_kJmol": dG
+            })
+
+        df_energy = pd.DataFrame(data).sort_values("Occupancy", ascending=False)
+
+        pdb_lines = []
+        for i, row in df_energy.iterrows():
+            pdb_lines.append(
+                "HETATM{:5d}  O   HOH A{:4d}    {:8.3f}{:8.3f}{:8.3f}  1.00{:6.2f}           O\n".format(
+                    int(i),
+                    int(row["Site"]),
+                    row["x"], row["y"], row["z"],
+                    row["Occupancy"] * 100
+                )
+            )
+
+        pdb_path = os.path.join(self.output_dir, "hydration_sites.pdb")
+        with open(pdb_path, "w") as f:
+            f.writelines(pdb_lines)
+
+        logger.info(f"Saved hydration sites PDB to {pdb_path}")
 
         out_json = os.path.join(self.output_dir, "hydration_sites.json")
         df_energy.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved hydration site free energies to {out_json}")
 
-        plt.figure(figsize=(6, 4))
-        sns.barplot(data=df_energy, x="Site", y="DeltaG_kJmol", color="#5DADE2")
+        plt.figure(figsize=(8, 5))
+
+        sns.scatterplot(
+            data=df_energy,
+            x="Occupancy",
+            y="DeltaG_kJmol",
+            size="Occupancy",
+            sizes=(50, 300)
+        )
+
+        for _, row in df_energy.head(10).iterrows():
+            plt.text(row["Occupancy"], row["DeltaG_kJmol"], f"{int(row['Site'])}")
+
+        plt.xlabel("Occupancy")
         plt.ylabel("ΔG (kJ/mol)")
-        plt.title("Relative Hydration Site Free Energies")
+        plt.title("Hydration Site Stability")
+
         plt.tight_layout()
         out_plot = os.path.join(self.output_dir, "hydration_sites_energy.png")
         plt.savefig(out_plot, dpi=300, bbox_inches="tight")
@@ -1018,7 +1197,7 @@ class TemporalMotifPersistenceTask:
         self.u = mda.Universe(self.topology, self.trajectory)
 
     def run(self):
-        logger.info("Analyzing temporal motif persistence...")
+        logger.info("Analyzing protein-ligand temporal motif persistence...")
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
         waters = self.u.select_atoms(f"resname {self.water_resname} and name O")
         protein = self.u.select_atoms("protein")
@@ -1128,7 +1307,17 @@ class TemporalMotifPersistenceTask:
         window = self.smoothing_window
         smoothed_matrix = np.zeros_like(presence_matrix)
         for i in range(presence_matrix.shape[0]):
-            smoothed_matrix[i] = np.convolve(presence_matrix[i], np.ones(window) / window, mode='same')
+            row = presence_matrix[i]
+            window = min(self.smoothing_window, len(row))
+            
+            if window < 2:
+                smoothed_matrix[i] = row
+                continue
+
+            kernel = np.ones(window) / window
+            smoothed = np.convolve(row, kernel, mode='same')
+
+            smoothed_matrix[i] = smoothed[:len(row)]  # extra safety
 
         motif_labels = [f"L:{k[0]} W:{k[1]} P:{k[3]}{k[2]}" for k in top_grouped_keys]
 
@@ -1386,7 +1575,7 @@ class NetworkEmbeddingAnalysisTask:
         return df
 
     def run(self):
-        logger.info("Starting network embedding analysis (from trajectory)...")
+        logger.info("Starting network embedding analysis...")
         graphs = self._generate_graphs()
 
         embeddings_file = self._compute_node2vec_embeddings(graphs)
@@ -1472,8 +1661,8 @@ class NetworkEmbeddingAnalysisTask:
                     cmap="YlGnBu",
                     cbar_kws={"label": "Contact frequency"})  # colorbar label
 
-        plt.xlabel("Cluster")
-        plt.ylabel("Residue")
+        plt.ylabel("Cluster")
+        plt.xlabel("Residue Pair")
         plt.title("Residue-Ligand Contact Frequency per Cluster")
         plt.tight_layout()
 
@@ -1534,6 +1723,87 @@ class ProteinProteinNetworkEmbeddingTask:
         self.context = context or {}
         self.u = mda.Universe(topology, trajectory)
 
+    def _compute_node2vec_embeddings(self, graphs):
+
+        embeddings_file = os.path.join(self.output_dir, "node2vec_embeddings.h5")
+
+        with h5py.File(embeddings_file, 'w') as f:
+            emb_dataset = f.create_dataset("embeddings", 
+                                        shape=(len(graphs), self.node2vec_dim), 
+                                        dtype=np.float32)
+
+            for i, G in tqdm.tqdm(enumerate(graphs), total=len(graphs), desc="Node2Vec embeddings"):
+                if G.number_of_nodes() < 2:
+                    emb_dataset[i] = np.zeros(self.node2vec_dim, dtype=np.float32)
+                    logger.info(f"Skipping frame {i} because the graph has fewer than 2 nodes")
+                    continue
+
+                logger.debug(f"Processing frame {i} with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
+
+                n2v = Node2Vec(G, dimensions=self.node2vec_dim, walk_length=self.node2vec_walk_length, 
+                            num_walks=self.node2vec_num_walks, p=self.node2vec_p, q=self.node2vec_q, 
+                            workers=1, seed=self.random_state, quiet=True)
+
+                # Debugging: Check graph info before fitting
+                logger.debug(f"Graph {i}: number of nodes = {len(G.nodes)}, number of edges = {len(G.edges)}")
+
+                model = n2v.fit(window=5, min_count=1, batch_words=4)
+                
+                # Compute the mean of node embeddings
+                emb = np.mean([model.wv[node] for node in G.nodes if node in model.wv], axis=0)
+
+                if np.isnan(emb).any():
+                    logger.debug(f"Warning: NaN values encountered in embedding for frame {i}")
+
+                emb_dataset[i] = emb
+
+                # Debug: Check embedding
+                logger.debug(f"Embedding saved for frame {i}: {emb[:5]}...")
+
+            logger.info(f"Embeddings saved to {embeddings_file}")
+        return embeddings_file
+    
+    def _load_node2vec_embeddings_in_chunks(self, embeddings_file, chunk_size=100):
+        with h5py.File(embeddings_file, 'r') as f:
+            total_frames = len(f['embeddings'])
+            embeddings = []
+
+            for start_idx in range(0, total_frames, chunk_size):
+                end_idx = min(start_idx + chunk_size, total_frames)
+                chunk = f['embeddings'][start_idx:end_idx]
+                chunk = np.nan_to_num(chunk, nan=0.0, posinf=0.0, neginf=0.0)  # Clean NaN/Inf
+                embeddings.append(chunk)
+        
+        return np.concatenate(embeddings, axis=0)
+
+    def _incremental_pca(self, embeddings, chunk_size=100):
+        ipca = IncrementalPCA(n_components=50)
+        for start_idx in range(0, len(embeddings), chunk_size):
+            end_idx = min(start_idx + chunk_size, len(embeddings))
+            ipca.partial_fit(embeddings[start_idx:end_idx])
+        
+        reduced_embeddings = ipca.transform(embeddings)
+        return reduced_embeddings
+
+    def _tsne(self, embeddings):
+        tsne = TSNE(
+            n_components=2,
+            perplexity=min(self.perplexity, len(embeddings)//3),
+            random_state=self.random_state,
+            init="pca",
+            learning_rate="auto"
+        )
+        return tsne.fit_transform(embeddings)
+
+    def _cluster_embeddings(self, emb_2d):
+        from sklearn.preprocessing import StandardScaler
+
+        emb_scaled = StandardScaler().fit_transform(emb_2d)
+
+        db = DBSCAN(eps=0.5, min_samples=5)
+        return db.fit_predict(emb_scaled)
+
+
     def _frame_to_graph_pp(self, ts):
         protein = self.u.select_atoms("protein")
 
@@ -1541,11 +1811,8 @@ class ProteinProteinNetworkEmbeddingTask:
             logger.debug(f"Warning: No protein atoms found at frame {ts.frame}")
             return nx.Graph()
 
-        logger.debug(f"Protein selection (frame {ts.frame}): {len(protein)} atoms")
-
         G = nx.Graph(frame=ts.frame)
 
-        # Consider only residues, not waters/ions
         residues = protein.residues
 
         # Add nodes
@@ -1553,21 +1820,30 @@ class ProteinProteinNetworkEmbeddingTask:
             resid_label = f"{res.resname}{res.resid}"
             G.add_node(resid_label, type="residue")
 
-        # Add edges based on distance cutoff between residues (using any atom in residue)
+        # Add edges
         for i, res_i in enumerate(residues):
-            pos_i = res_i.atoms.positions  # N_i x 3
             label_i = f"{res_i.resname}{res_i.resid}"
+
             for j, res_j in enumerate(residues[i + 1:], start=i + 1):
-                pos_j = res_j.atoms.positions  # N_j x 3
                 label_j = f"{res_j.resname}{res_j.resid}"
 
-                # Compute all pairwise distances between atoms in the two residues
-                dists = np.linalg.norm(pos_i[:, None, :] - pos_j[None, :, :], axis=-1)
-                min_dist = np.min(dists)
-                if min_dist <= self.distance_cutoff:
+                # ✅ remove trivial local contacts
+                seq_sep = abs(res_i.resid - res_j.resid)
+                if seq_sep < 5:
+                    continue
+
+                # ✅ CA–CA distance
+                ca_i = res_i.atoms.select_atoms("name CA")
+                ca_j = res_j.atoms.select_atoms("name CA")
+
+                if len(ca_i) == 0 or len(ca_j) == 0:
+                    continue
+
+                dist = np.linalg.norm(ca_i.positions[0] - ca_j.positions[0])
+
+                if dist <= 8.0:
                     G.add_edge(label_i, label_j, weight=1.0)
 
-        logger.debug(f"Graph at frame {ts.frame} has {len(G.nodes)} nodes and {len(G.edges)} edges")
         return G
 
     def _generate_graphs_pp(self):
@@ -1576,16 +1852,63 @@ class ProteinProteinNetworkEmbeddingTask:
             G = self._frame_to_graph_pp(ts)
             graphs.append(G)
         return graphs
+    
+    def _graphs_to_adjacency_embeddings(self, graphs):
+        """
+        Convert each graph into a flattened adjacency matrix vector.
+        Ensures consistent node ordering across frames.
+        """
+        # Use node list from first graph (assumes consistent residue set)
+        node_list = sorted(graphs[0].nodes())
+
+        embeddings = []
+        for G in graphs:
+            # Ensure all nodes exist (important if graph changes slightly)
+            for node in node_list:
+                if node not in G:
+                    G.add_node(node)
+
+            A = nx.to_numpy_array(G, nodelist=node_list)
+            vec = A[np.triu_indices(len(node_list), k=1)]  # upper triangle
+            embeddings.append(vec)
+
+        return np.array(embeddings, dtype=np.float32)
 
     def run(self):
         logger.info("Starting protein-protein network embedding analysis...")
         graphs = self._generate_graphs_pp()
 
-        embeddings_file = self._compute_node2vec_embeddings(graphs)
-        frame_embeddings = self._load_node2vec_embeddings_in_chunks(embeddings_file, chunk_size=100)
+        # ✅ NEW: compute top contacts across trajectory
+        from collections import Counter
 
-        reduced_embeddings = self._incremental_pca(frame_embeddings, chunk_size=100)
-        emb_2d = self._incremental_tsne(reduced_embeddings, chunk_size=100)
+        contact_counts = Counter()
+        for G in graphs:
+            for u, v in G.edges:
+                pair = tuple(sorted((u, v)))
+                contact_counts[pair] += 1
+
+        df_contacts = pd.DataFrame.from_dict(contact_counts, orient="index", columns=["Count"])
+        df_contacts["Frequency"] = df_contacts["Count"] / len(graphs)
+        df_contacts = df_contacts.sort_values("Frequency", ascending=False).head(30)
+
+        out_csv_contacts = os.path.join(self.output_dir, "top_contacts.csv")
+        df_contacts.to_csv(out_csv_contacts)
+        logger.info(f"Saved top contacts to {out_csv_contacts}")
+
+        # embeddings_file = self._compute_node2vec_embeddings(graphs)
+        # frame_embeddings = self._load_node2vec_embeddings_in_chunks(embeddings_file, chunk_size=100)
+
+        # reduced_embeddings = self._incremental_pca(frame_embeddings, chunk_size=100)
+        # emb_2d = self._incremental_tsne(reduced_embeddings, chunk_size=100)
+
+        embeddings = self._graphs_to_adjacency_embeddings(graphs)
+
+        # Reduce dimensionality before t-SNE
+        pca = PCA(n_components=min(50, embeddings.shape[1]))
+        reduced_embeddings = pca.fit_transform(embeddings)
+
+        # t-SNE (GLOBAL, not chunked)
+        emb_2d = self._tsne(reduced_embeddings)
 
         df_emb = pd.DataFrame({
             "Frame": np.arange(len(emb_2d)),
@@ -1636,6 +1959,12 @@ class ProteinProteinNetworkEmbeddingTask:
         cluster_res_counts = self._compute_cluster_contact_frequencies_pp(graphs, cluster_labels)
         df_heatmap = pd.DataFrame(cluster_res_counts).fillna(0)
 
+        # ✅ NEW: keep only top N most frequent contacts
+        top_n = 50
+        total_counts = df_heatmap.sum(axis=0)
+        top_pairs = total_counts.sort_values(ascending=False).head(top_n).index
+        df_heatmap = df_heatmap[top_pairs]
+
         plt.figure(figsize=(10, 6))
         sns.heatmap(df_heatmap, annot=False, cmap="YlGnBu")
         plt.xlabel("Cluster")
@@ -1668,16 +1997,21 @@ class ProteinProteinNetworkEmbeddingTask:
             cluster = cluster_labels[i]
             if cluster not in cluster_res_counts:
                 cluster_res_counts[cluster] = Counter()
-            for node in G.nodes:
-                if G.nodes[node].get("type") == "residue":
-                    cluster_res_counts[cluster][node] += 1
+            for u, v in G.edges:
+                pair = tuple(sorted((u, v)))
+                cluster_res_counts[cluster][pair] += 1
 
-        all_residues = sorted({res for c in cluster_res_counts for res in cluster_res_counts[c]},
-                              key=lambda x: int(''.join(filter(str.isdigit, x))))  # sort by residue number
-        df = pd.DataFrame(0, index=cluster_res_counts.keys(), columns=all_residues)
+        all_pairs = sorted({
+            pair for c in cluster_res_counts for pair in cluster_res_counts[c]
+        })
+        df = pd.DataFrame(0, index=cluster_res_counts.keys(), columns=all_pairs)
 
         for cluster, counter in cluster_res_counts.items():
             for res, count in counter.items():
                 df.loc[cluster, res] = count
+        
+        # ✅ NEW: normalize by number of frames
+        n_frames = len(graphs)
+        df = df / n_frames
 
         return df

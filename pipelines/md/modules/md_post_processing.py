@@ -127,7 +127,7 @@ class MDPostProcessingWorkflow:
         time_series = traj_analysis_cfg.get("time_series", [])
 
         if "rmsd" in time_series:
-            logger.info("Running RMSD analysis...")
+            logger.info("Next stage:: RMSD analysis...")
             rmsd_outdir = os.path.join(output_dir, "rmsd")
             os.makedirs(rmsd_outdir, exist_ok=True)
             rmsd_task = RMSDAnalysisTask(
@@ -142,7 +142,7 @@ class MDPostProcessingWorkflow:
             results["rmsd"] = rmsd_task.run()
 
         if "rmsf" in time_series:
-            logger.info("Running RMSF analysis...")
+            logger.info("Next stage:: RMSF analysis...")
             rmsf_outdir = os.path.join(output_dir, "rmsf")
             os.makedirs(rmsf_outdir, exist_ok=True)
             rmsf_task = RMSFAnalysisTask(
@@ -156,7 +156,7 @@ class MDPostProcessingWorkflow:
             results["rmsf"] = rmsf_task.run()
 
         if "interactions" in time_series:
-            logger.info("Running interaction analysis (ProLIF)...")
+            logger.info("Next stage:: interaction analysis...")
             interactions_outdir = os.path.join(output_dir, "interactions")
             os.makedirs(interactions_outdir, exist_ok=True)
             interactions_task = InteractionFingerprintTask(
@@ -177,7 +177,7 @@ class MDPostProcessingWorkflow:
         graph_analyses = traj_analysis_cfg.get("graph_analyses", [])
 
         if "protein_ligand_communities" in graph_analyses:
-            logger.info("Running protein–ligand community analysis...")
+            logger.info("Next stage:: protein–ligand community analysis...")
             task = ProteinLigandCommunityTask(
                 topology=topology,
                 trajectory=wrapped_trajectories or trajectories,
@@ -190,7 +190,7 @@ class MDPostProcessingWorkflow:
             results["protein_ligand_communities"] = task.run()
 
         if "hydration_site_energy" in graph_analyses:
-            logger.info("Running hydration site energy analysis...")
+            logger.info("Next stage:: hydration site energy analysis...")
             task = HydrationSiteEnergyTask(
                 topology=topology,
                 trajectory=wrapped_trajectories or trajectories,
@@ -204,7 +204,7 @@ class MDPostProcessingWorkflow:
             results["hydration_site_energy"] = task.run()
 
         if "temporal_motif_persistence" in graph_analyses:
-            logger.info("Running temporal motif persistence analysis...")
+            logger.info("Next stage:: temporal motif persistence analysis...")
             task = TemporalMotifPersistenceTask(
                 topology=topology,
                 trajectory=trajectories,
@@ -217,7 +217,7 @@ class MDPostProcessingWorkflow:
             results["temporal_motif_persistence"] = task.run()
 
         if "network_embedding_analysis" in graph_analyses:
-            logger.info("Running network embedding analysis...")
+            logger.info("Next stage:: network embedding analysis...")
             task = NetworkEmbeddingAnalysisTask(
                 topology=topology,
                 trajectory=trajectories,
@@ -230,7 +230,7 @@ class MDPostProcessingWorkflow:
             results["network_embedding_analysis"] = task.run()
 
         if "protein_protein_network_embedding" in graph_analyses:
-            logger.info("Running protein-protein network embedding analysis...")
+            logger.info("Next stage:: protein-protein network embedding analysis...")
             task = ProteinProteinNetworkEmbeddingTask(
                 topology=topology,
                 trajectory=trajectories,
@@ -249,7 +249,7 @@ class MDPostProcessingWorkflow:
             solvent_cfg = {"enabled": solvent_cfg}
 
         if solvent_cfg.get("enabled", False):
-            logger.info("Running solvent hydrogen bond analysis...")
+            logger.info("Next step: solvent hydrogen bond analysis...")
             solvent_outdir = os.path.join(output_dir, "solvent_hbonds")
             os.makedirs(solvent_outdir, exist_ok=True)
 
