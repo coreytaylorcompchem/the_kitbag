@@ -109,7 +109,7 @@ class MDPostProcessingWorkflow:
         if wrapped_trajectories:
             logger.info(f"Detected wrapped trajectories: {len(wrapped_trajectories)} file(s)")
         else:
-            logger.warning("No wrapped trajectories found — falling back to raw DCD (may break contact analyses)")
+            logger.warning("No wrapped trajectories found; falling back to raw DCD (may break contact analyses)")
 
         logger.info(f"Topology: {topology}")
         logger.info(f"Trajectories: {len(trajectories)} file(s)")
