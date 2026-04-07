@@ -27,7 +27,7 @@ from modules.utils.plotting import save_plot
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 protein_resnames = {
     "ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS",
