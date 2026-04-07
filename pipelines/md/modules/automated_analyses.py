@@ -19,6 +19,7 @@ from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
 from modules.utils.mda_utils import _bit_to_color_value, _get_inv_color_mapper, _get_color_mapper
+from modules.utils.component_detection import ComponentDetector
 
 import prolif as plf
 from prolif.plotting.utils import separated_interaction_colors
@@ -70,7 +71,8 @@ class HydrogenBondAnalysisTask:
                  step: int = 1,
                  binding_site_cutoff: float = 5.0,
                  output_dir: str = "output",
-                 context: Optional[Dict[str, Any]] = None):
+                 context: Optional[Dict[str, Any]] = None
+                 ):
         self.topology = topology
         self.trajectory = trajectory
         self.binding_site_resids = binding_site_resids
@@ -95,6 +97,16 @@ class HydrogenBondAnalysisTask:
 
         self.direct_paths = []
         self.water_paths = []
+        self.detector = ComponentDetector(
+            self.u,
+            ligand_resname=self.ligand_resname if hasattr(self, "ligand_resname") else "UNK"
+        )
+
+        self.components = self.context.get("components")
+
+        if self.components is None:
+            self.components = self.detector.detect()
+            self.context["components"] = self.components
 
     def _compute_hbonds(self, water_mediated: bool = False):
         paths = []
@@ -201,7 +213,6 @@ class HydrogenBondAnalysisTask:
         plt.savefig(out_plot, bbox_inches="tight", dpi=300)
         plt.close()
         logger.info(f"Saved solvent hydrogen bond summary plot to {out_plot}")
-
         
         # Plot direct h-bonds
         
@@ -302,51 +313,121 @@ class RMSDAnalysisTask:
         protein = self.u.select_atoms("protein")
 
         self.u.trajectory.add_transformations(
-            unwrap(self.u.atoms),              # fix broken molecules
+            unwrap(self.u.atoms),              # fix broken systems
             center_in_box(protein, wrap=True)  # keep protein centered
         )
+        
+        # Detect system type automatically
+        self.detector = ComponentDetector(
+            self.u,
+            ligand_resname=self.ligand_resname if hasattr(self, "ligand_resname") else "UNK"
+        )
+
+        self.components = self.context.get("components")
+
+        if self.components is None:
+            self.components = self.detector.detect()
+            self.context["components"] = self.components
     def run(self):
+
+        # More robusterer selection strings from segments
+
+        def segid_backbone_selection(atomgroup):
+            if atomgroup is None or len(atomgroup) == 0:
+                return None
+            segids = sorted(set(atomgroup.segids))
+            seg_str = " or ".join([f"segid {seg}" for seg in segids])
+            return f"({seg_str}) and backbone"
+
+        def segid_all_selection(atomgroup):
+            if atomgroup is None or len(atomgroup) == 0:
+                return None
+            segids = sorted(set(atomgroup.segids))
+            seg_str = " or ".join([f"segid {seg}" for seg in segids])
+            return f"({seg_str})"
+
         logger.debug("Starting RMSD analysis...")
 
+        # Use detected components
+        comp = self.components
+        receptor = comp["receptor"]
+        partner = comp["partner"]
+        ligand = comp["ligand"]
+
         protein = self.u.select_atoms("protein and backbone")
-        ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
-        align.AlignTraj(self.u, self.u, select="protein and backbone",
-                        in_memory=True).run()
 
         if len(protein) == 0:
             raise ValueError("No protein atoms found in topology for RMSD calculation.")
 
-        if len(ligand) == 0:
-            logger.warning(f"No ligand atoms found for resname {self.ligand_resname}. Skipping ligand RMSD.")
+        # Final selection strings (MDAnalysis weirdness)
+        rec_sel = segid_backbone_selection(receptor)
+        partner_sel = segid_backbone_selection(partner) if comp["has_partner"] else None
+        lig_sel = f"resname {self.ligand_resname}" if comp["has_ligand"] else None
+
+        # Safer alignment selection string from receptor segments
+
+        align_selection = rec_sel if rec_sel is not None else "protein and backbone"
+
+        align.AlignTraj(self.u, self.u, select=align_selection,
+                in_memory=True).run()
+
+        # Ligand detection
+        if ligand is None:
+            logger.warning("No ligand detected. Skipping ligand RMSD.")
 
         # Reference (frame0)
         ref = mda.Universe(self.topology, self.trajectory)
         ref.trajectory[0]
 
-        align.AlignTraj(ref, ref, select="protein and backbone", in_memory=True).run()
-        ref_protein = ref.select_atoms("protein and backbone")
-        ref_ligand = ref.select_atoms(f"resname {self.ligand_resname}") if len(ligand) > 0 else None
+        # Align ref
+        align.AlignTraj(ref, ref, select=align_selection,
+                in_memory=True).run()
 
-        # Compute protein BB RMSD
-        rmsd_protein = rms.RMSD(self.u, ref, select="protein and backbone",
-                                start=self.start, stop=self.stop, step=self.step).run()
+        dfs = []
 
-        df_rmsd = pd.DataFrame({
-            "Time (ns)": rmsd_protein.rmsd[:, 1] / 1000.0,  # convert ps → ns
-            "RMSD (Å)": rmsd_protein.rmsd[:, 2],
-            "Component": "Protein (backbone)"
-        })
+        # Receptor RMSD by AtomGroups
+        if rec_sel is not None:
+            rmsd_receptor = rms.RMSD(
+            self.u, ref,
+            select=rec_sel,
+            start=self.start, stop=self.stop, step=self.step
+        ).run()
 
-        # Compute ligand RMSD 
-        if len(ligand) > 0 and ref_ligand is not None:
-            rmsd_ligand = rms.RMSD(self.u, ref, select=f"resname {self.ligand_resname}",
-                                   start=self.start, stop=self.stop, step=self.step).run()
-            df_ligand = pd.DataFrame({
+            dfs.append(pd.DataFrame({
+                "Time (ns)": rmsd_receptor.rmsd[:, 1] / 1000.0,
+                "RMSD (Å)": rmsd_receptor.rmsd[:, 2],
+                "Component": "Receptor"
+            }))
+
+        # Partner RMSD (if not a ligand)
+        if partner_sel is not None:
+            rmsd_partner = rms.RMSD(
+                self.u, ref,
+                select=partner_sel,
+                start=self.start, stop=self.stop, step=self.step
+            ).run()
+
+            dfs.append(pd.DataFrame({
+                "Time (ns)": rmsd_partner.rmsd[:, 1] / 1000.0,
+                "RMSD (Å)": rmsd_partner.rmsd[:, 2],
+                "Component": "Partner (VHH)"
+            }))
+
+        # Ligand RMSD
+        if lig_sel is not None:
+            rmsd_ligand = rms.RMSD(
+                self.u, ref,
+                select=lig_sel,
+                start=self.start, stop=self.stop, step=self.step
+            ).run()
+
+            dfs.append(pd.DataFrame({
                 "Time (ns)": rmsd_ligand.rmsd[:, 1] / 1000.0,
                 "RMSD (Å)": rmsd_ligand.rmsd[:, 2],
                 "Component": f"Ligand ({self.ligand_resname})"
-            })
-            df_rmsd = pd.concat([df_rmsd, df_ligand], ignore_index=True)
+            }))
+
+        df_rmsd = pd.concat(dfs, ignore_index=True)
 
         # Dump plot data to JSON
         out_json = os.path.join(self.output_dir, "rmsd_data.json")
@@ -399,9 +480,25 @@ class RMSFAnalysisTask:
 
         os.makedirs(self.output_dir, exist_ok=True)
         self.u = mda.Universe(self.topology, self.trajectory)
+        
+        # Detect system type automatically
+        self.detector = ComponentDetector(
+            self.u,
+            ligand_resname=self.ligand_resname if hasattr(self, "ligand_resname") else "UNK"
+        )
+
+        self.components = self.context.get("components")
+
+        if self.components is None:
+            self.components = self.detector.detect()
+            self.context["components"] = self.components
 
     def run(self):
         logger.debug("Starting RMSF analysis...")
+
+        comp = self.components
+        receptor = comp["receptor"]
+        partner = comp["partner"]
 
         protein = self.u.select_atoms("protein")
         calphas = self.u.select_atoms("protein and name CA")
@@ -415,40 +512,134 @@ class RMSFAnalysisTask:
                         in_memory=True).run()
 
         # Per-residue RMSF
-        rmsf_all = rms.RMSF(protein).run()
-        df_all_atoms = pd.DataFrame({
-            "Residue": [atom.resid for atom in protein.atoms],
-            "RMSF (Å)": rmsf_all.rmsf,
-        })
+        dfs = []
 
-        df_all = df_all_atoms.groupby("Residue", as_index=False).mean()
-        df_all["Component"] = "Protein (all atoms)"
+        # >>> helper: compute RMSF safely
+        def compute_rmsf(atomgroup, label):
+            atoms = atomgroup.atoms
+            rmsf_vals = rms.RMSF(atoms).run()
+
+            if len(atoms) != len(rmsf_vals.rmsf):
+                raise ValueError(
+                    f"Mismatch: {len(atoms)} atoms vs {len(rmsf_vals.rmsf)} RMSF values"
+                )
+
+            df_atoms = pd.DataFrame({
+                "Residue": [int(atom.resid) for atom in atoms],
+                "Chain": [str(atom.segid) for atom in atoms],
+                "RMSF (Å)": rmsf_vals.rmsf,
+            })
+
+            df_res = df_atoms.groupby(["Chain", "Residue"], as_index=False).mean()
+            df_res["Component"] = label
+
+            return df_res
+
+        # Receptor RMSF
+        if receptor is not None:
+            dfs.append(compute_rmsf(receptor, "Receptor (all atoms)"))
+
+        # Partner RMSF
+        if comp["has_partner"]:
+            dfs.append(compute_rmsf(partner, "Partner (VHH, all atoms)"))
 
         # Cα RMSF
-        rmsf_ca = rms.RMSF(calphas).run()
+        atoms_ca = calphas.atoms
+        rmsf_ca = rms.RMSF(atoms_ca).run()
+
         df_ca = pd.DataFrame({
-            "Residue": [atom.resid for atom in calphas.atoms],
+            "Residue": [int(atom.resid) for atom in atoms_ca],
+            "Chain": [str(atom.segid) for atom in atoms_ca],
             "RMSF (Å)": rmsf_ca.rmsf,
-            "Component": "Cα only"
+            "Component": "Cα only (global)"
         })
 
-        df_rmsf = pd.concat([df_all, df_ca], ignore_index=True)
-        logger.debug(f"Computed RMSF for {len(df_all)} residues (all atoms) "
-                    f"and {len(df_ca)} alpha carbons.")
+        dfs.append(df_ca)
 
+        df_rmsf = pd.concat(dfs, ignore_index=True)
+
+        # ============================================================
+        # Combine residue indexing across chains
+        # ============================================================
+
+        df_rmsf = df_rmsf.sort_values(["Chain", "Residue"]).reset_index(drop=True)
+
+        chain_offsets = {}
+        offset = 0
+
+        for chain in df_rmsf["Chain"].unique():
+            chain_df = df_rmsf[df_rmsf["Chain"] == chain]
+
+            chain_min = chain_df["Residue"].min()
+            chain_max = chain_df["Residue"].max()
+
+            chain_offsets[chain] = offset - chain_min + 1
+            offset += (chain_max - chain_min + 1)
+
+        df_rmsf["Residue_cont"] = df_rmsf.apply(
+            lambda row: row["Residue"] + chain_offsets[row["Chain"]],
+            axis=1
+        )
+
+        logger.debug(f"Computed RMSF for {len(df_rmsf)} total entries.")
+
+        # Save data
         out_json = os.path.join(self.output_dir, "rmsf_data.json")
         df_rmsf.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved RMSF data to {out_json}")
 
+        # ============================================================
+        # Plotting
+        # ============================================================
+
         sns.set(style="whitegrid", context="talk")
-        plt.figure(figsize=(10, 5))
-        sns.lineplot(data=df_rmsf, x="Residue", y="RMSF (Å)", hue="Component", lw=2)
+        plt.figure(figsize=(12, 5))
+
+        sns.lineplot(
+            data=df_rmsf,
+            x="Residue_cont",
+            y="RMSF (Å)",
+            hue="Component",
+            lw=2
+        )
+
+        # Chain-aware tick labels
+        # Build labels like e.g A:45
+        df_rmsf["Label"] = df_rmsf["Chain"] + ":" + df_rmsf["Residue"].astype(str)
+
+        # Only use one component
+        df_ticks = (
+            df_rmsf[df_rmsf["Component"] == df_rmsf["Component"].iloc[0]]
+            .drop_duplicates(subset=["Residue_cont"])
+            .sort_values("Residue_cont")
+        )
+
+        # Subsample ticks to avoid overcrowding
+
+        n_ticks = 20  # adjust if needed
+        step = max(1, len(df_ticks) // n_ticks)
+
+        tick_positions = df_ticks["Residue_cont"].iloc[::step]
+        tick_labels = df_ticks["Label"].iloc[::step]
+
+        plt.xticks(tick_positions, tick_labels, rotation=45, ha="right", fontsize=8)
+
+        # Show chain boundaries
+
+        for chain, off in chain_offsets.items():
+            plt.axvline(off, linestyle="--", alpha=0.3)
+
+        plt.grid(True, axis="y")
+        plt.grid(False, axis="x")
+
         plt.title("Per-Residue RMSF")
+        plt.xlabel("Residue (chain:resid)")
         plt.tight_layout()
 
         out_plot = os.path.join(self.output_dir, "rmsf_plot.png")
         plt.savefig(out_plot, dpi=300, bbox_inches="tight")
         plt.close()
+
         logger.info(f"Saved RMSF plot to {out_plot}")
 
         return {"rmsf_data": out_json, "rmsf_plot": out_plot}
@@ -499,12 +690,37 @@ class InteractionFingerprintTask:
         os.makedirs(self.output_dir, exist_ok=True)
         self.u = mda.Universe(self.topology, self.trajectory)
 
+        self.detector = ComponentDetector(self.u)
+
+        self.components = self.context.get("components")
+
+        if self.components is None:
+            self.components = self.detector.detect()
+            self.context["components"] = self.components
+
     def run(self):
         logger.debug("Starting ProLIF interaction fingerprint analysis...")
 
-        ligand = self.u.select_atoms(self.ligand_selection)
-        if len(ligand) == 0:
-            raise ValueError(f"No atoms found for ligand selection: {self.ligand_selection}")
+        comp = self.components
+
+        if comp["has_ligand"]:
+            ligand = comp["ligand"]
+            protein = self.u.select_atoms(
+                "(protein or resname WAT) and byres around 20.0 group ligand",
+                ligand=ligand
+            )
+            mode = "ligand"
+        else:
+            if not comp["has_partner"]:
+                raise ValueError("No ligand or partner detected for interaction analysis.")
+
+            # Treat VHH as ligand
+            ligand = comp["partner"]
+            protein = comp["receptor"]
+            mode = "protein-protein"
+
+        if len(protein) == 0:
+            raise ValueError("No atoms found for interaction partner selection.")
 
         protein = self.u.select_atoms(self.protein_selection, ligand=ligand)
         if len(protein) == 0:
@@ -592,7 +808,10 @@ class InteractionFingerprintTask:
         ligands = sorted({lig[:3] for lig, prot, inter in fp_transposed.index})
         ligand_str = ", ".join(ligands)
 
-        ax.set_title(f"Ligand interaction fingerprint for ligand {ligand_str}.")
+        if mode == "ligand":
+            ax.set_title(f"Ligand interaction fingerprint for ligand {ligand_str}.")
+        else:
+            ax.set_title("Protein–protein interaction fingerprint (receptor vs partner).")
         plt.tight_layout()
         plt.savefig(out_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
