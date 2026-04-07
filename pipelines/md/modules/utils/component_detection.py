@@ -22,7 +22,7 @@ class ComponentDetector:
     def detect(self):
         protein = self.u.select_atoms("protein")
 
-        # --- STEP 1: cluster protein into connected components ---
+        # STEP 1: cluster protein into connected components
 
         coords = protein.positions
 
@@ -56,7 +56,7 @@ class ComponentDetector:
 
             clusters.append(protein[group])
 
-        # --- STEP 2: build components ---
+        # STEP 2: build components
         components = [{
             "atoms": cluster,
             "n_residues": len(cluster.residues)
@@ -64,7 +64,7 @@ class ComponentDetector:
 
         components = sorted(components, key=lambda x: x["n_residues"], reverse=True)
 
-        # --- STEP 3: decide if partner exists ---
+        # STEP 3: decide if partner exists
         receptor = components[0]["atoms"] if components else None
         partner = None
 
@@ -76,7 +76,7 @@ class ComponentDetector:
             if size_ratio > 0.2:
                 partner = components[1]["atoms"]
 
-        # --- STEP 4: ligand detection (unchanged) ---
+        # STEP 4: ligand detection
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
 
         if len(ligand) == 0:

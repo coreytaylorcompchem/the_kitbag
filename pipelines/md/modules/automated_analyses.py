@@ -3,6 +3,7 @@ import warnings
 import json
 import itertools
 import h5py
+import re
 
 import networkx as nx
 import tqdm as tqdm
@@ -329,6 +330,7 @@ class RMSDAnalysisTask:
         if self.components is None:
             self.components = self.detector.detect()
             self.context["components"] = self.components
+    
     def run(self):
 
         # More robusterer selection strings from segments
@@ -515,7 +517,7 @@ class RMSFAnalysisTask:
         # Per-residue RMSF
         dfs = []
 
-        # >>> helper: compute RMSF safely
+        # helper; compute RMSF safely
         def compute_rmsf(atomgroup, label):
             atoms = atomgroup.atoms
             rmsf_vals = rms.RMSF(atoms).run()
@@ -617,7 +619,7 @@ class RMSFAnalysisTask:
 
         # Subsample ticks to avoid overcrowding
 
-        n_ticks = 20  # adjust if needed
+        n_ticks = 20  # TODO: add adjust to yaml
         step = max(1, len(df_ticks) // n_ticks)
 
         tick_positions = df_ticks["Residue_cont"].iloc[::step]
@@ -1015,18 +1017,15 @@ class HydrationSiteEnergyTask:
         logger.info("Detecting hydration sites via water oxygen clustering...")
 
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
-
         protein = self.u.select_atoms("protein")
         solvent = self.u.select_atoms(f"resname {self.water_resname}")
-
-        protein = self.u.select_atoms("protein")
 
         self.u.trajectory.add_transformations(
             unwrap(self.u.atoms),
             wrap_like_vmd
         )
         
-        # --- ALIGN ONCE ---
+        # align once
         logger.info("Aligning trajectory...")
         align.AlignTraj(
             self.u,
@@ -1035,7 +1034,7 @@ class HydrationSiteEnergyTask:
             in_memory=True
         ).run()
 
-        # --- NOW extract reference from aligned universe ---
+        # Extract reference from aligned universe
         ref_pdb_path = os.path.join(self.output_dir, "reference_structure.pdb")
 
         self.u.trajectory[0]
@@ -1055,25 +1054,10 @@ class HydrationSiteEnergyTask:
             )
 
             coords.append(water_oxygens.positions.copy())
-
-        # # >>> save LAST FRAME (correctly processed)
-        # ref_u = mda.Universe(self.topology)
-        # ref = ref_u.select_atoms(f"protein or resname {self.ligand_resname}")
-
-        # ref_pdb_path = os.path.join(self.output_dir, "reference_structure.pdb")
-
-        # with mda.Writer(ref_pdb_path, ref.n_atoms) as W:
-        #     W.write(ref)
-
-        # logger.info(f"Saved reference structure to {ref_pdb_path}")
         
         logger.info(f"Water selection atoms: {len(water_oxygens)}")
         logger.info(f"Ligand atoms: {len(ligand)}")
 
-        # coords = []
-
-        # for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Waters"):
-        #     coords.append(water_oxygens.positions.copy())
         coords = np.concatenate(coords, axis=0)
 
         db = DBSCAN(eps=1.5, min_samples=5).fit(coords)
@@ -1197,7 +1181,7 @@ class TemporalMotifPersistenceTask:
         self.u = mda.Universe(self.topology, self.trajectory)
 
     def run(self):
-        logger.info("Analyzing protein-ligand temporal motif persistence...")
+        logger.info("Analysing protein-ligand temporal motif persistence...")
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
         waters = self.u.select_atoms(f"resname {self.water_resname} and name O")
         protein = self.u.select_atoms("protein")
@@ -1317,7 +1301,7 @@ class TemporalMotifPersistenceTask:
             kernel = np.ones(window) / window
             smoothed = np.convolve(row, kernel, mode='same')
 
-            smoothed_matrix[i] = smoothed[:len(row)]  # extra safety
+            smoothed_matrix[i] = smoothed[:len(row)]
 
         motif_labels = [f"L:{k[0]} W:{k[1]} P:{k[3]}{k[2]}" for k in top_grouped_keys]
 
@@ -1386,7 +1370,7 @@ class NetworkEmbeddingAnalysisTask:
                  perplexity: float = 30.0,
                  random_state: int = 42,
                  context: Optional[Dict[str, Any]] = None):
-        import os
+
         os.makedirs(output_dir, exist_ok=True)
         self.topology = topology
         self.trajectory = trajectory
@@ -1593,7 +1577,7 @@ class NetworkEmbeddingAnalysisTask:
             "Dim2": emb_2d[:, 1],
         })
 
-        # ---- Plot ----
+        # Plot
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(7, 6))
         sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
@@ -1610,7 +1594,7 @@ class NetworkEmbeddingAnalysisTask:
         plt.close()
         logger.info(f"Saved t-SNE embedding plot to {out_plot}")
 
-        #  Step 3: Clustering 
+        #  Clustering 
         cluster_labels = self._cluster_embeddings(emb_2d)
         df_emb["Cluster"] = cluster_labels
 
@@ -1618,7 +1602,7 @@ class NetworkEmbeddingAnalysisTask:
         df_emb.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved t-SNE embedding + cluster data to {out_json}")
 
-        #  Plot  t-SNE colored by cluster 
+        #  Plot t-SNE colored by cluster 
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(7, 6))
         sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
@@ -1640,7 +1624,6 @@ class NetworkEmbeddingAnalysisTask:
 
         # Helper - sort by residue number for plotting.
 
-        import re
         def resid_sort_key(res_label):
             """
             Sort residue labels by numeric residue number.
@@ -1670,7 +1653,8 @@ class NetworkEmbeddingAnalysisTask:
         plt.savefig(heatmap_plot, dpi=300, bbox_inches="tight")
         plt.close()
         logger.info(f"Saved cluster contact frequency heatmap to {heatmap_plot}")
-        # Also save numeric data to disk
+        
+        # Save numeric data to disk
         out_csv = os.path.join(self.output_dir, "cluster_contact_frequencies.csv")
         df_heatmap.to_csv(out_csv)
         logger.info(f"Saved cluster contact frequencies to {out_csv}")
@@ -1704,7 +1688,7 @@ class ProteinProteinNetworkEmbeddingTask:
                  perplexity: float = 30.0,
                  random_state: int = 42,
                  context: Optional[Dict[str, Any]] = None):
-        import os
+
         os.makedirs(output_dir, exist_ok=True)
         self.topology = topology
         self.trajectory = trajectory
@@ -1744,7 +1728,7 @@ class ProteinProteinNetworkEmbeddingTask:
                             num_walks=self.node2vec_num_walks, p=self.node2vec_p, q=self.node2vec_q, 
                             workers=1, seed=self.random_state, quiet=True)
 
-                # Debugging: Check graph info before fitting
+                # Debug: Check graph info before fitting
                 logger.debug(f"Graph {i}: number of nodes = {len(G.nodes)}, number of edges = {len(G.edges)}")
 
                 model = n2v.fit(window=5, min_count=1, batch_words=4)
@@ -1771,7 +1755,7 @@ class ProteinProteinNetworkEmbeddingTask:
             for start_idx in range(0, total_frames, chunk_size):
                 end_idx = min(start_idx + chunk_size, total_frames)
                 chunk = f['embeddings'][start_idx:end_idx]
-                chunk = np.nan_to_num(chunk, nan=0.0, posinf=0.0, neginf=0.0)  # Clean NaN/Inf
+                chunk = np.nan_to_num(chunk, nan=0.0, posinf=0.0, neginf=0.0) 
                 embeddings.append(chunk)
         
         return np.concatenate(embeddings, axis=0)
@@ -1827,12 +1811,12 @@ class ProteinProteinNetworkEmbeddingTask:
             for j, res_j in enumerate(residues[i + 1:], start=i + 1):
                 label_j = f"{res_j.resname}{res_j.resid}"
 
-                # ✅ remove trivial local contacts
+                # Remove trivial local contacts
                 seq_sep = abs(res_i.resid - res_j.resid)
                 if seq_sep < 5:
                     continue
 
-                # ✅ CA–CA distance
+                # CA–CA distance
                 ca_i = res_i.atoms.select_atoms("name CA")
                 ca_j = res_j.atoms.select_atoms("name CA")
 
@@ -1863,7 +1847,7 @@ class ProteinProteinNetworkEmbeddingTask:
 
         embeddings = []
         for G in graphs:
-            # Ensure all nodes exist (important if graph changes slightly)
+            # Ensure all nodes exist
             for node in node_list:
                 if node not in G:
                     G.add_node(node)
@@ -1878,7 +1862,7 @@ class ProteinProteinNetworkEmbeddingTask:
         logger.info("Starting protein-protein network embedding analysis...")
         graphs = self._generate_graphs_pp()
 
-        # ✅ NEW: compute top contacts across trajectory
+        # Compute top contacts across trajectory
         from collections import Counter
 
         contact_counts = Counter()
@@ -1895,19 +1879,13 @@ class ProteinProteinNetworkEmbeddingTask:
         df_contacts.to_csv(out_csv_contacts)
         logger.info(f"Saved top contacts to {out_csv_contacts}")
 
-        # embeddings_file = self._compute_node2vec_embeddings(graphs)
-        # frame_embeddings = self._load_node2vec_embeddings_in_chunks(embeddings_file, chunk_size=100)
-
-        # reduced_embeddings = self._incremental_pca(frame_embeddings, chunk_size=100)
-        # emb_2d = self._incremental_tsne(reduced_embeddings, chunk_size=100)
-
         embeddings = self._graphs_to_adjacency_embeddings(graphs)
 
         # Reduce dimensionality before t-SNE
         pca = PCA(n_components=min(50, embeddings.shape[1]))
         reduced_embeddings = pca.fit_transform(embeddings)
 
-        # t-SNE (GLOBAL, not chunked)
+        # t-SNE (global)
         emb_2d = self._tsne(reduced_embeddings)
 
         df_emb = pd.DataFrame({
@@ -1939,7 +1917,7 @@ class ProteinProteinNetworkEmbeddingTask:
         df_emb.to_json(out_json, orient="records", indent=2)
         logger.info(f"Saved t-SNE embedding + cluster data to {out_json}")
 
-        # Cluster-coloyred t-SNE
+        # Cluster-coloured t-SNE
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(7, 6))
         sc = plt.scatter(df_emb["Dim1"], df_emb["Dim2"],
@@ -1959,7 +1937,7 @@ class ProteinProteinNetworkEmbeddingTask:
         cluster_res_counts = self._compute_cluster_contact_frequencies_pp(graphs, cluster_labels)
         df_heatmap = pd.DataFrame(cluster_res_counts).fillna(0)
 
-        # ✅ NEW: keep only top N most frequent contacts
+        # Keep only top N most frequent contacts
         top_n = 50
         total_counts = df_heatmap.sum(axis=0)
         top_pairs = total_counts.sort_values(ascending=False).head(top_n).index
@@ -2010,7 +1988,7 @@ class ProteinProteinNetworkEmbeddingTask:
             for res, count in counter.items():
                 df.loc[cluster, res] = count
         
-        # ✅ NEW: normalize by number of frames
+        # Normalise by number of frames
         n_frames = len(graphs)
         df = df / n_frames
 
