@@ -482,8 +482,6 @@ class OpenMMBackend:
             if any(res.chain.id in protein_chains for res in chain.residues()):
                 protein_chain_fragments.append(chain.id)
 
-        # logger.info(f"Protein chains to keep after capping: {protein_chain_fragments}")
-
         logger.debug("Residues after PDBFixer:")
         for residue in modeller.topology.residues():
             logger.debug(f"{residue.name} chain {residue.chain.id}")
@@ -507,8 +505,6 @@ class OpenMMBackend:
             logger.info(f"Ligand {ligand_resname} detected in chain {ligand_chain}")
         else:
             logger.info("No ligand specified → running apo workflow")
-
-        # logger.info(f"Ligand {ligand_resname} detected in chain {ligand_chain}")
 
         # Prepare protein+ligand PDB for orientation (fixed)
         # Keep all protein residues, even if chain IDs changed by chain capping
@@ -569,48 +565,136 @@ class OpenMMBackend:
 
                 ligand_sdf_path = os.path.join(input_pdb_dir, f"{ligand_resname}_extracted.sdf")
 
+                # It helps to provide SMILES in the yaml to parameterise ligands that the OFF has trouble with when we build the topology
+                # To circumvent OFF weirdness, we make the SMILES + SDF the source of chemical truth and only ask OFF to add it later.
+                # Extracting the ligand coords from the PDB is not enough, as we lose bonding info needed to build a good SDF.
+                # So we need to generate an SDF from SMILES to ensure chemical correctness
+                # and then match the coordinates with the PDB in a way that's robust to if the generated molecule differs from the PDB extraction
+
+                # STEPS:
+
+                # We extract ligand coords from the PDB, create an Rdkit mol from SMILES and generate a chemically-correct conformer,
+                # Do HA MCS match between the two and keep the best one if > 1 match (RMSD), then a coordinate transfer for those outside the MCS.
+
+                # TODO: Generate pH 7.4 protomers.
+
                 smiles = ligand_cfg.get("smiles")
 
                 if smiles:
-                    logger.info("SMILES provided → using template-based ligand reconstruction")
+                    logger.info("SMILES provided → aligning via MCS + coordinate transfer")
 
-                    # --- Read PDB coordinates only ---
+                    from rdkit.Chem import rdMolAlign, rdFMCS
+
+                    # 1. Load ligand from PDB 
                     mol_pdb = Chem.MolFromPDBFile(
                         ligand_pdb_path,
-                        removeHs=False,
+                        removeHs=True,
                         sanitize=False,
-                        proximityBonding=False
+                        proximityBonding=True
                     )
 
                     if mol_pdb is None:
-                        raise RuntimeError("RDKit failed to read ligand from extracted PDB")
+                        raise RuntimeError("RDKit failed to read ligand from PDB")
 
-                    # Build from SMILES
-                    mol_template = Chem.MolFromSmiles(smiles)
-                    if mol_template is None:
-                        raise RuntimeError("Invalid SMILES provided for ligand")
+                    # 2. Build ligand from SMILES
+                    mol = Chem.MolFromSmiles(smiles)
+                    if mol is None:
+                        raise RuntimeError("Invalid SMILES provided")
 
-                    mol_template = Chem.AddHs(mol_template)
+                    # 3. Generate conformer
+                    AllChem.EmbedMolecule(mol, randomSeed=42)
 
-                    # Needed for mapping
-                    AllChem.EmbedMolecule(mol_template, AllChem.ETKDG())
+                    # 4. Remove Hs for matching
+                    mol_noH = Chem.RemoveHs(mol)
+                    mol_pdb_noH = Chem.RemoveHs(mol_pdb)
 
-                    # Assign correct bonding
-                    mol = AllChem.AssignBondOrdersFromTemplate(mol_template, mol_pdb)
+                    # 5. Compute MCS
+                    mcs = rdFMCS.FindMCS(
+                        [mol_noH, mol_pdb_noH],
+                        bondCompare=rdFMCS.BondCompare.CompareOrder,
+                        atomCompare=rdFMCS.AtomCompare.CompareElements,
+                        ringMatchesRingOnly=True,
+                        completeRingsOnly=False,
+                    )
 
+                    if not mcs.smartsString:
+                        raise RuntimeError("MCS search failed")
+
+                    patt = Chem.MolFromSmarts(mcs.smartsString)
+
+                    matches1 = mol_noH.GetSubstructMatches(patt)
+                    matches2 = mol_pdb_noH.GetSubstructMatches(patt)
+
+                    if not matches1 or not matches2:
+                        raise RuntimeError("Failed to obtain MCS atom mappings")
+
+                    if len(matches1[0]) / mol_noH.GetNumAtoms() < 0.9:
+                        raise RuntimeError("MCS overlap too small - ligand mismatch")
+
+                    logger.debug(f"MCS match size: {len(matches1[0])} atoms")
+                    logger.debug(f"Number of match combinations: {len(matches1) * len(matches2)}")
+
+                    # find best atom map by RMSD
+                    best_rmsd = float("inf")
+                    best_map = None
+
+                    for m1 in matches1:
+                        for m2 in matches2:
+                            atom_map = list(zip(m1, m2))
+                            try:
+                                rmsd = rdMolAlign.AlignMol(mol, mol_pdb, atomMap=atom_map)
+                                if rmsd < best_rmsd:
+                                    best_rmsd = rmsd
+                                    best_map = atom_map
+                            except Exception:
+                                continue
+
+                    if best_map is None:
+                        raise RuntimeError("MCS-based alignment failed for all mappings")
+
+                    logger.debug(f"Best RMSD from MCS alignment: {best_rmsd:.3f} Å")
+
+                    # Expand mapping by 1-bond neighbors
+                    expanded_map = dict(best_map)
+
+                    pdb_conf = mol_pdb.GetConformer()
+                    mol_conf = mol.GetConformer()
+
+                    for smi_idx, pdb_idx in best_map:
+                        smi_atom = mol_noH.GetAtomWithIdx(smi_idx)
+                        pdb_atom = mol_pdb_noH.GetAtomWithIdx(pdb_idx)
+
+                        for smi_nbr in smi_atom.GetNeighbors():
+                            smi_nbr_idx = smi_nbr.GetIdx()
+                            if smi_nbr_idx in expanded_map:
+                                continue
+
+                            for pdb_nbr in pdb_atom.GetNeighbors():
+                                pdb_nbr_idx = pdb_nbr.GetIdx()
+
+                                # match by element only
+                                if smi_nbr.GetSymbol() == pdb_nbr.GetSymbol():
+                                    expanded_map[smi_nbr_idx] = pdb_nbr_idx
+                                    break
+
+                    logger.debug(f"Expanded map size: {len(expanded_map)} atoms")
+
+                    # Coordinate transfer
+                    for smi_idx, pdb_idx in expanded_map.items():
+                        pos = pdb_conf.GetAtomPosition(pdb_idx)
+                        mol_conf.SetAtomPosition(smi_idx, pos)
+
+                    logger.debug("Applied direct coordinate transfer (expanded mapping)")
+
+                    # 9. Sanitise
                     Chem.SanitizeMol(mol)
 
-                else:
-                    logger.info("No SMILES provided → using direct PDB parsing")
+                    # 10. Add hydrogens with coordinates
+                    mol = Chem.AddHs(mol, addCoords=True)
 
-                    mol = Chem.MolFromPDBFile(ligand_pdb_path, removeHs=False)
+                    # 11. Write SDF
+                    Chem.MolToMolFile(mol, ligand_sdf_path)
 
-                    if mol is None:
-                        raise RuntimeError("RDKit failed to read ligand from extracted PDB")
-
-                # Write SDF
-                Chem.MolToMolFile(mol, ligand_sdf_path)
-                
                 logger.debug(f"Generated ligand SDF: {ligand_sdf_path}")
 
         # Step 5: Keep only protein + waters
