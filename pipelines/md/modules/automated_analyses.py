@@ -537,27 +537,52 @@ class RMSFAnalysisTask:
             df_res["Component"] = label
 
             return df_res
+    
+        # Cα RMSF per component
+        def compute_rmsf_ca(atomgroup, label):
+            if atomgroup is None or len(atomgroup) == 0:
+                return None
+            atoms = atomgroup.select_atoms("name CA")
+            if len(atoms) == 0:
+                return None
+
+            rmsf_vals = rms.RMSF(atoms).run()
+
+            df_atoms = pd.DataFrame({
+                "Residue": [int(atom.resid) for atom in atoms],
+                "Chain": [str(atom.segid) for atom in atoms],
+                "RMSF (Å)": rmsf_vals.rmsf,
+                "Component": label
+            })
+
+            # Group only the RMSF values by Chain+Residue
+            df_res = df_atoms.groupby(["Chain", "Residue"], as_index=False)[["RMSF (Å)"]].mean()
+            df_res["Component"] = label  # re-add the label after aggregation
+
+            return df_res
 
         # Receptor RMSF
         if receptor is not None:
             dfs.append(compute_rmsf(receptor, "Receptor (all atoms)"))
+            dfs.append(compute_rmsf_ca(receptor, "Receptor (Cα only)"))
 
         # Partner RMSF
         if comp["has_partner"]:
             dfs.append(compute_rmsf(partner, "Partner (VHH, all atoms)"))
+            dfs.append(compute_rmsf_ca(partner, "Partner (VHH, Cα only)"))
 
-        # Cα RMSF
-        atoms_ca = calphas.atoms
-        rmsf_ca = rms.RMSF(atoms_ca).run()
+        # # Cα RMSF
+        # atoms_ca = calphas.atoms
+        # rmsf_ca = rms.RMSF(atoms_ca).run()
 
-        df_ca = pd.DataFrame({
-            "Residue": [int(atom.resid) for atom in atoms_ca],
-            "Chain": [str(atom.segid) for atom in atoms_ca],
-            "RMSF (Å)": rmsf_ca.rmsf,
-            "Component": "Cα only (global)"
-        })
+        # df_ca = pd.DataFrame({
+        #     "Residue": [int(atom.resid) for atom in atoms_ca],
+        #     "Chain": [str(atom.segid) for atom in atoms_ca],
+        #     "RMSF (Å)": rmsf_ca.rmsf,
+        #     "Component": "Cα only (global)"
+        # })
 
-        dfs.append(df_ca)
+        # dfs.append(df_ca)
 
         df_rmsf = pd.concat(dfs, ignore_index=True)
 
@@ -598,6 +623,7 @@ class RMSFAnalysisTask:
         sns.set(style="whitegrid", context="talk")
         plt.figure(figsize=(12, 5))
 
+        # Plot RMSF lines
         sns.lineplot(
             data=df_rmsf,
             x="Residue_cont",
@@ -606,35 +632,28 @@ class RMSFAnalysisTask:
             lw=2
         )
 
-        # Chain-aware tick labels
-        # Build labels like e.g A:45
+        # Build chain:resid labels for x-axis
         df_rmsf["Label"] = df_rmsf["Chain"] + ":" + df_rmsf["Residue"].astype(str)
 
-        # Only use one component
-        df_ticks = (
-            df_rmsf[df_rmsf["Component"] == df_rmsf["Component"].iloc[0]]
-            .drop_duplicates(subset=["Residue_cont"])
-            .sort_values("Residue_cont")
-        )
+        # Use all protein components for ticks
+        protein_components = ["Receptor (all atoms)", "Partner (VHH, all atoms)"]
+        df_ticks = df_rmsf[df_rmsf["Component"].isin(protein_components)]
+        df_ticks = df_ticks.drop_duplicates(subset=["Residue_cont"]).sort_values("Residue_cont")
 
         # Subsample ticks to avoid overcrowding
-
-        n_ticks = 20  # TODO: add adjust to yaml
+        n_ticks = 20
         step = max(1, len(df_ticks) // n_ticks)
-
         tick_positions = df_ticks["Residue_cont"].iloc[::step]
         tick_labels = df_ticks["Label"].iloc[::step]
 
         plt.xticks(tick_positions, tick_labels, rotation=45, ha="right", fontsize=8)
 
         # Show chain boundaries
-
         for chain, off in chain_offsets.items():
             plt.axvline(off, linestyle="--", alpha=0.3)
 
         plt.grid(True, axis="y")
         plt.grid(False, axis="x")
-
         plt.title("Per-Residue RMSF")
         plt.xlabel("Residue (chain:resid)")
         plt.tight_layout()

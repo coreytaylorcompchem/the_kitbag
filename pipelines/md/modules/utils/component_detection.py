@@ -3,90 +3,50 @@
 # logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 import numpy as np
-
-from MDAnalysis.lib.distances import distance_array
+import MDAnalysis as mda
 
 class ComponentDetector:
     """
     Detects molecular components in a system:
-    - receptor (largest protein)
-    - partner (second protein, e.g. VHH)
+    - receptor (largest protein chain)
+    - partner (second protein chain, e.g. VHH)
     - ligand (optional small molecule)
     """
 
-    def __init__(self, universe, ligand_resname="UNK", water_resname="HOH"):
+    def __init__(self, universe, ligand_resname="UNK", water_resname="HOH", ion_resnames=None):
         self.u = universe
         self.ligand_resname = ligand_resname
         self.water_resname = water_resname
+        self.ion_resnames = ion_resnames or ["NA", "CL", "K", "MG", "CA"]
 
     def detect(self):
         protein = self.u.select_atoms("protein")
+        if len(protein) == 0:
+            raise ValueError("No protein atoms found in universe!")
 
-        # STEP 1: cluster protein into connected components
+        # -----------------------------
+        # STEP 1: detect receptor and partner by chain
+        # -----------------------------
+        chains = sorted(set(atom.segid for atom in protein))
+        receptor = protein.select_atoms(f"segid {chains[0]}") if chains else None
+        partner = protein.select_atoms(f"segid {chains[1]}") if len(chains) > 1 else None
 
-        coords = protein.positions
-
-        # distance cutoff for connectivity (Å)
-        cutoff = 4.5
-
-        # build adjacency
-        dist = distance_array(coords, coords)
-        adjacency = dist < cutoff
-
-        # simple DFS to find connected components
-        visited = set()
-        clusters = []
-
-        for i in range(len(coords)):
-            if i in visited:
-                continue
-
-            stack = [i]
-            group = []
-
-            while stack:
-                j = stack.pop()
-                if j in visited:
-                    continue
-                visited.add(j)
-                group.append(j)
-
-                neighbors = list(np.where(adjacency[j])[0])
-                stack.extend(neighbors)
-
-            clusters.append(protein[group])
-
-        # STEP 2: build components
-        components = [{
-            "atoms": cluster,
-            "n_residues": len(cluster.residues)
-        } for cluster in clusters]
-
-        components = sorted(components, key=lambda x: x["n_residues"], reverse=True)
-
-        # STEP 3: decide if partner exists
-        receptor = components[0]["atoms"] if components else None
-        partner = None
-
-        if len(components) > 1:
-            # Heuristic: second component must be "large enough"
-            size_ratio = components[1]["n_residues"] / components[0]["n_residues"]
-
-            # Only call it a partner if it's substantial (e.g. VHH)
-            if size_ratio > 0.2:
-                partner = components[1]["atoms"]
-
-        # STEP 4: ligand detection
+        # -----------------------------
+        # STEP 2: ligand detection
+        # -----------------------------
         ligand = self.u.select_atoms(f"resname {self.ligand_resname}")
-
         if len(ligand) == 0:
+            # fallback: select any non-protein, non-water, non-ion atoms
+            ions_str = " ".join(self.ion_resnames)
             ligand = self.u.select_atoms(
-                f"not protein and not resname {self.water_resname} and not ions"
+                f"not protein and not resname {self.water_resname} and not resname {ions_str}"
             )
+            if len(ligand) == 0:
+                ligand = None
 
-        if len(ligand) == 0:
-            ligand = None
-
+        # -----------------------------
+        # STEP 3: return components
+        # -----------------------------
         return {
             "receptor": receptor,
             "partner": partner,
