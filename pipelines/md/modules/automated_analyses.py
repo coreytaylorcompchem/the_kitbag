@@ -1175,10 +1175,15 @@ class FreeEnergyLandscapeTask:
             # ----------------------------------------------
             # Cluster centroids
             # ----------------------------------------------
+
+            centroids = {}
+
             for clust_id in np.unique(cluster_labels):
                 mask = cluster_labels == clust_id
                 cx = x[mask].mean()
                 cy = y[mask].mean()
+
+                centroids[clust_id] = (cx, cy)
 
                 plt.text(
                     cx, cy,
@@ -1187,6 +1192,47 @@ class FreeEnergyLandscapeTask:
                     weight="bold",
                     ha="center"
                 )
+
+            # ==================================================
+            # Transition arrows between clusters
+            # ==================================================
+            logger.debug("Computing cluster transitions...")
+
+            # Count transitions
+            transition_counts = {}
+
+            for i in range(len(cluster_labels) - 1):
+                a = cluster_labels[i]
+                b = cluster_labels[i + 1]
+
+                if a == b:
+                    continue  # skip self-transitions
+
+                key = (a, b)
+                transition_counts[key] = transition_counts.get(key, 0) + 1
+
+            if transition_counts:
+                max_count = max(transition_counts.values())
+
+                for (a, b), count in transition_counts.items():
+                    x1, y1 = centroids[a]
+                    x2, y2 = centroids[b]
+
+                    # Normalise arrow thickness
+                    width = 1.0 + 4.0 * (count / max_count)
+
+                    plt.arrow(
+                        x1, y1,
+                        x2 - x1,
+                        y2 - y1,
+                        alpha=0.4,
+                        width=0.0,
+                        linewidth=width,
+                        length_includes_head=True,
+                        head_width=0.1 * np.std(x),
+                        head_length=0.1 * np.std(y),
+                        color="black"
+                    )
 
         out_plot = os.path.join(self.output_dir, "fel_plot.png")
         plt.savefig(out_plot, dpi=300, bbox_inches="tight")
@@ -1198,6 +1244,105 @@ class FreeEnergyLandscapeTask:
             "fel_projection": out_json,
             "fel_plot": out_plot,
             "fel_grid": os.path.join(self.output_dir, "fel_grid.npy")
+        }
+
+from deeptime.decomposition import TICA
+from deeptime.clustering import KMeans
+from deeptime.markov.msm import MaximumLikelihoodMSM
+from deeptime.markov import TransitionCountEstimator
+
+@register_task(
+    "msm_analysis",
+    category="Post-proc; kinetics",
+    description="Rigorous MSM using TICA + clustering + MLE."
+)
+class MSMAnalysisTask:
+
+    def __init__(self,
+                 topology,
+                 trajectory,
+                 selection="protein and backbone",
+                 lagtime=10,
+                 n_clusters=100,
+                 output_dir="output_msm",
+                 context=None):
+
+        self.topology = topology
+        self.trajectory = trajectory
+        self.selection = selection
+        self.lagtime = lagtime
+        self.n_clusters = n_clusters
+        self.output_dir = output_dir
+        self.context = context or {}
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def run(self):
+        logger.info("Starting MSM analysis (deeptime)...")
+
+        atoms = self.u.select_atoms(self.selection)
+
+        # --------------------------------------------------
+        # Alignment before featurisation
+        # --------------------------------------------------
+
+        align.AlignTraj(
+            self.u, self.u,
+            select=self.selection,
+            in_memory=True
+        ).run()
+
+        # --------------------------------------------------
+        # Featurisation (flattened coords for now)
+        # --------------------------------------------------
+        X = []
+        for ts in self.u.trajectory:
+            X.append(atoms.positions.flatten())
+        X = np.array(X)
+
+        # --------------------------------------------------
+        # TICA
+        # --------------------------------------------------
+        tica = TICA(lagtime=self.lagtime, dim=5)
+        X_tica = tica.fit_transform(X)
+
+        # --------------------------------------------------
+        # Clustering
+        # --------------------------------------------------
+        kmeans = KMeans(n_clusters=self.n_clusters)
+        dtrajs = kmeans.fit_fetch(X_tica)
+
+        # --------------------------------------------------
+        # Count matrix
+        # --------------------------------------------------
+        counts_estimator = TransitionCountEstimator(lagtime=self.lagtime)
+        counts = counts_estimator.fit_fetch(dtrajs)
+
+        # --------------------------------------------------
+        # MSM
+        # --------------------------------------------------
+        msm = MaximumLikelihoodMSM(reversible=True)
+        model = msm.fit_fetch(counts)
+
+        # --------------------------------------------------
+        # Outputs
+        # --------------------------------------------------
+        np.save(os.path.join(self.output_dir, "transition_matrix.npy"),
+                model.transition_matrix)
+
+        np.save(os.path.join(self.output_dir, "stationary_distribution.npy"),
+                model.stationary_distribution)
+
+        np.save(os.path.join(self.output_dir, "timescales.npy"),
+                model.timescales())
+
+        logger.info("MSM analysis complete.")
+
+        return {
+            "transition_matrix": "transition_matrix.npy",
+            "stationary_distribution": "stationary_distribution.npy",
+            "timescales": "timescales.npy"
         }
 
 @register_task(
