@@ -15,52 +15,13 @@ from sklearn.preprocessing import StandardScaler, normalize
 from sklearn.decomposition import PCA
 
 from pipeline.task_registry import register_task
+
 from modules.utils.plotting import plot_label_histograms
+from modules.utils.splits import scaffold_split
 
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
-
-# def stratified_balanced_sampling(df, label_col='pIC50', n_bins=20, max_samples_per_bin=500, random_state=42):
-#     """
-#     Stratified sampling to balance dataset by label distribution.
-
-#     Args:
-#         df (pd.DataFrame): DataFrame containing labelled data.
-#         label_col (str): Name of the label column (e.g., 'pIC50').
-#         n_bins (int): Number of bins to discretize the label.
-#         max_samples_per_bin (int): Maximum number of samples to keep per bin.
-#         random_state (int): Random seed for reproducibility.
-
-#     Returns:
-#         pd.DataFrame: Balanced DataFrame sampled from input.
-#     """
-#     np.random.seed(random_state)
-    
-#     bins = np.linspace(df[label_col].min(), df[label_col].max(), n_bins + 1)
-#     df['bin'] = pd.cut(df[label_col], bins=bins, include_lowest=True, labels=False)
-
-#     balanced_indices = []
-
-#     for bin_id in range(n_bins):
-#         bin_indices = df[df['bin'] == bin_id].index.values
-#         n_samples = len(bin_indices)
-
-#         if n_samples == 0:
-#             continue
-        
-#         if n_samples > max_samples_per_bin:
-#             chosen = np.random.choice(bin_indices, max_samples_per_bin, replace=False)
-#         else:
-#             chosen = np.random.choice(bin_indices, max_samples_per_bin, replace=True)
-
-#         balanced_indices.extend(chosen)
-
-#     balanced_df = df.loc[balanced_indices].reset_index(drop=True)
-
-#     balanced_df = balanced_df.drop(columns=['bin'])
-
-#     return balanced_df
 
 def quantile_balanced_sampling(
     df,
@@ -194,6 +155,9 @@ def load_smiles_dataset(config, context):
 
     return {"dataframe": df}
 
+def ic50_to_pic50(x):
+    return -np.log10(x * 1e-9)  # assume values are in nM
+
 @register_task("transform_labels", category="ADME")
 def transform_labels(config, context):
 
@@ -204,8 +168,23 @@ def transform_labels(config, context):
 
     for col in task_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-        if col != "Solubility":
-            df[col] = np.where(df[col] > 0, np.log1p(df[col]), np.nan)
+
+        if "IC50" in col:
+            df[col] = df[col].apply(
+                lambda x: ic50_to_pic50(x) if x > 0 else np.nan
+            )
+
+        elif col in ["LogP", "LogD"]:
+            # already log-scaled → leave as is
+            pass
+
+        elif col == "Solubility":
+            # don't log transform LogS
+            # TODO: automatically detect entirely negative data
+            pass
+
+        else:
+            df[col] = np.log1p(df[col])
 
     context["task_names"] = label_cols
 
@@ -281,7 +260,7 @@ def featurise_smiles(config, context):
 
     smiles_col = config.get("smiles_col", "smiles")
 
-    # --- NEW: support multi-task ---
+    # Retrieve data and label cols for multi-task
     label_cols = config.get("label_cols")
     label_col = config.get("label_col")
 
@@ -298,7 +277,7 @@ def featurise_smiles(config, context):
 
     graphs = []
 
-    # --- MULTI-TASK ---
+    # MULTI-TASK
     if label_cols is not None:
         labels = df[label_cols].values.astype(np.float32)
 
@@ -313,7 +292,7 @@ def featurise_smiles(config, context):
 
         num_tasks = len(label_cols)
 
-    # --- SINGLE-TASK (backward compatible) ---
+    # SINGLE-TASK (backward compatible)
     else:
         for i, (smi, y) in enumerate(
             tqdm(zip(df[smiles_col], df[label_col]),
@@ -329,14 +308,8 @@ def featurise_smiles(config, context):
     if not graphs:
         raise ValueError("Featurisation produced zero graphs.")
 
-    # --- Infer dimensions ---
+    # Infer dimensions
     first_graph = graphs[0]
-
-    # print("Has global_features:", hasattr(first_graph, "global_features"))
-    # print("Value:", getattr(first_graph, "global_features", None))
-
-    # print("Has fp:", hasattr(first_graph, "fp"))
-    # print("Value:", getattr(first_graph, "fp", None))
 
     global_feat = getattr(first_graph, "global_features", None)
     fp = getattr(first_graph, "fp", None)
@@ -355,14 +328,16 @@ def featurise_smiles(config, context):
 @register_task("split_data", category="ADME", description="Perform train/test/val splits.")
 def split_data(config, context):
     graphs = context["graphs"]
+    smiles = context["dataframe"]["smiles"].tolist()
 
     test_size = config.get("val_size", 0.2)
     batch_size = config.get("batch_size", 32)
 
-    train_list, val_list = train_test_split(
+    train_list, val_list = scaffold_split(
         graphs,
-        test_size=test_size,
-        random_state=config.get("seed", 42)
+        smiles,
+        val_fraction=config.get("val_size", 0.2),
+        seed=42
     )
 
     train_loader = DataLoader(train_list, batch_size=batch_size, shuffle=True)

@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from tqdm import trange
 from torch_geometric.loader import DataLoader
 from torch_geometric.data import Batch
+import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 
@@ -31,7 +32,7 @@ def masked_mse_loss(pred, target):
         return torch.tensor(0.0, device=pred.device, requires_grad=True)
 
     diff = pred - target
-    diff = diff[mask]   # apply mask AFTER subtraction
+    diff = diff[mask]   # apply mask after subtraction
 
     return torch.mean(diff ** 2)
 
@@ -51,6 +52,23 @@ def per_task_mse(pred, target):
 
     return losses, counts
 
+def multitask_loss(pred, target, log_vars):
+    total_loss = 0.0
+
+    for i in range(pred.shape[1]):
+        mask = ~torch.isnan(target[:, i])
+        if mask.sum() == 0:
+            continue
+
+        pred_i = pred[mask, i]
+        target_i = target[mask, i]
+
+        mse = F.mse_loss(pred_i, target_i)
+
+        precision = torch.exp(-log_vars[i])
+        total_loss += precision * mse + log_vars[i]
+
+    return total_loss
 
 # =========================
 # TRAIN / EVAL EPOCHS
@@ -66,7 +84,6 @@ def train_epoch(model, loader, optimizer, device):
     for batch in loader:
         batch = batch.to(device)
 
-        # --- match CYP global feature handling ---
         if hasattr(batch, "global_features"):
             gf = batch.global_features.to(device).float()
             if gf.dim() == 1:
@@ -78,13 +95,13 @@ def train_epoch(model, loader, optimizer, device):
         out = model(batch)
         target = batch.y.float()
 
-        loss = masked_mse_loss(out, target)
+        loss = multitask_loss(out, target, model.log_vars)
         loss.backward()
         optimizer.step()
 
         total_loss += loss.item()
 
-        # --- per-task tracking ---
+        # per-task tracking
         if num_tasks is None:
             num_tasks = target.shape[1]
             task_losses = torch.zeros(num_tasks, device=device)
@@ -122,7 +139,7 @@ def eval_epoch(model, loader, device):
             out = model(batch)
             target = batch.y.float()
 
-            loss = masked_mse_loss(out, target)
+            loss = multitask_loss(out, target, model.log_vars)
             total_loss += loss.item()
 
             all_preds.append(out.cpu())
@@ -181,7 +198,7 @@ def train(context, config):
     )
 
     # -------------------------
-    # DIMENSIONS (from data)
+    # DIMENSIONS
     # -------------------------
     sample = data_list[0]
 
@@ -236,7 +253,7 @@ def train(context, config):
         best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 
         # =========================
-        # TRAIN LOOP
+        # TRAINING LOOP
         # =========================
         for epoch in trange(
             config.get("max_epochs", 200),
