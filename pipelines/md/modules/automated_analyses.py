@@ -843,6 +843,364 @@ class InteractionFingerprintTask:
         return {"fp_data": out_data_path, "fp_plot": out_plot_path}
 
 @register_task(
+    "cluster_analysis",
+    category="Post-proc; traj analyses",
+    description="Cluster trajectory based on RMSD and output centroid structures."
+)
+class ClusterAnalysisTask:
+    """
+    Perform RMSD-based clustering on a trajectory and output:
+      - cluster populations
+      - centroid structures (PDB)
+    """
+
+    def __init__(self,
+                 topology: str,
+                 trajectory: str,
+                 selection: str = "protein and backbone",
+                 n_clusters: int = 5,
+                 start: int = 0,
+                 stop: int = -1,
+                 step: int = 1,
+                 output_dir: str = "output_clusters",
+                 context: Optional[Dict[str, Any]] = None):
+
+        self.topology = topology
+        self.trajectory = trajectory
+        self.selection = selection
+        self.n_clusters = n_clusters
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.output_dir = output_dir
+        self.context = context or {}
+
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def run(self):
+        logger.info("Starting cluster analysis...")
+
+        # --------------------------------------------------
+        # Align trajectory
+        # --------------------------------------------------
+        logger.debug("Aligning trajectory...")
+        align.AlignTraj(
+            self.u, self.u,
+            select=self.selection,
+            in_memory=True
+        ).run()
+
+        atoms = self.u.select_atoms(self.selection)
+
+        # --------------------------------------------------
+        # Collect coordinates
+        # --------------------------------------------------
+        coords = []
+        frame_indices = []
+
+        for ts in self.u.trajectory[self.start:self.stop:self.step]:
+            coords.append(atoms.positions.copy())
+            frame_indices.append(ts.frame)
+
+        coords = np.array(coords)  # shape: (n_frames, n_atoms, 3)
+
+        n_frames = coords.shape[0]
+        logger.info(f"Collected {n_frames} frames for clustering.")
+
+        # --------------------------------------------------
+        # Compute RMSD distance matrix
+        # --------------------------------------------------
+        logger.debug("Computing RMSD distance matrix...")
+
+        dist_matrix = np.zeros((n_frames, n_frames))
+
+        for i in range(n_frames):
+            for j in range(i + 1, n_frames):
+                d = rms.rmsd(coords[i], coords[j], superposition=False)
+                dist_matrix[i, j] = d
+                dist_matrix[j, i] = d
+
+        # --------------------------------------------------
+        # Clustering (Agglomerative)
+        # --------------------------------------------------
+        logger.debug("Running agglomerative clustering...")
+
+        from sklearn.cluster import AgglomerativeClustering
+
+        clustering = AgglomerativeClustering(
+            n_clusters=self.n_clusters,
+            metric="precomputed",
+            linkage="average"
+        )
+
+        labels = clustering.fit_predict(dist_matrix)
+
+        # --------------------------------------------------
+        # Cluster statistics
+        # --------------------------------------------------
+        df = pd.DataFrame({
+            "Frame": frame_indices,
+            "Cluster": labels
+        })
+
+        cluster_counts = df["Cluster"].value_counts().sort_index()
+        cluster_props = cluster_counts / cluster_counts.sum()
+
+        df_summary = pd.DataFrame({
+            "Cluster": cluster_counts.index,
+            "Count": cluster_counts.values,
+            "Proportion": cluster_props.values
+        })
+
+        out_json = os.path.join(self.output_dir, "cluster_summary.json")
+        df_summary.to_json(out_json, orient="records", indent=2)
+
+        logger.info(f"Saved cluster summary to {out_json}")
+
+        # --------------------------------------------------
+        # Find centroids
+        # --------------------------------------------------
+        logger.debug("Extracting cluster centroids...")
+
+        centroids = {}
+
+        for clust_id in sorted(df["Cluster"].unique()):
+            cluster_frames = np.where(labels == clust_id)[0]
+
+            submatrix = dist_matrix[np.ix_(cluster_frames, cluster_frames)]
+
+            # centroid = frame with minimal average distance
+            avg_dist = submatrix.mean(axis=1)
+            centroid_idx_local = np.argmin(avg_dist)
+            centroid_idx_global = cluster_frames[centroid_idx_local]
+
+            centroids[clust_id] = centroid_idx_global
+
+        # --------------------------------------------------
+        # Write centroid PDBs
+        # --------------------------------------------------
+        logger.debug("Writing centroid structures...")
+
+        for clust_id, frame_idx in centroids.items():
+            self.u.trajectory[frame_idx]
+
+            out_pdb = os.path.join(
+                self.output_dir,
+                f"cluster_{clust_id}_centroid.pdb"
+            )
+
+            with mda.Writer(out_pdb, self.u.atoms.n_atoms) as W:
+                W.write(self.u.atoms)
+
+            logger.info(f"Saved centroid for cluster {clust_id} → {out_pdb}")
+
+        return {
+            "cluster_summary": out_json,
+            "labels": labels.tolist()
+        }
+
+@register_task(
+    "free_energy_landscape",
+    category="Post-proc; traj analyses",
+    description="Compute 2D free energy landscape using PCA projection."
+)
+class FreeEnergyLandscapeTask:
+    """
+    Compute a 2D Free Energy Landscape (FEL) using PCA.
+
+    Outputs:
+      - FEL grid (numpy)
+      - raw projection data (JSON)
+      - contour plot (PNG)
+    """
+
+    def __init__(self,
+                 topology: str,
+                 trajectory: str,
+                 selection: str = "protein and backbone",
+                 n_bins: int = 50,
+                 temperature: float = 298.0,
+                 start: int = 0,
+                 stop: int = -1,
+                 step: int = 1,
+                 output_dir: str = "output_fel",
+                 context: Optional[Dict[str, Any]] = None):
+
+        self.topology = topology
+        self.trajectory = trajectory
+        self.selection = selection
+        self.n_bins = n_bins
+        self.temperature = temperature
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.output_dir = output_dir
+        self.context = context or {}
+
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def run(self):
+        logger.info("Starting free energy landscape analysis...")
+        cluster_labels = self.context.get("cluster_labels", None)
+
+        # --------------------------------------------------
+        # Align trajectory
+        # --------------------------------------------------
+        logger.debug("Aligning trajectory...")
+        align.AlignTraj(
+            self.u, self.u,
+            select=self.selection,
+            in_memory=True
+        ).run()
+
+        atoms = self.u.select_atoms(self.selection)
+
+        # --------------------------------------------------
+        # Collect coordinates
+        # --------------------------------------------------
+        coords = []
+
+        for ts in self.u.trajectory[self.start:self.stop:self.step]:
+            coords.append(atoms.positions.flatten())
+
+        coords = np.array(coords)
+        logger.info(f"Collected {coords.shape[0]} frames.")
+
+        # --------------------------------------------------
+        # PCA
+        # --------------------------------------------------
+        logger.debug("Running PCA...")
+        from sklearn.decomposition import PCA
+
+        pca = PCA(n_components=2)
+        proj = pca.fit_transform(coords)
+
+        x = proj[:, 0]
+        y = proj[:, 1]
+
+        # --------------------------------------------------
+        # Histogram → probability
+        # --------------------------------------------------
+        logger.debug("Computing probability density...")
+        H, xedges, yedges = np.histogram2d(
+            x, y,
+            bins=self.n_bins,
+            density=True
+        )
+
+        # --------------------------------------------------
+        # Free energy
+        # --------------------------------------------------
+        kB = 0.0019872041  # kcal/mol/K
+        kT = kB * self.temperature
+
+        F = -kT * np.log(H + 1e-12)
+        F -= np.nanmin(F)
+
+        # --------------------------------------------------
+        # Save data
+        # --------------------------------------------------
+        np.save(os.path.join(self.output_dir, "fel_grid.npy"), F)
+
+        df = pd.DataFrame({
+            "PC1": x,
+            "PC2": y
+        })
+
+        out_json = os.path.join(self.output_dir, "fel_projection.json")
+        df.to_json(out_json, orient="records", indent=2)
+
+        logger.info(f"Saved FEL projection to {out_json}")
+
+        # ==================================================
+        # Cluster thermodynamics
+        # ==================================================
+        if cluster_labels is not None:
+            logger.debug("Computing cluster free energies...")
+
+            cluster_labels = np.array(cluster_labels)
+
+            counts = pd.Series(cluster_labels).value_counts().sort_index()
+            probs = counts / counts.sum()
+
+            free_energy = -kT * np.log(probs)
+
+            df_clusters = pd.DataFrame({
+                "Cluster": counts.index,
+                "Population": probs.values,
+                "FreeEnergy (kcal/mol)": free_energy.values
+            })
+
+            out_clusters = os.path.join(self.output_dir, "cluster_fel_summary.json")
+            df_clusters.to_json(out_clusters, orient="records", indent=2)
+
+            logger.info(f"Saved cluster FEL summary to {out_clusters}")
+
+        # --------------------------------------------------
+        # Plot
+        # --------------------------------------------------
+        logger.debug("Plotting FEL...")
+
+        X, Y = np.meshgrid(xedges[:-1], yedges[:-1])
+
+        plt.figure(figsize=(7, 6))
+
+        contour = plt.contourf(
+            X, Y, F.T,
+            levels=50
+        )
+
+        plt.colorbar(contour, label="Free Energy (kcal/mol)")
+        plt.xlabel("PC1")
+        plt.ylabel("PC2")
+        plt.title("Free Energy Landscape")
+
+        # ==================================================
+        # Overlay clusters
+        # ==================================================
+        if cluster_labels is not None:
+            logger.debug("Overlaying cluster labels on FEL...")
+
+            plt.scatter(
+                x, y,
+                c=cluster_labels,
+                s=5,
+                alpha=0.5
+            )
+
+            # ----------------------------------------------
+            # Cluster centroids
+            # ----------------------------------------------
+            for clust_id in np.unique(cluster_labels):
+                mask = cluster_labels == clust_id
+                cx = x[mask].mean()
+                cy = y[mask].mean()
+
+                plt.text(
+                    cx, cy,
+                    str(clust_id),
+                    fontsize=12,
+                    weight="bold",
+                    ha="center"
+                )
+
+        out_plot = os.path.join(self.output_dir, "fel_plot.png")
+        plt.savefig(out_plot, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        logger.info(f"Saved FEL plot to {out_plot}")
+
+        return {
+            "fel_projection": out_json,
+            "fel_plot": out_plot,
+            "fel_grid": os.path.join(self.output_dir, "fel_grid.npy")
+        }
+
+@register_task(
     "protein_ligand_communities",
     category="Post-proc; graph analyses",
     description="Detect cooperative residue clusters (communities) in the protein–ligand interaction network."

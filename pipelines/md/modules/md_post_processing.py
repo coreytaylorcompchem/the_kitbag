@@ -170,6 +170,44 @@ class MDPostProcessingWorkflow:
                 output_dir=interactions_outdir,
             )
             results["interactions"] = interactions_task.run()
+        
+        if "clusters" in time_series:
+            logger.info("Next stage:: clustering analysis...")
+            cluster_outdir = os.path.join(output_dir, "clusters")
+            os.makedirs(cluster_outdir, exist_ok=True)
+
+            task = ClusterAnalysisTask(
+                topology=topology,
+                trajectory=trajectories,
+                selection="protein and backbone",
+                n_clusters=5,
+                start=start,
+                stop=stop,
+                step=step,
+                output_dir=cluster_outdir,
+            )
+
+            results["clusters"] = task.run()
+            self.context["cluster_labels"] = results["clusters"]["labels"]
+        
+        if "fel" in time_series:
+            logger.info("Next stage:: free energy landscape analysis...")
+            fel_outdir = os.path.join(output_dir, "free_energy_landscape")
+            os.makedirs(fel_outdir, exist_ok=True)
+
+            task = FreeEnergyLandscapeTask(
+                topology=topology,
+                trajectory=trajectories,
+                selection="protein and backbone",
+                n_bins=60,
+                temperature=298,
+                start=start,
+                stop=stop,
+                step=step,
+                output_dir=fel_outdir,
+            )
+
+            results["fel"] = task.run()
 
         # ==============================================================
         # Graph / Network Analyses
