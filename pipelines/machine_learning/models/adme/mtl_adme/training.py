@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from tqdm import trange
 from torch_geometric.loader import DataLoader
 from torch_geometric.data import Batch
+import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 
@@ -31,7 +32,7 @@ def masked_mse_loss(pred, target):
         return torch.tensor(0.0, device=pred.device, requires_grad=True)
 
     diff = pred - target
-    diff = diff[mask]   # apply mask AFTER subtraction
+    diff = diff[mask]   # apply mask after subtraction
 
     return torch.mean(diff ** 2)
 
@@ -51,6 +52,23 @@ def per_task_mse(pred, target):
 
     return losses, counts
 
+def multitask_loss(pred, target, log_vars):
+    total_loss = 0.0
+
+    for i in range(pred.shape[1]):
+        mask = ~torch.isnan(target[:, i])
+        if mask.sum() == 0:
+            continue
+
+        pred_i = pred[mask, i]
+        target_i = target[mask, i]
+
+        mse = F.mse_loss(pred_i, target_i)
+
+        precision = torch.exp(-log_vars[i])
+        total_loss += precision * mse + log_vars[i]
+
+    return total_loss
 
 # =========================
 # TRAIN / EVAL EPOCHS
@@ -66,7 +84,6 @@ def train_epoch(model, loader, optimizer, device):
     for batch in loader:
         batch = batch.to(device)
 
-        # --- match CYP global feature handling ---
         if hasattr(batch, "global_features"):
             gf = batch.global_features.to(device).float()
             if gf.dim() == 1:
@@ -78,13 +95,13 @@ def train_epoch(model, loader, optimizer, device):
         out = model(batch)
         target = batch.y.float()
 
-        loss = masked_mse_loss(out, target)
+        loss = multitask_loss(out, target, model.log_vars)
         loss.backward()
         optimizer.step()
 
         total_loss += loss.item()
 
-        # --- per-task tracking ---
+        # per-task tracking
         if num_tasks is None:
             num_tasks = target.shape[1]
             task_losses = torch.zeros(num_tasks, device=device)
@@ -122,7 +139,7 @@ def eval_epoch(model, loader, device):
             out = model(batch)
             target = batch.y.float()
 
-            loss = masked_mse_loss(out, target)
+            loss = multitask_loss(out, target, model.log_vars)
             total_loss += loss.item()
 
             all_preds.append(out.cpu())
@@ -150,12 +167,16 @@ def eval_epoch(model, loader, device):
 # =========================
 # MAIN TRAIN FUNCTION (PIPELINE ENTRY)
 # =========================
+
 def train(context, config):
     data_list = context["graphs"]
     device = context["device"]
     ModelClass = context["model_class"]
 
     logger.debug(f"Number of graphs: {len(data_list)}")
+
+    def format_params(param_dict):
+        return "_".join(f"{k}={v}" for k, v in param_dict.items())
 
     # -------------------------
     # SPLIT
@@ -181,7 +202,7 @@ def train(context, config):
     )
 
     # -------------------------
-    # DIMENSIONS (from data)
+    # DIMENSIONS
     # -------------------------
     sample = data_list[0]
 
@@ -190,6 +211,8 @@ def train(context, config):
     global_feat_dim = sample.global_features.shape[-1]
     fp_dim = sample.fp.shape[-1]
     num_tasks = sample.y.shape[-1]
+
+    task_names = context.get("task_names", [f"Task {i}" for i in range(num_tasks)])
 
     # -------------------------
     # OUTPUT DIRS
@@ -205,22 +228,31 @@ def train(context, config):
     # =========================
     # GRID SEARCH
     # =========================
-    for lr, hidden_dim in itertools.product(
-        config["param_grid"]["lr"],
-        config["param_grid"]["hidden_dim"],
-    ):
-        logger.info(f"\nTraining with lr={lr}, hidden_dim={hidden_dim}")
+
+    param_grid = config["param_grid"]
+    keys = list(param_grid.keys())
+
+    for values in itertools.product(*param_grid.values()):
+        params = dict(zip(keys, values))
+
+        logger.info(f"\nTraining with params: {params}")
+
+        lr = params.get("lr")
 
         model = ModelClass(
             input_dim=input_dim,
             edge_dim=edge_dim,
             global_feat_dim=global_feat_dim,
             fp_dim=fp_dim,
-            hidden_dim=hidden_dim,
             num_tasks=num_tasks,
+            **{k: v for k, v in params.items() if k != "lr"}  # pass all model params
         ).to(device)
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=lr,
+            weight_decay=params.get("weight_decay", 1e-5),
+        )
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", factor=0.5, patience=10, verbose=True
@@ -236,11 +268,11 @@ def train(context, config):
         best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 
         # =========================
-        # TRAIN LOOP
+        # TRAINING LOOP
         # =========================
         for epoch in trange(
             config.get("max_epochs", 200),
-            desc=f"lr={lr}, hidden={hidden_dim}",
+            desc=str(params),
         ):
             train_loss, train_task = train_epoch(model, train_loader, optimizer, device)
 
@@ -274,16 +306,19 @@ def train(context, config):
         # -------------------------
         # PLOTTING
         # -------------------------
+
         train_task_hist = np.array(train_task_hist)
         val_task_hist = np.array(val_task_hist)
+
+        param_str = format_params(params)
 
         # Overall loss
         plt.figure()
         plt.plot(train_losses, label="Train")
         plt.plot(val_losses, label="Val")
         plt.legend()
-        plt.title(f"lr={lr}, hidden={hidden_dim}")
-        plt.savefig(loss_curve_dir / f"overall_lr{lr}_hd{hidden_dim}.png", dpi=150)
+        plt.title(param_str)
+        plt.savefig(loss_curve_dir / f"overall_{param_str}.png", dpi=150)
         plt.close()
 
         # Per-task loss
@@ -297,14 +332,14 @@ def train(context, config):
         for i in range(n_tasks):
             axes[i].plot(train_task_hist[:, i], label="Train")
             axes[i].plot(val_task_hist[:, i], label="Val")
-            axes[i].set_title(f"Task {i}")
+            axes[i].set_title(task_names[i])
             axes[i].legend()
 
         for j in range(i + 1, len(axes)):
             fig.delaxes(axes[j])
 
         plt.tight_layout()
-        plt.savefig(loss_curve_dir / f"per_task_lr{lr}_hd{hidden_dim}.png", dpi=150)
+        plt.savefig(loss_curve_dir / f"per_task_{param_str}.png", dpi=150)
         plt.close()
 
         # -------------------------
@@ -327,7 +362,7 @@ def train(context, config):
         if final_val_loss < best_loss:
             best_loss = final_val_loss
             best_model = model
-            best_params = {"lr": lr, "hidden_dim": hidden_dim}
+            best_params = params.copy()
 
             torch.save(
                 {
@@ -337,6 +372,8 @@ def train(context, config):
                     "global_feat_dim": global_feat_dim,
                     "fp_dim": fp_dim,
                     "num_tasks": num_tasks,
+                    "params": params,
+                    "task_names": task_names,
                 },
                 model_path,
             )

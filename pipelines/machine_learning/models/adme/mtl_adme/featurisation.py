@@ -23,7 +23,7 @@ FP_FEATURES = None
 
 
 # =========================
-# YOUR ORIGINAL HELPERS (UNCHANGED)
+# HELPERS
 # =========================
 
 def safe_value(val):
@@ -35,7 +35,7 @@ def safe_value(val):
         return 0.0
 
 # =========================
-# PRECOMPUTATION (CRITICAL)
+# PRECOMPUTATION
 # =========================
 
 def prepare_features(df, smiles_col="smiles", label_col=None):
@@ -104,17 +104,21 @@ def mol_to_graph(smiles: str, label=None, idx=None, global_feats=None, fps=None)
     if mol is None:
         return None
 
-    # Node features (same structure as your notebook)
-    atom_features = []
-    for atom in mol.GetAtoms():
-        atom_features.append([
+    # Node features
+    def atom_features(atom):
+        return [
             atom.GetAtomicNum(),
             atom.GetDegree(),
             atom.GetFormalCharge(),
             int(atom.GetIsAromatic()),
-        ])
+            atom.GetHybridization().real,
+            atom.GetTotalNumHs(),
+            atom.GetImplicitValence(),
+            int(atom.IsInRing()),
+        ]
 
-    x = torch.tensor(atom_features, dtype=torch.float32)
+    atom_features_list = [atom_features(atom) for atom in mol.GetAtoms()]
+    x = torch.tensor(atom_features_list, dtype=torch.float32)
 
     # Edges
     edge_index = []
