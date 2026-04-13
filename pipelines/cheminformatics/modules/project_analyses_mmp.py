@@ -424,7 +424,7 @@ def sar_cliff_analysis(config, data=None):
     #  1. Load configs
     input_file = config.get("input_file")
 
-    sar_cliff_cfg = config.get("sar_cliff", {})    
+    sar_cliff_cfg = config.get("sar_cliff_analysis", {})    
     activity_col = sar_cliff_cfg.get("activity_col", "pActivity")
     similarity_cutoff = sar_cliff_cfg.get("similarity_cutoff", 0.85)
     delta_threshold = sar_cliff_cfg.get("delta_threshold", 1.0)
@@ -437,7 +437,13 @@ def sar_cliff_analysis(config, data=None):
 
     logger.debug(f"[SAR Cliff] Loading input file: {input_file}")
     df = pd.read_csv(input_file)
+    # ensure numeric
+    df[activity_col] = pd.to_numeric(df[activity_col], errors="coerce")
+
+    # remove NaN and inf
+    df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=["smiles", activity_col])
+
     df = df.reset_index(drop=True)
 
     #  2. Fingerprint computation 
@@ -709,7 +715,7 @@ def scaffold_enrichment_trends(config, data=None):
     else:
         df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
         df["week_period"] = df[date_col].dt.to_period("W")
-        df["week"] = df["week_period"].astype(str)
+        df["week"] = df["week_period"].astype(str)  # for plotting
 
     # 2. Bemis–Murcko scaffolds
     logger.debug("[ScaffoldEnrichment] Computing Murcko scaffolds...")
@@ -722,6 +728,10 @@ def scaffold_enrichment_trends(config, data=None):
         if mol is None:
             scaffolds.append(None)
             continue
+
+        # if min_size and mol.GetNumHeavyAtoms() < min_size:
+        #     scaffolds.append(None)
+        #     continue
 
         try:
             scaf = None
@@ -738,6 +748,7 @@ def scaffold_enrichment_trends(config, data=None):
                 frags = BRICS.BRICSDecompose(mol)
                 scaf = max(frags, key=len) if frags else None
 
+            # canonicalize if valid
             if scaf:
                 scaf_mol = Chem.MolFromSmiles(scaf)
                 if min_size and scaf_mol and scaf_mol.GetNumHeavyAtoms() < min_size:
@@ -749,13 +760,15 @@ def scaffold_enrichment_trends(config, data=None):
             scaffolds.append(None)
 
     df["scaffold"] = scaffolds
-    df_valid = df.dropna(subset=["scaffold"]).copy()
 
+    df_valid = df.dropna(subset=["scaffold"]).copy()
+    
     if df_valid.empty:
         logger.warning("[ScaffoldEnrichment] No valid scaffolds found.")
         return None
 
-    # 3. Weekly scaffold stats
+    #  3. Weekly scaffold stats 
+    logger.debug("[ScaffoldEnrichment] Aggregating weekly scaffold statistics...")
     agg_df = (
         df_valid.groupby(["week_period", "scaffold"])
         .agg(
@@ -764,20 +777,29 @@ def scaffold_enrichment_trends(config, data=None):
         )
         .reset_index()
     )
-
+    
     agg_df = agg_df.sort_values("week_period")
     agg_df["week_num"] = agg_df["week_period"].rank(method="dense").astype(int)
 
     agg_df = agg_df.sort_values(["scaffold", "week_period"])
+
     agg_df["prev_mean"] = agg_df.groupby("scaffold")["mean_activity"].shift(1)
     agg_df["delta_mean"] = agg_df["mean_activity"] - agg_df["prev_mean"]
 
-    # 4. Trends
+    #  4. Identify improving / declining scaffolds
+
+    # Use last N weeks instead of single latest week
     window_weeks = task_conf.get("trend_window_weeks", 4)
+    print(window_weeks)
+
     recent_weeks = sorted(agg_df["week_period"].dropna().unique())[-window_weeks:]
+
     recent_data = agg_df[agg_df["week_period"].isin(recent_weeks)].copy()
+
+    # Keep only valid deltas
     recent_data = recent_data.dropna(subset=["delta_mean"])
 
+    # Aggregate trend per scaffold (mean delta over window)
     trend_df = (
         recent_data.groupby("scaffold")
         .agg(
@@ -788,9 +810,12 @@ def scaffold_enrichment_trends(config, data=None):
         .reset_index()
     )
 
+    # Optional robustness filter
     trend_df = trend_df[trend_df["n_points"] >= 2]
 
+    # Fallback if too strict
     if trend_df.empty:
+        logger.warning("[ScaffoldEnrichment] No valid multi-week trends - relaxing constraints.")
         trend_df = (
             recent_data.groupby("scaffold")
             .agg(mean_delta=("delta_mean", "mean"))
@@ -801,7 +826,7 @@ def scaffold_enrichment_trends(config, data=None):
     top_declining = trend_df.nsmallest(5, "mean_delta")
 
     # 5. Visualisation
-    image_zoom = 0.5
+    image_zoom = 0.5  # hardcoding size of 2D structures for the plots. Might need to adjust.
 
     top_n = task_conf.get("top_n_scaffolds", 8)
     top_scaffolds = (
@@ -810,7 +835,6 @@ def scaffold_enrichment_trends(config, data=None):
         .head(top_n)
         .index
     )
-
     agg_df["week"] = agg_df["week_period"].astype(str)
     plot_df = agg_df[agg_df["scaffold"].isin(top_scaffolds)]
 
@@ -821,11 +845,13 @@ def scaffold_enrichment_trends(config, data=None):
     )
 
     tick_step = task_conf.get("xtick_step", 4)
+
     week_labels_sub = week_labels.iloc[::tick_step]
 
     n_ticks = len(week_labels_sub)
     width = max(10, min(20, n_ticks * 1.2))
     plt.figure(figsize=(width, 6))
+    
     ax = plt.gca()
 
     from PIL import Image, ImageDraw
@@ -845,47 +871,85 @@ def scaffold_enrichment_trends(config, data=None):
                 img = Draw.MolToImage(mol, size=(100, 100))
             else:
                 raise ValueError("Invalid SMILES")
+
         except Exception:
+            logger.warning(f"[ScaffoldEnrichment] Failed to render scaffold: {smi}")
             img = make_placeholder_image("Invalid")
 
         scaffold_imgs[smi] = img
 
-    multi_point_scaffolds = []
-    for scaffold in top_scaffolds:
-        if len(plot_df[plot_df["scaffold"] == scaffold]) > 1:
-            multi_point_scaffolds.append(scaffold)
+    # Helper for mapping week labels to x-axis positions
+    xtick_labels = [label.get_text() for label in ax.get_xticklabels()]
+    xtick_positions = ax.get_xticks()
+    def get_x_position(x_val):
+        if isinstance(x_val, (int, float)):
+            return x_val
+        try:
+            idx = xtick_labels.index(str(x_val))
+            return xtick_positions[idx]
+        except ValueError:
+            return xtick_positions[-1]
 
+    # Split scaffolds into multi-point and single-point sets, depending on how many data points there are.
+    multi_point_scaffolds = []
+    single_point_scaffolds = []
+    for scaffold in top_scaffolds:
+        count_points = len(plot_df[plot_df["scaffold"] == scaffold])
+        if count_points > 1:
+            multi_point_scaffolds.append(scaffold)
+        else:
+            single_point_scaffolds.append(scaffold)
+
+    # Plot lines for scaffolds with multiple points
     palette = sns.color_palette("tab10", n_colors=len(multi_point_scaffolds))
     color_map = dict(zip(multi_point_scaffolds, palette))
 
     for scaffold in multi_point_scaffolds:
+        scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
+
         sns.lineplot(
-            data=plot_df[plot_df["scaffold"] == scaffold],
+            data=scaffold_data,
             x="week_num",
             y="mean_activity",
             color=color_map[scaffold],
             lw=2,
             ax=ax,
         )
-
+    
     ax.set_xticks(week_labels_sub["week_num"])
     ax.set_xticklabels(week_labels_sub["week"], rotation=45)
 
+    # Remove default legend if present (hack)
     if ax.legend_:
         ax.legend_.remove()
+    
+    logger.debug(f"Multi_point_scaffolds: {len(multi_point_scaffolds)}")
 
-    # === FIXED IMAGE PLACEMENT ===
-    y_min, y_max = ax.get_ylim()
-    min_sep = (y_max - y_min) * 0.08
-
-    scaffold_positions = []
     for scaffold in multi_point_scaffolds:
-        data_s = plot_df[plot_df["scaffold"] == scaffold]
-        if data_s.empty:
+        scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
+        logger.debug(
+            f"Scaffold={scaffold[:30]}... "
+            f"points={len(scaffold_data)} "
+            f"has_img={scaffold in scaffold_imgs}"
+        )
+
+    # Add images for line plots at the far right of the plot 
+    y_min, y_max = ax.get_ylim()
+    y_spacing = (y_max - y_min) / (len(multi_point_scaffolds) + 1)
+
+    # --- prevent overlapping endpoint images ---
+
+    # 1. Collect positions ONCE
+    scaffold_positions = []
+
+    for scaffold in multi_point_scaffolds:
+        scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
+        if scaffold_data.empty:
             continue
 
         last_row = (
-            data_s.sort_values(["week_period", "mean_activity"])
+            scaffold_data
+            .sort_values(["week_period", "mean_activity"])
             .drop_duplicates(subset=["week_period"], keep="last")
             .iloc[-1]
         )
@@ -896,37 +960,43 @@ def scaffold_enrichment_trends(config, data=None):
             "y": float(last_row["mean_activity"])
         })
 
+    # 2. Sort by y (stable ordering)
     scaffold_positions = sorted(scaffold_positions, key=lambda d: d["y"])
+
+    # 3. Place with alternating offsets (prevents stacking)
     placed_y = []
+    min_sep = (y_max - y_min) * 0.05
 
-    for item in scaffold_positions:
-        y0 = item["y"]
+    for i, item in enumerate(scaffold_positions):
+        y = item["y"]
 
-        offsets = [0]
-        for k in range(1, 20):
-            offsets.append(k * min_sep)
-            offsets.append(-k * min_sep)
+        # alternate direction: up, down, up, down...
+        direction = 1 if i % 2 == 0 else -1
 
-        y = None
-        for offset in offsets:
-            candidate = y0 + offset
-            margin = min_sep
-            candidate = max(y_min + margin, min(candidate, y_max - margin))
-
-            if all(abs(candidate - py) >= min_sep for py in placed_y):
-                y = candidate
+        # resolve collisions iteratively
+        for _ in range(10):  # small bounded loop = stable
+            collision = False
+            for py in placed_y:
+                if abs(y - py) < min_sep:
+                    y += direction * min_sep
+                    direction *= -1  # flip direction
+                    collision = True
+            if not collision:
                 break
 
-        if y is None:
-            y = max(y_min + min_sep, min(y0, y_max - min_sep))
+        # keep INSIDE bounds with margin (prevents edge stacking)
+        margin = min_sep
+        y = max(y_min + margin, min(y, y_max - margin))
 
         placed_y.append(y)
 
+        scaffold = item["scaffold"]
         x = min(item["x"], ax.get_xlim()[1] - 0.5)
 
-        img = scaffold_imgs.get(item["scaffold"])
+        img = scaffold_imgs.get(scaffold)
         if img:
             imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
+
             ab = offsetbox.AnnotationBbox(
                 imagebox,
                 (x, y),
@@ -934,12 +1004,18 @@ def scaffold_enrichment_trends(config, data=None):
                 xycoords='data',
                 boxcoords="offset points",
                 frameon=True,
-                bboxprops=dict(edgecolor=color_map[item["scaffold"]], linewidth=2),
+                bboxprops=dict(
+                    edgecolor=color_map[scaffold],
+                    linewidth=2
+                ),
                 annotation_clip=False
             )
             ax.add_artist(ab)
 
+    # ax.set_xlim(x_left, x_right + x_offset * 2)
+
     plt.title(f"Top {top_n} Scaffold Enrichment Trends (mean {activity_col})")
+    plt.xticks(rotation=45)
     plt.xlabel("Week")
     plt.ylabel(f"Mean {activity_col}")
     plt.tight_layout()
@@ -951,9 +1027,12 @@ def scaffold_enrichment_trends(config, data=None):
     trends_csv = output_dir / "scaffold_trends.csv"
     agg_df.to_csv(trends_csv, index=False)
 
-    improving_csv = output_dir / "top5_improving_scaffolds.csv"
-    declining_csv = output_dir / "top5_declining_scaffolds.csv"
-    top_improving.to_csv(improving_csv, index=False)
+    logger.info(f"[ScaffoldEnrichment] Trends saved to: {trends_csv}")
+    logger.info(f"[ScaffoldEnrichment] Plot saved to: {trend_plot}")
+
+    improving_csv = output_dir / "top5_improving_scaffolds.csv" 
+    declining_csv = output_dir / "top5_declining_scaffolds.csv" 
+    top_improving.to_csv(improving_csv, index=False) 
     top_declining.to_csv(declining_csv, index=False)
 
     return {
