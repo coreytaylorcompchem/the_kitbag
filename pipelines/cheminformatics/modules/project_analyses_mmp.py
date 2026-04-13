@@ -50,7 +50,7 @@ def write_mmpdb_inputs(df, output_prefix, smiles_col="smiles", id_col="id", prop
             mol_id = row.get(id_col)
             if pd.notna(smi) and pd.notna(mol_id):
                 f.write(f"{smi}\t{mol_id}\n")
-    logger.info(f"[✔] SMILES file written: {smi_path}")
+    logger.info(f"SMILES file written: {smi_path}")
 
     prop_path = None
     if props_cols:
@@ -62,7 +62,7 @@ def write_mmpdb_inputs(df, output_prefix, smiles_col="smiles", id_col="id", prop
         props_df.rename(columns={id_col: "id"}, inplace=True)
         prop_path = output_prefix.with_suffix(".props")
         props_df.to_csv(prop_path, index=False, sep="\t", encoding="utf-8", lineterminator="\n")
-        logger.info(f"[✔] Properties file written: {prop_path}")
+        logger.info(f"Properties file written: {prop_path}")
     else:
         logger.info("[ℹ] No props_cols provided — skipping props file.")
 
@@ -92,7 +92,9 @@ def run_transform(mmpdb_file, smiles, property_name):
 @register_task("mmp_analysis", category="Project-based analyses", description="Matched Molecular Pairs (mmpdb).")
 def mmp_analysis(config, data=None):
     input_file = config.get("input_file")
-    activity_col = config.get("activity_col", "pActivity")
+    cfg = config.get("mmp_analysis", {})
+    activity_col = cfg.get("activity_col", "pActivity")
+    print(activity_col)
     output_dir = Path(config.get("output", {}).get("directory", "outputs/mmp"))
     output_dir.mkdir(parents=True, exist_ok=True)
     out_filename = config.get("output", {}).get("filename", Path(input_file).stem + "_mmp.tsv")
@@ -706,32 +708,56 @@ def scaffold_enrichment_trends(config, data=None):
         df["week"] = "unknown"
     else:
         df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-        df["week"] = df[date_col].dt.strftime("%Y-%U")
+        df["week_period"] = df[date_col].dt.to_period("W")
+        df["week"] = df["week_period"].astype(str)
 
     # 2. Bemis–Murcko scaffolds
     logger.debug("[ScaffoldEnrichment] Computing Murcko scaffolds...")
+    method = task_conf.get("scaffold_method", "murcko")
+    min_size = task_conf.get("min_scaffold_size", 0)
+
     scaffolds = []
     for smi in tqdm(df[smiles_col], desc="Extracting scaffolds"):
         mol = Chem.MolFromSmiles(str(smi))
         if mol is None:
             scaffolds.append(None)
             continue
+
         try:
-            scaf = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+            scaf = None
+
+            if method == "murcko":
+                scaf = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+
+            elif method == "generic":
+                scaf_mol = MurckoScaffold.GetScaffoldForMol(mol)
+                scaf_mol = MurckoScaffold.MakeScaffoldGeneric(scaf_mol)
+                scaf = Chem.MolToSmiles(scaf_mol)
+
+            elif method == "brics":
+                frags = BRICS.BRICSDecompose(mol)
+                scaf = max(frags, key=len) if frags else None
+
+            if scaf:
+                scaf_mol = Chem.MolFromSmiles(scaf)
+                if min_size and scaf_mol and scaf_mol.GetNumHeavyAtoms() < min_size:
+                    scaf = None
+
             scaffolds.append(scaf)
+
         except Exception:
             scaffolds.append(None)
-    df["scaffold"] = scaffolds
 
+    df["scaffold"] = scaffolds
     df_valid = df.dropna(subset=["scaffold"]).copy()
+
     if df_valid.empty:
         logger.warning("[ScaffoldEnrichment] No valid scaffolds found.")
         return None
 
-    #  3. Weekly scaffold stats 
-    logger.debug("[ScaffoldEnrichment] Aggregating weekly scaffold statistics...")
+    # 3. Weekly scaffold stats
     agg_df = (
-        df_valid.groupby(["week", "scaffold"])
+        df_valid.groupby(["week_period", "scaffold"])
         .agg(
             count=("scaffold", "size"),
             mean_activity=(activity_col, "mean")
@@ -739,30 +765,43 @@ def scaffold_enrichment_trends(config, data=None):
         .reset_index()
     )
 
+    agg_df = agg_df.sort_values("week_period")
+    agg_df["week_num"] = agg_df["week_period"].rank(method="dense").astype(int)
+
+    agg_df = agg_df.sort_values(["scaffold", "week_period"])
     agg_df["prev_mean"] = agg_df.groupby("scaffold")["mean_activity"].shift(1)
     agg_df["delta_mean"] = agg_df["mean_activity"] - agg_df["prev_mean"]
 
-    #  4. Identify improving / declining scaffolds
-    latest_week = agg_df["week"].dropna().unique()
-    latest_week = sorted(latest_week)[-1] if len(latest_week) else None
+    # 4. Trends
+    window_weeks = task_conf.get("trend_window_weeks", 4)
+    recent_weeks = sorted(agg_df["week_period"].dropna().unique())[-window_weeks:]
+    recent_data = agg_df[agg_df["week_period"].isin(recent_weeks)].copy()
+    recent_data = recent_data.dropna(subset=["delta_mean"])
 
-    if latest_week:
-        latest_data = agg_df[agg_df["week"] == latest_week]
-        top_improving = latest_data.nlargest(5, "delta_mean", keep="all")
-        top_declining = latest_data.nsmallest(5, "delta_mean", keep="all")
-    else:
-        top_improving = top_declining = pd.DataFrame()
+    trend_df = (
+        recent_data.groupby("scaffold")
+        .agg(
+            mean_delta=("delta_mean", "mean"),
+            n_points=("delta_mean", "count"),
+            latest_activity=("mean_activity", "last")
+        )
+        .reset_index()
+    )
 
-    trends_csv = output_dir / "scaffold_trends.csv"
-    agg_df.to_csv(trends_csv, index=False)
+    trend_df = trend_df[trend_df["n_points"] >= 2]
 
-    improving_csv = output_dir / "top5_improving_scaffolds.csv"
-    declining_csv = output_dir / "top5_declining_scaffolds.csv"
-    top_improving.to_csv(improving_csv, index=False)
-    top_declining.to_csv(declining_csv, index=False)
+    if trend_df.empty:
+        trend_df = (
+            recent_data.groupby("scaffold")
+            .agg(mean_delta=("delta_mean", "mean"))
+            .reset_index()
+        )
+
+    top_improving = trend_df.nlargest(5, "mean_delta")
+    top_declining = trend_df.nsmallest(5, "mean_delta")
 
     # 5. Visualisation
-    image_zoom = 0.4  # hardcoding size of 2D structures for the plots. Might need to adjust.
+    image_zoom = 0.5
 
     top_n = task_conf.get("top_n_scaffolds", 8)
     top_scaffolds = (
@@ -771,108 +810,136 @@ def scaffold_enrichment_trends(config, data=None):
         .head(top_n)
         .index
     )
+
+    agg_df["week"] = agg_df["week_period"].astype(str)
     plot_df = agg_df[agg_df["scaffold"].isin(top_scaffolds)]
 
-    plt.figure(figsize=(10, 6))
+    week_labels = (
+        agg_df[["week_num", "week"]]
+        .drop_duplicates()
+        .sort_values("week_num")
+    )
+
+    tick_step = task_conf.get("xtick_step", 4)
+    week_labels_sub = week_labels.iloc[::tick_step]
+
+    n_ticks = len(week_labels_sub)
+    width = max(10, min(20, n_ticks * 1.2))
+    plt.figure(figsize=(width, 6))
     ax = plt.gca()
 
+    from PIL import Image, ImageDraw
+
+    def make_placeholder_image(text="NA", size=(100, 100)):
+        img = Image.new("RGB", size, color="white")
+        draw = ImageDraw.Draw(img)
+        draw.text((10, 40), text, fill="black")
+        return img
+
     scaffold_imgs = {}
+
     for smi in top_scaffolds:
-        mol = Chem.MolFromSmiles(smi)
-        if mol:
-            img = Draw.MolToImage(mol, size=(100, 100))
-            scaffold_imgs[smi] = img
-
-    # Helper for mapping week labels to x-axis positions
-    xtick_labels = [label.get_text() for label in ax.get_xticklabels()]
-    xtick_positions = ax.get_xticks()
-    def get_x_position(x_val):
-        if isinstance(x_val, (int, float)):
-            return x_val
         try:
-            idx = xtick_labels.index(str(x_val))
-            return xtick_positions[idx]
-        except ValueError:
-            return xtick_positions[-1]
+            mol = Chem.MolFromSmiles(smi)
+            if mol:
+                img = Draw.MolToImage(mol, size=(100, 100))
+            else:
+                raise ValueError("Invalid SMILES")
+        except Exception:
+            img = make_placeholder_image("Invalid")
 
-    # Split scaffolds into multi-point and single-point sets, depending on how many data points there are.
+        scaffold_imgs[smi] = img
+
     multi_point_scaffolds = []
-    single_point_scaffolds = []
     for scaffold in top_scaffolds:
-        count_points = len(plot_df[plot_df["scaffold"] == scaffold])
-        if count_points > 1:
+        if len(plot_df[plot_df["scaffold"] == scaffold]) > 1:
             multi_point_scaffolds.append(scaffold)
-        else:
-            single_point_scaffolds.append(scaffold)
 
-    # Plot lines for scaffolds with multiple points
-    if multi_point_scaffolds:
+    palette = sns.color_palette("tab10", n_colors=len(multi_point_scaffolds))
+    color_map = dict(zip(multi_point_scaffolds, palette))
+
+    for scaffold in multi_point_scaffolds:
         sns.lineplot(
-            data=plot_df[plot_df["scaffold"].isin(multi_point_scaffolds)],
-            x="week",
+            data=plot_df[plot_df["scaffold"] == scaffold],
+            x="week_num",
             y="mean_activity",
-            hue="scaffold",
-            palette="tab10",
+            color=color_map[scaffold],
             lw=2,
             ax=ax,
         )
 
-    # Remove default legend if present (hack)
+    ax.set_xticks(week_labels_sub["week_num"])
+    ax.set_xticklabels(week_labels_sub["week"], rotation=45)
+
     if ax.legend_:
         ax.legend_.remove()
 
-    # Add images for line plots at the far right of the plot 
-    x_left, x_right = ax.get_xlim()
-    x_offset = (x_right - x_left) * 0.1  # move 10% beyond plot limit
+    # === FIXED IMAGE PLACEMENT ===
     y_min, y_max = ax.get_ylim()
-    y_spacing = (y_max - y_min) / (len(multi_point_scaffolds) + 1)
+    min_sep = (y_max - y_min) * 0.08
 
-    for i, scaffold in enumerate(multi_point_scaffolds):
-        scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
-        if scaffold_data.empty:
+    scaffold_positions = []
+    for scaffold in multi_point_scaffolds:
+        data_s = plot_df[plot_df["scaffold"] == scaffold]
+        if data_s.empty:
             continue
 
-        y_pos = y_max - (i + 1) * y_spacing
-        x_img = x_right + x_offset
+        last_row = (
+            data_s.sort_values(["week_period", "mean_activity"])
+            .drop_duplicates(subset=["week_period"], keep="last")
+            .iloc[-1]
+        )
 
-        img = scaffold_imgs.get(scaffold)
+        scaffold_positions.append({
+            "scaffold": scaffold,
+            "x": float(last_row["week_num"]),
+            "y": float(last_row["mean_activity"])
+        })
+
+    scaffold_positions = sorted(scaffold_positions, key=lambda d: d["y"])
+    placed_y = []
+
+    for item in scaffold_positions:
+        y0 = item["y"]
+
+        offsets = [0]
+        for k in range(1, 20):
+            offsets.append(k * min_sep)
+            offsets.append(-k * min_sep)
+
+        y = None
+        for offset in offsets:
+            candidate = y0 + offset
+            margin = min_sep
+            candidate = max(y_min + margin, min(candidate, y_max - margin))
+
+            if all(abs(candidate - py) >= min_sep for py in placed_y):
+                y = candidate
+                break
+
+        if y is None:
+            y = max(y_min + min_sep, min(y0, y_max - min_sep))
+
+        placed_y.append(y)
+
+        x = min(item["x"], ax.get_xlim()[1] - 0.5)
+
+        img = scaffold_imgs.get(item["scaffold"])
         if img:
             imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
             ab = offsetbox.AnnotationBbox(
-                imagebox, (x_img, y_pos),
-                frameon=False, box_alignment=(0, 0.5)
+                imagebox,
+                (x, y),
+                xybox=(25, 0),
+                xycoords='data',
+                boxcoords="offset points",
+                frameon=True,
+                bboxprops=dict(edgecolor=color_map[item["scaffold"]], linewidth=2),
+                annotation_clip=False
             )
             ax.add_artist(ab)
 
-    #  Plot single data points with pastel scatter colors 
-    if single_point_scaffolds:
-        pastel_palette = sns.color_palette("Pastel1", n_colors=len(single_point_scaffolds))
-        for color, scaffold in zip(pastel_palette, single_point_scaffolds):
-            scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
-            if scaffold_data.empty:
-                continue
-
-            x_raw = scaffold_data["week"].iloc[0]
-            y = scaffold_data["mean_activity"].iloc[0]
-            x = get_x_position(x_raw)
-
-            # Plot single point data frame
-            ax.scatter(x, y, s=60, color=color, edgecolor='black', zorder=5)
-
-            # Add scaffold image slightly above each point
-            img = scaffold_imgs.get(scaffold)
-            if img:
-                imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
-                ab = offsetbox.AnnotationBbox(
-                    imagebox, (x, y + 0.02),
-                    frameon=False, box_alignment=(0.5, 0)
-                )
-                ax.add_artist(ab)
-
-    ax.set_xlim(x_left, x_right + x_offset * 2)
-
     plt.title(f"Top {top_n} Scaffold Enrichment Trends (mean {activity_col})")
-    plt.xticks(rotation=45)
     plt.xlabel("Week")
     plt.ylabel(f"Mean {activity_col}")
     plt.tight_layout()
@@ -881,9 +948,13 @@ def scaffold_enrichment_trends(config, data=None):
     plt.savefig(trend_plot, dpi=300)
     plt.close()
 
+    trends_csv = output_dir / "scaffold_trends.csv"
+    agg_df.to_csv(trends_csv, index=False)
 
-    logger.info(f"[ScaffoldEnrichment] Trends saved to: {trends_csv}")
-    logger.info(f"[ScaffoldEnrichment] Plot saved to: {trend_plot}")
+    improving_csv = output_dir / "top5_improving_scaffolds.csv"
+    declining_csv = output_dir / "top5_declining_scaffolds.csv"
+    top_improving.to_csv(improving_csv, index=False)
+    top_declining.to_csv(declining_csv, index=False)
 
     return {
         "trends_csv": str(trends_csv),
@@ -1073,19 +1144,28 @@ def rgroup_frequency_tracking(config, data=None):
     rgroups_all = []
     for core_smiles in unique_cores:
         core = Chem.MolFromSmiles(core_smiles)
-        matches = [m for m in mols if m and core and m.HasSubstructMatch(core)]
+        matches = [(i, m) for i, m in enumerate(mols) if m and core and m.HasSubstructMatch(core)]
+        
         if len(matches) < 3:
             continue
-        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], matches)
+        
+        # Split before calling RDKit
+        match_indices = [i for i, _ in matches]
+        match_mols = [m for _, m in matches]
+
+        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], match_mols)
+
         for mol_idx, row in enumerate(groups):
+            original_idx = match_indices[mol_idx]  # Map back to df
+
             for label, frag in row.items():
                 if frag:
                     rgroups_all.append({
                         "core": core_smiles,
                         "rgroup_label": label,
                         "rgroup_smiles": Chem.MolToSmiles(frag),
-                        "pActivity": df.iloc[mol_idx][activity_col],
-                        "week": df.iloc[mol_idx]["week"]
+                        activity_col: df.iloc[original_idx][activity_col],
+                        "week": df.iloc[original_idx]["week"]             
                     })
     rgroups_df = pd.DataFrame(rgroups_all)
     if rgroups_df.empty:
@@ -1094,7 +1174,7 @@ def rgroup_frequency_tracking(config, data=None):
 
     grouped = (
         rgroups_df.groupby(["week", "rgroup_smiles"])
-        .agg(count=("pActivity", "size"), mean_activity=(activity_col, "mean"))
+        .agg(count=(activity_col, "size"), mean_activity=(activity_col, "mean"))
         .reset_index()
     )
 
@@ -1222,16 +1302,18 @@ def rgroup_sar_tree(config, data=None):
         if not core_smiles or len(subset) < min_variants:
             continue
         core = Chem.MolFromSmiles(core_smiles)
-        matches = [Chem.MolFromSmiles(s) for s in subset["smiles"]]
-        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], matches)
-        for mol_idx, row in enumerate(groups):
+        match_indices = subset.index.tolist()
+        match_mols = [Chem.MolFromSmiles(s) for s in subset["smiles"]]
+
+        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], match_mols)
+        for row, (_, subrow) in zip(groups, subset.iterrows()):
             for label, frag in row.items():
                 if frag:
                     all_records.append({
                         "core": core_smiles,
                         "rgroup_label": label,
                         "rgroup_smiles": Chem.MolToSmiles(frag),
-                        "pActivity": subset.iloc[mol_idx][activity_col]
+                        activity_col: subrow[activity_col],
                     })
 
     rg_df = pd.DataFrame(all_records)
@@ -1243,7 +1325,7 @@ def rgroup_sar_tree(config, data=None):
         rg_df.groupby(["core", "rgroup_label", "rgroup_smiles"])
         .agg(mean_pActivity=(activity_col, "mean"),
              std_pActivity=(activity_col, "std"),
-             count=("pActivity", "size"))
+             count=(activity_col, "size"))
         .reset_index()
     )
 
