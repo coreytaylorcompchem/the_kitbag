@@ -24,6 +24,9 @@ from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 import umap
 
+from scipy.stats import linregress, ttest_ind, wasserstein_distance
+from scipy.spatial.distance import mahalanobis
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.offsetbox as offsetbox
@@ -487,7 +490,7 @@ def sar_cliff_analysis(config, data=None):
             row["smiles"],
             row["fps"],
             row["FORMATTED_ID"],
-            row[activity_col],  # NEW
+            row[activity_col],
             row["Chemical series"],
             df,
             similarity_cutoff,
@@ -1120,6 +1123,58 @@ def physchem_property_drift(config, data=None):
     Track trends in key physicochemical properties across weekly design cycles.
     """
 
+    def penalty(val, low, high):
+        if pd.isna(val):
+            return np.nan
+        if low <= val <= high:
+            return 0
+        return min(abs(val - low), abs(val - high))
+
+    def compute_slope(series):
+        y = series.values
+        x = np.arange(len(y))
+        if len(y) < 3 or np.all(np.isnan(y)):
+            return np.nan
+        return linregress(x, y).slope
+
+    def direction(val, threshold=0.2):
+        if pd.isna(val):
+            return "NA"
+        if val > threshold:
+            return "↑"
+        elif val < -threshold:
+            return "↓"
+        return "→"
+
+    def window_shift_test(prev, curr):
+        if len(prev) < 2 or len(curr) < 2:
+            return np.nan
+        return ttest_ind(prev, curr, nan_policy='omit').pvalue
+        
+    PROPERTY_TARGETS = {
+        "MW": (250, 500),
+        "clogP": (1.0, 3.5),
+        "TPSA": (40, 100),
+        "HBD": (0, 3),
+        "HBA": (2, 8),
+        "RotBonds": (0, 5),
+    }
+
+    PROPERTY_WEIGHTS = {k: 1.0 for k in PROPERTY_TARGETS}
+
+    DESCRIPTOR_FUNCS = {
+        "MW": Descriptors.MolWt,
+        "clogP": Crippen.MolLogP,
+        "TPSA": rdMolDescriptors.CalcTPSA,
+        "HBD": rdMolDescriptors.CalcNumHBD,
+        "HBA": rdMolDescriptors.CalcNumHBA,
+        "Fsp3": rdMolDescriptors.CalcFractionCSP3,
+        "RotBonds": rdMolDescriptors.CalcNumRotatableBonds,
+        "RingCount": rdMolDescriptors.CalcNumRings,
+        "AromaticRings": rdMolDescriptors.CalcNumAromaticRings,
+        "HeavyAtoms": Descriptors.HeavyAtomCount,
+    }
+
     # 1. Load configs
     input_file = config.get("input_file")
     drift_cfg = config.get("physchem_property_drift", {})
@@ -1128,6 +1183,17 @@ def physchem_property_drift(config, data=None):
     output_dir = Path(drift_cfg.get("output_dir", "outputs/physchem_drift"))
     rolling_window = drift_cfg.get("rolling_window", 4)  # e.g. 4 weeks
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    trend_dir = output_dir / "trends"
+    penalty_dir = output_dir / "penalties"
+    multi_dir = output_dir / "multivariate"
+    slope_dir = output_dir / "slopes"
+    direction_dir = output_dir / "directional"
+    dist_dir = output_dir / "distributions"
+    summary_dir = output_dir / "summaries"
+
+    for d in [trend_dir, penalty_dir, multi_dir, slope_dir, direction_dir, dist_dir, summary_dir]:
+        d.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"[PhysChem Drift] Loading input file: {input_file}")
     df = pd.read_csv(input_file)
@@ -1138,39 +1204,550 @@ def physchem_property_drift(config, data=None):
     logger.debug("[PhysChem Drift] Calculating basic properties...")
     mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
 
-    # Manual list - perhaps we should automate or select in the yaml
+    # Manual list (DESCRIPTOR_FUNCS) - perhaps we should automate or select in the yaml
 
-    df["MW"] = [Descriptors.MolWt(m) if m else np.nan for m in mols]
-    df["clogP"] = [Crippen.MolLogP(m) if m else np.nan for m in mols]
-    df["TPSA"] = [rdMolDescriptors.CalcTPSA(m) if m else np.nan for m in mols]
-    df["HBD"] = [rdMolDescriptors.CalcNumHBD(m) if m else np.nan for m in mols]
-    df["HBA"] = [rdMolDescriptors.CalcNumHBA(m) if m else np.nan for m in mols]
-    df["Fsp3"] = [rdMolDescriptors.CalcFractionCSP3(m) if m else np.nan for m in mols]
+    for name, func in DESCRIPTOR_FUNCS.items():
+        df[name] = [func(m) if m else np.nan for m in mols]
 
     # 3. Weekly aggregation
     df["week"] = df[date_col].dt.to_period("W").apply(lambda r: r.start_time)
-    props = ["MW", "clogP", "TPSA", "HBD", "HBA", "Fsp3"]
-    agg = df.groupby("week")[props].mean().rolling(window=rolling_window, min_periods=1).mean()
+    props = list(DESCRIPTOR_FUNCS.keys())
+    series_col = drift_cfg.get("series_col", None)
+
+    if series_col and series_col in df.columns:
+        grouped = df.groupby([series_col, "week"])[props].mean()
+        agg = (
+            grouped
+            .groupby(level=0)
+            .rolling(window=rolling_window, min_periods=1)
+            .mean()
+            .droplevel(0) 
+        )
+    else:
+        grouped = df.groupby("week")[props].mean()
+        agg = grouped.rolling(window=rolling_window, min_periods=1).mean()
+    
+    numeric_cols = agg.select_dtypes(include=[np.number]).columns
+
+    # 3a property penalty
+
+    penalty_df = agg.copy()
+
+    for p in PROPERTY_TARGETS:
+        if p in penalty_df.columns:
+            low, high = PROPERTY_TARGETS[p]
+            penalty_df[p] = penalty_df[p].apply(lambda x: penalty(x, low, high))
+
+    penalty_df["total_penalty"] = sum(
+        PROPERTY_WEIGHTS[p] * penalty_df[p]
+        for p in PROPERTY_TARGETS if p in penalty_df.columns
+    )
+
+    # 3b multivariate shift
+
+    valid = agg[numeric_cols].dropna()
+
+    if len(valid) > 5:
+        cov = np.cov(valid.T)
+        inv_cov = np.linalg.pinv(cov)
+        mean_vec = valid.mean()
+
+        def mahal(row):
+            if row.isna().any():
+                return np.nan
+            return mahalanobis(row, mean_vec, inv_cov)
+
+        agg["multivariate_drift"] = agg[numeric_cols].apply(mahal, axis=1)
+    else:
+        agg["multivariate_drift"] = np.nan
+
+    # 3c Slopes
+
+    slopes = {}
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            if series not in agg.index.get_level_values(0):
+                continue
+            sub = agg.xs(series, level=0).sort_index()
+            slopes[series] = {
+                col: compute_slope(sub[col]) for col in numeric_cols
+            }
+    else:
+        slopes = {col: compute_slope(agg[col]) for col in numeric_cols}
+
+    # 3d Statistical shift
+
+    shift_pvals = {}
+
+    def split_windows(series, window):
+        if len(series) < window * 2:
+            return None, None
+        return series.iloc[-2*window:-window], series.iloc[-window:]
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            if series not in agg.index.get_level_values(0):
+                continue
+            sub = agg.xs(series, level=0).sort_index()
+
+            shift_pvals[series] = {}
+            for col in numeric_cols:
+                prev, curr = split_windows(sub[col].dropna(), rolling_window)
+                if prev is not None:
+                    shift_pvals[series][col] = window_shift_test(prev, curr)
+    else:
+        shift_pvals = {}
+        for col in numeric_cols:
+            prev, curr = split_windows(agg[col].dropna(), rolling_window)
+            if prev is not None:
+                shift_pvals[col] = window_shift_test(prev, curr)
+    
+    # 3e Distribution shift
+
+    dist_shift = {}
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            sub_df = df[df[series_col] == series]
+            sub_df = sub_df.sort_values("week")
+
+            dist_shift[series] = {}
+
+            for col in numeric_cols:
+                prev = sub_df.iloc[:-rolling_window][col].dropna()
+                curr = sub_df.iloc[-rolling_window:][col].dropna()
+
+                if len(prev) > 1 and len(curr) > 1:
+                    dist_shift[series][col] = wasserstein_distance(prev, curr)
+    else:
+        for col in numeric_cols:
+            prev = df.iloc[:-rolling_window][col].dropna()
+            curr = df.iloc[-rolling_window:][col].dropna()
+
+            if len(prev) > 1 and len(curr) > 1:
+                dist_shift[col] = wasserstein_distance(prev, curr)
+    
+    # 3f Directional fingerprint
+
+    directional = {}
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            if series not in agg.index.get_level_values(0):
+                continue
+
+            sub = agg.xs(series, level=0).sort_index()
+
+            if len(sub) > 1:
+                delta = sub.iloc[-1] - sub.iloc[-2]
+                directional[series] = {
+                    col: direction(delta[col]) for col in numeric_cols
+                }
+    else:
+        if len(agg) > 1:
+            delta = agg.iloc[-1] - agg.iloc[-2]
+            directional = {
+                col: direction(delta[col]) for col in numeric_cols
+            }
+    
+    # 3g alerts
+
+    alerts = {}
+
+    def generate_alerts(latest, slope_dict, pvals, multi_drift):
+        a = []
+
+        if "clogP" in slope_dict and slope_dict["clogP"] > 0.2:
+            a.append("Rapid lipophilicity increase")
+
+        if "TPSA" in latest and latest["TPSA"] < 50:
+            a.append("Low polarity risk")
+
+        if "MW" in latest and latest["MW"] > 500:
+            a.append("High molecular weight risk")
+
+        if multi_drift is not None and multi_drift > 3:
+            a.append("Significant multivariate drift")
+
+        for k, v in (pvals or {}).items():
+            if v is not None and v < 0.05:
+                a.append(f"Significant shift in {k}")
+
+        return list(set(a))
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            if series not in agg.index.get_level_values(0):
+                continue
+
+            sub = agg.xs(series, level=0).sort_index()
+            latest = sub.iloc[-1]
+
+            alerts[series] = generate_alerts(
+                latest,
+                slopes.get(series, {}),
+                shift_pvals.get(series, {}),
+                latest.get("multivariate_drift", None)
+            )
+    else:
+        latest = agg.iloc[-1]
+        alerts = generate_alerts(
+            latest,
+            slopes,
+            shift_pvals,
+            latest.get("multivariate_drift", None)
+        )
+    
+    penalty_df.to_csv(summary_dir / "property_penalty.csv")
+
+    pd.DataFrame.from_dict(slopes, orient="index").to_csv(trend_dir / "trend_slopes.csv")
+    pd.DataFrame.from_dict(shift_pvals, orient="index").to_csv(summary_dir / "shift_pvalues.csv")
+    pd.DataFrame.from_dict(dist_shift, orient="index").to_csv(dist_dir / "distribution_shift.csv")
+    pd.DataFrame.from_dict(directional, orient="index").to_csv(direction_dir / "directional_fingerprint.csv", encoding="utf-8-sig")
+
+    with open(output_dir / "alerts.json", "w") as f:
+        json.dump(alerts, f, indent=2)
+    
+    #### plot the above quantities
+
+    logger.info("[PhysChem Drift] Plotting advanced diagnostics...")
+
+    # A. Penalty trend (stacked by property)
+    plt.figure(figsize=(10,6))
+
+    if series_col and series_col in df.columns:
+        for series in penalty_df.index.get_level_values(0).unique():
+            sub = penalty_df.xs(series, level=0).sort_index()
+
+            props = [p for p in PROPERTY_TARGETS if p in sub.columns]
+            stacked = sub[props]
+
+            stacked.plot.area(alpha=0.6)
+
+            plt.title(f"Property Penalty Decomposition — {series}")
+            plt.ylabel("Penalty Contribution")
+            plt.xlabel("Week")
+
+            plt.savefig(penalty_dir / f"penalty_breakdown_{series}.png", dpi=300)
+            plt.close()
+
+    else:
+        props = [p for p in PROPERTY_TARGETS if p in penalty_df.columns]
+        penalty_df[props].plot.area(alpha=0.6)
+
+        plt.title("Property Penalty Decomposition")
+        plt.ylabel("Penalty Contribution")
+        plt.xlabel("Week")
+
+        plt.savefig(penalty_dir / "penalty_breakdown.png", dpi=300)
+        plt.close()
+
+
+    # B1. Multivariate drift heatmap over time
+
+    try:
+        if series_col and series_col in df.columns:
+
+            # reshape to Series x Week
+            heat_df = (
+                agg["multivariate_drift"]
+                .unstack(level=0)   # columns = series
+                .T                 # rows = series
+            )
+
+            # deal with dates
+            
+            heat_df.columns = pd.to_datetime(heat_df.columns).strftime("%Y-%m-%d")
+
+            def series_key(x):
+                # split numeric prefix + suffix (handles 4b, 4c)
+                import re
+                m = re.match(r"(\d+)", str(x))
+                return int(m.group(1)) if m else float("inf")
+
+            heat_df = heat_df.loc[sorted(heat_df.index, key=series_key)]
+
+            fig, ax = plt.subplots(figsize=(12, max(4, len(heat_df) * 0.4)))
+
+            sns.heatmap(
+                heat_df,
+                cmap="plasma_r",
+                cbar_kws={"label": "Mahalanobis Drift"},
+                linewidths=0.5,
+                ax=ax
+            )
+
+            ax.set_title("Multivariate Drift Over Time (All Series)")
+            ax.set_xlabel("Week")
+            ax.set_ylabel("Series")
+
+            # --- FIX: ensure full x-axis labels are visible ---
+            ax.set_xticklabels(
+                ax.get_xticklabels(),
+                rotation=45,
+                ha="right"
+            )
+
+            plt.tight_layout()
+
+            # extra safety margin (prevents clipping on savefig)
+            plt.subplots_adjust(bottom=0.25)
+
+            plt.savefig(
+                multi_dir / "multivariate_timeseries_heatmap.png",
+                dpi=300,
+                bbox_inches="tight"
+            )
+            plt.close()
+
+    except Exception as e:
+        logger.warning(f"Multivariate time heatmap failed: {e}")
+
+    # --- B2. Multivariate drift heatmap (latest snapshot) ---
+    try:
+        if series_col and series_col in df.columns:
+            latest_vals = {}
+
+            for series in agg.index.get_level_values(0).unique():
+                sub = agg.xs(series, level=0).sort_index()
+                if len(sub) > 0:
+                    latest_vals[series] = sub["multivariate_drift"].iloc[-1]
+
+            if latest_vals:
+                heat_df = pd.DataFrame.from_dict(latest_vals, orient="index", columns=["Drift"])
+
+                plt.figure(figsize=(4, max(4, len(heat_df)*0.4)))
+                sns.heatmap(
+                    heat_df,
+                    cmap="Reds",
+                    annot=True,
+                    fmt=".2f"
+                )
+
+                plt.title("Latest Multivariate Drift (by Series)")
+
+                plt.savefig(multi_dir / "multivariate_heatmap.png", dpi=300)
+                plt.close()
+
+    except Exception as e:
+        logger.warning(f"Multivariate heatmap failed: {e}")
+
+    # --- C. Directional heatmap (robust) ---
+    try:
+        mapping = {"↑": 1, "↓": -1, "→": 0, "NA": 0}
+
+        dir_df = pd.DataFrame.from_dict(directional, orient="index")
+
+        if dir_df.empty:
+            logger.warning("Directional heatmap skipped: no data")
+        else:
+            dir_numeric = dir_df.replace(mapping)
+            dir_numeric = dir_numeric.apply(pd.to_numeric, errors="coerce").fillna(0).astype(float)
+
+            plt.figure(figsize=(10,4))
+            sns.heatmap(
+                dir_numeric,
+                cmap="coolwarm",
+                center=0,
+                annot=dir_df,
+                fmt=""
+            )
+
+            plt.title("Directional Drift Fingerprint")
+            plt.xlabel("Property")
+            plt.ylabel("Series")
+
+            plt.savefig(direction_dir / "directional_heatmap.png", dpi=300)
+            plt.close()
+
+    except Exception as e:
+        logger.warning(f"Directional heatmap failed: {e}")
+
+    # --- D. Slope bar charts (per series) ---
+    if series_col and isinstance(slopes, dict):
+        for series, vals in slopes.items():
+            if not isinstance(vals, dict):
+                continue
+
+            plt.figure(figsize=(8,4))
+            pd.Series(vals).sort_values().plot(kind="barh")
+
+            plt.title(f"Drift Velocity — {series}")
+            plt.xlabel("Slope")
+
+            plt.savefig(slope_dir / f"slope_{series}.png", dpi=300)
+            plt.close()
+
+
+    # --- E. Alerts text summary (human readable) ---
+    with open(summary_dir / "alerts.txt", "w") as f:
+        for series, msgs in alerts.items():
+            f.write(f"{series}:\n")
+            for m in msgs:
+                f.write(f"  - {m}\n")
+            f.write("\n")
+
+    # --- F. Distribution shift (per series, FIXED) ---
+    key_props = ["MW", "clogP", "TPSA"]
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            sub_df = df[df[series_col] == series].sort_values("week")
+
+            for col in key_props:
+                if col not in sub_df.columns:
+                    continue
+
+                prev = sub_df.iloc[:-rolling_window][col].dropna()
+                curr = sub_df.iloc[-rolling_window:][col].dropna()
+
+                if len(prev) >= 3 and len(curr) >= 3:
+                    try:
+                        plt.figure(figsize=(6,4))
+                        sns.kdeplot(prev, label="Previous")
+                        sns.kdeplot(curr, label="Current")
+
+                        plt.title(f"{series} — Distribution Shift: {col}")
+                        plt.legend()
+
+                        plt.savefig(dist_dir / f"{series}_dist_shift_{col}.png", dpi=300)
+                        plt.close()
+
+                    except Exception as e:
+                        logger.warning(f"Dist plot failed for {series}-{col}: {e}")
+    else:
+        for col in key_props:
+            if col not in df.columns:
+                continue
+
+            prev = df.iloc[:-rolling_window][col].dropna()
+            curr = df.iloc[-rolling_window:][col].dropna()
+
+            if len(prev) >= 3 and len(curr) >= 3:
+                try:
+                    plt.figure(figsize=(6,4))
+                    sns.kdeplot(prev, label="Previous")
+                    sns.kdeplot(curr, label="Current")
+
+                    plt.title(f"Distribution Shift: {col}")
+                    plt.legend()
+
+                    plt.savefig(dist_dir / f"dist_shift_{col}.png", dpi=300)
+                    plt.close()
+
+                except Exception as e:
+                    logger.warning(f"Dist plot failed for {col}: {e}")
 
     #  4. Trend visualisation 
     logger.info("[PhysChem Drift] Plotting property trends...")
-    plt.figure(figsize=(10, 6))
-    for p in ["MW", "clogP", "TPSA"]:
-        plt.plot(agg.index, agg[p], marker='o', label=p)
-    plt.legend()
-    plt.title("Rolling Property Trends")
-    plt.xlabel("Week")
-    plt.ylabel("Mean Property (Rolling Avg)")
-    plt.grid(True)
-    trend_file = output_dir / "property_trends.png"
-    plt.savefig(trend_file, dpi=300, bbox_inches="tight")
-    plt.close()
 
+    trend_file = None
+    numeric_cols = agg.select_dtypes(include=[np.number]).columns
     deltas = {}
-    if len(agg) > 1:
-        latest = agg.iloc[-1]
-        prev = agg.iloc[-2]
-        deltas = (latest - prev).to_dict()
+
+    # --- Z-score normalization ---
+    agg_z = agg.copy()
+
+    for col in numeric_cols:
+        if agg[col].std() == 0 or agg[col].isna().all():
+            agg_z[col] = 0
+        else:
+            agg_z[col] = (agg[col] - agg[col].mean()) / agg[col].std()
+
+    # --- Define logical property groups + palettes ---
+    property_groups = {
+        "Size & Lipophilicity": ["MW", "clogP", "TPSA"],
+        "HBD/HBA": ["HBD", "HBA"],
+        "3D Character": ["Fsp3"],
+        "Topology": ["RotBonds", "RingCount", "AromaticRings", "HeavyAtoms"],
+    }
+
+    group_palettes = {
+        "Size & Lipophilicity": plt.cm.Blues,
+        "HBD/HBA": plt.cm.Greens,
+        "3D Character": plt.cm.Purples,
+        "Topology": plt.cm.Oranges,
+    }
+
+    if series_col and series_col in df.columns:
+        series_values = df[series_col].dropna().unique()
+
+        for series in series_values:
+            if series not in agg.index.get_level_values(0):
+                continue
+
+            sub = agg_z.xs(series, level=0).sort_index()
+            sub_raw = agg.xs(series, level=0).sort_index()
+
+            n_groups = len(property_groups)
+            fig, axes = plt.subplots(n_groups, 1, figsize=(10, 3 * n_groups), sharex=True)
+
+            if n_groups == 1:
+                axes = [axes]
+
+            for ax, (group_name, group_props) in zip(axes, property_groups.items()):
+                palette = group_palettes[group_name]
+                valid_props = [p for p in group_props if p in sub.columns]
+
+                colors = palette(np.linspace(0.4, 0.9, len(valid_props)))
+
+                for p, c in zip(valid_props, colors):
+                    ax.plot(sub.index, sub[p], marker='o', label=p, color=c)
+
+                ax.axhline(0, linestyle="--", linewidth=1)
+                ax.set_title(group_name)
+                ax.grid(True)
+                ax.legend(fontsize=8)
+
+            axes[-1].set_xlabel("Week")
+            fig.suptitle(f"Property Trends (Z-score) — {series}", fontsize=14)
+
+            plt.tight_layout(rect=[0, 0, 1, 0.97])
+            plt.savefig(trend_dir / f"trend_{series}.png", dpi=300)
+            plt.close()
+
+            # --- deltas
+            if len(sub_raw) > 1:
+                latest = sub_raw.iloc[-1][numeric_cols]
+                prev = sub_raw.iloc[-2][numeric_cols]
+                deltas[series] = (latest - prev).to_dict()
+
+    else:
+        trend_file = output_dir / "property_trends.png"
+
+        n_groups = len(property_groups)
+        fig, axes = plt.subplots(n_groups, 1, figsize=(10, 3 * n_groups), sharex=True)
+
+        if n_groups == 1:
+            axes = [axes]
+
+        for ax, (group_name, group_props) in zip(axes, property_groups.items()):
+            palette = group_palettes[group_name]
+            valid_props = [p for p in group_props if p in agg_z.columns]
+
+            colors = palette(np.linspace(0.4, 0.9, len(valid_props)))
+
+            for p, c in zip(valid_props, colors):
+                ax.plot(agg_z.index, agg_z[p], marker='o', label=p, color=c)
+
+            ax.axhline(0, linestyle="--", linewidth=1)
+            ax.set_title(group_name)
+            ax.grid(True)
+            ax.legend(fontsize=8)
+
+        axes[-1].set_xlabel("Week")
+        fig.suptitle("Rolling Property Trends (Z-score)", fontsize=14)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+        plt.savefig(trend_file, dpi=300)
+        plt.close()
+
+        # --- deltas (RAW values) ---
+        if len(agg) > 1:
+            latest = agg.iloc[-1][numeric_cols]
+            prev = agg.iloc[-2][numeric_cols]
+            deltas = (latest - prev).to_dict()
 
     # --- 6. Save summary ---
     summary_file = output_dir / "property_drift_summary.csv"
@@ -1178,9 +1755,15 @@ def physchem_property_drift(config, data=None):
     logger.info(f"[PhysChem Drift] Summary saved to: {summary_file}")
 
     return {
-        "trend_plot": str(trend_file),
+        "trend_plot": str(trend_file) if trend_file else None,
         "summary_csv": str(summary_file),
         "property_changes": deltas,
+        "penalty_csv": str(output_dir / "property_penalty.csv"),
+        "trend_slopes": slopes,
+        "shift_pvalues": shift_pvals,
+        "distribution_shift": dist_shift,
+        "directional": directional,
+        "alerts": alerts,
     }
 
 @register_task("druglikeness_indices_trend", category="Project-based analyses",
