@@ -7,20 +7,13 @@ from tqdm import tqdm
 import hashlib
 import io
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.offsetbox as offsetbox
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-from matplotlib.cbook import get_sample_data
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import matplotlib.cm as cm
-
 import numpy as np
 from PIL import Image
 import seaborn as sns
 import networkx as nx
 import pandas as pd
+from collections import Counter
+
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, QED, rdRGroupDecomposition, Scaffolds
 from rdkit.Chem.Draw import rdMolDraw2D
@@ -30,6 +23,15 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 import umap
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.offsetbox as offsetbox
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from matplotlib.cbook import get_sample_data
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import matplotlib.cm as cm
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pipeline.task_registry import register_task
@@ -85,7 +87,7 @@ def run_transform(mmpdb_file, smiles, property_name):
 
         return property_name, smiles, output_lines
     except subprocess.CalledProcessError as e:
-        logger.warning(f"[!] Transform failed for SMILES {smiles} with property {property_name}")
+        logger.warning(f"Transform failed for SMILES {smiles} with property {property_name}")
         logger.debug(e.stderr)
         return property_name, smiles, None
 
@@ -396,25 +398,45 @@ def compute_fingerprint(smiles, fp_type="morgan", radius=2, nbits=2048):
         raise ValueError(f"Unsupported fingerprint type: {fp_type}")
 
 def pairwise_similarity(args):
-    i, smi_i, fp_i, data, cutoff, delta_threshold, activity_col = args
+    i, smi_i, fp_i, id_i, act_i, series_i, data, cutoff, delta_threshold, activity_col = args
+
     cliffs = []
-    for j, (smi_j, fp_j, act_j) in enumerate(zip(data["smiles"], data["fps"], data[activity_col])):
+
+    for j, (smi_j, fp_j, act_j, id_j, series_j) in enumerate(
+        zip(
+            data["smiles"],
+            data["fps"],
+            data[activity_col],
+            data["FORMATTED_ID"],
+            data["Chemical series"]
+        )
+    ):
         if i >= j:
             continue
+
         if fp_i is None or fp_j is None:
             continue
+
         sim = DataStructs.TanimotoSimilarity(fp_i, fp_j)
+
         if sim >= cutoff:
-            delta = abs(data.loc[i, activity_col] - act_j)
+            act_i = data.loc[i, activity_col]
+            delta = abs(act_i - act_j)
+
             if delta >= delta_threshold:
                 cliffs.append({
                     "smiles_1": smi_i,
                     "smiles_2": smi_j,
+                    "formatted_id_1": id_i,
+                    "formatted_id_2": id_j,
+                    "series_1": series_i,
+                    "series_2": series_j,
                     "similarity": sim,
                     "delta_activity": delta,
-                    "activity_1": data.loc[i, activity_col],
+                    "activity_1": act_i,
                     "activity_2": act_j
                 })
+
     return cliffs
 
 @register_task("sar_cliff_analysis", category="Project-based analyses",
@@ -440,6 +462,11 @@ def sar_cliff_analysis(config, data=None):
     # ensure numeric
     df[activity_col] = pd.to_numeric(df[activity_col], errors="coerce")
 
+    # check if series in in the df
+
+    if "Chemical series" not in df.columns:
+        df["Chemical series"] = "Unknown"
+
     # remove NaN and inf
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=["smiles", activity_col])
@@ -455,7 +482,18 @@ def sar_cliff_analysis(config, data=None):
     logger.debug(f"[SAR Cliff] Computing pairwise similarities (cutoff={similarity_cutoff})...")
 
     tasks = [
-        (i, row["smiles"], row["fps"], df, similarity_cutoff, delta_threshold, activity_col)
+        (
+            i,
+            row["smiles"],
+            row["fps"],
+            row["FORMATTED_ID"],
+            row[activity_col],  # NEW
+            row["Chemical series"],
+            df,
+            similarity_cutoff,
+            delta_threshold,
+            activity_col
+        )
         for i, row in df.iterrows()
     ]
 
@@ -477,54 +515,86 @@ def sar_cliff_analysis(config, data=None):
 
     #  5. Visualise
     if not cliff_df.empty:
-        plt.figure(figsize=(8, 6))
+        # Top 10 cliffs - with molecule images
+
+        def delta_bin(delta, step=0.5):
+            lower = np.floor(delta / step) * step
+            upper = lower + step
+            return f"delta_act_{lower:.1f}-{upper:.1f}"
+
+        # where to save images
+
+        img_root = output_dir / "cliff_images"
+        img_root.mkdir(exist_ok=True)
+
+        # add colums to df
+        
+        cliff_df["delta_bin"] = cliff_df["delta_activity"].apply(delta_bin)
+        cliff_df = cliff_df[cliff_df["series_1"] == cliff_df["series_2"]]
+        cliff_df["series"] = cliff_df["series_1"]
+
+        plt.figure(figsize=(9, 7))
+
         sns.scatterplot(
             data=cliff_df,
             x="similarity",
             y="delta_activity",
+            hue="series",
+            palette="tab10",
             s=40,
             alpha=0.7
         )
-        plt.axvline(similarity_cutoff, color='red', linestyle='--', label=f"sim ≥ {similarity_cutoff}")
-        plt.axhline(delta_threshold, color='orange', linestyle='--', label=f"Δact ≥ {delta_threshold}")
+
+        plt.axvline(similarity_cutoff, color='red', linestyle='--')
+        plt.axhline(delta_threshold, color='orange', linestyle='--')
+
         plt.xlabel("Tanimoto Similarity")
         plt.ylabel(f"|Δ {activity_col}|")
-        plt.title("Activity Cliff Landscape")
-        plt.legend()
+        plt.title("Activity Cliff Landscape (by Chemical Series)")
+
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')  # avoids clutter
+
         scatter_file = output_dir / "sar_cliff_scatter.png"
         plt.savefig(scatter_file, bbox_inches='tight', dpi=300)
         plt.close()
 
-        # Top 10 cliffs — with molecule images
-        top_cliffs = cliff_df.head(10)
-        imgs = []
-        for _, row in top_cliffs.iterrows():
-            mol1 = Chem.MolFromSmiles(row["smiles_1"])
-            mol2 = Chem.MolFromSmiles(row["smiles_2"])
-            img = Draw.MolsToGridImage(
-                [mol1, mol2],
-                legends=[
-                    f"Act={row['activity_1']:.2f}",
-                    f"Act={row['activity_2']:.2f}"
-                ],
-                molsPerRow=2,
-                subImgSize=(200, 200)
-            )
-            imgs.append(img)
+        max_imgs = sar_cliff_cfg.get("max_images_per_bin", None)
 
-        for i, img in enumerate(imgs):
-            img_path = output_dir / f"top_cliff_{i+1}.png"
-            img.save(img_path)
+        for series_name, series_group in cliff_df.groupby("series"):
 
-        # Save
-        top_csv = output_dir / "top_10_sar_cliffs.csv"
-        top_cliffs.to_csv(top_csv, index=False)
-        logger.info(f"[SAR Cliff] Top 10 cliffs written to: {top_csv}")
+            # sanitise folder name
+            safe_series = str(series_name).replace(" ", "_").replace("/", "_")
+            series_dir = img_root / safe_series
+            series_dir.mkdir(exist_ok=True)
+
+            for bin_name, bin_group in series_group.groupby("delta_bin"):
+
+                if max_imgs:
+                    bin_group = bin_group.head(max_imgs)
+
+                bin_dir = series_dir / bin_name
+                bin_dir.mkdir(parents=True, exist_ok=True)
+
+                for idx, row in bin_group.iterrows():
+                    mol1 = Chem.MolFromSmiles(row["smiles_1"])
+                    mol2 = Chem.MolFromSmiles(row["smiles_2"])
+
+                    img = Draw.MolsToGridImage(
+                        [mol1, mol2],
+                        legends=[
+                            f"{row['formatted_id_1']}\nAct={row['activity_1']:.2f}\nSim={row['similarity']:.2f}",
+                            f"{row['formatted_id_2']}\nAct={row['activity_2']:.2f}\nSim={row['similarity']:.2f}",
+                        ],
+                        molsPerRow=2,
+                        subImgSize=(250, 250)
+                    )
+
+                    img_path = bin_dir / f"cliff_{idx}.png"
+                    img.save(img_path)
 
         return {
             "cliff_csv": str(output_csv),
             "scatter_png": str(scatter_file),
-            "top_cliffs_csv": str(top_csv),
         }
 
     else:
@@ -544,7 +614,7 @@ except ImportError:
     description="Track week-to-week evolution of chemical space via (UMAP / t-SNE)."
 )
 def chemical_space_drift(config, data=None):
-    """Visualize chemical space evolution colored by time or activity."""
+    """Visualise chemical space evolution colored by time or activity."""
 
     # 1. Load configs
     task_conf = config.get("chemical_space_drift", {})
@@ -1218,7 +1288,13 @@ def rgroup_frequency_tracking(config, data=None):
     logger.debug("[RGroup Tracking] Performing R-group decomposition...")
     mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
     scaffolds = [Chem.Scaffolds.MurckoScaffold.GetScaffoldForMol(m) for m in mols]
-    unique_cores = list({Chem.MolToSmiles(s) for s in scaffolds if s})
+    
+    core_counts = Counter(Chem.MolToSmiles(s) for s in scaffolds if s)
+
+    unique_cores = [
+        core for core, count in core_counts.items()
+        if count >= 5   # configurable threshold
+    ]
 
     rgroups_all = []
     for core_smiles in unique_cores:
@@ -1232,15 +1308,21 @@ def rgroup_frequency_tracking(config, data=None):
         match_indices = [i for i, _ in matches]
         match_mols = [m for _, m in matches]
 
-        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], match_mols)
+        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], match_mols, asRows=True)
+        
+        if not groups:
+            continue
 
         for mol_idx, row in enumerate(groups):
             original_idx = match_indices[mol_idx]  # Map back to df
 
             for label, frag in row.items():
+                if label == "Core" or frag is None:
+                    continue
                 if frag:
                     rgroups_all.append({
                         "core": core_smiles,
+                        "series": df.iloc[original_idx]["Chemical series"],
                         "rgroup_label": label,
                         "rgroup_smiles": Chem.MolToSmiles(frag),
                         activity_col: df.iloc[original_idx][activity_col],
@@ -1252,8 +1334,11 @@ def rgroup_frequency_tracking(config, data=None):
         return None
 
     grouped = (
-        rgroups_df.groupby(["week", "rgroup_smiles"])
-        .agg(count=(activity_col, "size"), mean_activity=(activity_col, "mean"))
+        rgroups_df.groupby(["series", "core", "week", "rgroup_smiles"])
+        .agg(
+            count=(activity_col, "size"),
+            mean_activity=(activity_col, "mean")
+        )
         .reset_index()
     )
 
@@ -1270,7 +1355,12 @@ def rgroup_frequency_tracking(config, data=None):
 
     new_rgroups = set(current_week["rgroup_smiles"]) - set(previous_week["rgroup_smiles"])
     new_df = current_week[current_week["rgroup_smiles"].isin(new_rgroups)]
-    top_new = new_df.nlargest(top_n, "count")
+
+    if new_df.empty:
+        logger.warning("[RGroup Tracking] No new R-groups found; falling back to most frequent.")
+        top_new = current_week.nlargest(top_n, "count")
+    else:
+        top_new = new_df.nlargest(top_n, "count")
 
     summary_csv = output_dir / f"top_rgroups_{latest.date()}.csv"
     top_new.to_csv(summary_csv, index=False)
@@ -1301,7 +1391,7 @@ def draw_core_with_large_atom_numbers(mol, size=(300, 300), font_size=40):
 
     drawer = rdMolDraw2D.MolDraw2DCairo(size[0], size[1])
     opts = drawer.drawOptions()
-    opts.fontSize = font_size
+    opts.baseFontSize = font_size / 100
 
     # Label dummy atoms (atomic number == 0) or atoms with R-group-like mapping
     atom_labels = {}
@@ -1390,6 +1480,7 @@ def rgroup_sar_tree(config, data=None):
                 if frag:
                     all_records.append({
                         "core": core_smiles,
+                        "series": subrow["Chemical series"],
                         "rgroup_label": label,
                         "rgroup_smiles": Chem.MolToSmiles(frag),
                         activity_col: subrow[activity_col],
@@ -1401,7 +1492,7 @@ def rgroup_sar_tree(config, data=None):
         return None
 
     sar_summary = (
-        rg_df.groupby(["core", "rgroup_label", "rgroup_smiles"])
+        rg_df.groupby(["series", "core", "rgroup_label", "rgroup_smiles"])
         .agg(mean_pActivity=(activity_col, "mean"),
              std_pActivity=(activity_col, "std"),
              count=(activity_col, "size"))
@@ -1414,8 +1505,8 @@ def rgroup_sar_tree(config, data=None):
 
     # Outputting a hierarchical json for later use (interactive html or something else silly)
     tree_json = {}
-    for core, subdf in sar_summary.groupby("core"):
-        tree_json[core] = (
+    for (series, core), subdf in sar_summary.groupby(["series", "core"]):
+        tree_json.setdefault(series, {})[core] = (
             subdf[["rgroup_label", "rgroup_smiles", "mean_pActivity", "std_pActivity"]]
             .sort_values("mean_pActivity", ascending=False)
             .to_dict(orient="records")
@@ -1431,99 +1522,144 @@ def rgroup_sar_tree(config, data=None):
 
         cmap = cm.get_cmap("viridis")
 
-        for core, rgroups in tree_json.items():
-            if not rgroups:
-                continue
+        for series, cores in tree_json.items():
 
-            # Try to find the true decomposition core (rgroup_label == 'Core')
-            core_frag = None
-            for rg in rgroups:
-                if str(rg["rgroup_label"]).lower() == "core":
-                    core_frag = rg["rgroup_smiles"]
-                    break
-            if not core_frag:
-                core_frag = core  # fallback to Murcko core SMILES
+            # create per-series directory
+            safe_series = str(series).replace(" ", "_").replace("/", "_")
+            series_dir = output_dir / safe_series
+            series_dir.mkdir(exist_ok=True)
 
-            # Build graph for one core
-            G = nx.DiGraph()
-            core_label = "CORE"
-            G.add_node(core_label, kind="core", smiles=core_frag, pAct=None)
-            for rg in rgroups:
-                if str(rg["rgroup_label"]).lower() == "core":
-                    continue  # skip duplicate central core node
-                r_smiles = rg["rgroup_smiles"]
-                pAct = rg["mean_pActivity"]
-                label = rg["rgroup_label"]
-                G.add_node(label, kind="rgroup", smiles=r_smiles, pAct=pAct)
-                G.add_edge(core_label, label)
-
-            n = len(G.nodes)
-            radius = 1.5
-            pos = {core_label: np.array([0.0, 0.0])}
-            angle_step = 2 * np.pi / max(1, n - 1)
-            for i, node in enumerate(G.nodes):
-                if node == core_label:
+            for core, rgroups in cores.items():
+                if not rgroups:
                     continue
-                angle = i * angle_step
-                pos[node] = np.array([radius * np.cos(angle), radius * np.sin(angle)])
 
-            # Normalise pActivity
-            pActs = [d.get("pAct") for _, d in G.nodes(data=True) if d["pAct"] is not None]
-            norm = plt.Normalize(min(pActs or [0]), max(pActs or [1]))
+                # Try to find the true decomposition core
+                core_frag = None
+                for rg in rgroups:
+                    if str(rg["rgroup_label"]).lower() == "core":
+                        core_frag = rg["rgroup_smiles"]
+                        break
+                if not core_frag:
+                    core_frag = core  # fallback
 
-            fig, ax = plt.subplots(figsize=(7, 7))
-            ax.axis("off")
+                # Build graph
+                G = nx.DiGraph()
+                core_label = "CORE"
+                G.add_node(core_label, kind="core", smiles=core_frag, pAct=None)
 
-            # Draw edges
-            nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#666666", width=1.2, arrows=False)
+                for rg in rgroups:
+                    if str(rg["rgroup_label"]).lower() == "core":
+                        continue
 
-            # Draw central core
-            core_mol = Chem.MolFromSmiles(core_frag)
-            if core_mol:
-                core_img = draw_core_with_large_atom_numbers(core_mol, size=(300, 300), font_size=50)
-                im = OffsetImage(core_img, zoom=0.5)
-                ab = AnnotationBbox(im, (0, 0), frameon=True,
-                                    bboxprops=dict(facecolor="#ffcc00", edgecolor="#333333", lw=1.5))
-                ax.add_artist(ab)
+                    r_smiles = rg["rgroup_smiles"]
+                    pAct = rg["mean_pActivity"]
+                    label = rg["rgroup_label"]
 
-            # Draw R-group molecules
-            for node, data in G.nodes(data=True):
-                if data["kind"] != "rgroup":
+                    # ✅ FIX: unique node IDs (prevents overwriting)
+                    node_id = f"{label}_{hash(r_smiles)}"
+
+                    G.add_node(node_id, kind="rgroup", smiles=r_smiles, pAct=pAct, label=label)
+                    G.add_edge(core_label, node_id)
+
+                # Layout (adaptive)
+                n = len(G.nodes)
+
+                # dynamic radius (key fix)
+                radius = max(1.5, 0.4 * n)
+
+                # dynamic image scaling
+                img_size = max(80, int(140 - n * 2))      # shrink with more nodes
+                zoom = max(0.25, 0.5 - n * 0.01)
+
+                # reduce label clutter if many nodes
+                show_labels = n <= 12
+
+                pos = {core_label: np.array([0.0, 0.0])}
+                angle_step = 2 * np.pi / max(1, n - 1)
+
+                i = 0
+                for node in G.nodes:
+                    if node == core_label:
+                        continue
+                    angle = i * angle_step
+                    pos[node] = np.array([
+                        radius * np.cos(angle),
+                        radius * np.sin(angle)
+                    ])
+                    i += 1
+
+                # Normalize activity
+                pActs = [d.get("pAct") for _, d in G.nodes(data=True) if d["pAct"] is not None]
+                if not pActs:
+                    logger.warning(f"[RGroup SAR Tree] No activity values for core: {core}")
                     continue
-                x, y = pos[node]
-                mol = Chem.MolFromSmiles(data["smiles"])
-                if mol:
+
+                norm = plt.Normalize(min(pActs), max(pActs))
+
+                fig, ax = plt.subplots(figsize=(7, 7))
+                ax.axis("off")
+
+                # Edges
+                nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#666666", width=1.2, arrows=False)
+
+                # Core
+                core_mol = Chem.MolFromSmiles(core_frag)
+                if core_mol is None:
+                    core_mol = Chem.MolFromSmiles(core)
+
+                if core_mol:
+                    core_img = draw_core_with_large_atom_numbers(core_mol, size=(300, 300), font_size=50)
+                    if core_img:
+                        im = OffsetImage(core_img, zoom=0.5)
+                        ab = AnnotationBbox(im, (0, 0), frameon=True,
+                                            bboxprops=dict(facecolor="#ffcc00", edgecolor="#333333", lw=1.5))
+                        ax.add_artist(ab)
+
+                # R-groups
+                for node, data in G.nodes(data=True):
+                    if data["kind"] != "rgroup":
+                        continue
+
+                    x, y = pos[node]
+                    mol = Chem.MolFromSmiles(data["smiles"])
+
+                    if mol is None:
+                        continue
+
                     img = Draw.MolToImage(mol, size=(120, 120))
                     im = OffsetImage(img, zoom=0.45)
                     ab = AnnotationBbox(im, (x, y), frameon=False)
                     ax.add_artist(ab)
+                    ax.set_title(f"{series} | Core SAR", fontsize=10)
 
-                    # R-group label (TODO: get rid of this)
-                    ax.text(x, y + 0.25, node, ha="center", va="bottom",
+                    # label (use stored label, not node_id)
+                    ax.text(x, y + 0.25, data["label"],
+                            ha="center", va="bottom",
                             fontsize=8, fontweight="bold", color="#333333")
 
-                    # Potency
+                    # activity
                     if data["pAct"] is not None:
                         ax.text(x, y - 0.25, f"{data['pAct']:.2f}",
                                 ha="center", va="top", fontsize=8,
                                 color=cm.viridis(norm(data["pAct"])))
 
-            # Add potency colorbar
-            if pActs:
+                # Colorbar
                 sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
                 sm.set_array([])
                 cbar = fig.colorbar(sm, ax=ax, shrink=0.75, pad=0.03)
                 cbar.set_label("Mean pActivity")
 
-            core_hash = hashlib.sha1(core_frag.encode()).hexdigest()[:8]
-            plot_path = output_dir / f"rgroup_tree_{core_hash}.png"
-            fig.savefig(plot_path, dpi=300, bbox_inches="tight")
-            plt.close(fig)
-            logger.info(f"[RGroup SAR Tree] Saved: {plot_path}")
+                # Save
+                core_hash = hashlib.sha1(core_frag.encode()).hexdigest()[:8]
+                plot_path = series_dir / f"rgroup_tree_{core_hash}.png"
+                fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+                plt.close(fig)
+
+                logger.info(f"[RGroup SAR Tree] Saved: {plot_path}")
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logger.warning(f"[RGroup SAR Tree] Plot generation failed: {e}")
-
-
 
     return {"summary_csv": str(output_csv), "hierarchy_json": str(json_path)}
