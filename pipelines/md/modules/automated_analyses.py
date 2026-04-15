@@ -6,7 +6,8 @@ import h5py
 import re
 
 import networkx as nx
-import tqdm as tqdm
+
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 
@@ -116,7 +117,7 @@ class HydrogenBondAnalysisTask:
             "protein and resid " + " ".join(str(r) for r in self.binding_site_resids)
         )
 
-        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step],
+        for ts in tqdm(self.u.trajectory[self.start:self.stop:self.step],
                             desc="Direct HBonds" if not water_mediated else "Water-mediated HBonds"):
             if water_mediated:
                 donors_sel = f"prop mass > 13 and resname {self.ligand_resname} " \
@@ -310,6 +311,14 @@ class RMSDAnalysisTask:
         self.context = context or {}
 
         os.makedirs(self.output_dir, exist_ok=True)
+        # Show trajectory loading progress (non-intrusive)
+        if isinstance(self.trajectory, list):
+            logger.info(f"Preparing to load {len(self.trajectory)} trajectory files...")
+
+            for traj_file in tqdm(self.trajectory, desc="Loading trajectories", unit="file"):
+                logger.debug(f"Queued: {traj_file}")
+
+        # Now load as usual (no behavior change)
         self.u = mda.Universe(self.topology, self.trajectory)
 
         protein = self.u.select_atoms("protein")
@@ -371,8 +380,32 @@ class RMSDAnalysisTask:
 
         align_selection = rec_sel if rec_sel is not None else "protein and backbone"
 
-        align.AlignTraj(self.u, self.u, select=align_selection,
-                in_memory=True).run()
+        logger.info("Starting trajectory alignment (this may take a few minutes)...")
+
+        # --- Reference frame (frame 0) ---
+        self.u.trajectory[0]
+        ref_atoms = self.u.select_atoms(align_selection)
+        ref_pos = ref_atoms.positions.copy()
+
+        # Preselect mobile atoms ONCE (important for speed)
+        mobile_atoms = self.u.select_atoms(align_selection)
+
+        n_frames = len(self.u.trajectory)
+
+        for ts in tqdm(self.u.trajectory, total=n_frames, desc="Aligning trajectory", unit="frame"):
+
+            # Compute optimal rotation + translation
+            R, rmsd_val = align.rotation_matrix(
+                mobile_atoms.positions - mobile_atoms.center_of_mass(),
+                ref_pos - ref_atoms.center_of_mass()
+            )
+
+            # Apply transformation to ALL atoms (not just selection!)
+            self.u.atoms.positions = np.dot(
+                self.u.atoms.positions - mobile_atoms.center_of_mass(), R.T
+            ) + ref_atoms.center_of_mass()
+
+        logger.info("Alignment complete.")
 
         # Ligand detection
         if ligand is None:
@@ -382,55 +415,76 @@ class RMSDAnalysisTask:
         ref = mda.Universe(self.topology, self.trajectory)
         ref.trajectory[0]
 
-        # Align ref
-        align.AlignTraj(ref, ref, select=align_selection,
-                in_memory=True).run()
+        # Align reference once
+        logger.info("Aligning reference structure...")
+
+        align.AlignTraj(ref, ref, select=align_selection, in_memory=True).run()
+
+        logger.info("Reference alignment complete.")
+
+        # Extract reference positions
+        ref_atoms = {
+            "receptor": ref.select_atoms(rec_sel) if rec_sel else None,
+            "partner": ref.select_atoms(partner_sel) if partner_sel else None,
+            "ligand": ref.select_atoms(lig_sel) if lig_sel else None,
+        }
 
         dfs = []
 
         # Receptor RMSD by AtomGroups
-        if rec_sel is not None:
-            rmsd_receptor = rms.RMSD(
-            self.u, ref,
-            select=rec_sel,
-            start=self.start, stop=self.stop, step=self.step
-        ).run()
+        times = []
+        rmsd_data = {
+            "Receptor": [],
+            "Partner (VHH)": [],
+            f"Ligand ({self.ligand_resname})": []
+        }
 
-            dfs.append(pd.DataFrame({
-                "Time (ns)": rmsd_receptor.rmsd[:, 1] / 1000.0,
-                "RMSD (Å)": rmsd_receptor.rmsd[:, 2],
-                "Component": "Receptor"
-            }))
+        # Frame indices
+        traj = self.u.trajectory[self.start:self.stop:self.step]
+        n_frames = len(traj)
 
-        # Partner RMSD (if not a ligand)
-        if partner_sel is not None:
-            rmsd_partner = rms.RMSD(
-                self.u, ref,
-                select=partner_sel,
-                start=self.start, stop=self.stop, step=self.step
-            ).run()
+        logger.info(f"Processing {n_frames} frames for RMSD...")
 
-            dfs.append(pd.DataFrame({
-                "Time (ns)": rmsd_partner.rmsd[:, 1] / 1000.0,
-                "RMSD (Å)": rmsd_partner.rmsd[:, 2],
-                "Component": "Partner (VHH)"
-            }))
+        for ts in tqdm(
+                traj,
+                desc="RMSD (all trajectories)",
+                unit="frame",
+                mininterval=1.0  # avoids too frequent updates
+            ):
+            time_ns = ts.time / 1000.0
+            times.append(time_ns)
 
-        # Ligand RMSD
-        if lig_sel is not None:
-            rmsd_ligand = rms.RMSD(
-                self.u, ref,
-                select=lig_sel,
-                start=self.start, stop=self.stop, step=self.step
-            ).run()
+            # Receptor RMSD
+            if rec_sel:
+                mob = self.u.select_atoms(rec_sel)
+                ref_sel = ref_atoms["receptor"]
+                val = rms.rmsd(mob.positions, ref_sel.positions, center=True, superposition=True)
+                rmsd_data["Receptor"].append(val)
 
-            dfs.append(pd.DataFrame({
-                "Time (ns)": rmsd_ligand.rmsd[:, 1] / 1000.0,
-                "RMSD (Å)": rmsd_ligand.rmsd[:, 2],
-                "Component": f"Ligand ({self.ligand_resname})"
-            }))
+            # Partner RMSD
+            if partner_sel:
+                mob = self.u.select_atoms(partner_sel)
+                ref_sel = ref_atoms["partner"]
+                val = rms.rmsd(mob.positions, ref_sel.positions, center=True, superposition=True)
+                rmsd_data["Partner (VHH)"].append(val)
 
-        df_rmsd = pd.concat(dfs, ignore_index=True)
+            # Ligand RMSD
+            if lig_sel:
+                mob = self.u.select_atoms(lig_sel)
+                ref_sel = ref_atoms["ligand"]
+                val = rms.rmsd(mob.positions, ref_sel.positions, center=True, superposition=True)
+                rmsd_data[f"Ligand ({self.ligand_resname})"].append(val)
+
+            for comp, values in rmsd_data.items():
+                if len(values) == 0:
+                    continue
+                dfs.append(pd.DataFrame({
+                    "Time (ns)": times,
+                    "RMSD (Å)": values,
+                    "Component": comp
+                }))
+
+            df_rmsd = pd.concat(dfs, ignore_index=True)
 
         # Dump plot data to JSON
         out_json = os.path.join(self.output_dir, "rmsd_data.json")
@@ -1386,7 +1440,7 @@ class ProteinLigandCommunityTask:
         for res in protein.residues:
             contact_matrix[res.resid] = []
 
-        for ts in tqdm.tqdm(frames, desc="Contacts"):
+        for ts in tqdm(frames, desc="Contacts"):
             for res in protein.residues:
                 d = mda.lib.distances.distance_array(
                     res.atoms.positions, ligand.positions
@@ -1409,7 +1463,7 @@ class ProteinLigandCommunityTask:
         contact_counts = {}
         n_frames = 0
 
-        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Contacts"):
+        for ts in tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Contacts"):
             n_frames += 1
 
             for res in protein.residues:
@@ -1710,7 +1764,7 @@ class TemporalMotifPersistenceTask:
 
         motif_history = {}
 
-        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Frames"):
+        for ts in tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Frames"):
             ligand_atoms = ligand.atoms.positions
             water_atoms = waters.positions
             prot_atoms = protein.positions
@@ -1965,7 +2019,7 @@ class NetworkEmbeddingAnalysisTask:
 
     def _generate_graphs(self):
         graphs = []
-        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Building contact graphs"):
+        for ts in tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Building contact graphs"):
             G = self._frame_to_graph(ts)
             graphs.append(G)
         return graphs
@@ -1979,7 +2033,7 @@ class NetworkEmbeddingAnalysisTask:
                                         shape=(len(graphs), self.node2vec_dim), 
                                         dtype=np.float32)
 
-            for i, G in tqdm.tqdm(enumerate(graphs), total=len(graphs), desc="Node2Vec embeddings"):
+            for i, G in tqdm(enumerate(graphs), total=len(graphs), desc="Node2Vec embeddings"):
                 if G.number_of_nodes() < 2:
                     emb_dataset[i] = np.zeros(self.node2vec_dim, dtype=np.float32)
                     logger.info(f"Skipping frame {i} because the graph has fewer than 2 nodes")
@@ -2238,7 +2292,7 @@ class ProteinProteinNetworkEmbeddingTask:
                                         shape=(len(graphs), self.node2vec_dim), 
                                         dtype=np.float32)
 
-            for i, G in tqdm.tqdm(enumerate(graphs), total=len(graphs), desc="Node2Vec embeddings"):
+            for i, G in tqdm(enumerate(graphs), total=len(graphs), desc="Node2Vec embeddings"):
                 if G.number_of_nodes() < 2:
                     emb_dataset[i] = np.zeros(self.node2vec_dim, dtype=np.float32)
                     logger.info(f"Skipping frame {i} because the graph has fewer than 2 nodes")
@@ -2354,7 +2408,7 @@ class ProteinProteinNetworkEmbeddingTask:
 
     def _generate_graphs_pp(self):
         graphs = []
-        for ts in tqdm.tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Building protein-protein graphs"):
+        for ts in tqdm(self.u.trajectory[self.start:self.stop:self.step], desc="Building protein-protein graphs"):     
             G = self._frame_to_graph_pp(ts)
             graphs.append(G)
         return graphs
