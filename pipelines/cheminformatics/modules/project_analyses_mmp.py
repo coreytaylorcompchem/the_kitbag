@@ -7,20 +7,13 @@ from tqdm import tqdm
 import hashlib
 import io
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.offsetbox as offsetbox
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-from matplotlib.cbook import get_sample_data
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import matplotlib.cm as cm
-
 import numpy as np
 from PIL import Image
 import seaborn as sns
 import networkx as nx
 import pandas as pd
+from collections import Counter
+
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, QED, rdRGroupDecomposition, Scaffolds
 from rdkit.Chem.Draw import rdMolDraw2D
@@ -30,6 +23,18 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 import umap
+
+from scipy.stats import linregress, ttest_ind, wasserstein_distance
+from scipy.spatial.distance import mahalanobis
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.offsetbox as offsetbox
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from matplotlib.cbook import get_sample_data
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import matplotlib.cm as cm
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pipeline.task_registry import register_task
@@ -50,7 +55,7 @@ def write_mmpdb_inputs(df, output_prefix, smiles_col="smiles", id_col="id", prop
             mol_id = row.get(id_col)
             if pd.notna(smi) and pd.notna(mol_id):
                 f.write(f"{smi}\t{mol_id}\n")
-    logger.info(f"[✔] SMILES file written: {smi_path}")
+    logger.info(f"SMILES file written: {smi_path}")
 
     prop_path = None
     if props_cols:
@@ -62,7 +67,7 @@ def write_mmpdb_inputs(df, output_prefix, smiles_col="smiles", id_col="id", prop
         props_df.rename(columns={id_col: "id"}, inplace=True)
         prop_path = output_prefix.with_suffix(".props")
         props_df.to_csv(prop_path, index=False, sep="\t", encoding="utf-8", lineterminator="\n")
-        logger.info(f"[✔] Properties file written: {prop_path}")
+        logger.info(f"Properties file written: {prop_path}")
     else:
         logger.info("[ℹ] No props_cols provided — skipping props file.")
 
@@ -85,14 +90,16 @@ def run_transform(mmpdb_file, smiles, property_name):
 
         return property_name, smiles, output_lines
     except subprocess.CalledProcessError as e:
-        logger.warning(f"[!] Transform failed for SMILES {smiles} with property {property_name}")
+        logger.warning(f"Transform failed for SMILES {smiles} with property {property_name}")
         logger.debug(e.stderr)
         return property_name, smiles, None
 
 @register_task("mmp_analysis", category="Project-based analyses", description="Matched Molecular Pairs (mmpdb).")
 def mmp_analysis(config, data=None):
     input_file = config.get("input_file")
-    activity_col = config.get("activity_col", "pActivity")
+    cfg = config.get("mmp_analysis", {})
+    activity_col = cfg.get("activity_col", "pActivity")
+    print(activity_col)
     output_dir = Path(config.get("output", {}).get("directory", "outputs/mmp"))
     output_dir.mkdir(parents=True, exist_ok=True)
     out_filename = config.get("output", {}).get("filename", Path(input_file).stem + "_mmp.tsv")
@@ -394,25 +401,45 @@ def compute_fingerprint(smiles, fp_type="morgan", radius=2, nbits=2048):
         raise ValueError(f"Unsupported fingerprint type: {fp_type}")
 
 def pairwise_similarity(args):
-    i, smi_i, fp_i, data, cutoff, delta_threshold, activity_col = args
+    i, smi_i, fp_i, id_i, act_i, series_i, data, cutoff, delta_threshold, activity_col = args
+
     cliffs = []
-    for j, (smi_j, fp_j, act_j) in enumerate(zip(data["smiles"], data["fps"], data[activity_col])):
+
+    for j, (smi_j, fp_j, act_j, id_j, series_j) in enumerate(
+        zip(
+            data["smiles"],
+            data["fps"],
+            data[activity_col],
+            data["FORMATTED_ID"],
+            data["Chemical series"]
+        )
+    ):
         if i >= j:
             continue
+
         if fp_i is None or fp_j is None:
             continue
+
         sim = DataStructs.TanimotoSimilarity(fp_i, fp_j)
+
         if sim >= cutoff:
-            delta = abs(data.loc[i, activity_col] - act_j)
+            act_i = data.loc[i, activity_col]
+            delta = abs(act_i - act_j)
+
             if delta >= delta_threshold:
                 cliffs.append({
                     "smiles_1": smi_i,
                     "smiles_2": smi_j,
+                    "formatted_id_1": id_i,
+                    "formatted_id_2": id_j,
+                    "series_1": series_i,
+                    "series_2": series_j,
                     "similarity": sim,
                     "delta_activity": delta,
-                    "activity_1": data.loc[i, activity_col],
+                    "activity_1": act_i,
                     "activity_2": act_j
                 })
+
     return cliffs
 
 @register_task("sar_cliff_analysis", category="Project-based analyses",
@@ -422,7 +449,7 @@ def sar_cliff_analysis(config, data=None):
     #  1. Load configs
     input_file = config.get("input_file")
 
-    sar_cliff_cfg = config.get("sar_cliff", {})    
+    sar_cliff_cfg = config.get("sar_cliff_analysis", {})    
     activity_col = sar_cliff_cfg.get("activity_col", "pActivity")
     similarity_cutoff = sar_cliff_cfg.get("similarity_cutoff", 0.85)
     delta_threshold = sar_cliff_cfg.get("delta_threshold", 1.0)
@@ -435,7 +462,18 @@ def sar_cliff_analysis(config, data=None):
 
     logger.debug(f"[SAR Cliff] Loading input file: {input_file}")
     df = pd.read_csv(input_file)
+    # ensure numeric
+    df[activity_col] = pd.to_numeric(df[activity_col], errors="coerce")
+
+    # check if series in in the df
+
+    if "Chemical series" not in df.columns:
+        df["Chemical series"] = "Unknown"
+
+    # remove NaN and inf
+    df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=["smiles", activity_col])
+
     df = df.reset_index(drop=True)
 
     #  2. Fingerprint computation 
@@ -447,7 +485,18 @@ def sar_cliff_analysis(config, data=None):
     logger.debug(f"[SAR Cliff] Computing pairwise similarities (cutoff={similarity_cutoff})...")
 
     tasks = [
-        (i, row["smiles"], row["fps"], df, similarity_cutoff, delta_threshold, activity_col)
+        (
+            i,
+            row["smiles"],
+            row["fps"],
+            row["FORMATTED_ID"],
+            row[activity_col],
+            row["Chemical series"],
+            df,
+            similarity_cutoff,
+            delta_threshold,
+            activity_col
+        )
         for i, row in df.iterrows()
     ]
 
@@ -469,54 +518,86 @@ def sar_cliff_analysis(config, data=None):
 
     #  5. Visualise
     if not cliff_df.empty:
-        plt.figure(figsize=(8, 6))
+        # Top 10 cliffs - with molecule images
+
+        def delta_bin(delta, step=0.5):
+            lower = np.floor(delta / step) * step
+            upper = lower + step
+            return f"delta_act_{lower:.1f}-{upper:.1f}"
+
+        # where to save images
+
+        img_root = output_dir / "cliff_images"
+        img_root.mkdir(exist_ok=True)
+
+        # add colums to df
+        
+        cliff_df["delta_bin"] = cliff_df["delta_activity"].apply(delta_bin)
+        cliff_df = cliff_df[cliff_df["series_1"] == cliff_df["series_2"]]
+        cliff_df["series"] = cliff_df["series_1"]
+
+        plt.figure(figsize=(9, 7))
+
         sns.scatterplot(
             data=cliff_df,
             x="similarity",
             y="delta_activity",
+            hue="series",
+            palette="tab10",
             s=40,
             alpha=0.7
         )
-        plt.axvline(similarity_cutoff, color='red', linestyle='--', label=f"sim ≥ {similarity_cutoff}")
-        plt.axhline(delta_threshold, color='orange', linestyle='--', label=f"Δact ≥ {delta_threshold}")
+
+        plt.axvline(similarity_cutoff, color='red', linestyle='--')
+        plt.axhline(delta_threshold, color='orange', linestyle='--')
+
         plt.xlabel("Tanimoto Similarity")
         plt.ylabel(f"|Δ {activity_col}|")
-        plt.title("Activity Cliff Landscape")
-        plt.legend()
+        plt.title("Activity Cliff Landscape (by Chemical Series)")
+
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')  # avoids clutter
+
         scatter_file = output_dir / "sar_cliff_scatter.png"
         plt.savefig(scatter_file, bbox_inches='tight', dpi=300)
         plt.close()
 
-        # Top 10 cliffs — with molecule images
-        top_cliffs = cliff_df.head(10)
-        imgs = []
-        for _, row in top_cliffs.iterrows():
-            mol1 = Chem.MolFromSmiles(row["smiles_1"])
-            mol2 = Chem.MolFromSmiles(row["smiles_2"])
-            img = Draw.MolsToGridImage(
-                [mol1, mol2],
-                legends=[
-                    f"Act={row['activity_1']:.2f}",
-                    f"Act={row['activity_2']:.2f}"
-                ],
-                molsPerRow=2,
-                subImgSize=(200, 200)
-            )
-            imgs.append(img)
+        max_imgs = sar_cliff_cfg.get("max_images_per_bin", None)
 
-        for i, img in enumerate(imgs):
-            img_path = output_dir / f"top_cliff_{i+1}.png"
-            img.save(img_path)
+        for series_name, series_group in cliff_df.groupby("series"):
 
-        # Save
-        top_csv = output_dir / "top_10_sar_cliffs.csv"
-        top_cliffs.to_csv(top_csv, index=False)
-        logger.info(f"[SAR Cliff] Top 10 cliffs written to: {top_csv}")
+            # sanitise folder name
+            safe_series = str(series_name).replace(" ", "_").replace("/", "_")
+            series_dir = img_root / safe_series
+            series_dir.mkdir(exist_ok=True)
+
+            for bin_name, bin_group in series_group.groupby("delta_bin"):
+
+                if max_imgs:
+                    bin_group = bin_group.head(max_imgs)
+
+                bin_dir = series_dir / bin_name
+                bin_dir.mkdir(parents=True, exist_ok=True)
+
+                for idx, row in bin_group.iterrows():
+                    mol1 = Chem.MolFromSmiles(row["smiles_1"])
+                    mol2 = Chem.MolFromSmiles(row["smiles_2"])
+
+                    img = Draw.MolsToGridImage(
+                        [mol1, mol2],
+                        legends=[
+                            f"{row['formatted_id_1']}\nAct={row['activity_1']:.2f}\nSim={row['similarity']:.2f}",
+                            f"{row['formatted_id_2']}\nAct={row['activity_2']:.2f}\nSim={row['similarity']:.2f}",
+                        ],
+                        molsPerRow=2,
+                        subImgSize=(250, 250)
+                    )
+
+                    img_path = bin_dir / f"cliff_{idx}.png"
+                    img.save(img_path)
 
         return {
             "cliff_csv": str(output_csv),
             "scatter_png": str(scatter_file),
-            "top_cliffs_csv": str(top_csv),
         }
 
     else:
@@ -536,7 +617,7 @@ except ImportError:
     description="Track week-to-week evolution of chemical space via (UMAP / t-SNE)."
 )
 def chemical_space_drift(config, data=None):
-    """Visualize chemical space evolution colored by time or activity."""
+    """Visualise chemical space evolution colored by time or activity."""
 
     # 1. Load configs
     task_conf = config.get("chemical_space_drift", {})
@@ -706,24 +787,55 @@ def scaffold_enrichment_trends(config, data=None):
         df["week"] = "unknown"
     else:
         df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-        df["week"] = df[date_col].dt.strftime("%Y-%U")
+        df["week_period"] = df[date_col].dt.to_period("W")
+        df["week"] = df["week_period"].astype(str)  # for plotting
 
     # 2. Bemis–Murcko scaffolds
     logger.debug("[ScaffoldEnrichment] Computing Murcko scaffolds...")
+    method = task_conf.get("scaffold_method", "murcko")
+    min_size = task_conf.get("min_scaffold_size", 0)
+
     scaffolds = []
     for smi in tqdm(df[smiles_col], desc="Extracting scaffolds"):
         mol = Chem.MolFromSmiles(str(smi))
         if mol is None:
             scaffolds.append(None)
             continue
+
+        # if min_size and mol.GetNumHeavyAtoms() < min_size:
+        #     scaffolds.append(None)
+        #     continue
+
         try:
-            scaf = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+            scaf = None
+
+            if method == "murcko":
+                scaf = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+
+            elif method == "generic":
+                scaf_mol = MurckoScaffold.GetScaffoldForMol(mol)
+                scaf_mol = MurckoScaffold.MakeScaffoldGeneric(scaf_mol)
+                scaf = Chem.MolToSmiles(scaf_mol)
+
+            elif method == "brics":
+                frags = BRICS.BRICSDecompose(mol)
+                scaf = max(frags, key=len) if frags else None
+
+            # canonicalize if valid
+            if scaf:
+                scaf_mol = Chem.MolFromSmiles(scaf)
+                if min_size and scaf_mol and scaf_mol.GetNumHeavyAtoms() < min_size:
+                    scaf = None
+
             scaffolds.append(scaf)
+
         except Exception:
             scaffolds.append(None)
+
     df["scaffold"] = scaffolds
 
     df_valid = df.dropna(subset=["scaffold"]).copy()
+    
     if df_valid.empty:
         logger.warning("[ScaffoldEnrichment] No valid scaffolds found.")
         return None
@@ -731,38 +843,63 @@ def scaffold_enrichment_trends(config, data=None):
     #  3. Weekly scaffold stats 
     logger.debug("[ScaffoldEnrichment] Aggregating weekly scaffold statistics...")
     agg_df = (
-        df_valid.groupby(["week", "scaffold"])
+        df_valid.groupby(["week_period", "scaffold"])
         .agg(
             count=("scaffold", "size"),
             mean_activity=(activity_col, "mean")
         )
         .reset_index()
     )
+    
+    agg_df = agg_df.sort_values("week_period")
+    agg_df["week_num"] = agg_df["week_period"].rank(method="dense").astype(int)
+
+    agg_df = agg_df.sort_values(["scaffold", "week_period"])
 
     agg_df["prev_mean"] = agg_df.groupby("scaffold")["mean_activity"].shift(1)
     agg_df["delta_mean"] = agg_df["mean_activity"] - agg_df["prev_mean"]
 
     #  4. Identify improving / declining scaffolds
-    latest_week = agg_df["week"].dropna().unique()
-    latest_week = sorted(latest_week)[-1] if len(latest_week) else None
 
-    if latest_week:
-        latest_data = agg_df[agg_df["week"] == latest_week]
-        top_improving = latest_data.nlargest(5, "delta_mean", keep="all")
-        top_declining = latest_data.nsmallest(5, "delta_mean", keep="all")
-    else:
-        top_improving = top_declining = pd.DataFrame()
+    # Use last N weeks instead of single latest week
+    window_weeks = task_conf.get("trend_window_weeks", 4)
+    print(window_weeks)
 
-    trends_csv = output_dir / "scaffold_trends.csv"
-    agg_df.to_csv(trends_csv, index=False)
+    recent_weeks = sorted(agg_df["week_period"].dropna().unique())[-window_weeks:]
 
-    improving_csv = output_dir / "top5_improving_scaffolds.csv"
-    declining_csv = output_dir / "top5_declining_scaffolds.csv"
-    top_improving.to_csv(improving_csv, index=False)
-    top_declining.to_csv(declining_csv, index=False)
+    recent_data = agg_df[agg_df["week_period"].isin(recent_weeks)].copy()
+
+    # Keep only valid deltas
+    recent_data = recent_data.dropna(subset=["delta_mean"])
+
+    # Aggregate trend per scaffold (mean delta over window)
+    trend_df = (
+        recent_data.groupby("scaffold")
+        .agg(
+            mean_delta=("delta_mean", "mean"),
+            n_points=("delta_mean", "count"),
+            latest_activity=("mean_activity", "last")
+        )
+        .reset_index()
+    )
+
+    # Optional robustness filter
+    trend_df = trend_df[trend_df["n_points"] >= 2]
+
+    # Fallback if too strict
+    if trend_df.empty:
+        logger.warning("[ScaffoldEnrichment] No valid multi-week trends - relaxing constraints.")
+        trend_df = (
+            recent_data.groupby("scaffold")
+            .agg(mean_delta=("delta_mean", "mean"))
+            .reset_index()
+        )
+
+    top_improving = trend_df.nlargest(5, "mean_delta")
+    top_declining = trend_df.nsmallest(5, "mean_delta")
 
     # 5. Visualisation
-    image_zoom = 0.4  # hardcoding size of 2D structures for the plots. Might need to adjust.
+    image_zoom = 0.5  # hardcoding size of 2D structures for the plots. Might need to adjust.
 
     top_n = task_conf.get("top_n_scaffolds", 8)
     top_scaffolds = (
@@ -771,17 +908,48 @@ def scaffold_enrichment_trends(config, data=None):
         .head(top_n)
         .index
     )
+    agg_df["week"] = agg_df["week_period"].astype(str)
     plot_df = agg_df[agg_df["scaffold"].isin(top_scaffolds)]
 
-    plt.figure(figsize=(10, 6))
+    week_labels = (
+        agg_df[["week_num", "week"]]
+        .drop_duplicates()
+        .sort_values("week_num")
+    )
+
+    tick_step = task_conf.get("xtick_step", 4)
+
+    week_labels_sub = week_labels.iloc[::tick_step]
+
+    n_ticks = len(week_labels_sub)
+    width = max(10, min(20, n_ticks * 1.2))
+    plt.figure(figsize=(width, 6))
+    
     ax = plt.gca()
 
+    from PIL import Image, ImageDraw
+
+    def make_placeholder_image(text="NA", size=(100, 100)):
+        img = Image.new("RGB", size, color="white")
+        draw = ImageDraw.Draw(img)
+        draw.text((10, 40), text, fill="black")
+        return img
+
     scaffold_imgs = {}
+
     for smi in top_scaffolds:
-        mol = Chem.MolFromSmiles(smi)
-        if mol:
-            img = Draw.MolToImage(mol, size=(100, 100))
-            scaffold_imgs[smi] = img
+        try:
+            mol = Chem.MolFromSmiles(smi)
+            if mol:
+                img = Draw.MolToImage(mol, size=(100, 100))
+            else:
+                raise ValueError("Invalid SMILES")
+
+        except Exception:
+            logger.warning(f"[ScaffoldEnrichment] Failed to render scaffold: {smi}")
+            img = make_placeholder_image("Invalid")
+
+        scaffold_imgs[smi] = img
 
     # Helper for mapping week labels to x-axis positions
     xtick_labels = [label.get_text() for label in ax.get_xticklabels()]
@@ -806,70 +974,118 @@ def scaffold_enrichment_trends(config, data=None):
             single_point_scaffolds.append(scaffold)
 
     # Plot lines for scaffolds with multiple points
-    if multi_point_scaffolds:
+    palette = sns.color_palette("tab10", n_colors=len(multi_point_scaffolds))
+    color_map = dict(zip(multi_point_scaffolds, palette))
+
+    for scaffold in multi_point_scaffolds:
+        scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
+
         sns.lineplot(
-            data=plot_df[plot_df["scaffold"].isin(multi_point_scaffolds)],
-            x="week",
+            data=scaffold_data,
+            x="week_num",
             y="mean_activity",
-            hue="scaffold",
-            palette="tab10",
+            color=color_map[scaffold],
             lw=2,
             ax=ax,
         )
+    
+    ax.set_xticks(week_labels_sub["week_num"])
+    ax.set_xticklabels(week_labels_sub["week"], rotation=45)
 
     # Remove default legend if present (hack)
     if ax.legend_:
         ax.legend_.remove()
+    
+    logger.debug(f"Multi_point_scaffolds: {len(multi_point_scaffolds)}")
+
+    for scaffold in multi_point_scaffolds:
+        scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
+        logger.debug(
+            f"Scaffold={scaffold[:30]}... "
+            f"points={len(scaffold_data)} "
+            f"has_img={scaffold in scaffold_imgs}"
+        )
 
     # Add images for line plots at the far right of the plot 
-    x_left, x_right = ax.get_xlim()
-    x_offset = (x_right - x_left) * 0.1  # move 10% beyond plot limit
     y_min, y_max = ax.get_ylim()
     y_spacing = (y_max - y_min) / (len(multi_point_scaffolds) + 1)
 
-    for i, scaffold in enumerate(multi_point_scaffolds):
+    # --- prevent overlapping endpoint images ---
+
+    # 1. Collect positions ONCE
+    scaffold_positions = []
+
+    for scaffold in multi_point_scaffolds:
         scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
         if scaffold_data.empty:
             continue
 
-        y_pos = y_max - (i + 1) * y_spacing
-        x_img = x_right + x_offset
+        last_row = (
+            scaffold_data
+            .sort_values(["week_period", "mean_activity"])
+            .drop_duplicates(subset=["week_period"], keep="last")
+            .iloc[-1]
+        )
+
+        scaffold_positions.append({
+            "scaffold": scaffold,
+            "x": float(last_row["week_num"]),
+            "y": float(last_row["mean_activity"])
+        })
+
+    # 2. Sort by y (stable ordering)
+    scaffold_positions = sorted(scaffold_positions, key=lambda d: d["y"])
+
+    # 3. Place with alternating offsets (prevents stacking)
+    placed_y = []
+    min_sep = (y_max - y_min) * 0.05
+
+    for i, item in enumerate(scaffold_positions):
+        y = item["y"]
+
+        # alternate direction: up, down, up, down...
+        direction = 1 if i % 2 == 0 else -1
+
+        # resolve collisions iteratively
+        for _ in range(10):  # small bounded loop = stable
+            collision = False
+            for py in placed_y:
+                if abs(y - py) < min_sep:
+                    y += direction * min_sep
+                    direction *= -1  # flip direction
+                    collision = True
+            if not collision:
+                break
+
+        # keep INSIDE bounds with margin (prevents edge stacking)
+        margin = min_sep
+        y = max(y_min + margin, min(y, y_max - margin))
+
+        placed_y.append(y)
+
+        scaffold = item["scaffold"]
+        x = min(item["x"], ax.get_xlim()[1] - 0.5)
 
         img = scaffold_imgs.get(scaffold)
         if img:
             imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
+
             ab = offsetbox.AnnotationBbox(
-                imagebox, (x_img, y_pos),
-                frameon=False, box_alignment=(0, 0.5)
+                imagebox,
+                (x, y),
+                xybox=(25, 0),
+                xycoords='data',
+                boxcoords="offset points",
+                frameon=True,
+                bboxprops=dict(
+                    edgecolor=color_map[scaffold],
+                    linewidth=2
+                ),
+                annotation_clip=False
             )
             ax.add_artist(ab)
 
-    #  Plot single data points with pastel scatter colors 
-    if single_point_scaffolds:
-        pastel_palette = sns.color_palette("Pastel1", n_colors=len(single_point_scaffolds))
-        for color, scaffold in zip(pastel_palette, single_point_scaffolds):
-            scaffold_data = plot_df[plot_df["scaffold"] == scaffold]
-            if scaffold_data.empty:
-                continue
-
-            x_raw = scaffold_data["week"].iloc[0]
-            y = scaffold_data["mean_activity"].iloc[0]
-            x = get_x_position(x_raw)
-
-            # Plot single point data frame
-            ax.scatter(x, y, s=60, color=color, edgecolor='black', zorder=5)
-
-            # Add scaffold image slightly above each point
-            img = scaffold_imgs.get(scaffold)
-            if img:
-                imagebox = offsetbox.OffsetImage(img, zoom=image_zoom)
-                ab = offsetbox.AnnotationBbox(
-                    imagebox, (x, y + 0.02),
-                    frameon=False, box_alignment=(0.5, 0)
-                )
-                ax.add_artist(ab)
-
-    ax.set_xlim(x_left, x_right + x_offset * 2)
+    # ax.set_xlim(x_left, x_right + x_offset * 2)
 
     plt.title(f"Top {top_n} Scaffold Enrichment Trends (mean {activity_col})")
     plt.xticks(rotation=45)
@@ -881,9 +1097,16 @@ def scaffold_enrichment_trends(config, data=None):
     plt.savefig(trend_plot, dpi=300)
     plt.close()
 
+    trends_csv = output_dir / "scaffold_trends.csv"
+    agg_df.to_csv(trends_csv, index=False)
 
     logger.info(f"[ScaffoldEnrichment] Trends saved to: {trends_csv}")
     logger.info(f"[ScaffoldEnrichment] Plot saved to: {trend_plot}")
+
+    improving_csv = output_dir / "top5_improving_scaffolds.csv" 
+    declining_csv = output_dir / "top5_declining_scaffolds.csv" 
+    top_improving.to_csv(improving_csv, index=False) 
+    top_declining.to_csv(declining_csv, index=False)
 
     return {
         "trends_csv": str(trends_csv),
@@ -900,6 +1123,58 @@ def physchem_property_drift(config, data=None):
     Track trends in key physicochemical properties across weekly design cycles.
     """
 
+    def penalty(val, low, high):
+        if pd.isna(val):
+            return np.nan
+        if low <= val <= high:
+            return 0
+        return min(abs(val - low), abs(val - high))
+
+    def compute_slope(series):
+        y = series.values
+        x = np.arange(len(y))
+        if len(y) < 3 or np.all(np.isnan(y)):
+            return np.nan
+        return linregress(x, y).slope
+
+    def direction(val, threshold=0.2):
+        if pd.isna(val):
+            return "NA"
+        if val > threshold:
+            return "↑"
+        elif val < -threshold:
+            return "↓"
+        return "→"
+
+    def window_shift_test(prev, curr):
+        if len(prev) < 2 or len(curr) < 2:
+            return np.nan
+        return ttest_ind(prev, curr, nan_policy='omit').pvalue
+        
+    PROPERTY_TARGETS = {
+        "MW": (250, 500),
+        "clogP": (1.0, 3.5),
+        "TPSA": (40, 100),
+        "HBD": (0, 3),
+        "HBA": (2, 8),
+        "RotBonds": (0, 5),
+    }
+
+    PROPERTY_WEIGHTS = {k: 1.0 for k in PROPERTY_TARGETS}
+
+    DESCRIPTOR_FUNCS = {
+        "MW": Descriptors.MolWt,
+        "clogP": Crippen.MolLogP,
+        "TPSA": rdMolDescriptors.CalcTPSA,
+        "HBD": rdMolDescriptors.CalcNumHBD,
+        "HBA": rdMolDescriptors.CalcNumHBA,
+        "Fsp3": rdMolDescriptors.CalcFractionCSP3,
+        "RotBonds": rdMolDescriptors.CalcNumRotatableBonds,
+        "RingCount": rdMolDescriptors.CalcNumRings,
+        "AromaticRings": rdMolDescriptors.CalcNumAromaticRings,
+        "HeavyAtoms": Descriptors.HeavyAtomCount,
+    }
+
     # 1. Load configs
     input_file = config.get("input_file")
     drift_cfg = config.get("physchem_property_drift", {})
@@ -908,6 +1183,17 @@ def physchem_property_drift(config, data=None):
     output_dir = Path(drift_cfg.get("output_dir", "outputs/physchem_drift"))
     rolling_window = drift_cfg.get("rolling_window", 4)  # e.g. 4 weeks
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    trend_dir = output_dir / "trends"
+    penalty_dir = output_dir / "penalties"
+    multi_dir = output_dir / "multivariate"
+    slope_dir = output_dir / "slopes"
+    direction_dir = output_dir / "directional"
+    dist_dir = output_dir / "distributions"
+    summary_dir = output_dir / "summaries"
+
+    for d in [trend_dir, penalty_dir, multi_dir, slope_dir, direction_dir, dist_dir, summary_dir]:
+        d.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"[PhysChem Drift] Loading input file: {input_file}")
     df = pd.read_csv(input_file)
@@ -918,39 +1204,550 @@ def physchem_property_drift(config, data=None):
     logger.debug("[PhysChem Drift] Calculating basic properties...")
     mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
 
-    # Manual list - perhaps we should automate or select in the yaml
+    # Manual list (DESCRIPTOR_FUNCS) - perhaps we should automate or select in the yaml
 
-    df["MW"] = [Descriptors.MolWt(m) if m else np.nan for m in mols]
-    df["clogP"] = [Crippen.MolLogP(m) if m else np.nan for m in mols]
-    df["TPSA"] = [rdMolDescriptors.CalcTPSA(m) if m else np.nan for m in mols]
-    df["HBD"] = [rdMolDescriptors.CalcNumHBD(m) if m else np.nan for m in mols]
-    df["HBA"] = [rdMolDescriptors.CalcNumHBA(m) if m else np.nan for m in mols]
-    df["Fsp3"] = [rdMolDescriptors.CalcFractionCSP3(m) if m else np.nan for m in mols]
+    for name, func in DESCRIPTOR_FUNCS.items():
+        df[name] = [func(m) if m else np.nan for m in mols]
 
     # 3. Weekly aggregation
     df["week"] = df[date_col].dt.to_period("W").apply(lambda r: r.start_time)
-    props = ["MW", "clogP", "TPSA", "HBD", "HBA", "Fsp3"]
-    agg = df.groupby("week")[props].mean().rolling(window=rolling_window, min_periods=1).mean()
+    props = list(DESCRIPTOR_FUNCS.keys())
+    series_col = drift_cfg.get("series_col", None)
+
+    if series_col and series_col in df.columns:
+        grouped = df.groupby([series_col, "week"])[props].mean()
+        agg = (
+            grouped
+            .groupby(level=0)
+            .rolling(window=rolling_window, min_periods=1)
+            .mean()
+            .droplevel(0) 
+        )
+    else:
+        grouped = df.groupby("week")[props].mean()
+        agg = grouped.rolling(window=rolling_window, min_periods=1).mean()
+    
+    numeric_cols = agg.select_dtypes(include=[np.number]).columns
+
+    # 3a property penalty
+
+    penalty_df = agg.copy()
+
+    for p in PROPERTY_TARGETS:
+        if p in penalty_df.columns:
+            low, high = PROPERTY_TARGETS[p]
+            penalty_df[p] = penalty_df[p].apply(lambda x: penalty(x, low, high))
+
+    penalty_df["total_penalty"] = sum(
+        PROPERTY_WEIGHTS[p] * penalty_df[p]
+        for p in PROPERTY_TARGETS if p in penalty_df.columns
+    )
+
+    # 3b multivariate shift
+
+    valid = agg[numeric_cols].dropna()
+
+    if len(valid) > 5:
+        cov = np.cov(valid.T)
+        inv_cov = np.linalg.pinv(cov)
+        mean_vec = valid.mean()
+
+        def mahal(row):
+            if row.isna().any():
+                return np.nan
+            return mahalanobis(row, mean_vec, inv_cov)
+
+        agg["multivariate_drift"] = agg[numeric_cols].apply(mahal, axis=1)
+    else:
+        agg["multivariate_drift"] = np.nan
+
+    # 3c Slopes
+
+    slopes = {}
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            if series not in agg.index.get_level_values(0):
+                continue
+            sub = agg.xs(series, level=0).sort_index()
+            slopes[series] = {
+                col: compute_slope(sub[col]) for col in numeric_cols
+            }
+    else:
+        slopes = {col: compute_slope(agg[col]) for col in numeric_cols}
+
+    # 3d Statistical shift
+
+    shift_pvals = {}
+
+    def split_windows(series, window):
+        if len(series) < window * 2:
+            return None, None
+        return series.iloc[-2*window:-window], series.iloc[-window:]
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            if series not in agg.index.get_level_values(0):
+                continue
+            sub = agg.xs(series, level=0).sort_index()
+
+            shift_pvals[series] = {}
+            for col in numeric_cols:
+                prev, curr = split_windows(sub[col].dropna(), rolling_window)
+                if prev is not None:
+                    shift_pvals[series][col] = window_shift_test(prev, curr)
+    else:
+        shift_pvals = {}
+        for col in numeric_cols:
+            prev, curr = split_windows(agg[col].dropna(), rolling_window)
+            if prev is not None:
+                shift_pvals[col] = window_shift_test(prev, curr)
+    
+    # 3e Distribution shift
+
+    dist_shift = {}
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            sub_df = df[df[series_col] == series]
+            sub_df = sub_df.sort_values("week")
+
+            dist_shift[series] = {}
+
+            for col in numeric_cols:
+                prev = sub_df.iloc[:-rolling_window][col].dropna()
+                curr = sub_df.iloc[-rolling_window:][col].dropna()
+
+                if len(prev) > 1 and len(curr) > 1:
+                    dist_shift[series][col] = wasserstein_distance(prev, curr)
+    else:
+        for col in numeric_cols:
+            prev = df.iloc[:-rolling_window][col].dropna()
+            curr = df.iloc[-rolling_window:][col].dropna()
+
+            if len(prev) > 1 and len(curr) > 1:
+                dist_shift[col] = wasserstein_distance(prev, curr)
+    
+    # 3f Directional fingerprint
+
+    directional = {}
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            if series not in agg.index.get_level_values(0):
+                continue
+
+            sub = agg.xs(series, level=0).sort_index()
+
+            if len(sub) > 1:
+                delta = sub.iloc[-1] - sub.iloc[-2]
+                directional[series] = {
+                    col: direction(delta[col]) for col in numeric_cols
+                }
+    else:
+        if len(agg) > 1:
+            delta = agg.iloc[-1] - agg.iloc[-2]
+            directional = {
+                col: direction(delta[col]) for col in numeric_cols
+            }
+    
+    # 3g alerts
+
+    alerts = {}
+
+    def generate_alerts(latest, slope_dict, pvals, multi_drift):
+        a = []
+
+        if "clogP" in slope_dict and slope_dict["clogP"] > 0.2:
+            a.append("Rapid lipophilicity increase")
+
+        if "TPSA" in latest and latest["TPSA"] < 50:
+            a.append("Low polarity risk")
+
+        if "MW" in latest and latest["MW"] > 500:
+            a.append("High molecular weight risk")
+
+        if multi_drift is not None and multi_drift > 3:
+            a.append("Significant multivariate drift")
+
+        for k, v in (pvals or {}).items():
+            if v is not None and v < 0.05:
+                a.append(f"Significant shift in {k}")
+
+        return list(set(a))
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            if series not in agg.index.get_level_values(0):
+                continue
+
+            sub = agg.xs(series, level=0).sort_index()
+            latest = sub.iloc[-1]
+
+            alerts[series] = generate_alerts(
+                latest,
+                slopes.get(series, {}),
+                shift_pvals.get(series, {}),
+                latest.get("multivariate_drift", None)
+            )
+    else:
+        latest = agg.iloc[-1]
+        alerts = generate_alerts(
+            latest,
+            slopes,
+            shift_pvals,
+            latest.get("multivariate_drift", None)
+        )
+    
+    penalty_df.to_csv(summary_dir / "property_penalty.csv")
+
+    pd.DataFrame.from_dict(slopes, orient="index").to_csv(trend_dir / "trend_slopes.csv")
+    pd.DataFrame.from_dict(shift_pvals, orient="index").to_csv(summary_dir / "shift_pvalues.csv")
+    pd.DataFrame.from_dict(dist_shift, orient="index").to_csv(dist_dir / "distribution_shift.csv")
+    pd.DataFrame.from_dict(directional, orient="index").to_csv(direction_dir / "directional_fingerprint.csv", encoding="utf-8-sig")
+
+    with open(output_dir / "alerts.json", "w") as f:
+        json.dump(alerts, f, indent=2)
+    
+    #### plot the above quantities
+
+    logger.info("[PhysChem Drift] Plotting advanced diagnostics...")
+
+    # A. Penalty trend (stacked by property)
+    plt.figure(figsize=(10,6))
+
+    if series_col and series_col in df.columns:
+        for series in penalty_df.index.get_level_values(0).unique():
+            sub = penalty_df.xs(series, level=0).sort_index()
+
+            props = [p for p in PROPERTY_TARGETS if p in sub.columns]
+            stacked = sub[props]
+
+            stacked.plot.area(alpha=0.6)
+
+            plt.title(f"Property Penalty Decomposition — {series}")
+            plt.ylabel("Penalty Contribution")
+            plt.xlabel("Week")
+
+            plt.savefig(penalty_dir / f"penalty_breakdown_{series}.png", dpi=300)
+            plt.close()
+
+    else:
+        props = [p for p in PROPERTY_TARGETS if p in penalty_df.columns]
+        penalty_df[props].plot.area(alpha=0.6)
+
+        plt.title("Property Penalty Decomposition")
+        plt.ylabel("Penalty Contribution")
+        plt.xlabel("Week")
+
+        plt.savefig(penalty_dir / "penalty_breakdown.png", dpi=300)
+        plt.close()
+
+
+    # B1. Multivariate drift heatmap over time
+
+    try:
+        if series_col and series_col in df.columns:
+
+            # reshape to Series x Week
+            heat_df = (
+                agg["multivariate_drift"]
+                .unstack(level=0)   # columns = series
+                .T                 # rows = series
+            )
+
+            # deal with dates
+            
+            heat_df.columns = pd.to_datetime(heat_df.columns).strftime("%Y-%m-%d")
+
+            def series_key(x):
+                # split numeric prefix + suffix (handles 4b, 4c)
+                import re
+                m = re.match(r"(\d+)", str(x))
+                return int(m.group(1)) if m else float("inf")
+
+            heat_df = heat_df.loc[sorted(heat_df.index, key=series_key)]
+
+            fig, ax = plt.subplots(figsize=(12, max(4, len(heat_df) * 0.4)))
+
+            sns.heatmap(
+                heat_df,
+                cmap="plasma_r",
+                cbar_kws={"label": "Mahalanobis Drift"},
+                linewidths=0.5,
+                ax=ax
+            )
+
+            ax.set_title("Multivariate Drift Over Time (All Series)")
+            ax.set_xlabel("Week")
+            ax.set_ylabel("Series")
+
+            # --- FIX: ensure full x-axis labels are visible ---
+            ax.set_xticklabels(
+                ax.get_xticklabels(),
+                rotation=45,
+                ha="right"
+            )
+
+            plt.tight_layout()
+
+            # extra safety margin (prevents clipping on savefig)
+            plt.subplots_adjust(bottom=0.25)
+
+            plt.savefig(
+                multi_dir / "multivariate_timeseries_heatmap.png",
+                dpi=300,
+                bbox_inches="tight"
+            )
+            plt.close()
+
+    except Exception as e:
+        logger.warning(f"Multivariate time heatmap failed: {e}")
+
+    # --- B2. Multivariate drift heatmap (latest snapshot) ---
+    try:
+        if series_col and series_col in df.columns:
+            latest_vals = {}
+
+            for series in agg.index.get_level_values(0).unique():
+                sub = agg.xs(series, level=0).sort_index()
+                if len(sub) > 0:
+                    latest_vals[series] = sub["multivariate_drift"].iloc[-1]
+
+            if latest_vals:
+                heat_df = pd.DataFrame.from_dict(latest_vals, orient="index", columns=["Drift"])
+
+                plt.figure(figsize=(4, max(4, len(heat_df)*0.4)))
+                sns.heatmap(
+                    heat_df,
+                    cmap="Reds",
+                    annot=True,
+                    fmt=".2f"
+                )
+
+                plt.title("Latest Multivariate Drift (by Series)")
+
+                plt.savefig(multi_dir / "multivariate_heatmap.png", dpi=300)
+                plt.close()
+
+    except Exception as e:
+        logger.warning(f"Multivariate heatmap failed: {e}")
+
+    # --- C. Directional heatmap (robust) ---
+    try:
+        mapping = {"↑": 1, "↓": -1, "→": 0, "NA": 0}
+
+        dir_df = pd.DataFrame.from_dict(directional, orient="index")
+
+        if dir_df.empty:
+            logger.warning("Directional heatmap skipped: no data")
+        else:
+            dir_numeric = dir_df.replace(mapping)
+            dir_numeric = dir_numeric.apply(pd.to_numeric, errors="coerce").fillna(0).astype(float)
+
+            plt.figure(figsize=(10,4))
+            sns.heatmap(
+                dir_numeric,
+                cmap="coolwarm",
+                center=0,
+                annot=dir_df,
+                fmt=""
+            )
+
+            plt.title("Directional Drift Fingerprint")
+            plt.xlabel("Property")
+            plt.ylabel("Series")
+
+            plt.savefig(direction_dir / "directional_heatmap.png", dpi=300)
+            plt.close()
+
+    except Exception as e:
+        logger.warning(f"Directional heatmap failed: {e}")
+
+    # --- D. Slope bar charts (per series) ---
+    if series_col and isinstance(slopes, dict):
+        for series, vals in slopes.items():
+            if not isinstance(vals, dict):
+                continue
+
+            plt.figure(figsize=(8,4))
+            pd.Series(vals).sort_values().plot(kind="barh")
+
+            plt.title(f"Drift Velocity — {series}")
+            plt.xlabel("Slope")
+
+            plt.savefig(slope_dir / f"slope_{series}.png", dpi=300)
+            plt.close()
+
+
+    # --- E. Alerts text summary (human readable) ---
+    with open(summary_dir / "alerts.txt", "w") as f:
+        for series, msgs in alerts.items():
+            f.write(f"{series}:\n")
+            for m in msgs:
+                f.write(f"  - {m}\n")
+            f.write("\n")
+
+    # --- F. Distribution shift (per series, FIXED) ---
+    key_props = ["MW", "clogP", "TPSA"]
+
+    if series_col and series_col in df.columns:
+        for series in df[series_col].dropna().unique():
+            sub_df = df[df[series_col] == series].sort_values("week")
+
+            for col in key_props:
+                if col not in sub_df.columns:
+                    continue
+
+                prev = sub_df.iloc[:-rolling_window][col].dropna()
+                curr = sub_df.iloc[-rolling_window:][col].dropna()
+
+                if len(prev) >= 3 and len(curr) >= 3:
+                    try:
+                        plt.figure(figsize=(6,4))
+                        sns.kdeplot(prev, label="Previous")
+                        sns.kdeplot(curr, label="Current")
+
+                        plt.title(f"{series} — Distribution Shift: {col}")
+                        plt.legend()
+
+                        plt.savefig(dist_dir / f"{series}_dist_shift_{col}.png", dpi=300)
+                        plt.close()
+
+                    except Exception as e:
+                        logger.warning(f"Dist plot failed for {series}-{col}: {e}")
+    else:
+        for col in key_props:
+            if col not in df.columns:
+                continue
+
+            prev = df.iloc[:-rolling_window][col].dropna()
+            curr = df.iloc[-rolling_window:][col].dropna()
+
+            if len(prev) >= 3 and len(curr) >= 3:
+                try:
+                    plt.figure(figsize=(6,4))
+                    sns.kdeplot(prev, label="Previous")
+                    sns.kdeplot(curr, label="Current")
+
+                    plt.title(f"Distribution Shift: {col}")
+                    plt.legend()
+
+                    plt.savefig(dist_dir / f"dist_shift_{col}.png", dpi=300)
+                    plt.close()
+
+                except Exception as e:
+                    logger.warning(f"Dist plot failed for {col}: {e}")
 
     #  4. Trend visualisation 
     logger.info("[PhysChem Drift] Plotting property trends...")
-    plt.figure(figsize=(10, 6))
-    for p in ["MW", "clogP", "TPSA"]:
-        plt.plot(agg.index, agg[p], marker='o', label=p)
-    plt.legend()
-    plt.title("Rolling Property Trends")
-    plt.xlabel("Week")
-    plt.ylabel("Mean Property (Rolling Avg)")
-    plt.grid(True)
-    trend_file = output_dir / "property_trends.png"
-    plt.savefig(trend_file, dpi=300, bbox_inches="tight")
-    plt.close()
 
+    trend_file = None
+    numeric_cols = agg.select_dtypes(include=[np.number]).columns
     deltas = {}
-    if len(agg) > 1:
-        latest = agg.iloc[-1]
-        prev = agg.iloc[-2]
-        deltas = (latest - prev).to_dict()
+
+    # --- Z-score normalization ---
+    agg_z = agg.copy()
+
+    for col in numeric_cols:
+        if agg[col].std() == 0 or agg[col].isna().all():
+            agg_z[col] = 0
+        else:
+            agg_z[col] = (agg[col] - agg[col].mean()) / agg[col].std()
+
+    # --- Define logical property groups + palettes ---
+    property_groups = {
+        "Size & Lipophilicity": ["MW", "clogP", "TPSA"],
+        "HBD/HBA": ["HBD", "HBA"],
+        "3D Character": ["Fsp3"],
+        "Topology": ["RotBonds", "RingCount", "AromaticRings", "HeavyAtoms"],
+    }
+
+    group_palettes = {
+        "Size & Lipophilicity": plt.cm.Blues,
+        "HBD/HBA": plt.cm.Greens,
+        "3D Character": plt.cm.Purples,
+        "Topology": plt.cm.Oranges,
+    }
+
+    if series_col and series_col in df.columns:
+        series_values = df[series_col].dropna().unique()
+
+        for series in series_values:
+            if series not in agg.index.get_level_values(0):
+                continue
+
+            sub = agg_z.xs(series, level=0).sort_index()
+            sub_raw = agg.xs(series, level=0).sort_index()
+
+            n_groups = len(property_groups)
+            fig, axes = plt.subplots(n_groups, 1, figsize=(10, 3 * n_groups), sharex=True)
+
+            if n_groups == 1:
+                axes = [axes]
+
+            for ax, (group_name, group_props) in zip(axes, property_groups.items()):
+                palette = group_palettes[group_name]
+                valid_props = [p for p in group_props if p in sub.columns]
+
+                colors = palette(np.linspace(0.4, 0.9, len(valid_props)))
+
+                for p, c in zip(valid_props, colors):
+                    ax.plot(sub.index, sub[p], marker='o', label=p, color=c)
+
+                ax.axhline(0, linestyle="--", linewidth=1)
+                ax.set_title(group_name)
+                ax.grid(True)
+                ax.legend(fontsize=8)
+
+            axes[-1].set_xlabel("Week")
+            fig.suptitle(f"Property Trends (Z-score) — {series}", fontsize=14)
+
+            plt.tight_layout(rect=[0, 0, 1, 0.97])
+            plt.savefig(trend_dir / f"trend_{series}.png", dpi=300)
+            plt.close()
+
+            # --- deltas
+            if len(sub_raw) > 1:
+                latest = sub_raw.iloc[-1][numeric_cols]
+                prev = sub_raw.iloc[-2][numeric_cols]
+                deltas[series] = (latest - prev).to_dict()
+
+    else:
+        trend_file = output_dir / "property_trends.png"
+
+        n_groups = len(property_groups)
+        fig, axes = plt.subplots(n_groups, 1, figsize=(10, 3 * n_groups), sharex=True)
+
+        if n_groups == 1:
+            axes = [axes]
+
+        for ax, (group_name, group_props) in zip(axes, property_groups.items()):
+            palette = group_palettes[group_name]
+            valid_props = [p for p in group_props if p in agg_z.columns]
+
+            colors = palette(np.linspace(0.4, 0.9, len(valid_props)))
+
+            for p, c in zip(valid_props, colors):
+                ax.plot(agg_z.index, agg_z[p], marker='o', label=p, color=c)
+
+            ax.axhline(0, linestyle="--", linewidth=1)
+            ax.set_title(group_name)
+            ax.grid(True)
+            ax.legend(fontsize=8)
+
+        axes[-1].set_xlabel("Week")
+        fig.suptitle("Rolling Property Trends (Z-score)", fontsize=14)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+        plt.savefig(trend_file, dpi=300)
+        plt.close()
+
+        # --- deltas (RAW values) ---
+        if len(agg) > 1:
+            latest = agg.iloc[-1][numeric_cols]
+            prev = agg.iloc[-2][numeric_cols]
+            deltas = (latest - prev).to_dict()
 
     # --- 6. Save summary ---
     summary_file = output_dir / "property_drift_summary.csv"
@@ -958,9 +1755,15 @@ def physchem_property_drift(config, data=None):
     logger.info(f"[PhysChem Drift] Summary saved to: {summary_file}")
 
     return {
-        "trend_plot": str(trend_file),
+        "trend_plot": str(trend_file) if trend_file else None,
         "summary_csv": str(summary_file),
         "property_changes": deltas,
+        "penalty_csv": str(output_dir / "property_penalty.csv"),
+        "trend_slopes": slopes,
+        "shift_pvalues": shift_pvals,
+        "distribution_shift": dist_shift,
+        "directional": directional,
+        "alerts": alerts,
     }
 
 @register_task("druglikeness_indices_trend", category="Project-based analyses",
@@ -1068,24 +1871,45 @@ def rgroup_frequency_tracking(config, data=None):
     logger.debug("[RGroup Tracking] Performing R-group decomposition...")
     mols = [Chem.MolFromSmiles(s) for s in df["smiles"]]
     scaffolds = [Chem.Scaffolds.MurckoScaffold.GetScaffoldForMol(m) for m in mols]
-    unique_cores = list({Chem.MolToSmiles(s) for s in scaffolds if s})
+    
+    core_counts = Counter(Chem.MolToSmiles(s) for s in scaffolds if s)
+
+    unique_cores = [
+        core for core, count in core_counts.items()
+        if count >= 5   # configurable threshold
+    ]
 
     rgroups_all = []
     for core_smiles in unique_cores:
         core = Chem.MolFromSmiles(core_smiles)
-        matches = [m for m in mols if m and core and m.HasSubstructMatch(core)]
+        matches = [(i, m) for i, m in enumerate(mols) if m and core and m.HasSubstructMatch(core)]
+        
         if len(matches) < 3:
             continue
-        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], matches)
+        
+        # Split before calling RDKit
+        match_indices = [i for i, _ in matches]
+        match_mols = [m for _, m in matches]
+
+        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], match_mols, asRows=True)
+        
+        if not groups:
+            continue
+
         for mol_idx, row in enumerate(groups):
+            original_idx = match_indices[mol_idx]  # Map back to df
+
             for label, frag in row.items():
+                if label == "Core" or frag is None:
+                    continue
                 if frag:
                     rgroups_all.append({
                         "core": core_smiles,
+                        "series": df.iloc[original_idx]["Chemical series"],
                         "rgroup_label": label,
                         "rgroup_smiles": Chem.MolToSmiles(frag),
-                        "pActivity": df.iloc[mol_idx][activity_col],
-                        "week": df.iloc[mol_idx]["week"]
+                        activity_col: df.iloc[original_idx][activity_col],
+                        "week": df.iloc[original_idx]["week"]             
                     })
     rgroups_df = pd.DataFrame(rgroups_all)
     if rgroups_df.empty:
@@ -1093,8 +1917,11 @@ def rgroup_frequency_tracking(config, data=None):
         return None
 
     grouped = (
-        rgroups_df.groupby(["week", "rgroup_smiles"])
-        .agg(count=("pActivity", "size"), mean_activity=(activity_col, "mean"))
+        rgroups_df.groupby(["series", "core", "week", "rgroup_smiles"])
+        .agg(
+            count=(activity_col, "size"),
+            mean_activity=(activity_col, "mean")
+        )
         .reset_index()
     )
 
@@ -1111,7 +1938,12 @@ def rgroup_frequency_tracking(config, data=None):
 
     new_rgroups = set(current_week["rgroup_smiles"]) - set(previous_week["rgroup_smiles"])
     new_df = current_week[current_week["rgroup_smiles"].isin(new_rgroups)]
-    top_new = new_df.nlargest(top_n, "count")
+
+    if new_df.empty:
+        logger.warning("[RGroup Tracking] No new R-groups found; falling back to most frequent.")
+        top_new = current_week.nlargest(top_n, "count")
+    else:
+        top_new = new_df.nlargest(top_n, "count")
 
     summary_csv = output_dir / f"top_rgroups_{latest.date()}.csv"
     top_new.to_csv(summary_csv, index=False)
@@ -1142,7 +1974,7 @@ def draw_core_with_large_atom_numbers(mol, size=(300, 300), font_size=40):
 
     drawer = rdMolDraw2D.MolDraw2DCairo(size[0], size[1])
     opts = drawer.drawOptions()
-    opts.fontSize = font_size
+    opts.baseFontSize = font_size / 100
 
     # Label dummy atoms (atomic number == 0) or atoms with R-group-like mapping
     atom_labels = {}
@@ -1222,16 +2054,19 @@ def rgroup_sar_tree(config, data=None):
         if not core_smiles or len(subset) < min_variants:
             continue
         core = Chem.MolFromSmiles(core_smiles)
-        matches = [Chem.MolFromSmiles(s) for s in subset["smiles"]]
-        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], matches)
-        for mol_idx, row in enumerate(groups):
+        match_indices = subset.index.tolist()
+        match_mols = [Chem.MolFromSmiles(s) for s in subset["smiles"]]
+
+        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], match_mols)
+        for row, (_, subrow) in zip(groups, subset.iterrows()):
             for label, frag in row.items():
                 if frag:
                     all_records.append({
                         "core": core_smiles,
+                        "series": subrow["Chemical series"],
                         "rgroup_label": label,
                         "rgroup_smiles": Chem.MolToSmiles(frag),
-                        "pActivity": subset.iloc[mol_idx][activity_col]
+                        activity_col: subrow[activity_col],
                     })
 
     rg_df = pd.DataFrame(all_records)
@@ -1240,10 +2075,10 @@ def rgroup_sar_tree(config, data=None):
         return None
 
     sar_summary = (
-        rg_df.groupby(["core", "rgroup_label", "rgroup_smiles"])
+        rg_df.groupby(["series", "core", "rgroup_label", "rgroup_smiles"])
         .agg(mean_pActivity=(activity_col, "mean"),
              std_pActivity=(activity_col, "std"),
-             count=("pActivity", "size"))
+             count=(activity_col, "size"))
         .reset_index()
     )
 
@@ -1253,8 +2088,8 @@ def rgroup_sar_tree(config, data=None):
 
     # Outputting a hierarchical json for later use (interactive html or something else silly)
     tree_json = {}
-    for core, subdf in sar_summary.groupby("core"):
-        tree_json[core] = (
+    for (series, core), subdf in sar_summary.groupby(["series", "core"]):
+        tree_json.setdefault(series, {})[core] = (
             subdf[["rgroup_label", "rgroup_smiles", "mean_pActivity", "std_pActivity"]]
             .sort_values("mean_pActivity", ascending=False)
             .to_dict(orient="records")
@@ -1270,99 +2105,144 @@ def rgroup_sar_tree(config, data=None):
 
         cmap = cm.get_cmap("viridis")
 
-        for core, rgroups in tree_json.items():
-            if not rgroups:
-                continue
+        for series, cores in tree_json.items():
 
-            # Try to find the true decomposition core (rgroup_label == 'Core')
-            core_frag = None
-            for rg in rgroups:
-                if str(rg["rgroup_label"]).lower() == "core":
-                    core_frag = rg["rgroup_smiles"]
-                    break
-            if not core_frag:
-                core_frag = core  # fallback to Murcko core SMILES
+            # create per-series directory
+            safe_series = str(series).replace(" ", "_").replace("/", "_")
+            series_dir = output_dir / safe_series
+            series_dir.mkdir(exist_ok=True)
 
-            # Build graph for one core
-            G = nx.DiGraph()
-            core_label = "CORE"
-            G.add_node(core_label, kind="core", smiles=core_frag, pAct=None)
-            for rg in rgroups:
-                if str(rg["rgroup_label"]).lower() == "core":
-                    continue  # skip duplicate central core node
-                r_smiles = rg["rgroup_smiles"]
-                pAct = rg["mean_pActivity"]
-                label = rg["rgroup_label"]
-                G.add_node(label, kind="rgroup", smiles=r_smiles, pAct=pAct)
-                G.add_edge(core_label, label)
-
-            n = len(G.nodes)
-            radius = 1.5
-            pos = {core_label: np.array([0.0, 0.0])}
-            angle_step = 2 * np.pi / max(1, n - 1)
-            for i, node in enumerate(G.nodes):
-                if node == core_label:
+            for core, rgroups in cores.items():
+                if not rgroups:
                     continue
-                angle = i * angle_step
-                pos[node] = np.array([radius * np.cos(angle), radius * np.sin(angle)])
 
-            # Normalise pActivity
-            pActs = [d.get("pAct") for _, d in G.nodes(data=True) if d["pAct"] is not None]
-            norm = plt.Normalize(min(pActs or [0]), max(pActs or [1]))
+                # Try to find the true decomposition core
+                core_frag = None
+                for rg in rgroups:
+                    if str(rg["rgroup_label"]).lower() == "core":
+                        core_frag = rg["rgroup_smiles"]
+                        break
+                if not core_frag:
+                    core_frag = core  # fallback
 
-            fig, ax = plt.subplots(figsize=(7, 7))
-            ax.axis("off")
+                # Build graph
+                G = nx.DiGraph()
+                core_label = "CORE"
+                G.add_node(core_label, kind="core", smiles=core_frag, pAct=None)
 
-            # Draw edges
-            nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#666666", width=1.2, arrows=False)
+                for rg in rgroups:
+                    if str(rg["rgroup_label"]).lower() == "core":
+                        continue
 
-            # Draw central core
-            core_mol = Chem.MolFromSmiles(core_frag)
-            if core_mol:
-                core_img = draw_core_with_large_atom_numbers(core_mol, size=(300, 300), font_size=50)
-                im = OffsetImage(core_img, zoom=0.5)
-                ab = AnnotationBbox(im, (0, 0), frameon=True,
-                                    bboxprops=dict(facecolor="#ffcc00", edgecolor="#333333", lw=1.5))
-                ax.add_artist(ab)
+                    r_smiles = rg["rgroup_smiles"]
+                    pAct = rg["mean_pActivity"]
+                    label = rg["rgroup_label"]
 
-            # Draw R-group molecules
-            for node, data in G.nodes(data=True):
-                if data["kind"] != "rgroup":
+                    # ✅ FIX: unique node IDs (prevents overwriting)
+                    node_id = f"{label}_{hash(r_smiles)}"
+
+                    G.add_node(node_id, kind="rgroup", smiles=r_smiles, pAct=pAct, label=label)
+                    G.add_edge(core_label, node_id)
+
+                # Layout (adaptive)
+                n = len(G.nodes)
+
+                # dynamic radius (key fix)
+                radius = max(1.5, 0.4 * n)
+
+                # dynamic image scaling
+                img_size = max(80, int(140 - n * 2))      # shrink with more nodes
+                zoom = max(0.25, 0.5 - n * 0.01)
+
+                # reduce label clutter if many nodes
+                show_labels = n <= 12
+
+                pos = {core_label: np.array([0.0, 0.0])}
+                angle_step = 2 * np.pi / max(1, n - 1)
+
+                i = 0
+                for node in G.nodes:
+                    if node == core_label:
+                        continue
+                    angle = i * angle_step
+                    pos[node] = np.array([
+                        radius * np.cos(angle),
+                        radius * np.sin(angle)
+                    ])
+                    i += 1
+
+                # Normalize activity
+                pActs = [d.get("pAct") for _, d in G.nodes(data=True) if d["pAct"] is not None]
+                if not pActs:
+                    logger.warning(f"[RGroup SAR Tree] No activity values for core: {core}")
                     continue
-                x, y = pos[node]
-                mol = Chem.MolFromSmiles(data["smiles"])
-                if mol:
+
+                norm = plt.Normalize(min(pActs), max(pActs))
+
+                fig, ax = plt.subplots(figsize=(7, 7))
+                ax.axis("off")
+
+                # Edges
+                nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#666666", width=1.2, arrows=False)
+
+                # Core
+                core_mol = Chem.MolFromSmiles(core_frag)
+                if core_mol is None:
+                    core_mol = Chem.MolFromSmiles(core)
+
+                if core_mol:
+                    core_img = draw_core_with_large_atom_numbers(core_mol, size=(300, 300), font_size=50)
+                    if core_img:
+                        im = OffsetImage(core_img, zoom=0.5)
+                        ab = AnnotationBbox(im, (0, 0), frameon=True,
+                                            bboxprops=dict(facecolor="#ffcc00", edgecolor="#333333", lw=1.5))
+                        ax.add_artist(ab)
+
+                # R-groups
+                for node, data in G.nodes(data=True):
+                    if data["kind"] != "rgroup":
+                        continue
+
+                    x, y = pos[node]
+                    mol = Chem.MolFromSmiles(data["smiles"])
+
+                    if mol is None:
+                        continue
+
                     img = Draw.MolToImage(mol, size=(120, 120))
                     im = OffsetImage(img, zoom=0.45)
                     ab = AnnotationBbox(im, (x, y), frameon=False)
                     ax.add_artist(ab)
+                    ax.set_title(f"{series} | Core SAR", fontsize=10)
 
-                    # R-group label (TODO: get rid of this)
-                    ax.text(x, y + 0.25, node, ha="center", va="bottom",
+                    # label (use stored label, not node_id)
+                    ax.text(x, y + 0.25, data["label"],
+                            ha="center", va="bottom",
                             fontsize=8, fontweight="bold", color="#333333")
 
-                    # Potency
+                    # activity
                     if data["pAct"] is not None:
                         ax.text(x, y - 0.25, f"{data['pAct']:.2f}",
                                 ha="center", va="top", fontsize=8,
                                 color=cm.viridis(norm(data["pAct"])))
 
-            # Add potency colorbar
-            if pActs:
+                # Colorbar
                 sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
                 sm.set_array([])
                 cbar = fig.colorbar(sm, ax=ax, shrink=0.75, pad=0.03)
                 cbar.set_label("Mean pActivity")
 
-            core_hash = hashlib.sha1(core_frag.encode()).hexdigest()[:8]
-            plot_path = output_dir / f"rgroup_tree_{core_hash}.png"
-            fig.savefig(plot_path, dpi=300, bbox_inches="tight")
-            plt.close(fig)
-            logger.info(f"[RGroup SAR Tree] Saved: {plot_path}")
+                # Save
+                core_hash = hashlib.sha1(core_frag.encode()).hexdigest()[:8]
+                plot_path = series_dir / f"rgroup_tree_{core_hash}.png"
+                fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+                plt.close(fig)
+
+                logger.info(f"[RGroup SAR Tree] Saved: {plot_path}")
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logger.warning(f"[RGroup SAR Tree] Plot generation failed: {e}")
-
-
 
     return {"summary_csv": str(output_csv), "hierarchy_json": str(json_path)}
