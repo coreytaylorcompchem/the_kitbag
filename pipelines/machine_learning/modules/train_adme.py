@@ -171,24 +171,78 @@ def transform_labels(config, context):
 
         if "IC50" in col:
             df[col] = df[col].apply(
-                lambda x: ic50_to_pic50(x) if x > 0 else np.nan
+                lambda x: ic50_to_pic50(x) if pd.notna(x) and x > 0 else np.nan
             )
 
         elif col in ["LogP", "LogD"]:
-            # already log-scaled → leave as is
-            pass
+            # realistic ADME bounds
+            lower, upper = -5, 10
+
+            outlier_mask = (df[col] < lower) | (df[col] > upper)
+
+            n_outliers = outlier_mask.sum()
+
+            if n_outliers > 0:
+                logger.warning(
+                    f"{col}: removing {n_outliers} outliers outside [{lower}, {upper}]"
+                )
+            
+            df.loc[outlier_mask, col] = np.nan # removes the outliers
 
         elif col == "Solubility":
             # don't log transform LogS
             # TODO: automatically detect entirely negative data
             pass
+        
+        elif "Microsomal Stability" in col:
+            # Clint-specific handling
+
+            # Remove invalid values
+            valid_mask = df[col].notna()
+
+            invalid_mask = valid_mask & (
+                (df[col] <= 0) | (~np.isfinite(df[col]))
+            )
+
+            n_invalid = invalid_mask.sum()
+            if n_invalid > 0:
+                logger.warning(f"{col}: removing {n_invalid} invalid (<=0 or inf) values")
+
+            df.loc[invalid_mask, col] = np.nan
+
+            upper = df[col].quantile(0.99)
+            df.loc[df[col] > upper, col] = upper
+
+            # Log transform 
+            df.loc[df[col].notna(), col] = np.log(df.loc[df[col].notna(), col])
 
         else:
             df[col] = np.log1p(df[col])
 
-    context["task_names"] = label_cols
+    scalers = {}
 
+    for col in task_cols:
+        mask = df[col].notna()
+
+        if mask.sum() == 0:
+            continue
+
+        scaler = StandardScaler()
+
+        scaled = scaler.fit_transform(
+            df.loc[mask, col].values.reshape(-1, 1)
+        ).flatten()
+
+        df.loc[mask, col] = scaled
+
+        scalers[col] = scaler
+
+    # Save scalers for later use
+    context["label_scalers"] = scalers
+
+    context["task_names"] = label_cols
     context["dataframe"] = df
+
     return context
 
 # @register_task("compute_mtl_features", category="ADME", description="Compute global features and fingerprints for MTL")
