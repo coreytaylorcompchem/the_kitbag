@@ -23,6 +23,7 @@ def evaluate(context, config):
     if "y_pred" in context and "y_true" in context:
         y_pred = context["y_pred"]
         y_true = context["y_true"]
+
         logger.info("Using predictions from context")
 
     else:
@@ -40,6 +41,33 @@ def evaluate(context, config):
         y_true = np.squeeze(y_true, axis=1)
     if y_pred.ndim == 3:
         y_pred = np.squeeze(y_pred, axis=1)
+    
+    # =========================
+    # INVERSE TRANSFORM  ✅ ADD THIS
+    # =========================
+    scalers = context.get("label_scalers", None)
+
+    if scalers is not None:
+        logger.info("Applying inverse label scaling")
+
+        for i, task in enumerate(task_names):
+            scaler = scalers.get(task)
+
+            if scaler is None:
+                continue
+
+            mask = ~np.isnan(y_true[:, i])
+
+            if mask.sum() == 0:
+                continue
+
+            y_true[mask, i] = scaler.inverse_transform(
+                y_true[mask, i].reshape(-1, 1)
+            ).flatten()
+
+            y_pred[mask, i] = scaler.inverse_transform(
+                y_pred[mask, i].reshape(-1, 1)
+            ).flatten()
 
     n_tasks = y_true.shape[1]
 
