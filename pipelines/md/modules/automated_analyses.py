@@ -798,16 +798,22 @@ class InteractionFingerprintTask:
         if len(protein) == 0:
             raise ValueError("No atoms found for interaction partner selection.")
 
-        protein = self.u.select_atoms(self.protein_selection, ligand=ligand)
-        if len(protein) == 0:
-            raise ValueError(f"No atoms found for protein selection: {self.protein_selection}")
+        # protein = self.u.select_atoms(self.protein_selection, ligand=ligand)
+        # if len(protein) == 0:
+        #     raise ValueError(f"No atoms found for protein selection: {self.protein_selection}")
 
         # Prolif FP calculation
         logger.debug("Running ProLIF fingerprint calculation...")
         
         fp = plf.Fingerprint()
+
+        ligand.guess_bonds()
+        protein.guess_bonds()
+
         fp.run(self.u.trajectory[self.start:self.stop:self.step], ligand, protein)
         fp_df = fp.to_dataframe()
+        
+        logger.debug(fp_df.columns.get_level_values(2).unique()) #debug to check all interactions are being found
 
         out_data_path = os.path.join(self.output_dir, "fp_data.pkl")
         fp_df.to_pickle(out_data_path)
@@ -835,13 +841,19 @@ class InteractionFingerprintTask:
 
         # Convert MultiIndex df to integer array for plotting
         plot_data = fp_transposed.copy()
+
         for idx in plot_data.index:
             interaction_type = idx[2]  # i.e. third level of MultiIndex
+            color_mapper.get(interaction_type, 0)
             plot_data.loc[idx] = plot_data.loc[idx] * color_mapper.get(interaction_type, 0)
 
         plot_data_array = plot_data.values.astype(int)
 
-        cmap = ListedColormap([separated_interaction_colors.get(name, "white") for name in [None]+list(color_mapper.keys())])
+        interaction_order = [None] + list(separated_interaction_colors.keys())
+
+        cmap = ListedColormap(
+            ["white"] + [separated_interaction_colors[name] for name in separated_interaction_colors]
+        )
 
         sns.set(style="whitegrid", context="talk")
         fig, ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
@@ -860,8 +872,10 @@ class InteractionFingerprintTask:
         num_ticks = min(self.n_frame_ticks, len(frames)) 
         tick_indices = np.round(np.linspace(0, len(frames) - 1, num_ticks)).astype(int)
 
+        times_ns_int = np.round(times_ns).astype(int)
+
         ax.set_xticks(tick_indices)
-        ax.set_xticklabels([f"{times_ns[i]:.1f}" for i in tick_indices])
+        ax.set_xticklabels(times_ns_int[tick_indices])
         ax.set_xlabel("Simulation Time (ns)")
 
         # Format Y-axis

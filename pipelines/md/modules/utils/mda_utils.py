@@ -11,26 +11,12 @@ from matplotlib.colors import ListedColormap
 from prolif.plotting.utils import separated_interaction_colors
 
 def _get_color_mapper():
-
-    COLORS: ClassVar[Dict[Optional[str], str]] = {
-            None: "white",
-            **separated_interaction_colors,
-    }
-
-    color_mapper = {
-        interaction: value for value, interaction in enumerate(COLORS)
-    }
-    return color_mapper
+    interactions = [None] + list(separated_interaction_colors.keys())
+    return {name: i for i, name in enumerate(interactions)}
 
 def _get_inv_color_mapper():
-    
-    color_mapper = _get_color_mapper()
-    
-    inv_color_mapper = {
-                value: interaction for interaction, value in color_mapper.items()
-    }
-
-    return inv_color_mapper
+    cmap = _get_color_mapper()
+    return {v: k for k, v in cmap.items()}
 
 def _bit_to_color_value(s: pd.Series) -> pd.Series:
     """Replaces a bit value with it's corresponding color value"""
