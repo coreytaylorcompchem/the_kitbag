@@ -53,7 +53,8 @@ def per_task_mse(pred, target):
     return losses, counts
 
 def multitask_loss(pred, target, log_vars):
-    total_loss = 0.0
+    total_loss = torch.tensor(0.0, device=pred.device)
+    valid_task_count = 0
 
     for i in range(pred.shape[1]):
         mask = ~torch.isnan(target[:, i])
@@ -66,7 +67,11 @@ def multitask_loss(pred, target, log_vars):
         mse = F.mse_loss(pred_i, target_i)
 
         precision = torch.exp(-log_vars[i])
-        total_loss += precision * mse + log_vars[i]
+        total_loss = total_loss + (precision * mse + log_vars[i])
+        valid_task_count += 1
+
+    if valid_task_count == 0:
+        return torch.tensor(0.0, device=pred.device, requires_grad=True)
 
     return total_loss
 
