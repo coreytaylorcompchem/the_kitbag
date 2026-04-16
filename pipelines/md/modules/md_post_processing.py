@@ -6,6 +6,7 @@ from modules.automated_analyses import (
     RMSDAnalysisTask,
     RMSFAnalysisTask,
     InteractionFingerprintTask,
+    ProteinProteinInteractionFingerprintTask,
     ClusterAnalysisTask,
     FreeEnergyLandscapeTask,
     MSMAnalysisTask,
@@ -174,6 +175,25 @@ class MDPostProcessingWorkflow:
             )
             results["interactions"] = interactions_task.run()
         
+        if "protein_protein_interactions" in time_series:
+            logger.info("Next stage:: protein–protein interaction analysis...")
+
+            ppi_cfg = post_cfg.get("protein_protein_interactions", {})
+
+            task = ProteinProteinInteractionFingerprintTask(
+                topology=topology,
+                trajectory=wrapped_trajectories or trajectories,
+                receptor_chains=ppi_cfg.get("receptor_chains", ["A"]),
+                partner_chains=ppi_cfg.get("partner_chains", ["B"]),
+                frequency_cutoff=ppi_cfg.get("frequency_cutoff", 0.1),
+                start=start,
+                stop=stop,
+                step=step,
+                output_dir=os.path.join(output_dir, "protein_protein_interactions"),
+            )
+
+            results["protein_protein_interactions"] = task.run()
+            
         if "clusters" in time_series:
             logger.info("Next stage:: clustering analysis...")
             cluster_outdir = os.path.join(output_dir, "clusters")

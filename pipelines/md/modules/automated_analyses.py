@@ -909,6 +909,244 @@ class InteractionFingerprintTask:
         logger.info(f"Saved interaction barcode plot to {out_plot_path}")
 
         return {"fp_data": out_data_path, "fp_plot": out_plot_path}
+    
+@register_task(
+    "protein_protein_interaction_fingerprint",
+    category="Post-proc; traj analyses",
+    description="Compute protein–protein interaction fingerprints using ProLIF."
+)
+class ProteinProteinInteractionFingerprintTask:
+
+    def __init__(
+        self,
+        topology: str,
+        trajectory,
+        receptor_chains,
+        partner_chains,
+        start: int = 0,
+        stop: int = -1,
+        step: int = 1,
+        cutoff: float = 6.0,
+        frequency_cutoff: float = 0.1,
+        output_dir: str = "output_ppi",
+    ):
+        self.topology = topology
+        self.trajectory = trajectory
+        self.receptor_chains = receptor_chains
+        self.partner_chains = partner_chains
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.cutoff = cutoff
+        self.frequency_cutoff = frequency_cutoff
+        self.output_dir = output_dir
+
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def _chain_selection(self, chains):
+        return " or ".join([f"segid {c} or chainID {c}" for c in chains])
+
+    def run(self):
+        logger.info("Running protein–protein ProLIF analysis...")
+
+        # --------------------------------------------------
+        # Build selections
+        # --------------------------------------------------
+        receptor_sel = self._chain_selection(self.receptor_chains)
+        partner_sel = self._chain_selection(self.partner_chains)
+
+        receptor = self.u.select_atoms(receptor_sel)
+        partner = self.u.select_atoms(partner_sel)
+
+        if len(receptor) == 0:
+            raise ValueError(f"No atoms found for receptor chains {self.receptor_chains}")
+        if len(partner) == 0:
+            raise ValueError(f"No atoms found for partner chains {self.partner_chains}")
+
+        # Optional: restrict receptor to interface region
+        if self.cutoff:
+            receptor = self.u.select_atoms(
+                f"({receptor_sel}) and byres around {self.cutoff} group partner",
+                partner=partner
+            )
+
+        logger.debug(f"Receptor atoms: {len(receptor)}")
+        logger.debug(f"Partner atoms: {len(partner)}")
+
+        # --------------------------------------------------
+        # ProLIF setup
+        # --------------------------------------------------
+        receptor.guess_bonds()
+        partner.guess_bonds()
+
+        fp = plf.Fingerprint()
+
+        logger.info("Computing fingerprint...")
+        fp.run(
+            self.u.trajectory[self.start:self.stop:self.step],
+            partner,
+            receptor
+        )
+
+        fp_df = fp.to_dataframe()
+
+        frequency_cutoff = getattr(self, "frequency_cutoff", 0.1)
+
+        logger.info(f"Filtering interactions with frequency < {frequency_cutoff:.2f}")
+
+        # Compute frequency per interaction
+        interaction_freq = fp_df.mean(axis=0)
+
+        # Filter columns
+        mask = interaction_freq >= frequency_cutoff
+        filtered_fp_df = fp_df.loc[:, mask]
+
+        logger.info(
+            f"Retained {mask.sum()} / {len(mask)} interactions "
+            f"({mask.sum()/len(mask)*100:.1f}%)"
+        )
+
+        # Replace for downstream plotting
+        fp_df = filtered_fp_df
+
+        # Save raw data
+        out_data_path = os.path.join(self.output_dir, "ppi_fp.pkl")
+        fp_df.to_pickle(out_data_path)
+
+        logger.info(f"Saved fingerprint DataFrame to {out_data_path}")
+
+        # ==========================================================
+        # ✅ REUSE YOUR ORIGINAL BARCODE LOGIC (FULL FEATURED)
+        # ==========================================================
+
+        logger.info("Generating interaction barcode plot...")
+
+        # Time reconstruction (same as your ligand version)
+        times_ns = np.array([
+            ts.time / 1000.0
+            for ts in self.u.trajectory[self.start:self.stop:self.step]
+        ])
+
+        # Transpose like before
+        fp_transposed = fp_df.astype(np.uint8).T.apply(_bit_to_color_value, axis=1)
+
+        color_mapper = _get_color_mapper()
+        inv_color_mapper = _get_inv_color_mapper()
+
+        plot_data = fp_transposed.copy()
+
+        # Apply interaction-type coloring
+        for idx in plot_data.index:
+            interaction_type = idx[2]  # <-- THIS is key
+            plot_data.loc[idx] = plot_data.loc[idx] * color_mapper.get(interaction_type, 0)
+
+        plot_data_array = plot_data.values.astype(int)
+
+        cmap = ListedColormap(
+            ["white"] + [separated_interaction_colors[name] for name in separated_interaction_colors]
+        )
+
+        sns.set(style="whitegrid", context="talk")
+        n_rows = len(fp_transposed)
+
+        # Tune these
+        height_per_row = 0.25   # inches per interaction row
+        min_height = 6
+        max_height = 60         # prevent absurd figures
+
+        fig_height = min(max(n_rows * height_per_row, min_height), max_height)
+        fig_width = 14 if n_rows > 100 else 12
+
+        dpi = 200 if n_rows > 150 else 150
+
+        fig, ax = plt.subplots(1, 1, figsize=(fig_width, fig_height), dpi=dpi)
+
+        im = ax.imshow(
+            plot_data_array,
+            aspect="auto",
+            interpolation="none",
+            cmap=cmap,
+            vmin=0,
+            vmax=max(color_mapper.values()),
+        )
+
+        # ----------------------------------------------------------
+        # ✅ X axis (time)
+        # ----------------------------------------------------------
+        frames = fp_transposed.columns.astype(int)
+        num_ticks = min(10, len(frames))
+        tick_indices = np.round(np.linspace(0, len(frames) - 1, num_ticks)).astype(int)
+
+        times_ns_int = np.round(times_ns).astype(int)
+
+        ax.set_xticks(tick_indices)
+        ax.set_xticklabels(times_ns_int[tick_indices])
+        ax.set_xlabel("Simulation Time (ns)")
+
+        # ----------------------------------------------------------
+        # ✅ Y axis (RESIDUE PAIRS + INTERACTION TYPE)
+        # ----------------------------------------------------------
+        labels = [
+            f"{partner} → {receptor} ({interaction})"
+            for partner, receptor, interaction in fp_transposed.index
+        ]
+
+        ax.set_yticks(np.arange(len(labels)))
+        if n_rows > 200:
+            y_fontsize = 4
+        elif n_rows > 100:
+            y_fontsize = 6
+        else:
+            y_fontsize = 8
+
+        ax.set_yticklabels(labels, fontsize=y_fontsize)
+
+        # ----------------------------------------------------------
+        # ✅ Legend (same as before)
+        # ----------------------------------------------------------
+        unique_values = np.unique(plot_data_array)
+        unique_values = [v for v in unique_values if v != 0]
+
+        legend_colors = {
+            inv_color_mapper[v]: im.cmap(v)
+            for v in unique_values
+        }
+
+        patches = [
+            Patch(color=color, label=interaction)
+            for interaction, color in legend_colors.items()
+        ]
+
+        ax.legend(
+            handles=patches,
+            loc='upper center',
+            bbox_to_anchor=(0.5, -0.15),
+            ncol=3
+        )
+
+        # ----------------------------------------------------------
+        # ✅ Title
+        # ----------------------------------------------------------
+        ax.set_title(
+            f"Protein–protein interaction fingerprint\n"
+            f"Chains {self.partner_chains} (VHH) vs {self.receptor_chains} (GPCR)"
+        )
+
+        plt.tight_layout(rect=[0.15, 0.05, 1, 1])
+
+        out_plot_path = os.path.join(self.output_dir, "ppi_barcode.png")
+        plt.savefig(out_plot_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        logger.info(f"Saved interaction barcode plot to {out_plot_path}")
+
+        out_data = os.path.join(self.output_dir, "ppi_fp.pkl")
+        fp_df.to_pickle(out_data)
+
+        return {"fp_data": out_data, "fp_plot": out_plot_path}
+
 
 @register_task(
     "cluster_analysis",
