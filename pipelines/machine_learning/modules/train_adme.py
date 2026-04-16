@@ -7,6 +7,8 @@ from tqdm import tqdm
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from rdkit.Chem import Descriptors
+from rdkit.Chem import QED
 
 import torch
 from torch_geometric.loader import DataLoader
@@ -155,6 +157,210 @@ def load_smiles_dataset(config, context):
 
     return {"dataframe": df}
 
+@register_task("filter_druglike", category="ADME", description="Filter non drug-like molecules.")
+def filter_druglike(config, context):
+    df = context["dataframe"]
+
+    logger.info(f"Dataset size before drug-like filtering: {len(df)}")
+
+    keep_mask = []
+
+    # -------------------------
+    # DEBUG TRACKING
+    # -------------------------
+    fail_reasons = {
+        "mw": 0,
+        "logp": 0,
+        "tpsa": 0,
+        "hbd": 0,
+        "hba": 0,
+        "rot": 0,
+        "qed": 0,
+        "invalid": 0,
+    }
+
+    max_examples = config.get("debug_max_examples", 5)
+
+    fail_examples = {
+        "mw": [],
+        "logp": [],
+        "tpsa": [],
+        "hbd": [],
+        "hba": [],
+        "rot": [],
+        "qed": [],
+        "invalid": [],
+    }
+
+    # -------------------------
+    # DEBUG: ACTIVE FILTER CONFIGURATION
+    # -------------------------
+
+    # CONDITIONS (ADD TO YAML?)
+
+    mw_lower = 100
+    mw_upper = 700
+    logp_lower = -3
+    logp_upper = 7
+    tpsa_upper = 160
+    hbd_upper = 6
+    hba_upper = 12
+    rot_upper = 12
+    qed_lower = 0.35
+
+    logger.debug("=== Drug-likeness filter configuration ===")
+    logger.debug(f"MW:    {mw_lower} <= MW <= {mw_upper}")
+    logger.debug(f"LogP:  {logp_lower} <= LogP <= {logp_upper}")
+    logger.debug(f"TPSA:  TPSA <= {tpsa_upper}")
+    logger.debug(f"HBD:   HBD <= {hbd_upper}")
+    logger.debug(f"HBA:   HBA <= {hba_upper}")
+    logger.debug(f"ROT:   ROT <= {rot_upper}")
+    logger.debug(f"QED:   QED >= {qed_lower}")
+    logger.debug("==========================================")
+
+    # -------------------------
+    # LOOP
+    # -------------------------
+    for smi in tqdm(df["smiles"], desc="Filtering drug-like molecules"):
+        mol = Chem.MolFromSmiles(smi)
+
+        if mol is None:
+            fail_reasons["invalid"] += 1
+
+            if len(fail_examples["invalid"]) < max_examples:
+                fail_examples["invalid"].append({"smiles": smi})
+
+            keep_mask.append(False)
+            continue
+
+        mw = Descriptors.MolWt(mol)
+        logp = Descriptors.MolLogP(mol)
+        tpsa = Descriptors.TPSA(mol)
+        hbd = Descriptors.NumHDonors(mol)
+        hba = Descriptors.NumHAcceptors(mol)
+        rot = Descriptors.NumRotatableBonds(mol)
+        qed = QED.qed(mol)
+
+        # -------------------------
+        # CONDITIONS
+        # -------------------------
+        cond_mw = 100 <= mw <= 700
+        cond_logp = -3 <= logp <= 7
+        cond_tpsa = tpsa <= 160
+        cond_hbd = hbd <= 6
+        cond_hba = hba <= 12
+        cond_rot = rot <= 12
+        cond_qed = qed >= 0.35
+
+        # -------------------------
+        # DEBUG COUNTS + EXAMPLES
+        # -------------------------
+        def maybe_store(reason):
+            if len(fail_examples[reason]) < max_examples:
+                fail_examples[reason].append({
+                    "smiles": smi,
+                    "mw": mw,
+                    "logp": logp,
+                    "tpsa": tpsa,
+                    "hbd": hbd,
+                    "hba": hba,
+                    "rot": rot,
+                    "qed": qed,
+                })
+
+        if not cond_mw:
+            fail_reasons["mw"] += 1
+            maybe_store("mw")
+
+        if not cond_logp:
+            fail_reasons["logp"] += 1
+            maybe_store("logp")
+
+        if not cond_tpsa:
+            fail_reasons["tpsa"] += 1
+            maybe_store("tpsa")
+
+        if not cond_hbd:
+            fail_reasons["hbd"] += 1
+            maybe_store("hbd")
+
+        if not cond_hba:
+            fail_reasons["hba"] += 1
+            maybe_store("hba")
+
+        if not cond_rot:
+            fail_reasons["rot"] += 1
+            maybe_store("rot")
+
+        if not cond_qed:
+            fail_reasons["qed"] += 1
+            maybe_store("qed")
+
+        # -------------------------
+        # STRICT FILTER (for now)
+        # -------------------------
+        is_druglike = (
+            cond_mw and cond_logp and cond_tpsa and
+            cond_hbd and cond_hba and cond_rot and cond_qed
+        )
+
+        keep_mask.append(is_druglike)
+
+    keep_mask = np.array(keep_mask)
+
+    df_filtered = df[keep_mask].reset_index(drop=True)
+
+    removed = len(df) - len(df_filtered)
+    pct_removed = 100 * removed / len(df)
+
+    logger.info(f"Removed {removed} molecules ({pct_removed:.2f}%)")
+    logger.info(f"Dataset size after filtering: {len(df_filtered)}")
+
+    # -------------------------
+    # DEBUG BREAKDOWN
+    # -------------------------
+    logger.debug("Drug-like filtering breakdown:")
+    for k, v in fail_reasons.items():
+        logger.debug(f"  {k}: {v} outside filters")
+
+    # -------------------------
+    # PER-ENDPOINT RETENTION
+    # -------------------------
+    for col in context.get("task_names", []):
+        before = df[col].notna().sum()
+        after = df_filtered[col].notna().sum()
+
+        logger.info(
+            f"{col}: {before} → {after} retained "
+            f"({(after / before * 100) if before > 0 else 0:.1f}%)"
+        )
+    
+    # -------------------------
+    # DEBUG SHOW EXAMPLES OF FAILED MOLECULES PER DESCRIPTOR
+    # -------------------------
+    
+    logger.debug("Sample failed molecules per category:")
+
+    for reason, examples in fail_examples.items():
+        if not examples:
+            continue
+
+        logger.debug(f"\n--- {reason.upper()} (showing up to {max_examples}) ---")
+
+        for ex in examples:
+            if reason == "invalid":
+                logger.debug(f"SMILES: {ex['smiles']} (invalid)")
+            else:
+                logger.debug(
+                    f"SMILES: {ex['smiles']} | "
+                    f"MW={ex['mw']:.1f}, LogP={ex['logp']:.2f}, TPSA={ex['tpsa']:.1f}, "
+                    f"HBD={ex['hbd']}, HBA={ex['hba']}, ROT={ex['rot']}, QED={ex['qed']:.2f}"
+                )
+
+    context["dataframe"] = df_filtered
+
+    return {"dataframe": df_filtered}
+
 def ic50_to_pic50(x):
     return -np.log10(x * 1e-9)  # assume values are in nM
 
@@ -175,49 +381,42 @@ def transform_labels(config, context):
             )
 
         elif col in ["LogP", "LogD"]:
-            # realistic ADME bounds
             lower, upper = -5, 10
-
             outlier_mask = (df[col] < lower) | (df[col] > upper)
-
-            n_outliers = outlier_mask.sum()
-
-            if n_outliers > 0:
-                logger.warning(
-                    f"{col}: removing {n_outliers} outliers outside [{lower}, {upper}]"
-                )
-            
-            df.loc[outlier_mask, col] = np.nan # removes the outliers
+            df.loc[outlier_mask, col] = np.nan
 
         elif col == "Solubility":
-            # don't log transform LogS
-            # TODO: automatically detect entirely negative data
+            # already LogS → no transform
             pass
-        
+
         elif "Microsomal Stability" in col:
-            # Clint-specific handling
+            mask = df[col].notna()
 
-            # Remove invalid values
-            valid_mask = df[col].notna()
+            # remove invalid
+            df.loc[mask & (df[col] <= 0), col] = np.nan
 
-            invalid_mask = valid_mask & (
-                (df[col] <= 0) | (~np.isfinite(df[col]))
-            )
-
-            n_invalid = invalid_mask.sum()
-            if n_invalid > 0:
-                logger.warning(f"{col}: removing {n_invalid} invalid (<=0 or inf) values")
-
-            df.loc[invalid_mask, col] = np.nan
-
+            # clip extreme values
             upper = df[col].quantile(0.99)
             df.loc[df[col] > upper, col] = upper
 
-            # Log transform 
-            df.loc[df[col].notna(), col] = np.log(df.loc[df[col].notna(), col])
+            # safe log
+            mask = df[col].notna()
+            df.loc[mask, col] = np.log(np.clip(df.loc[mask, col], 1e-6, None))
 
         else:
-            df[col] = np.log1p(df[col])
+            mask = df[col].notna()
+
+            # remove invalid values before transform
+            invalid_mask = mask & (~np.isfinite(df[col]))
+            df.loc[invalid_mask, col] = np.nan
+
+            # critical fix: prevent log issues
+            too_small = mask & (df[col] <= -0.999999)
+            df.loc[too_small, col] = np.nan
+
+            # apply safe transform
+            mask = df[col].notna()
+            df.loc[mask, col] = np.log1p(df.loc[mask, col])
 
     scalers = {}
 

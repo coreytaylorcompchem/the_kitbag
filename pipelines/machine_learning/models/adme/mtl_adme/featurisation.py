@@ -21,7 +21,6 @@ from models.adme.utils.compute_fp import compute_morgan_fp
 GLOBAL_FEATURES = None
 FP_FEATURES = None
 
-
 # =========================
 # HELPERS
 # =========================
@@ -86,8 +85,12 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
     fps = [process_fp(s) for s in smiles_list]
     fps = np.array(fps, dtype=np.float32)
 
-    pca = PCA(n_components=512)
-    FP_FEATURES = normalize(pca.fit_transform(fps), axis=1)
+    # Remove PCA of fps for now
+    
+    # pca = PCA(n_components=512)
+    # FP_FEATURES = normalize(pca.fit_transform(fps), axis=1)
+
+    FP_FEATURES = normalize(fps, axis=1)
 
 
 # =========================
