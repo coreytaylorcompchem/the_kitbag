@@ -9,7 +9,6 @@ dependencies:
   - openmm
   - openmmforcefields
   - pdbfixer
-  - mdtraj
   - parmed
 
   # Amber / chemistry
