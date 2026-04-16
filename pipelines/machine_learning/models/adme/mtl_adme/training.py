@@ -179,13 +179,18 @@ def train(context, config):
         return "_".join(f"{k}={v}" for k, v in param_dict.items())
 
     # -------------------------
-    # SPLIT
+    # SPLIT # using random splits
     # -------------------------
-    train_list, val_list = train_test_split(
-        data_list,
-        test_size=config.get("val_fraction", 0.2),
-        random_state=config.get("random_seed", 42),
-    )
+    # train_list, val_list = train_test_split(
+    #     data_list,
+    #     test_size=config.get("val_fraction", 0.2),
+    #     random_state=config.get("random_seed", 42),
+    # )
+
+    # Use scaffold splits
+
+    train_list = context["train_loader"].dataset
+    val_list = context["val_loader"].dataset
 
     train_loader = DataLoader(
         train_list,

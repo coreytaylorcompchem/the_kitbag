@@ -18,7 +18,7 @@ class GINRegressor(nn.Module):
         self.input_proj = nn.Linear(input_dim, hidden_dim)
 
         # =========================
-        # TASK GROUPING (for grouping architecture)
+        # TASK GROUPING (for grouping architecture TODO: should probably add this to the yaml)
         # =========================
         self.task_groups = {
             "physchem": [0, 1, 2],

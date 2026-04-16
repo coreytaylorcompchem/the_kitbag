@@ -18,7 +18,7 @@ def evaluate(context, config):
     plot_dir.mkdir(parents=True, exist_ok=True)
 
     # -------------------------
-    # LOAD DATA (robust)
+    # LOAD DATA
     # -------------------------
     if "y_pred" in context and "y_true" in context:
         y_pred = context["y_pred"]
@@ -43,7 +43,7 @@ def evaluate(context, config):
         y_pred = np.squeeze(y_pred, axis=1)
     
     # =========================
-    # INVERSE TRANSFORM  ✅ ADD THIS
+    # INVERSE TRANSFORM
     # =========================
     scalers = context.get("label_scalers", None)
 
