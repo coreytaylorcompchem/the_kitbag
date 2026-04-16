@@ -43,3 +43,4 @@ dependencies:
       - prolif
       - packmol-memgen
       - mmpbsa-py
+      - dimorphite-dl

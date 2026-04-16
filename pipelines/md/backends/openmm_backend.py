@@ -28,6 +28,8 @@ import parmed as pmd
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
+from openbabel import openbabel as ob
+
 from pdbfixer import PDBFixer
 
 from backends.utils.orient_gpcr import align_to_opm_reference, orient_gpcr_with_ligand
@@ -576,12 +578,28 @@ class OpenMMBackend:
                 # We extract ligand coords from the PDB, create an Rdkit mol from SMILES and generate a chemically-correct conformer,
                 # Do HA MCS match between the two and keep the best one if > 1 match (RMSD), then a coordinate transfer for those outside the MCS.
 
-                # TODO: Generate pH 7.4 protomers.
+                # Generate pH 7.4 protomer with Obabel.
+                # Dimorphite gives more protomers but this is quick and easy
+                # TODO: use Dimorphite to generate multiple protomers of interest and then multiple systems?
+ 
+                obc = ob.OBConversion()
+                obc.SetInAndOutFormats('smi', 'smi')
+                
+                def get_smi_with_pH(smi, pH=7.4):
+                    obmol = ob.OBMol()
+                    obc.ReadString(obmol, smi)
+                    obmol.CorrectForPH(pH)
+                    return obc.WriteString(obmol)
 
                 smiles = ligand_cfg.get("smiles")
 
                 if smiles:
                     logger.info("SMILES provided → aligning via MCS + coordinate transfer")
+                    logger.info("Protonating ligand at pH 7.4")
+
+                    smiles = get_smi_with_pH(smiles, pH=ph)
+
+                    logger.info(f"Using protonated SMILES: {smiles}")
 
                     from rdkit.Chem import rdMolAlign, rdFMCS
 
