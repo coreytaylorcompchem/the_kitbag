@@ -4,10 +4,16 @@ from collections import defaultdict
 import random
 
 def generate_scaffold(smiles):
-    mol = Chem.MolFromSmiles(smiles)
+    mol = Chem.MolFromSmiles(smiles, sanitize=False)
     if mol is None:
         return None
-    return MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+
+    try:
+        Chem.SanitizeMol(mol)
+        Chem.RemoveStereochemistry(mol)
+        return MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+    except Exception:
+        return None
 
 
 def scaffold_split(graphs, smiles_list, val_fraction=0.2, seed=42):
@@ -17,6 +23,10 @@ def scaffold_split(graphs, smiles_list, val_fraction=0.2, seed=42):
 
     for i, smi in enumerate(smiles_list):
         scaffold = generate_scaffold(smi)
+        
+        if scaffold is None:
+            continue
+
         scaffold_to_indices[scaffold].append(i)
 
     # sort scaffolds by size (largest first)

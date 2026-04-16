@@ -529,6 +529,7 @@ def featurise_smiles(config, context):
         module.prepare_features(df, smiles_col=smiles_col)
 
     graphs = []
+    valid_indices = []
 
     # MULTI-TASK
     if label_cols is not None:
@@ -542,7 +543,10 @@ def featurise_smiles(config, context):
             g = featuriser(smi, label=y_vec, idx=i)
             if g is not None:
                 graphs.append(g)
+                valid_indices.append(i)
 
+        
+        context["valid_indices"] = valid_indices
         num_tasks = len(label_cols)
 
     # SINGLE-TASK (backward compatible)
@@ -581,7 +585,10 @@ def featurise_smiles(config, context):
 @register_task("split_data", category="ADME", description="Perform train/test/val splits.")
 def split_data(config, context):
     graphs = context["graphs"]
+    valid_indices = context["valid_indices"]
     smiles = context["dataframe"]["smiles"].tolist()
+    # only keep valid ones
+    smiles = [smiles[i] for i in valid_indices]
 
     test_size = config.get("val_size", 0.2)
     batch_size = config.get("batch_size", 32)
