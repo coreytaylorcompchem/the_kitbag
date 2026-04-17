@@ -2,6 +2,7 @@ import os
 import json
 import sys
 import platform
+import re
 
 from tqdm import tqdm
 
@@ -827,8 +828,6 @@ class MDWorkflow:
 
     @register_task("production", category='Molecular dynamics', description="Run production simulation.")
     def production(self):
-
-        import re
 
         def find_latest_checkpoint(output_dir):
             pattern = re.compile(r"restart_(\d+)\.chk")
