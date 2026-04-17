@@ -9,7 +9,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class GINRegressor(nn.Module):
     def __init__(self, input_dim, edge_dim, global_feat_dim, fp_dim, num_tasks,
-                 hidden_dim=512, fp_hidden_dim=512, num_layers=5, dropout=0.1):
+                 hidden_dim=512, fp_hidden_dim=512, num_layers=5, dropout=0.1, task_groups=None):
         super().__init__()
         self._debug_printed = False
         self.num_layers = num_layers
@@ -20,12 +20,10 @@ class GINRegressor(nn.Module):
         # =========================
         # TASK GROUPING (for grouping architecture TODO: should probably add this to the yaml)
         # =========================
-        self.task_groups = {
-            "physchem": [0, 1, 2],
-            "adme": [3, 4],
-            "cyp": [5, 6, 7, 8],
-            "tox": [9],
-        }
+        if task_groups is None:
+            raise ValueError("task_groups must be provided")
+
+        self.task_groups = task_groups
         # =========================
         # DEBUG: validate task grouping
         # =========================

@@ -81,6 +81,9 @@ def multitask_loss(pred, target, log_vars):
 # TRAIN / EVAL EPOCHS
 # =========================
 def train_epoch(model, loader, optimizer, device):
+
+    all_preds, all_labels = [], []
+
     model.train()
     total_loss = 0
 
@@ -118,9 +121,21 @@ def train_epoch(model, loader, optimizer, device):
         task_losses += losses
         task_counts += counts
 
-    task_mse = (task_losses / (task_counts + 1e-8)).detach().cpu().numpy()
+        all_preds.append(out.detach())
+        all_labels.append(target.detach())
 
-    return total_loss / len(loader), task_mse
+    task_mse = (task_losses / (task_counts + 1e-8))
+    task_rmse = torch.sqrt(task_mse).detach().cpu().numpy()
+
+    task_r2 = per_task_r2(torch.cat(all_preds), torch.cat(all_labels)).detach().cpu().numpy()
+
+    return (
+        total_loss / len(loader),
+        torch.cat(all_preds),
+        torch.cat(all_labels),
+        task_rmse,
+        task_r2
+    )
 
 
 def eval_epoch(model, loader, device):
@@ -174,7 +189,7 @@ def set_requires_grad(module, requires_grad):
     for p in module.parameters():
         p.requires_grad = requires_grad
 
-def apply_curriculum_freezing(model, stage_idx, curriculum_cfg):
+def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
     strategy = curriculum_cfg.get("strategy", "none")
 
     if strategy == "none":
@@ -207,14 +222,56 @@ def apply_curriculum_freezing(model, stage_idx, curriculum_cfg):
     for i in active_stages:
         stage = stages[i]
         group_name = stage["name"]
-        task_indices = stage["tasks"]
+        if isinstance(stage["tasks"][0], str):
+            task_indices = [
+                context["task_names"].index(t)
+                for t in stage["tasks"]
+            ]
+        else:
+            task_indices = stage["tasks"]
 
         set_requires_grad(model.group_trunks[group_name], True)
 
         for t in task_indices:
             set_requires_grad(model.heads[t], True)
 
-def train_curriculum(context, config):
+def filter_dataset_for_tasks(data_list, task_indices):
+    filtered = []
+
+    for data in data_list:
+        y = data.y
+
+        # Ensure shape is [num_tasks]
+        if y.dim() == 2:
+            y = y.squeeze(0)
+
+        if not torch.isnan(y[task_indices]).all():
+            filtered.append(data)
+
+    return filtered
+
+def per_task_r2(pred, target):
+    mask = ~torch.isnan(target)
+    num_tasks = target.shape[1]
+
+    r2 = torch.full((num_tasks,), float("nan"), device=pred.device)
+
+    for t in range(num_tasks):
+        m = mask[:, t]
+        if m.sum() > 1:
+            y_true = target[m, t]
+            y_pred = pred[m, t]
+
+            ss_res = torch.sum((y_true - y_pred) ** 2)
+            ss_tot = torch.sum((y_true - torch.mean(y_true)) ** 2)
+
+            if ss_tot > 0:
+                r2[t] = 1 - ss_res / ss_tot
+
+    return r2
+
+def train_curriculum(context, config, params):
+
     device = context["device"]
     ModelClass = context["model_class"]
     data_list = context["graphs"]
@@ -230,21 +287,7 @@ def train_curriculum(context, config):
         random_state=config.get("random_seed", 42),
     )
 
-    train_loader = DataLoader(
-        train_list,
-        batch_size=config["batch_size"],
-        shuffle=True,
-        collate_fn=custom_collate,
-    )
-
-    val_loader = DataLoader(
-        val_list,
-        batch_size=config["batch_size"],
-        shuffle=False,
-        collate_fn=custom_collate,
-    )
-
-    # Model init
+   # Model init
     sample = data_list[0]
 
     model = ModelClass(
@@ -253,51 +296,193 @@ def train_curriculum(context, config):
         global_feat_dim=sample.global_features.shape[-1],
         fp_dim=sample.fp.shape[-1],
         num_tasks=sample.y.shape[-1],
+        task_groups=context.get("task_groups"),
     ).to(device)
 
-    best_model = None
     best_loss = float("inf")
+    best_model_state = None  # ✅ FIX: store weights, not reference
 
     logger.info(f"Curriculum freezing strategy applied: {strategy}")
 
     for stage_idx, stage in enumerate(stages):
-        stage_tasks = stage["tasks"]
+        if isinstance(stage["tasks"][0], str):
+            stage_tasks = [
+                context["task_names"].index(t)
+                for t in stage["tasks"]
+            ]
+        else:
+            stage_tasks = stage["tasks"]
         stage_epochs = stage["epochs"]
+
+         # ✅ NEW: stage-specific dataset
+        stage_train_list = filter_dataset_for_tasks(train_list, stage_tasks)
+        # stage_val_list = filter_dataset_for_tasks(val_list, stage_tasks)
+        stage_val_list = val_list
+
+        if len(stage_train_list) == 0:
+            logger.warning(f"No data for stage {stage['name']}, skipping")
+            continue
+
+        train_loader = DataLoader(
+            stage_train_list,
+            batch_size=config["batch_size"],
+            shuffle=True,
+            collate_fn=custom_collate,
+        )
+
+        val_loader = DataLoader(
+            stage_val_list,
+            batch_size=config["batch_size"],
+            shuffle=False,
+            collate_fn=custom_collate,
+        )
+
+        # ✅ NEW: stage-specific params
+        stage_lr = stage.get("lr", params.get("lr", 1e-3))
+        patience = stage.get("patience", 10)
 
         logger.info(f"=== Curriculum stage: {stage['name']} | tasks={stage_tasks} ===")
 
-        apply_curriculum_freezing(model, stage_idx, curriculum_cfg)
+        # =========================
+        # NEW: history tracking
+        # =========================
+        train_losses = []
+        val_losses = []
+        train_task_hist = []
+        val_task_hist = []
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context)
+
+        if stage_idx == 0 or curriculum_cfg.get("reset_optimizer", True):
+            optimizer = torch.optim.Adam(
+                filter(lambda p: p.requires_grad, model.parameters()),
+                lr=stage_lr
+            )
+
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.5, patience=5, verbose=True
+        )
+
+        # ✅ NEW: early stopping state per stage
+        best_stage_loss = float("inf")
+        best_stage_state = None
+        counter = 0
 
         for epoch in range(stage_epochs):
-            model.train()
-            total_loss = 0
 
-            for batch in train_loader:
-                batch = batch.to(device)
-                optimizer.zero_grad()
+            # =========================
+            # TRAIN (reuse your function)
+            # =========================
+            train_loss, train_preds, train_labels, train_rmse, train_r2 = train_epoch(
+                model, train_loader, optimizer, device
+            )
 
-                out = model(batch)
-                target = batch.y.float()
+            # =========================
+            # MASK TRAIN RMSE TO STAGE TASKS ONLY
+            # =========================
+            train_rmse_stage = train_rmse.copy()
+            mask_arr = np.ones_like(train_rmse_stage, dtype=bool)
+            mask_arr[stage_tasks] = False
+            train_rmse_stage[mask_arr] = np.nan
 
-                # 👇 Mask tasks not in this stage
-                mask = torch.zeros_like(target, dtype=torch.bool)
-                mask[:, stage_tasks] = True
+            # =========================
+            # VALIDATION
+            # =========================
+            val_loss, val_preds, val_labels, val_mse = eval_epoch(model, val_loader, device)
 
-                masked_target = target.clone()
-                masked_target[~mask] = torch.nan
+            val_rmse = np.sqrt(val_mse)
 
-                loss = multitask_loss(out, masked_target, model.log_vars)
+            val_rmse_stage = val_rmse.copy()
+            mask_arr = np.ones_like(val_rmse_stage, dtype=bool)
+            mask_arr[stage_tasks] = False
+            val_rmse_stage[mask_arr] = np.nan
 
-                loss.backward()
-                optimizer.step()
+            val_r2 = per_task_r2(
+                val_preds.to(device),
+                val_labels.to(device)
+            ).detach().cpu().numpy()
 
-                total_loss += loss.item()
+            # =========================
+            # STORE HISTORY (NEW)
+            # =========================
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            train_task_hist.append(train_rmse_stage)
+            val_task_hist.append(val_rmse_stage)
 
-            logger.info(f"Stage {stage['name']} | Epoch {epoch} | Loss {total_loss:.4f}")
+            logger.info(
+                f"Stage {stage['name']} | Epoch {epoch} | "
+                f"Train Loss {train_loss:.4f} | Val Loss {val_loss:.4f}"
+            )
 
-        # validation per stage
+            logger.debug(f"Val RMSE: {np.round(val_rmse_stage, 3)}")
+            logger.debug(f"Val R2:   {np.round(val_r2, 3)}")
+
+            # =========================
+            # EARLY STOPPING (unchanged)
+            # =========================
+            if val_loss < best_stage_loss:
+                best_stage_loss = val_loss
+                best_stage_state = {
+                    k: v.detach().cpu() for k, v in model.state_dict().items()
+                }
+                counter = 0
+            else:
+                counter += 1
+
+            if counter >= patience:
+                logger.info(f"Early stopping in stage {stage['name']}")
+                break
+
+        # ✅ NEW: restore best weights for this stage
+        if best_stage_state is not None:
+            model.load_state_dict(best_stage_state)
+            model.to(device)
+        
+        # =========================
+        # PLOTTING (NEW)
+        # =========================
+        train_task_hist = np.array(train_task_hist)
+        val_task_hist = np.array(val_task_hist)
+
+        loss_curve_dir = Path(config.get("loss_curve_dir", "outputs/mtl_curriculum/loss_curves"))
+        loss_curve_dir.mkdir(parents=True, exist_ok=True)
+
+        stage_name = stage["name"]
+
+        # --- Overall loss ---
+        plt.figure()
+        plt.plot(train_losses, label="Train")
+        plt.plot(val_losses, label="Val")
+        plt.legend()
+        plt.title(f"Stage: {stage_name}")
+        plt.savefig(loss_curve_dir / f"overall_stage_{stage_name}.png", dpi=150)
+        plt.close()
+
+        # --- Per-task ---
+        n_tasks = train_task_hist.shape[1]
+        n_cols = 3
+        n_rows = int(np.ceil(n_tasks / n_cols))
+
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
+        axes = axes.flatten()
+
+        task_names = context.get("task_names", [f"task_{i}" for i in range(n_tasks)])
+
+        for i in range(n_tasks):
+            axes[i].plot(train_task_hist[:, i], label="Train")
+            axes[i].plot(val_task_hist[:, i], label="Val")
+            axes[i].set_title(task_names[i])
+            axes[i].legend()
+
+        for j in range(i + 1, len(axes)):
+            fig.delaxes(axes[j])
+
+        plt.tight_layout()
+        plt.savefig(loss_curve_dir / f"per_task_stage_{stage_name}.png", dpi=150)
+        plt.close()
+
+        # validation per stage (for saving preds + global best tracking)
         val_loss, val_preds, val_labels, _ = eval_epoch(model, val_loader, device)
 
         y_pred = val_preds.cpu().numpy()
@@ -307,7 +492,7 @@ def train_curriculum(context, config):
         context["y_pred"] = y_pred
         context["y_true"] = y_true
 
-        # Save to disk (fallback + consistency)
+        # Save to disk
         pred_dir = Path(config.get("predictions_dir", "outputs/mtl_adme/preds"))
         pred_dir.mkdir(parents=True, exist_ok=True)
 
@@ -316,12 +501,21 @@ def train_curriculum(context, config):
 
         logger.info(f"Saved predictions to {pred_dir}")
 
+        # ✅ FIX: store best model properly
         if val_loss < best_loss:
             best_loss = val_loss
-            best_model = model
+            best_model_state = {
+                k: v.detach().cpu() for k, v in model.state_dict().items()
+            }
+
+    # ✅ NEW: restore global best model
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+        model.to(device)
 
     return {
-        "model": best_model,
+        "model": model,
+        "params": params,
         "best_val_loss": best_loss,
         "y_pred": y_pred,
         "y_true": y_true,
@@ -337,7 +531,53 @@ def train(context, config):
     training_mode = config.get("training_mode", "multitask")
 
     if training_mode == "curriculum":
-        return train_curriculum(context, config)
+        # =========================
+        # ✅ ADD THIS BLOCK
+        # =========================
+        data_list = context["graphs"]
+        sample = data_list[0]
+        num_tasks = sample.y.shape[-1]
+
+        task_names = context.get("task_names", [f"task_{i}" for i in range(num_tasks)])
+
+        task_groups_cfg = config.get("task_groups", {})
+
+        if not task_groups_cfg:
+            raise ValueError("task_groups must be provided in config for curriculum mode")
+
+        task_groups = {}
+        for group, names in task_groups_cfg.items():
+            indices = [task_names.index(n) for n in names]
+            task_groups[group] = indices
+
+        context["task_groups"] = task_groups
+        context["task_names"] = task_names
+
+        logger.info(f"[Curriculum] Resolved task groups: {task_groups}")
+
+        # =========================
+        # existing code continues
+        # =========================
+
+        param_grid = config["param_grid"]
+        keys = list(param_grid.keys())
+
+        best_result = None
+        best_loss = float("inf")
+
+        for values in itertools.product(*param_grid.values()):
+            params = dict(zip(keys, values))
+
+            logger.info(f"\n[Curriculum] Training with params: {params}")
+
+            result = train_curriculum(context, config, params)
+
+            if result["best_val_loss"] < best_loss:
+                best_loss = result["best_val_loss"]
+                best_result = result
+                best_result["best_params"] = params
+
+        return best_result
     data_list = context["graphs"]
     device = context["device"]
     ModelClass = context["model_class"]
@@ -386,7 +626,34 @@ def train(context, config):
     fp_dim = sample.fp.shape[-1]
     num_tasks = sample.y.shape[-1]
 
-    task_names = context.get("task_names", [f"Task {i}" for i in range(num_tasks)])
+    task_names = context.get("task_names", [f"task_{i}" for i in range(num_tasks)])
+
+    task_groups_cfg = config.get("task_groups", {})
+
+    task_groups = {}
+    for group, names in task_groups_cfg.items():
+        indices = [task_names.index(n) for n in names]
+        task_groups[group] = indices
+
+    context["task_groups"] = task_groups
+
+    logger.info(f"Resolved task groups: {task_groups}")
+
+    # if context.get("task_names"):
+    #     task_names = context["task_names"]
+
+    #     rmse_str = ", ".join(
+    #         f"{name}: {rmse:.3f}" if not np.isnan(rmse) else f"{name}: nan"
+    #         for name, rmse in zip(task_names, val_rmse)
+    #     )
+
+    #     r2_str = ", ".join(
+    #         f"{name}: {r2:.3f}" if not np.isnan(r2) else f"{name}: nan"
+    #         for name, r2 in zip(task_names, val_r2)
+    #     )
+
+    #     logger.info(f"  Val RMSE → {rmse_str}")
+    #     logger.info(f"  Val R2   → {r2_str}")
 
     # -------------------------
     # OUTPUT DIRS
@@ -419,8 +686,8 @@ def train(context, config):
             global_feat_dim=global_feat_dim,
             fp_dim=fp_dim,
             num_tasks=num_tasks,
-            **{k: v for k, v in params.items() if k != "lr"}  # pass all model params
-        ).to(device)
+            task_groups=context.get("task_groups"),
+            **{k: v for k, v in params.items() if k != "lr"}).to(device)
 
         optimizer = torch.optim.Adam(
             model.parameters(),
@@ -448,15 +715,17 @@ def train(context, config):
             config.get("max_epochs", 200),
             desc=str(params),
         ):
-            train_loss, train_task = train_epoch(model, train_loader, optimizer, device)
+            train_loss, _, _, train_task_rmse, train_task_r2 = train_epoch(model, train_loader, optimizer, device)
 
-            val_loss, _, _, val_task = eval_epoch(model, val_loader, device)
+            val_loss, val_preds, val_labels, val_mse = eval_epoch(model, val_loader, device)
+            val_task_rmse = np.sqrt(val_mse)
+            scheduler.step(val_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
 
-            train_task_hist.append(train_task)
-            val_task_hist.append(val_task)
+            train_task_hist.append(train_task_rmse)
+            val_task_hist.append(val_task_rmse)
 
             scheduler.step(val_loss)
 
