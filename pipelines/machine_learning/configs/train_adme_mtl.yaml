@@ -11,8 +11,8 @@ workflow:
   - evaluate_adme_model
 
 load_smiles_dataset:
-  # csv_path: inputs/chembl_mtl_dataset.csv
-  csv_path: inputs/2026-04-15_chembl_mtl_dataset_1k.csv
+  csv_path: inputs/chembl_mtl_dataset.csv
+  # csv_path: inputs/2026-04-15_chembl_mtl_dataset_10k.csv
   ### options for sampling, if you need them
   # sampling: 
   #   sample_type: balanced | quantil
@@ -30,8 +30,8 @@ transform_labels:
     - Microsomal Stability_Human_mean
     - CYP3A4_IC50_mean
     - CYP2D6_IC50_mean
-    - CYP2C9_IC50_mean
-    - CYP1A2_IC50_mean
+    # - CYP2C9_IC50_mean
+    # - CYP1A2_IC50_mean
     - hERG_IC50_mean
   outlier_bounds:
     LogP: [-5, 10]
@@ -50,8 +50,8 @@ featurise_smiles:
     - Microsomal Stability_Human_mean
     - CYP3A4_IC50_mean
     - CYP2D6_IC50_mean
-    - CYP2C9_IC50_mean
-    - CYP1A2_IC50_mean
+    # - CYP2C9_IC50_mean
+    # - CYP1A2_IC50_mean
     - hERG_IC50_mean
 
 split_data:
@@ -63,8 +63,13 @@ load_adme_model_spec:
   class: GINRegressor
 
 train_adme_model:
-  device: cpu  # or 'cpu' to override
-  training_mode: multitask   # multitask | curriculum
+  device: cuda:0  # cuda:0 | cpu
+  training_mode: curriculum   # multitask | curriculum
+  task_groups:
+    physchem: [Solubility, LogP, LogD]
+    adme: [Caco-2_AB_mean, Microsomal Stability_Human_mean]
+    cyp: [CYP3A4_IC50_mean, CYP2D6_IC50_mean]
+    tox: [hERG_IC50_mean]
   trainer:
     module: models.adme.mtl_adme.training
     function: train
@@ -72,17 +77,17 @@ train_adme_model:
     strategy: progressive_unfreeze   # options: none | freeze_previous | progressive_unfreeze
     stages:
       - name: physchem
-        tasks: [0, 1, 2]
-        epochs: 20
+        tasks: [Solubility, LogP, LogD]
+        epochs: 80
       - name: adme
-        tasks: [3, 4]
-        epochs: 20
+        tasks: [Caco-2_AB_mean, Microsomal Stability_Human_mean]
+        epochs: 60
       - name: cyp
-        tasks: [5, 6, 7, 8]
-        epochs: 30
+        tasks: [CYP3A4_IC50_mean, CYP2D6_IC50_mean]
+        epochs: 80
       - name: tox
-        tasks: [9]
-        epochs: 30
+        tasks: [hERG_IC50_mean]
+        epochs: 60
     freeze_shared: false
     reset_optimizer: true
   batch_size: 32
@@ -107,14 +112,14 @@ train_adme_model:
   predictions_dir: outputs/mtl_adme/preds
 
   param_grid:
-    # lr: [0.001, 0.0005, 0.0001]
-    # hidden_dim: [128, 256, 512]
-    # num_layers: [4, 5]
-    # dropout: [0.1, 0.2]
-    lr: [0.0001]
-    hidden_dim: [512]
-    num_layers: [5]
-    dropout: [0.2]
+    lr: [0.001, 0.0005, 0.0001]
+    hidden_dim: [128, 256, 512]
+    num_layers: [4, 5]
+    dropout: [0.1, 0.2]
+    # lr: [0.001]
+    # hidden_dim: [512]
+    # num_layers: [4]
+    # dropout: [0.1]
 
 evaluate_adme_model:
   evaluator:

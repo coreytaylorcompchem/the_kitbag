@@ -336,7 +336,7 @@ def filter_druglike(config, context):
         )
     
     # -------------------------
-    # DEBUG SHOW EXAMPLES OF FAILED MOLECULES PER DESCRIPTOR
+    # DEBUG: SHOW EXAMPLES OF FAILED MOLECULES PER DESCRIPTOR
     # -------------------------
     
     logger.debug("Sample failed molecules per category:")
@@ -606,11 +606,8 @@ def evaluate_model(config, context):
         module_path = eval_cfg["module"]
         function_name = eval_cfg["function"]
 
-    # Import evaluation function dynamically
     module = importlib.import_module(module_path)
     eval_fn = getattr(module, function_name)
-
-    # Call the evaluation function with context and config
     result = eval_fn(context=context, config=config)
 
     # Update context with any results returned by the evaluation function

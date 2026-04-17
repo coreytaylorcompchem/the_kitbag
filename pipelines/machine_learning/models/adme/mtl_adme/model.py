@@ -84,17 +84,6 @@ class GINRegressor(nn.Module):
         self.global_gate = nn.Parameter(torch.zeros(hidden_dim))
 
         # =========================
-        # Shared trunk
-        # =========================
-        # final_dim = hidden_dim + fp_hidden_dim + hidden_dim
-
-        # self.shared = nn.Sequential(
-        #     nn.Linear(final_dim, 512),
-        #     nn.ReLU(),
-        #     nn.Dropout(dropout)
-        # )
-
-        # =========================
         # SHARED TRUNK
         # =========================
 

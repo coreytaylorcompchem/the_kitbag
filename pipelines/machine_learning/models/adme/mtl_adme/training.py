@@ -300,7 +300,7 @@ def train_curriculum(context, config, params):
     ).to(device)
 
     best_loss = float("inf")
-    best_model_state = None  # ✅ FIX: store weights, not reference
+    best_model_state = None 
 
     logger.info(f"Curriculum freezing strategy applied: {strategy}")
 
@@ -314,7 +314,7 @@ def train_curriculum(context, config, params):
             stage_tasks = stage["tasks"]
         stage_epochs = stage["epochs"]
 
-         # ✅ NEW: stage-specific dataset
+         # Stage-specific dataset
         stage_train_list = filter_dataset_for_tasks(train_list, stage_tasks)
         # stage_val_list = filter_dataset_for_tasks(val_list, stage_tasks)
         stage_val_list = val_list
@@ -337,15 +337,13 @@ def train_curriculum(context, config, params):
             collate_fn=custom_collate,
         )
 
-        # ✅ NEW: stage-specific params
+        # Stage-specific params
         stage_lr = stage.get("lr", params.get("lr", 1e-3))
         patience = stage.get("patience", 10)
 
         logger.info(f"=== Curriculum stage: {stage['name']} | tasks={stage_tasks} ===")
 
-        # =========================
-        # NEW: history tracking
-        # =========================
+        # History tracking
         train_losses = []
         val_losses = []
         train_task_hist = []
@@ -363,7 +361,7 @@ def train_curriculum(context, config, params):
             optimizer, mode="min", factor=0.5, patience=5, verbose=True
         )
 
-        # ✅ NEW: early stopping state per stage
+        # Per-stage early stopping
         best_stage_loss = float("inf")
         best_stage_state = None
         counter = 0
@@ -371,7 +369,7 @@ def train_curriculum(context, config, params):
         for epoch in range(stage_epochs):
 
             # =========================
-            # TRAIN (reuse your function)
+            # TRAIN
             # =========================
             train_loss, train_preds, train_labels, train_rmse, train_r2 = train_epoch(
                 model, train_loader, optimizer, device
@@ -419,7 +417,7 @@ def train_curriculum(context, config, params):
             logger.debug(f"Val R2:   {np.round(val_r2, 3)}")
 
             # =========================
-            # EARLY STOPPING (unchanged)
+            # EARLY STOPPING
             # =========================
             if val_loss < best_stage_loss:
                 best_stage_loss = val_loss
@@ -434,13 +432,13 @@ def train_curriculum(context, config, params):
                 logger.info(f"Early stopping in stage {stage['name']}")
                 break
 
-        # ✅ NEW: restore best weights for this stage
+        # Restore best weights for this stage
         if best_stage_state is not None:
             model.load_state_dict(best_stage_state)
             model.to(device)
         
         # =========================
-        # PLOTTING (NEW)
+        # PLOTTING
         # =========================
         train_task_hist = np.array(train_task_hist)
         val_task_hist = np.array(val_task_hist)
@@ -450,7 +448,7 @@ def train_curriculum(context, config, params):
 
         stage_name = stage["name"]
 
-        # --- Overall loss ---
+        # Overall loss
         plt.figure()
         plt.plot(train_losses, label="Train")
         plt.plot(val_losses, label="Val")
@@ -459,7 +457,7 @@ def train_curriculum(context, config, params):
         plt.savefig(loss_curve_dir / f"overall_stage_{stage_name}.png", dpi=150)
         plt.close()
 
-        # --- Per-task ---
+        # Per-task
         n_tasks = train_task_hist.shape[1]
         n_cols = 3
         n_rows = int(np.ceil(n_tasks / n_cols))
@@ -501,14 +499,14 @@ def train_curriculum(context, config, params):
 
         logger.info(f"Saved predictions to {pred_dir}")
 
-        # ✅ FIX: store best model properly
+        # Store best model
         if val_loss < best_loss:
             best_loss = val_loss
             best_model_state = {
                 k: v.detach().cpu() for k, v in model.state_dict().items()
             }
 
-    # ✅ NEW: restore global best model
+    # Restore global best model
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
         model.to(device)
@@ -531,9 +529,7 @@ def train(context, config):
     training_mode = config.get("training_mode", "multitask")
 
     if training_mode == "curriculum":
-        # =========================
-        # ✅ ADD THIS BLOCK
-        # =========================
+
         data_list = context["graphs"]
         sample = data_list[0]
         num_tasks = sample.y.shape[-1]
@@ -554,10 +550,6 @@ def train(context, config):
         context["task_names"] = task_names
 
         logger.info(f"[Curriculum] Resolved task groups: {task_groups}")
-
-        # =========================
-        # existing code continues
-        # =========================
 
         param_grid = config["param_grid"]
         keys = list(param_grid.keys())
@@ -596,7 +588,7 @@ def train(context, config):
         random_state=config.get("random_seed", 42),
     )
 
-    # Use scaffold splits
+    # Use scaffold splits TODO: add this choice to yaml
 
     # train_list = context["train_loader"].dataset
     # val_list = context["val_loader"].dataset
@@ -639,25 +631,7 @@ def train(context, config):
 
     logger.info(f"Resolved task groups: {task_groups}")
 
-    # if context.get("task_names"):
-    #     task_names = context["task_names"]
-
-    #     rmse_str = ", ".join(
-    #         f"{name}: {rmse:.3f}" if not np.isnan(rmse) else f"{name}: nan"
-    #         for name, rmse in zip(task_names, val_rmse)
-    #     )
-
-    #     r2_str = ", ".join(
-    #         f"{name}: {r2:.3f}" if not np.isnan(r2) else f"{name}: nan"
-    #         for name, r2 in zip(task_names, val_r2)
-    #     )
-
-    #     logger.info(f"  Val RMSE → {rmse_str}")
-    #     logger.info(f"  Val R2   → {r2_str}")
-
-    # -------------------------
     # OUTPUT DIRS
-    # -------------------------
     loss_curve_dir = Path(config.get("loss_curve_dir", "outputs/mtl/loss_curves"))
     loss_curve_dir.mkdir(parents=True, exist_ok=True)
 
