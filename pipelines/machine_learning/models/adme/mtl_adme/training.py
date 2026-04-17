@@ -297,8 +297,24 @@ def train_curriculum(context, config):
 
             logger.info(f"Stage {stage['name']} | Epoch {epoch} | Loss {total_loss:.4f}")
 
-        # Optional validation per stage
-        val_loss, _, _, _ = eval_epoch(model, val_loader, device)
+        # validation per stage
+        val_loss, val_preds, val_labels, _ = eval_epoch(model, val_loader, device)
+
+        y_pred = val_preds.cpu().numpy()
+        y_true = val_labels.cpu().numpy()
+
+        # Save to context
+        context["y_pred"] = y_pred
+        context["y_true"] = y_true
+
+        # Save to disk (fallback + consistency)
+        pred_dir = Path(config.get("predictions_dir", "outputs/mtl_adme/preds"))
+        pred_dir.mkdir(parents=True, exist_ok=True)
+
+        np.save(pred_dir / "y_pred.npy", y_pred)
+        np.save(pred_dir / "y_true.npy", y_true)
+
+        logger.info(f"Saved predictions to {pred_dir}")
 
         if val_loss < best_loss:
             best_loss = val_loss
@@ -307,6 +323,10 @@ def train_curriculum(context, config):
     return {
         "model": best_model,
         "best_val_loss": best_loss,
+        "y_pred": y_pred,
+        "y_true": y_true,
+        "task_names": context.get("task_names"),
+        "predictions_dir": str(pred_dir),
     }
 
 # =========================
