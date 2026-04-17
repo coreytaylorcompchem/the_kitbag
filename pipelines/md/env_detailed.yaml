@@ -9,7 +9,6 @@ dependencies:
   - openmm
   - openmmforcefields
   - pdbfixer
-  - mdtraj
   - parmed
 
   # Amber / chemistry
@@ -43,3 +42,4 @@ dependencies:
       - prolif
       - packmol-memgen
       - mmpbsa-py
+      - dimorphite-dl
