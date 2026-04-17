@@ -66,8 +66,10 @@ def multitask_loss(pred, target, log_vars):
 
         mse = F.mse_loss(pred_i, target_i)
 
-        precision = torch.exp(-log_vars[i])
-        total_loss = total_loss + (precision * mse + log_vars[i])
+        log_var = torch.clamp(log_vars[i], min=-5.0, max=5.0)
+        precision = torch.exp(-log_var)
+        total_loss = total_loss + (precision * mse + log_var)
+        # total_loss = total_loss + (precision * mse + log_vars[i])
         valid_task_count += 1
 
     if valid_task_count == 0:
@@ -168,12 +170,154 @@ def eval_epoch(model, loader, device):
         task_mse
     )
 
+def set_requires_grad(module, requires_grad):
+    for p in module.parameters():
+        p.requires_grad = requires_grad
+
+def apply_curriculum_freezing(model, stage_idx, curriculum_cfg):
+    strategy = curriculum_cfg.get("strategy", "none")
+
+    if strategy == "none":
+        return
+
+    # First freeze everything
+    for p in model.parameters():
+        p.requires_grad = False
+
+    # Always allow shared trunk + backbone
+    set_requires_grad(model.input_proj, True)
+    set_requires_grad(model.convs, True)
+    set_requires_grad(model.norms, True)
+    set_requires_grad(model.shared, True)
+    set_requires_grad(model.fp_mlp, True)
+    set_requires_grad(model.global_proj, True)
+
+    stages = curriculum_cfg["stages"]
+
+    if strategy == "freeze_previous":
+        active_stages = [stage_idx]
+
+    elif strategy == "progressive_unfreeze":
+        active_stages = list(range(stage_idx + 1))
+
+    else:
+        raise ValueError(f"Unknown curriculum strategy: {strategy}")
+
+    # Enable group trunks + heads for active stages
+    for i in active_stages:
+        stage = stages[i]
+        group_name = stage["name"]
+        task_indices = stage["tasks"]
+
+        set_requires_grad(model.group_trunks[group_name], True)
+
+        for t in task_indices:
+            set_requires_grad(model.heads[t], True)
+
+def train_curriculum(context, config):
+    device = context["device"]
+    ModelClass = context["model_class"]
+    data_list = context["graphs"]
+
+    curriculum_cfg = config["curriculum"]
+    stages = curriculum_cfg["stages"]
+    strategy = curriculum_cfg.get("strategy", "none")
+
+    # Dataloaders
+    train_list, val_list = train_test_split(
+        data_list,
+        test_size=config.get("val_fraction", 0.2),
+        random_state=config.get("random_seed", 42),
+    )
+
+    train_loader = DataLoader(
+        train_list,
+        batch_size=config["batch_size"],
+        shuffle=True,
+        collate_fn=custom_collate,
+    )
+
+    val_loader = DataLoader(
+        val_list,
+        batch_size=config["batch_size"],
+        shuffle=False,
+        collate_fn=custom_collate,
+    )
+
+    # Model init
+    sample = data_list[0]
+
+    model = ModelClass(
+        input_dim=sample.x.shape[1],
+        edge_dim=sample.edge_attr.shape[1],
+        global_feat_dim=sample.global_features.shape[-1],
+        fp_dim=sample.fp.shape[-1],
+        num_tasks=sample.y.shape[-1],
+    ).to(device)
+
+    best_model = None
+    best_loss = float("inf")
+
+    logger.info(f"Curriculum freezing strategy applied: {strategy}")
+
+    for stage_idx, stage in enumerate(stages):
+        stage_tasks = stage["tasks"]
+        stage_epochs = stage["epochs"]
+
+        logger.info(f"=== Curriculum stage: {stage['name']} | tasks={stage_tasks} ===")
+
+        apply_curriculum_freezing(model, stage_idx, curriculum_cfg)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+        for epoch in range(stage_epochs):
+            model.train()
+            total_loss = 0
+
+            for batch in train_loader:
+                batch = batch.to(device)
+                optimizer.zero_grad()
+
+                out = model(batch)
+                target = batch.y.float()
+
+                # 👇 Mask tasks not in this stage
+                mask = torch.zeros_like(target, dtype=torch.bool)
+                mask[:, stage_tasks] = True
+
+                masked_target = target.clone()
+                masked_target[~mask] = torch.nan
+
+                loss = multitask_loss(out, masked_target, model.log_vars)
+
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+
+            logger.info(f"Stage {stage['name']} | Epoch {epoch} | Loss {total_loss:.4f}")
+
+        # Optional validation per stage
+        val_loss, _, _, _ = eval_epoch(model, val_loader, device)
+
+        if val_loss < best_loss:
+            best_loss = val_loss
+            best_model = model
+
+    return {
+        "model": best_model,
+        "best_val_loss": best_loss,
+    }
 
 # =========================
 # MAIN TRAIN FUNCTION (PIPELINE ENTRY)
 # =========================
 
 def train(context, config):
+    training_mode = config.get("training_mode", "multitask")
+
+    if training_mode == "curriculum":
+        return train_curriculum(context, config)
     data_list = context["graphs"]
     device = context["device"]
     ModelClass = context["model_class"]
@@ -186,16 +330,16 @@ def train(context, config):
     # -------------------------
     # SPLIT # using random splits
     # -------------------------
-    # train_list, val_list = train_test_split(
-    #     data_list,
-    #     test_size=config.get("val_fraction", 0.2),
-    #     random_state=config.get("random_seed", 42),
-    # )
+    train_list, val_list = train_test_split(
+        data_list,
+        test_size=config.get("val_fraction", 0.2),
+        random_state=config.get("random_seed", 42),
+    )
 
     # Use scaffold splits
 
-    train_list = context["train_loader"].dataset
-    val_list = context["val_loader"].dataset
+    # train_list = context["train_loader"].dataset
+    # val_list = context["val_loader"].dataset
 
     train_loader = DataLoader(
         train_list,
@@ -359,6 +503,9 @@ def train(context, config):
 
         y_pred = val_preds.cpu().numpy()
         y_true = val_labels.cpu().numpy()
+
+        context["y_pred"] = y_pred
+        context["y_true"] = y_true
 
         pred_dir = Path(config.get("predictions_dir", "outputs/mtl_adme/preds"))
         pred_dir.mkdir(parents=True, exist_ok=True)

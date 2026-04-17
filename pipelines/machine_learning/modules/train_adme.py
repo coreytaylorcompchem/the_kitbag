@@ -444,69 +444,6 @@ def transform_labels(config, context):
 
     return context
 
-# @register_task("compute_mtl_features", category="ADME", description="Compute global features and fingerprints for MTL")
-# def compute_mtl_features(config, context):
-#     df = context["dataframe"]
-#     smiles_list = df["smiles"].tolist()
-
-#     # =============================
-#     # 1. GLOBAL FEATURES
-#     # =============================
-#     from models.adme.mtl_adme.featurisation import process_single_mol
-
-#     inputs = list(enumerate(smiles_list))
-
-#     global_feats = Parallel(n_jobs=config.get("n_jobs", -1))(
-#         delayed(process_single_mol)((i, smi))
-#         for i, smi in tqdm(inputs, desc="Global features")
-#     )
-
-#     global_feats = np.array(global_feats, dtype=np.float32)
-
-#     scaler = StandardScaler()
-#     scaled_global_feats = scaler.fit_transform(global_feats)
-
-#     # =============================
-#     # 2. FINGERPRINTS + PCA
-#     # =============================
-#     from models.adme.mtl_adme.featurisation import compute_morgan_fp
-
-#     all_fps = []
-
-#     for smi in tqdm(smiles_list, desc="Fingerprints"):
-#         mol = Chem.MolFromSmiles(smi)
-#         if mol is None:
-#             all_fps.append(np.zeros(1024, dtype=np.float32))
-#             continue
-
-#         fp_ecfp = compute_morgan_fp(mol, n_bits=512)
-#         fp_torsion = np.array(
-#             AllChem.GetHashedTopologicalTorsionFingerprintAsBitVect(mol, nBits=512)
-#         )
-
-#         fp = np.concatenate([fp_ecfp, fp_torsion])
-#         all_fps.append(fp)
-
-#     all_fps = np.array(all_fps, dtype=np.float32)
-
-#     # PCA → 512 dims (same as notebook)
-#     pca = PCA(n_components=512)
-#     fps_pca = pca.fit_transform(all_fps)
-
-#     # Normalize
-#     fps_pca = normalize(fps_pca, norm="l2", axis=1)
-
-#     # =============================
-#     # Save to context
-#     # =============================
-#     context["scaled_global_feats"] = scaled_global_feats
-#     context["fps_pca"] = fps_pca
-
-#     return {
-#         "scaled_global_feats": scaled_global_feats,
-#         "fps_pca": fps_pca
-#     }
-
 @register_task("featurise_smiles", category="ADME", description="Featurise SMILES for graph-based models.")
 def featurise_smiles(config, context):
     df = context["dataframe"]
