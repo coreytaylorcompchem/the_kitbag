@@ -1,6 +1,6 @@
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 import numpy as np
 import MDAnalysis as mda
@@ -34,23 +34,23 @@ class ComponentDetector:
         }
 
         # Debug: list all detected chains
-        logger.info("[ComponentDetector] Detected protein chains:")
+        logger.debug("[ComponentDetector] Detected protein chains:")
         for seg, ag in chain_groups.items():
-            logger.info(f"  - segid {seg}: {len(ag.atoms)} atoms, {len(ag.residues)} residues")
+            logger.debug(f"  - segid {seg}: {len(ag.atoms)} atoms, {len(ag.residues)} residues")
 
         # Sort chains by size (number of atoms)
         sorted_chains = sorted(chain_groups.items(), key=lambda x: len(x[1]), reverse=True)
 
-        logger.info("[ComponentDetector] Chains sorted by size:")
+        logger.debug("[ComponentDetector] Chains sorted by size:")
         for i, (seg, ag) in enumerate(sorted_chains):
-            logger.info(f"  {i+1}. segid {seg}: {len(ag.residues)} residues")
+            logger.debug(f"  {i+1}. segid {seg}: {len(ag.residues)} residues")
 
         # Start with all chains as receptor candidates
         receptor_chains = [ag for _, ag in sorted_chains]
 
         partner = None
 
-        logger.info("[ComponentDetector] Evaluating partner candidate:")
+        logger.debug("[ComponentDetector] Evaluating partner candidate:")
 
         if len(sorted_chains) > 1:
             seg_second, second = sorted_chains[1]
@@ -60,17 +60,17 @@ class ComponentDetector:
 
             ratio = n_res_second / n_res_receptor
 
-            logger.info(f"  Candidate segid {seg_second}")
-            logger.info(f"    residues: {n_res_second}")
-            logger.info(f"    ratio to receptor: {ratio:.3f}")
+            logger.debug(f"  Candidate segid {seg_second}")
+            logger.debug(f"    residues: {n_res_second}")
+            logger.debug(f"    ratio to receptor: {ratio:.3f}")
 
             is_vhh_like = 110 <= n_res_second <= 135
             is_reasonable_partner = (
                 n_res_second > 80 and ratio > 0.02
             )
 
-            logger.info(f"    is_vhh_like: {is_vhh_like}")
-            logger.info(f"    is_reasonable_partner: {is_reasonable_partner}")
+            logger.debug(f"    is_vhh_like: {is_vhh_like}")
+            logger.debug(f"    is_reasonable_partner: {is_reasonable_partner}")
 
             if is_vhh_like or is_reasonable_partner:
                 partner = second
@@ -118,6 +118,7 @@ class ComponentDetector:
             if len(ligand) == 0:
                 ligand = None
 
+        logger.info("Automatically detecting system components")   
         logger.info("[ComponentDetector] Final assignment:")
 
         if receptor is not None:
@@ -130,7 +131,7 @@ class ComponentDetector:
             logger.info(f"  Partner chains: {part_segids}")
             logger.info(f"  Residues: {len(partner.residues)}")
         else:
-            logger.info("  No partner detected")
+            logger.info("  No protein partner detected")
 
         if ligand is not None:
             lig_resnames = set(ligand.resnames)
