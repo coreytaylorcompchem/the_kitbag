@@ -75,7 +75,7 @@ class ComponentDetector:
             if is_vhh_like or is_reasonable_partner:
                 partner = second
 
-                # REMOVE partner chain from receptor
+                # Remove partner chain from receptor
                 receptor_chains = [ag for ag in receptor_chains if ag is not second]
 
         # Merge all remaining chains into one AtomGroup
