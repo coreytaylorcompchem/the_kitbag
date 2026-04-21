@@ -15,6 +15,8 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 
+########## HELPERS ##########
+
 # =========================
 # COLLATE
 # =========================
@@ -52,11 +54,14 @@ def per_task_mse(pred, target):
 
     return losses, counts
 
-def multitask_loss(pred, target, log_vars):
+def multitask_loss(pred, target, log_vars, active_tasks=None):
     total_loss = torch.tensor(0.0, device=pred.device)
-    valid_task_count = 0
 
     for i in range(pred.shape[1]):
+
+        if active_tasks is not None and i not in active_tasks:
+            continue
+
         mask = ~torch.isnan(target[:, i])
         if mask.sum() == 0:
             continue
@@ -66,21 +71,88 @@ def multitask_loss(pred, target, log_vars):
 
         mse = F.mse_loss(pred_i, target_i)
 
-        log_var = torch.clamp(log_vars[i], min=-5.0, max=5.0)
+        log_var = torch.clamp(log_vars[i], -5.0, 5.0)
         precision = torch.exp(-log_var)
-        total_loss = total_loss + (precision * mse + log_var)
-        # total_loss = total_loss + (precision * mse + log_vars[i])
-        valid_task_count += 1
 
-    if valid_task_count == 0:
-        return torch.tensor(0.0, device=pred.device, requires_grad=True)
+        total_loss += precision * mse + log_var
 
     return total_loss
+
+# def compute_task_losses(pred, target, log_vars, active_tasks=None):
+#     task_losses = []
+
+#     for i in range(pred.shape[1]):
+
+#         if active_tasks is not None and i not in active_tasks:
+#             continue
+
+#         mask = ~torch.isnan(target[:, i])
+#         if mask.sum() == 0:
+#             continue
+
+#         pred_i = pred[mask, i]
+#         target_i = target[mask, i]
+
+#         mse = F.mse_loss(pred_i, target_i)
+
+#         log_var = torch.clamp(log_vars[i], -5.0, 5.0)
+#         precision = torch.exp(-log_var)
+
+#         loss_i = precision * mse + log_var
+#         task_losses.append(loss_i)
+
+#     return task_losses
+
+########### PCGrad implmentation
+
+class PCGrad:
+    def __init__(self, optimizer):
+        self.optimizer = optimizer
+
+    def pc_backward(self, model, out, target, loss_fns):
+        """
+        Memory-efficient PCGrad:
+        - single forward pass
+        - multiple backward passes with retain_graph
+        """
+
+        params = [p for p in model.parameters() if p.requires_grad]
+        final_grads = [torch.zeros_like(p) for p in params]
+
+        for i, loss_fn in enumerate(loss_fns):
+
+            self.optimizer.zero_grad(set_to_none=True)
+
+            loss_i = loss_fn(out, target)
+            if loss_i is None:
+                continue
+
+            retain = i < (len(loss_fns) - 1)
+
+            loss_i.backward(retain_graph=retain)
+
+            grad_i = [
+                p.grad.clone() if p.grad is not None else None
+                for p in params
+            ]
+
+            for k in range(len(final_grads)):
+                if grad_i[k] is not None:
+                    final_grads[k] += grad_i[k]
+
+        self.optimizer.zero_grad(set_to_none=True)
+
+        for p, g in zip(params, final_grads):
+            if g is not None:
+                p.grad = g / len(loss_fns)
+
+    def step(self):
+        self.optimizer.step()
 
 # =========================
 # TRAIN / EVAL EPOCHS
 # =========================
-def train_epoch(model, loader, optimizer, device):
+def train_epoch(model, loader, optimizer, device, active_tasks=None):
 
     all_preds, all_labels = [], []
 
@@ -90,6 +162,8 @@ def train_epoch(model, loader, optimizer, device):
     num_tasks = None
     task_losses = None
     task_counts = None
+
+    pcgrad = PCGrad(optimizer)
 
     for batch in loader:
         batch = batch.to(device)
@@ -105,9 +179,66 @@ def train_epoch(model, loader, optimizer, device):
         out = model(batch)
         target = batch.y.float()
 
-        loss = multitask_loss(out, target, model.log_vars)
-        loss.backward()
-        optimizer.step()
+        use_pcgrad = getattr(model, "use_pcgrad", True)
+
+        if use_pcgrad:
+
+            # -------------------------
+            # Select task indices
+            # -------------------------
+            task_indices = [
+                i for i in range(out.shape[1])
+                if (active_tasks is None or i in active_tasks)
+            ]
+
+            max_tasks = getattr(model, "pcgrad_max_tasks", 2)
+            task_indices = task_indices[:max_tasks]
+
+            # -------------------------
+            # Build loss functions
+            # -------------------------
+            def make_loss_fn(task_idx):
+                def loss_fn(out, target):
+                    mask = ~torch.isnan(target[:, task_idx])
+                    if mask.sum() == 0:
+                        return None
+
+                    pred_i = out[mask, task_idx]
+                    target_i = target[mask, task_idx]
+
+                    mse = F.mse_loss(pred_i, target_i)
+
+                    log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
+                    precision = torch.exp(-log_var)
+
+                    return precision * mse + log_var
+                return loss_fn
+
+            loss_fns = [make_loss_fn(i) for i in task_indices]
+
+            if len(loss_fns) > 0:
+                # --- PCGrad update ---
+                pcgrad.pc_backward(model, out, target, loss_fns)
+                pcgrad.step()
+
+                # --- REAL LOSS FOR LOGGING ---
+                with torch.no_grad():
+                    losses = []
+                    for loss_fn in loss_fns:
+                        l = loss_fn(out, target)
+                        if l is not None:
+                            losses.append(l)
+
+                    if len(losses) > 0:
+                        loss = torch.stack(losses).mean()
+                    else:
+                        loss = torch.tensor(0.0, device=device)
+            else:
+                loss = torch.tensor(0.0, device=device)
+        else:
+            loss = multitask_loss(out, target, model.log_vars, active_tasks)
+            loss.backward()
+            optimizer.step()
 
         total_loss += loss.item()
 
@@ -138,7 +269,7 @@ def train_epoch(model, loader, optimizer, device):
     )
 
 
-def eval_epoch(model, loader, device):
+def eval_epoch(model, loader, device, active_tasks=None):
     model.eval()
     total_loss = 0
 
@@ -161,7 +292,7 @@ def eval_epoch(model, loader, device):
             out = model(batch)
             target = batch.y.float()
 
-            loss = multitask_loss(out, target, model.log_vars)
+            loss = multitask_loss(out, target, model.log_vars, active_tasks)
             total_loss += loss.item()
 
             all_preds.append(out.cpu())
@@ -270,6 +401,8 @@ def per_task_r2(pred, target):
 
     return r2
 
+######## TRAINING LOOPS ##########
+
 def train_curriculum(context, config, params):
 
     device = context["device"]
@@ -299,6 +432,13 @@ def train_curriculum(context, config, params):
         task_groups=context.get("task_groups"),
     ).to(device)
 
+    model.use_pcgrad = config.get("use_pcgrad", True)
+
+    if model.use_pcgrad:
+        logger.info("PCGrad ENABLED for training")
+    else:
+        logger.info("PCGrad DISABLED (using standard multitask loss)")
+
     best_loss = float("inf")
     best_model_state = None 
 
@@ -315,8 +455,11 @@ def train_curriculum(context, config, params):
         stage_epochs = stage["epochs"]
 
          # Stage-specific dataset
-        stage_train_list = filter_dataset_for_tasks(train_list, stage_tasks)
+        # stage_train_list = filter_dataset_for_tasks(train_list, stage_tasks)
         # stage_val_list = filter_dataset_for_tasks(val_list, stage_tasks)
+        # stage_val_list = val_list
+
+        stage_train_list = train_list
         stage_val_list = val_list
 
         if len(stage_train_list) == 0:
@@ -372,7 +515,7 @@ def train_curriculum(context, config, params):
             # TRAIN
             # =========================
             train_loss, train_preds, train_labels, train_rmse, train_r2 = train_epoch(
-                model, train_loader, optimizer, device
+                model, train_loader, optimizer, device, active_tasks=stage_tasks
             )
 
             # =========================
@@ -386,7 +529,9 @@ def train_curriculum(context, config, params):
             # =========================
             # VALIDATION
             # =========================
-            val_loss, val_preds, val_labels, val_mse = eval_epoch(model, val_loader, device)
+            val_loss, val_preds, val_labels, val_mse = eval_epoch(
+                model, val_loader, device, active_tasks=stage_tasks
+            )
 
             val_rmse = np.sqrt(val_mse)
 
@@ -662,6 +807,13 @@ def train(context, config):
             num_tasks=num_tasks,
             task_groups=context.get("task_groups"),
             **{k: v for k, v in params.items() if k != "lr"}).to(device)
+        
+        model.use_pcgrad = config.get("use_pcgrad", True)
+
+        if model.use_pcgrad:
+            logger.info("PCGrad ENABLED for training")
+        else:
+            logger.info("PCGrad DISABLED (using standard multitask loss)")
 
         optimizer = torch.optim.Adam(
             model.parameters(),
