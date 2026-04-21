@@ -2,6 +2,7 @@ import os
 import json
 import sys
 import platform
+import re
 
 from tqdm import tqdm
 
@@ -824,15 +825,52 @@ class MDWorkflow:
                 W.write(u.atoms)
 
         logger.info(f"Saved wrapped trajectory: {output_path}")
-        
+
     @register_task("production", category='Molecular dynamics', description="Run production simulation.")
     def production(self):
+
+        def find_latest_checkpoint(output_dir):
+            pattern = re.compile(r"restart_(\d+)\.chk")
+            checkpoints = []
+
+            for fname in os.listdir(output_dir):
+                match = pattern.match(fname)
+                if match:
+                    seg = int(match.group(1))
+                    checkpoints.append((seg, os.path.join(output_dir, fname)))
+
+            if not checkpoints:
+                return None, None
+
+            checkpoints.sort(key=lambda x: x[0])
+            return checkpoints[-1]  # (segment_number, filepath)
+
+        if self.simulation is None or self.integrator is None:
+            logger.warning("Simulation not initialised - running setup_simulation()")
+            self.setup_simulation()
+
+        # Setup from yaml
 
         cfg = self.config["production"]
         ns = cfg.get("length_ns", 1)
         ensemble = cfg.get("ensemble", "NPT").upper()
         target_temp = cfg.get("target_temp", self.integrator.getTemperature().value_in_unit(kelvin))
         pressure = cfg.get("pressure", 1.0)
+        timestep = self.integrator.getStepSize()
+        timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0
+        steps_per_ns = int(1.0 / timestep_ns)
+        total_steps = int(ns * steps_per_ns)
+        # Output control
+        split_ns = cfg.get("output_split_ns", ns)
+        split_steps = int(split_ns * steps_per_ns)
+        n_segments = int(np.ceil(ns / split_ns))
+        output_freq = cfg.get("output_frequency", 1000)
+
+        output_trajectory_base = cfg.get("output_trajectory", "output.dcd")
+        output_log_base = cfg.get("output_logfile", "output.log")
+        output_dir = os.path.dirname(output_trajectory_base)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
         # Thresholds for event triggers
         max_temp_dev = 100        # K deviation from target
@@ -844,34 +882,14 @@ class MDWorkflow:
         velocities = state.getVelocities()
         box_vectors = state.getPeriodicBoxVectors()
 
-        # #### Center system in the box
-        # coords = np.array([
-        #     [
-        #         p.x.value_in_unit(nanometer) if hasattr(p.x, "value_in_unit") else float(p.x),
-        #         p.y.value_in_unit(nanometer) if hasattr(p.y, "value_in_unit") else float(p.y),
-        #         p.z.value_in_unit(nanometer) if hasattr(p.z, "value_in_unit") else float(p.z)
-        #     ]
-        #     for p in positions
-        # ], dtype=float)
-        
-        # anchor_atoms = [
-        #     atom.index for atom in self.topology.atoms()
-        #     if atom.residue.name in {"POP"} or atom.residue.name == "UNK" or atom.residue.chain.id == "A"
-        # ]
-        
-        # com = np.mean(coords[anchor_atoms], axis=0)
-        # box_lengths = np.array([box_vectors[i][i].value_in_unit(nanometer) for i in range(3)])
-        # shift = box_lengths / 2 - com
-        # for i in range(len(positions)):
-        #     x, y, z = coords[i] + shift
-        #     positions[i] = Vec3(x, y, z) * nanometer
+        latest_seg, latest_chk = find_latest_checkpoint(output_dir)
 
         # Update context
-        self.simulation.context.setPositions(positions)
-        self.simulation.context.setVelocities(velocities)
-        self.simulation.context.setPeriodicBoxVectors(*box_vectors)
-        self.integrator.setTemperature(target_temp * kelvin)
-        self.simulation.currentStep = 0
+        if latest_chk is None:
+            self.simulation.context.setPositions(positions)
+            self.simulation.context.setVelocities(velocities)
+            self.simulation.context.setPeriodicBoxVectors(*box_vectors)
+            self.simulation.currentStep = 0
 
         # Attach barostat if NPT
         # Check for any existing barostat (both types!)
@@ -904,21 +922,23 @@ class MDWorkflow:
 
             logger.info(f"Added MonteCarloMembraneBarostat: {pressure} atm, {target_temp} K")
 
-        timestep = self.integrator.getStepSize()
-        timestep_ns = timestep.value_in_unit(picoseconds) / 1000.0
-        steps_per_ns = int(1.0 / timestep_ns)
-        total_steps = int(ns * steps_per_ns)
+        # Check for checkpoint file.
 
-        # Output control
-        split_ns = cfg.get("output_split_ns", ns)
-        split_steps = int(split_ns * steps_per_ns)
-        n_segments = int(np.ceil(ns / split_ns))
-        output_freq = cfg.get("output_frequency", 1000)
-        output_trajectory_base = cfg.get("output_trajectory", "output.dcd")
-        output_log_base = cfg.get("output_logfile", "output.log")
-        output_dir = os.path.dirname(output_trajectory_base)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        start_segment = 1
+
+        if latest_chk is not None:
+            logger.info(f"Found checkpoint: {latest_chk} (segment {latest_seg})")
+
+            try:
+                self.simulation.loadCheckpoint(latest_chk)
+                start_segment = latest_seg + 1
+                logger.info(f"Resuming from segment {start_segment}")
+            except Exception as e:
+                logger.warning(f"Failed to load checkpoint: {e}")
+                logger.warning("Starting from scratch instead")
+        else:
+            logger.info("No checkpoint found — starting fresh simulation")
+            
 
         # set how often to output data to log
         log_multiplier = 1 # set to 10, 100, etc. to run expensive evaluations that are dumped to log less frequently.
@@ -929,13 +949,13 @@ class MDWorkflow:
         logger.info(f"Writing frames every {output_freq} steps.")
 
         # Rolling diagnostic averages to check simulation is running smoothly
-        rolling_window = 10  # number of diagnostic points to average over
-        temp_history = []
-        density_history = []
-        energy_history = []
+        # rolling_window = 10  # number of diagnostic points to average over
+        # temp_history = []
+        # density_history = []
+        # energy_history = []
 
         # Segment loop
-        for seg in range(1, n_segments + 1):
+        for seg in range(start_segment, n_segments + 1):
             seg_start_step = self.simulation.currentStep
             seg_end_step = min(seg_start_step + split_steps, total_steps)
             seg_steps = seg_end_step - seg_start_step
