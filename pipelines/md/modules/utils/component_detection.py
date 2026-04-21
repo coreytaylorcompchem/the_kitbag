@@ -124,26 +124,26 @@ class ComponentDetector:
             if len(ligand) == 0:
                 ligand = None              
 
-        logger.info("Automatically detecting system components")   
-        logger.info("[ComponentDetector] Final assignment:")
+        logger.debug("Automatically detecting system components")   
+        logger.debug("[ComponentDetector] Final assignment:")
 
         if receptor is not None:
             rec_segids = sorted(set(receptor.segids))
-            logger.info(f"  Receptor chains: {rec_segids}")
-            logger.info(f"  Total residues: {len(receptor.residues)}")
+            logger.debug(f"  Receptor chains: {rec_segids}")
+            logger.debug(f"  Total residues: {len(receptor.residues)}")
 
         if partner is not None:
             part_segids = sorted(set(partner.segids))
-            logger.info(f"  Partner chains: {part_segids}")
-            logger.info(f"  Residues: {len(partner.residues)}")
+            logger.debug(f"  Partner chains: {part_segids}")
+            logger.debug(f"  Residues: {len(partner.residues)}")
         else:
-            logger.info("  No protein partner detected")
+            logger.debug("  No protein partner detected")
 
         if ligand is not None:
             lig_resnames = set(ligand.resnames)
-            logger.info(f"  Ligand detected: {lig_resnames} ({len(ligand.atoms)} atoms)")
+            logger.debug(f"  Ligand detected: {lig_resnames} ({len(ligand.atoms)} atoms)")
         else:
-            logger.info("  No ligand detected")
+            logger.debug("  No ligand detected")
 
         # -----------------------------
         # STEP 3: return components

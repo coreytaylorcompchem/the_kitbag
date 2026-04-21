@@ -882,12 +882,65 @@ class InteractionFingerprintTask:
                 fp_df = pd.concat(data, axis=1)
 
         logger.debug("ProLIF completed successfully")
+
+        # =========================
+        # Post-processing + exports
+        # =========================
+
+        # Ensure consistent column ordering across runs
+        fp_df.sort_index(axis=1, inplace=True)
+
+        # ---- Metadata ----
+        fp_df.attrs["topology"] = self.topology
+        fp_df.attrs["trajectory"] = self.trajectory
+        fp_df.attrs["ligand_selection"] = self.ligand_selection
+        fp_df.attrs["mode"] = mode
+
+        # ---- File base path ----
+        base = os.path.join(self.output_dir, "fp_data")
+
+        # ---- Save raw dataframe ----
+        fp_df.to_pickle(base + ".pkl")
+        fp_df.to_parquet(base + ".parquet")
+        fp_df.to_csv(base + ".csv")
+
+        # ---- Flattened version (ML-friendly) ----
+        def flatten_fp(df):
+            df_flat = df.copy()
+            df_flat.columns = [
+                f"{lig}_{prot}_{inter}"
+                for lig, prot, inter in df.columns
+            ]
+            return df_flat
+
+        fp_flat = flatten_fp(fp_df)
+        fp_flat["frame"] = fp_flat.index
+        fp_flat["ligand_id"] = ligand_str if "ligand_str" in locals() else "unknown"
+
+        fp_flat.to_parquet(base + "_flat.parquet")
+
+        # ---- Long / tidy format (analysis-friendly) ----
+        def to_long(df):
+            df_long = (
+                df.stack([0, 1, 2])
+                .rename("present")
+                .reset_index()
+            )
+            df_long.columns = ["frame", "ligand", "protein", "interaction_type", "present"]
+            return df_long
+
+        fp_long = to_long(fp_df)
+        fp_long["ligand_id"] = ligand_str if "ligand_str" in locals() else "unknown"
+
+        fp_long.to_parquet(base + "_long.parquet")
+
+        logger.info(f"Saved fingerprint data (pickle, parquet, csv, flat, long) to {self.output_dir}")
         
         logger.debug(fp_df.columns.get_level_values(2).unique()) #debug to check all interactions are being found
 
         out_data_path = os.path.join(self.output_dir, "fp_data.pkl")
-        fp_df.to_pickle(out_data_path)
-        logger.info(f"Saved fingerprint DataFrame to {out_data_path}")
+        # fp_df.to_pickle(out_data_path)
+        # logger.info(f"Saved fingerprint DataFrame to {out_data_path}")
 
         # Generate barcode plot
         logger.info("Generating interaction barcode plot...")
@@ -905,6 +958,9 @@ class InteractionFingerprintTask:
         ])
 
         fp_transposed = fp_df.astype(np.uint8).T.apply(_bit_to_color_value, axis=1)
+
+        ligands = sorted({lig[:3] for lig, prot, inter in fp_transposed.index})
+        ligand_str = ", ".join(ligands)
 
         color_mapper = _get_color_mapper()  
         inv_color_mapper = _get_inv_color_mapper()
@@ -964,9 +1020,6 @@ class InteractionFingerprintTask:
         plt.tight_layout(rect=[0, 0.05, 1, 1])  # leave 5% at bottom for legend
 
         out_plot_path = os.path.join(self.output_dir, "interaction_barcode.png")
-
-        ligands = sorted({lig[:3] for lig, prot, inter in fp_transposed.index})
-        ligand_str = ", ".join(ligands)
 
         if mode == "ligand":
             ax.set_title(f"Ligand interaction fingerprint for ligand {ligand_str}.")
