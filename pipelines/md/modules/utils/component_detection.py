@@ -112,11 +112,17 @@ class ComponentDetector:
         if len(ligand) == 0:
             # fallback: select any non-protein, non-water, non-ion atoms
             ions_str = " ".join(self.ion_resnames)
+
+            # remove lipids explicitly
+            lipid_resnames = ["POP", "POPC", "POPE", "POPG", "DOPC", "DPPC", "CHL1"]
+            lipid_str = " ".join(lipid_resnames)
+
             ligand = self.u.select_atoms(
-                f"not protein and not resname {self.water_resname} and not resname {ions_str}"
+                f"not protein and not resname {self.water_resname} and not resname {ions_str} and not resname {lipid_str}"
             )
+
             if len(ligand) == 0:
-                ligand = None
+                ligand = None              
 
         logger.info("Automatically detecting system components")   
         logger.info("[ComponentDetector] Final assignment:")

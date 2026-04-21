@@ -20,6 +20,13 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
+from rdkit import Chem
+
+from deeptime.decomposition import TICA
+from deeptime.clustering import KMeans
+from deeptime.markov.msm import MaximumLikelihoodMSM
+from deeptime.markov import TransitionCountEstimator
+
 from modules.utils.mda_utils import _bit_to_color_value, _get_inv_color_mapper, _get_color_mapper
 from modules.utils.component_detection import ComponentDetector
 
@@ -38,9 +45,10 @@ from MDAnalysis.lib.mdamath import make_whole
 from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis as HBA
 from MDAnalysis.transformations import unwrap, center_in_box, wrap
 
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import IncrementalPCA, PCA
 from sklearn.manifold import TSNE
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import DBSCAN, AgglomerativeClustering
 
 from node2vec import Node2Vec
 import community as community_louvain
@@ -1282,8 +1290,6 @@ class ClusterAnalysisTask:
         # --------------------------------------------------
         logger.debug("Running agglomerative clustering...")
 
-        from sklearn.cluster import AgglomerativeClustering
-
         clustering = AgglomerativeClustering(
             n_clusters=self.n_clusters,
             metric="precomputed",
@@ -1429,7 +1435,6 @@ class FreeEnergyLandscapeTask:
         # PCA
         # --------------------------------------------------
         logger.debug("Running PCA...")
-        from sklearn.decomposition import PCA
 
         pca = PCA(n_components=2)
         proj = pca.fit_transform(coords)
@@ -1600,11 +1605,6 @@ class FreeEnergyLandscapeTask:
             "fel_plot": out_plot,
             "fel_grid": os.path.join(self.output_dir, "fel_grid.npy")
         }
-
-from deeptime.decomposition import TICA
-from deeptime.clustering import KMeans
-from deeptime.markov.msm import MaximumLikelihoodMSM
-from deeptime.markov import TransitionCountEstimator
 
 @register_task(
     "msm_analysis",
@@ -2657,7 +2657,6 @@ class ProteinProteinNetworkEmbeddingTask:
         return tsne.fit_transform(embeddings)
 
     def _cluster_embeddings(self, emb_2d):
-        from sklearn.preprocessing import StandardScaler
 
         emb_scaled = StandardScaler().fit_transform(emb_2d)
 
