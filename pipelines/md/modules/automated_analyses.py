@@ -565,6 +565,8 @@ class RMSFAnalysisTask:
         receptor = comp["receptor"]
         partner = comp["partner"]
 
+        partner_label = "Partner (VHH)" if comp["has_partner"] else None
+
         protein = self.u.select_atoms("protein")
         calphas = self.u.select_atoms("protein and name CA")
 
@@ -630,8 +632,8 @@ class RMSFAnalysisTask:
 
         # Partner RMSF
         if comp["has_partner"]:
-            dfs.append(compute_rmsf(partner, "Partner (VHH, all atoms)"))
-            dfs.append(compute_rmsf_ca(partner, "Partner (VHH, Cα only)"))
+            dfs.append(compute_rmsf(partner, f"{partner_label} (all atoms)"))
+            dfs.append(compute_rmsf_ca(partner, f"{partner_label} (Cα only)"))
 
         # # Cα RMSF
         # atoms_ca = calphas.atoms
@@ -698,7 +700,11 @@ class RMSFAnalysisTask:
         df_rmsf["Label"] = df_rmsf["Chain"] + ":" + df_rmsf["Residue"].astype(str)
 
         # Use all protein components for ticks
-        protein_components = ["Receptor (all atoms)", "Partner (VHH, all atoms)"]
+        protein_components = ["Receptor (all atoms)"]
+
+        if comp["has_partner"] and partner is not None:
+            protein_components.append(f"{partner_label} (all atoms)")
+
         df_ticks = df_rmsf[df_rmsf["Component"].isin(protein_components)]
         df_ticks = df_ticks.drop_duplicates(subset=["Residue_cont"]).sort_values("Residue_cont")
 
