@@ -804,14 +804,70 @@ class InteractionFingerprintTask:
 
         # Prolif FP calculation
         logger.debug("Running ProLIF fingerprint calculation...")
-        
+
         fp = plf.Fingerprint()
 
-        ligand.guess_bonds()
+        # --- Always safe ---
         protein.guess_bonds()
 
-        fp.run(self.u.trajectory[self.start:self.stop:self.step], ligand, protein)
-        fp_df = fp.to_dataframe()
+        traj_slice = self.u.trajectory[self.start:self.stop:self.step]
+
+        # =========================
+        # Attempt 1: native approach
+        # =========================
+        try:
+            logger.info("Attempting native MDAnalysis ligand (no bond guessing)")
+            
+            fp.run(traj_slice, ligand, protein)
+            fp_df = fp.to_dataframe()
+
+        # =========================
+        # Attempt 2: SDF-informed ligand
+        # =========================
+        except Exception as e:
+            logger.warning(f"Native MDA ligand approach failed: {e}")
+            logger.info("Retrying ProLIF using SDF of ligand")
+
+            try:
+                sdf_path = os.path.join("input", "LIG_extracted.sdf")
+
+                rdkit_mol = Chem.SDMolSupplier(sdf_path, removeHs=False)[0]
+                if rdkit_mol is None:
+                    raise RuntimeError("Failed to load ligand SDF")
+
+                # Convert RDKit → ProLIF Molecule
+                ligand_plf = plf.Molecule.from_rdkit(rdkit_mol)
+
+                # Convert protein normally
+                protein_plf = plf.Molecule.from_mda(protein)
+
+                fp.run(traj_slice, ligand_plf, protein_plf)
+                fp_df = fp.to_dataframe()
+
+            # =========================
+            # Attempt 3: brute-force fallback
+            # =========================
+            except Exception as e2:
+                logger.warning(f"SDF approach failed: {e2}")
+                logger.info("Final fallback: skipping problematic frames")
+
+                valid_frames = []
+                data = []
+
+                for ts in traj_slice:
+                    try:
+                        fp.run([ts], ligand, protein)
+                        valid_frames.append(ts.frame)
+                        data.append(fp.to_dataframe())
+                    except Exception:
+                        continue
+
+                if not data:
+                    raise RuntimeError("ProLIF failed completely: no valid interaction frames.")
+
+                fp_df = pd.concat(data, axis=1)
+
+        logger.debug("ProLIF completed successfully")
         
         logger.debug(fp_df.columns.get_level_values(2).unique()) #debug to check all interactions are being found
 
