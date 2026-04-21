@@ -1073,10 +1073,6 @@ class ProteinProteinInteractionFingerprintTask:
 
         logger.info(f"Saved fingerprint DataFrame to {out_data_path}")
 
-        # ==========================================================
-        # ✅ REUSE YOUR ORIGINAL BARCODE LOGIC (FULL FEATURED)
-        # ==========================================================
-
         logger.info("Generating interaction barcode plot...")
 
         # Time reconstruction (same as your ligand version)
@@ -1129,7 +1125,7 @@ class ProteinProteinInteractionFingerprintTask:
         )
 
         # ----------------------------------------------------------
-        # ✅ X axis (time)
+        # X axis (time)
         # ----------------------------------------------------------
         frames = fp_transposed.columns.astype(int)
         num_ticks = min(10, len(frames))
@@ -1142,7 +1138,7 @@ class ProteinProteinInteractionFingerprintTask:
         ax.set_xlabel("Simulation Time (ns)")
 
         # ----------------------------------------------------------
-        # ✅ Y axis (RESIDUE PAIRS + INTERACTION TYPE)
+        # Y axis (RESIDUE PAIRS + INTERACTION TYPE)
         # ----------------------------------------------------------
         labels = [
             f"{partner} → {receptor} ({interaction})"
@@ -1160,7 +1156,7 @@ class ProteinProteinInteractionFingerprintTask:
         ax.set_yticklabels(labels, fontsize=y_fontsize)
 
         # ----------------------------------------------------------
-        # ✅ Legend (same as before)
+        # Legend
         # ----------------------------------------------------------
         unique_values = np.unique(plot_data_array)
         unique_values = [v for v in unique_values if v != 0]
@@ -1182,9 +1178,6 @@ class ProteinProteinInteractionFingerprintTask:
             ncol=3
         )
 
-        # ----------------------------------------------------------
-        # ✅ Title
-        # ----------------------------------------------------------
         ax.set_title(
             f"Protein–protein interaction fingerprint\n"
             f"Chains {self.partner_chains} (VHH) vs {self.receptor_chains} (GPCR)"
