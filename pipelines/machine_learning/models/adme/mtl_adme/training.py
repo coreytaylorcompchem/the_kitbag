@@ -118,42 +118,74 @@ class PCGrad:
     def __init__(self, optimizer):
         self.optimizer = optimizer
 
-    def pc_backward(self, model, out, target, loss_fns):
-        """
-        Memory-efficient PCGrad:
-        - single forward pass
-        - multiple backward passes with retain_graph
-        """
+    def pc_backward(self, model, batch, target, loss_fns):
 
         params = [p for p in model.parameters() if p.requires_grad]
-        final_grads = [torch.zeros_like(p) for p in params]
 
-        for i, loss_fn in enumerate(loss_fns):
+        # 🔥 ensure log_vars included even if not in optimizer param groups
+        if hasattr(model, "log_vars"):
+            params = params + [model.log_vars]
+
+        grads = []
+
+        # --- collect gradients per task ---
+        for loss_fn in loss_fns:
 
             self.optimizer.zero_grad(set_to_none=True)
 
-            loss_i = loss_fn(out, target)
+            # 🔥 CRITICAL: recompute forward pass
+            out_i = model(batch)
+
+            loss_i = loss_fn(out_i, target)
             if loss_i is None:
                 continue
 
-            retain = i < (len(loss_fns) - 1)
-
-            loss_i.backward(retain_graph=retain)
+            loss_i.backward()
 
             grad_i = [
                 p.grad.clone() if p.grad is not None else None
                 for p in params
             ]
 
-            for k in range(len(final_grads)):
-                if grad_i[k] is not None:
-                    final_grads[k] += grad_i[k]
+            grads.append(grad_i)
 
+        if len(grads) == 0:
+            return
+
+        # --- PCGrad projection ---
+        for i in range(len(grads)):
+            for j in range(len(grads)):
+                if i == j:
+                    continue
+
+                dot = 0.0
+                norm_j = 0.0
+
+                for g_i, g_j in zip(grads[i], grads[j]):
+                    if g_i is not None and g_j is not None:
+                        dot += torch.sum(g_i * g_j)
+                        norm_j += torch.sum(g_j * g_j)
+
+                if norm_j > 0 and dot < 0:
+                    coeff = dot / norm_j
+                    for k in range(len(grads[i])):
+                        if grads[i][k] is not None and grads[j][k] is not None:
+                            grads[i][k] -= coeff * grads[j][k]
+
+        # --- aggregate ---
+        final_grads = [torch.zeros_like(p) for p in params]
+
+        for grad in grads:
+            for k in range(len(final_grads)):
+                if grad[k] is not None:
+                    final_grads[k] += grad[k]
+
+        # --- assign ---
         self.optimizer.zero_grad(set_to_none=True)
 
         for p, g in zip(params, final_grads):
             if g is not None:
-                p.grad = g / len(loss_fns)
+                p.grad = g / len(grads)
 
     def step(self):
         self.optimizer.step()
@@ -186,6 +218,7 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
         optimizer.zero_grad()
 
         out = model(batch)
+        # model._pcgrad_forward_cache = out   # 🔥 cache forward for PCGrad
         target = batch.y.float()
 
         use_pcgrad = getattr(model, "use_pcgrad", True)
@@ -200,8 +233,11 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
                 if (active_tasks is None or i in active_tasks)
             ]
 
-            max_tasks = getattr(model, "pcgrad_max_tasks", 2)
-            task_indices = task_indices[:max_tasks]
+            max_tasks = getattr(model, "pcgrad_max_tasks", None)
+
+            if max_tasks is not None and len(task_indices) > max_tasks:
+                # 🔥 deterministic instead of random
+                task_indices = task_indices[:max_tasks]
 
             # -------------------------
             # Build loss functions
@@ -227,7 +263,7 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
 
             if len(loss_fns) > 0:
                 # --- PCGrad update ---
-                pcgrad.pc_backward(model, out, target, loss_fns)
+                pcgrad.pc_backward(model, batch, target, loss_fns)
                 pcgrad.step()
 
                 # --- REAL LOSS FOR LOGGING ---
@@ -476,10 +512,6 @@ def train_curriculum(context, config, params):
          # Stage-specific dataset
         stage_train_list = filter_dataset_for_tasks(train_list, stage_tasks)
         stage_val_list = filter_dataset_for_tasks(val_list, stage_tasks)
-        # stage_val_list = val_list
-
-        stage_train_list = train_list
-        stage_val_list = val_list
 
         if len(stage_train_list) == 0:
             logger.warning(f"No data for stage {stage['name']}, skipping")
@@ -518,11 +550,11 @@ def train_curriculum(context, config, params):
 
         apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context)
 
-        if stage_idx == 0 or curriculum_cfg.get("reset_optimizer", True):
-            optimizer = torch.optim.Adam(
-                filter(lambda p: p.requires_grad, model.parameters()),
-                lr=lr
-            )
+        # 🔥 ALWAYS rebuild optimizer after freezing changes
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            lr=lr
+        )
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", factor=0.5, patience=5, verbose=True
@@ -673,7 +705,7 @@ def train_curriculum(context, config, params):
         model_path.parent.mkdir(parents=True, exist_ok=True)
 
         torch.save({
-            "model_state_dict": best_model_state,
+            "model_state_dict": model.state_dict(),
             "params": params,
             "task_names": context.get("task_names"),
         }, model_path)
@@ -888,8 +920,6 @@ def train(context, config):
 
             train_task_hist.append(train_task_rmse)
             val_task_hist.append(val_task_rmse)
-
-            scheduler.step(val_loss)
 
             if not np.isnan(val_loss) and val_loss < best_val_loss:
                 best_val_loss = val_loss
