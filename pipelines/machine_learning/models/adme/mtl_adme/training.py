@@ -55,7 +55,7 @@ def per_task_mse(pred, target):
     return losses, counts
 
 def multitask_loss(pred, target, log_vars, active_tasks=None):
-    total_loss = torch.tensor(0.0, device=pred.device)
+    total_loss = None
 
     for i in range(pred.shape[1]):
 
@@ -74,7 +74,16 @@ def multitask_loss(pred, target, log_vars, active_tasks=None):
         log_var = torch.clamp(log_vars[i], -5.0, 5.0)
         precision = torch.exp(-log_var)
 
-        total_loss += precision * mse + log_var
+        loss_i = precision * mse + log_var
+
+        if total_loss is None:
+            total_loss = loss_i
+        else:
+            total_loss = total_loss + loss_i
+
+    # 🚨 critical fallback
+    if total_loss is None:
+        return pred.sum() * 0.0
 
     return total_loss
 
@@ -237,8 +246,14 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
                 loss = torch.tensor(0.0, device=device)
         else:
             loss = multitask_loss(out, target, model.log_vars, active_tasks)
-            loss.backward()
-            optimizer.step()
+
+            if loss.requires_grad:
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
+            else:
+                # No valid tasks in this batch → skip update safely
+                optimizer.zero_grad(set_to_none=True)
 
         total_loss += loss.item()
 
@@ -430,6 +445,7 @@ def train_curriculum(context, config, params):
         fp_dim=sample.fp.shape[-1],
         num_tasks=sample.y.shape[-1],
         task_groups=context.get("task_groups"),
+        **{k: v for k, v in params.items() if k != "lr"}
     ).to(device)
 
     model.use_pcgrad = config.get("use_pcgrad", True)
@@ -445,6 +461,9 @@ def train_curriculum(context, config, params):
     logger.info(f"Curriculum freezing strategy applied: {strategy}")
 
     for stage_idx, stage in enumerate(stages):
+
+        logger.debug(f"[Stage: {stage['name']}] Available group trunks: {list(model.group_trunks.keys())}")
+
         if isinstance(stage["tasks"][0], str):
             stage_tasks = [
                 context["task_names"].index(t)
@@ -455,8 +474,8 @@ def train_curriculum(context, config, params):
         stage_epochs = stage["epochs"]
 
          # Stage-specific dataset
-        # stage_train_list = filter_dataset_for_tasks(train_list, stage_tasks)
-        # stage_val_list = filter_dataset_for_tasks(val_list, stage_tasks)
+        stage_train_list = filter_dataset_for_tasks(train_list, stage_tasks)
+        stage_val_list = filter_dataset_for_tasks(val_list, stage_tasks)
         # stage_val_list = val_list
 
         stage_train_list = train_list
@@ -481,7 +500,12 @@ def train_curriculum(context, config, params):
         )
 
         # Stage-specific params
-        stage_lr = stage.get("lr", params.get("lr", 1e-3))
+        lr = params.get("lr", 1e-3)
+
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            lr=lr
+            )
         patience = stage.get("patience", 10)
 
         logger.info(f"=== Curriculum stage: {stage['name']} | tasks={stage_tasks} ===")
@@ -497,7 +521,7 @@ def train_curriculum(context, config, params):
         if stage_idx == 0 or curriculum_cfg.get("reset_optimizer", True):
             optimizer = torch.optim.Adam(
                 filter(lambda p: p.requires_grad, model.parameters()),
-                lr=stage_lr
+                lr=lr
             )
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -599,7 +623,8 @@ def train_curriculum(context, config, params):
         plt.plot(val_losses, label="Val")
         plt.legend()
         plt.title(f"Stage: {stage_name}")
-        plt.savefig(loss_curve_dir / f"overall_stage_{stage_name}.png", dpi=150)
+        param_str = "_".join(f"{k}={v}" for k,v in params.items())
+        plt.savefig(loss_curve_dir / f"{param_str}_overall_stage_{stage_name}.png")
         plt.close()
 
         # Per-task
@@ -643,6 +668,17 @@ def train_curriculum(context, config, params):
         np.save(pred_dir / "y_true.npy", y_true)
 
         logger.info(f"Saved predictions to {pred_dir}")
+
+        model_path = Path(config.get("model_path", "outputs/mtl_adme/models/model.pth"))
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+
+        torch.save({
+            "model_state_dict": best_model_state,
+            "params": params,
+            "task_names": context.get("task_names"),
+        }, model_path)
+
+        logger.info(f"Saved best model to {model_path}")
 
         # Store best model
         if val_loss < best_loss:
