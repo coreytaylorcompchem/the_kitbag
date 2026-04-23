@@ -122,7 +122,7 @@ class PCGrad:
 
         params = [p for p in model.parameters() if p.requires_grad]
 
-        # 🔥 ensure log_vars included even if not in optimizer param groups
+        # ensure log_vars included even if not in optimizer param groups
         if hasattr(model, "log_vars"):
             params = params + [model.log_vars]
 
@@ -133,7 +133,7 @@ class PCGrad:
 
             self.optimizer.zero_grad(set_to_none=True)
 
-            # 🔥 CRITICAL: recompute forward pass
+            # CRITICAL: recompute forward pass
             out_i = model(batch)
 
             loss_i = loss_fn(out_i, target)
@@ -218,7 +218,7 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
         optimizer.zero_grad()
 
         out = model(batch)
-        # model._pcgrad_forward_cache = out   # 🔥 cache forward for PCGrad
+        # model._pcgrad_forward_cache = out   # cache forward for PCGrad
         target = batch.y.float()
 
         use_pcgrad = getattr(model, "use_pcgrad", True)
@@ -236,7 +236,7 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
             max_tasks = getattr(model, "pcgrad_max_tasks", None)
 
             if max_tasks is not None and len(task_indices) > max_tasks:
-                # 🔥 deterministic instead of random
+                # deterministic, not random
                 task_indices = task_indices[:max_tasks]
 
             # -------------------------
@@ -550,7 +550,7 @@ def train_curriculum(context, config, params):
 
         apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context)
 
-        # 🔥 ALWAYS rebuild optimizer after freezing changes
+        # Rebuild optimizer after freezing changes
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()),
             lr=lr
