@@ -164,7 +164,7 @@ class PCGrad:
                 for g_i, g_j in zip(grads[i], grads[j]):
                     if g_i is not None and g_j is not None:
                         dot += torch.sum(g_i * g_j)
-                        norm_j += torch.sum(g_j * g_j)
+                        norm_j += torch.sum(g_j * g_j) + 1e-12
 
                 if norm_j > 0 and dot < 0:
                     coeff = dot / norm_j
@@ -185,7 +185,7 @@ class PCGrad:
 
         for p, g in zip(params, final_grads):
             if g is not None:
-                p.grad = g / len(grads)
+                p.grad = g
 
     def step(self):
         self.optimizer.step()
@@ -218,6 +218,7 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
         optimizer.zero_grad()
 
         out = model(batch)
+        out_detached = out.detach()
         # model._pcgrad_forward_cache = out   # cache forward for PCGrad
         target = batch.y.float()
 
@@ -270,7 +271,7 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
                 with torch.no_grad():
                     losses = []
                     for loss_fn in loss_fns:
-                        l = loss_fn(out, target)
+                        l = loss_fn(out_detached, target)
                         if l is not None:
                             losses.append(l)
 
@@ -303,7 +304,7 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
         task_losses += losses
         task_counts += counts
 
-        all_preds.append(out.detach())
+        all_preds.append(out_detached)
         all_labels.append(target.detach())
 
     task_mse = (task_losses / (task_counts + 1e-8))
@@ -341,6 +342,7 @@ def eval_epoch(model, loader, device, active_tasks=None):
                 batch.global_features = gf
 
             out = model(batch)
+            out_detached = out.detach()
             target = batch.y.float()
 
             loss = multitask_loss(out, target, model.log_vars, active_tasks)
@@ -485,6 +487,7 @@ def train_curriculum(context, config, params):
     ).to(device)
 
     model.use_pcgrad = config.get("use_pcgrad", True)
+    model.pcgrad_max_tasks = config.get("pcgrad_max_tasks", None)
 
     if model.use_pcgrad:
         logger.info("PCGrad ENABLED for training")
@@ -550,7 +553,7 @@ def train_curriculum(context, config, params):
 
         apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context)
 
-        # Rebuild optimizer after freezing changes
+        # Rebuild optimiser after freezing changes
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()),
             lr=lr
