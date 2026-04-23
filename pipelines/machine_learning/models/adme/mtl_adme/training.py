@@ -81,7 +81,7 @@ def multitask_loss(pred, target, log_vars, active_tasks=None):
         else:
             total_loss = total_loss + loss_i
 
-    # 🚨 critical fallback
+    # fallback
     if total_loss is None:
         return pred.sum() * 0.0
 
@@ -252,7 +252,7 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
                 loss.backward()
                 optimizer.step()
             else:
-                # No valid tasks in this batch → skip update safely
+                # No valid tasks in this batch; skip update safely
                 optimizer.zero_grad(set_to_none=True)
 
         total_loss += loss.item()
