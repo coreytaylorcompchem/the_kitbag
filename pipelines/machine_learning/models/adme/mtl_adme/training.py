@@ -118,29 +118,20 @@ class PCGrad:
     def __init__(self, optimizer):
         self.optimizer = optimizer
 
-    def pc_backward(self, model, batch, target, loss_fns):
-
-        params = [p for p in model.parameters() if p.requires_grad]
-
-        # ensure log_vars included even if not in optimizer param groups
-        if hasattr(model, "log_vars"):
-            params = params + [model.log_vars]
+    def pc_backward(self, losses, params):
 
         grads = []
 
-        # --- collect gradients per task ---
-        for loss_fn in loss_fns:
+        # --- compute gradients per task (single forward graph) ---
+        for i, loss in enumerate(losses):
+
+            if loss is None:
+                continue
 
             self.optimizer.zero_grad(set_to_none=True)
 
-            # CRITICAL: recompute forward pass
-            out_i = model(batch)
-
-            loss_i = loss_fn(out_i, target)
-            if loss_i is None:
-                continue
-
-            loss_i.backward()
+            retain = i < (len(losses) - 1)
+            loss.backward(retain_graph=retain)
 
             grad_i = [
                 p.grad.clone() if p.grad is not None else None
@@ -166,7 +157,7 @@ class PCGrad:
                         dot += torch.sum(g_i * g_j)
                         norm_j += torch.sum(g_j * g_j) + 1e-12
 
-                if norm_j > 0 and dot < 0:
+                if dot < 0:
                     coeff = dot / norm_j
                     for k in range(len(grads[i])):
                         if grads[i][k] is not None and grads[j][k] is not None:
@@ -185,7 +176,7 @@ class PCGrad:
 
         for p, g in zip(params, final_grads):
             if g is not None:
-                p.grad = g
+                p.grad = g / len(grads)
 
     def step(self):
         self.optimizer.step()
@@ -240,43 +231,69 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
                 # deterministic, not random
                 task_indices = task_indices[:max_tasks]
 
-            # -------------------------
-            # Build loss functions
-            # -------------------------
-            def make_loss_fn(task_idx):
-                def loss_fn(out, target):
-                    mask = ~torch.isnan(target[:, task_idx])
-                    if mask.sum() == 0:
-                        return None
+            # # -------------------------
+            # # Build loss functions
+            # # -------------------------
+            # def make_loss_fn(task_idx):
+            #     def loss_fn(out, target):
+            #         mask = ~torch.isnan(target[:, task_idx])
+            #         if mask.sum() == 0:
+            #             return None
 
-                    pred_i = out[mask, task_idx]
-                    target_i = target[mask, task_idx]
+            #         pred_i = out[mask, task_idx]
+            #         target_i = target[mask, task_idx]
 
-                    mse = F.mse_loss(pred_i, target_i)
+            #         mse = F.mse_loss(pred_i, target_i)
 
-                    log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
-                    precision = torch.exp(-log_var)
+            #         log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
+            #         precision = torch.exp(-log_var)
 
-                    return precision * mse + log_var
-                return loss_fn
+            #         return precision * mse + log_var
+            #     return loss_fn
 
-            loss_fns = [make_loss_fn(i) for i in task_indices]
+            # loss_fns = [make_loss_fn(i) for i in task_indices]
 
-            if len(loss_fns) > 0:
-                # --- PCGrad update ---
-                pcgrad.pc_backward(model, batch, target, loss_fns)
+            # if len(loss_fns) > 0:
+            #     # --- PCGrad update ---
+            #     pcgrad.pc_backward(model, batch, target, loss_fns)
+            #     pcgrad.step()
+
+            params = [p for p in model.parameters() if p.requires_grad]
+
+            # include uncertainty params
+            if hasattr(model, "log_vars"):
+                params = params + [model.log_vars]
+
+            losses = []
+
+            for task_idx in task_indices:
+
+                mask = ~torch.isnan(target[:, task_idx])
+                if mask.sum() == 0:
+                    losses.append(None)
+                    continue
+
+                pred_i = out[mask, task_idx]
+                target_i = target[mask, task_idx]
+
+                mse = F.mse_loss(pred_i, target_i)
+
+                log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
+                precision = torch.exp(-log_var)
+
+                loss_i = precision * mse + log_var
+                losses.append(loss_i)
+
+            if any(l is not None for l in losses):
+                pcgrad.pc_backward(losses, params)
                 pcgrad.step()
 
                 # --- REAL LOSS FOR LOGGING ---
                 with torch.no_grad():
-                    losses = []
-                    for loss_fn in loss_fns:
-                        l = loss_fn(out_detached, target)
-                        if l is not None:
-                            losses.append(l)
+                    valid_losses = [l for l in losses if l is not None]
 
-                    if len(losses) > 0:
-                        loss = torch.stack(losses).mean()
+                    if len(valid_losses) > 0:
+                        loss = torch.stack(valid_losses).mean()
                     else:
                         loss = torch.tensor(0.0, device=device)
             else:
