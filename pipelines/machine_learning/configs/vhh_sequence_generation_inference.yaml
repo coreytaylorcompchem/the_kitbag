@@ -1,0 +1,43 @@
+workflow_name: vhh_property_inference
+
+workflow:
+  - load_inference_dataset
+  - load_esm_model
+  - load_trained_model_bundle
+  - run_model_inference
+
+# ---------------------------
+# Input sequences
+# ---------------------------
+
+load_inference_dataset:
+  csv_path: data_vhh/new_sequences.csv
+  sequence_col: sequence
+  id_col: vhh_num
+  expected_len: 125
+
+# reuse same task from training
+load_esm_model:
+  device: cuda:0
+  pretrained_model: esm1b_t33_650M_UR50S
+  batch_size: 32
+
+# ---------------------------
+# Trained models
+# ---------------------------
+
+load_trained_model_bundle:
+  model_dir: outputs/models/production
+  # or:
+  # model_dir: outputs/models/round_20
+
+# ---------------------------
+# Prediction
+# ---------------------------
+
+run_model_inference:
+  batch_size: 32
+  output_csv: outputs/inference_predictions.csv
+
+  add_uncertainty: true
+  write_embeddings: false
