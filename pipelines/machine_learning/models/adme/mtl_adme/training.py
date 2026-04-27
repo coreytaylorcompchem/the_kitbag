@@ -939,6 +939,21 @@ def train(context, config):
 
     task_groups_cfg = config.get("task_groups", {})
 
+    task_names = context["task_names"]
+
+    grouped_tasks = [
+        t for group in config["task_groups"].values() for t in group
+    ]
+
+    missing = set(task_names) - set(grouped_tasks)
+    extra = set(grouped_tasks) - set(task_names)
+
+    if missing:
+        raise ValueError(f"Tasks missing from grouping: {missing}")
+
+    if extra:
+        raise ValueError(f"Unknown tasks in grouping: {extra}")
+
     task_groups = {}
     for group, names in task_groups_cfg.items():
         indices = [task_names.index(n) for n in names]

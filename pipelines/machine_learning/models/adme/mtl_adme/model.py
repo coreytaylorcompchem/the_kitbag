@@ -18,7 +18,7 @@ class GINRegressor(nn.Module):
         self.input_proj = nn.Linear(input_dim, hidden_dim)
 
         # =========================
-        # TASK GROUPING (for grouping architecture TODO: should probably add this to the yaml)
+        # TASK GROUPING
         # =========================
         if task_groups is None:
             raise ValueError("task_groups must be provided")
@@ -76,7 +76,7 @@ class GINRegressor(nn.Module):
         self.global_proj = nn.Sequential(
             nn.Linear(global_feat_dim, hidden_dim),
             nn.ReLU(),
-            nn.Dropout(dropout),  # NEW
+            nn.Dropout(dropout), 
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU()
         )
@@ -98,28 +98,37 @@ class GINRegressor(nn.Module):
         # =========================
         # GROUP-SPECIFIC TRUNKS
         # =========================
-        self.group_trunks = nn.ModuleDict({
-            "physchem": nn.Sequential(
+        # self.group_trunks = nn.ModuleDict({
+        #     "physchem": nn.Sequential(
+        #         nn.Linear(512, 256),
+        #         nn.ReLU(),
+        #         nn.Dropout(dropout)
+        #     ),
+        #     "adme": nn.Sequential(
+        #         nn.Linear(512, 256),
+        #         nn.ReLU(),
+        #         nn.Dropout(dropout)
+        #     ),
+        #     "cyp": nn.Sequential(
+        #         nn.Linear(512, 256),
+        #         nn.ReLU(),
+        #         nn.Dropout(dropout)
+        #     ),
+        #     "tox": nn.Sequential(
+        #         nn.Linear(512, 256),
+        #         nn.ReLU(),
+        #         nn.Dropout(dropout)
+        #     ),
+        # })
+
+        self.group_trunks = nn.ModuleDict()
+
+        for group_name in self.task_groups.keys():
+            self.group_trunks[group_name] = nn.Sequential(
                 nn.Linear(512, 256),
                 nn.ReLU(),
                 nn.Dropout(dropout)
-            ),
-            "adme": nn.Sequential(
-                nn.Linear(512, 256),
-                nn.ReLU(),
-                nn.Dropout(dropout)
-            ),
-            "cyp": nn.Sequential(
-                nn.Linear(512, 256),
-                nn.ReLU(),
-                nn.Dropout(dropout)
-            ),
-            "tox": nn.Sequential(
-                nn.Linear(512, 256),
-                nn.ReLU(),
-                nn.Dropout(dropout)
-            ),
-        })
+            )
 
         # =========================
         # Task-specific heads
@@ -208,6 +217,7 @@ class GINRegressor(nn.Module):
         # Group routing
         # =========================
         for group_name, task_indices in self.task_groups.items():
+            # logger.debug(f"[ROUTING] Group '{group_name}' → tasks {task_indices}")
             x_group = self.group_trunks[group_name](x_shared)
 
             # =========================
@@ -229,6 +239,7 @@ class GINRegressor(nn.Module):
                 # =========================
                 if not self._debug_printed:
                     logger.debug(f"Task {task_idx} output mean: {out_i.mean().item():.4f}")
+                    logger.debug(f"[HEAD] Task {task_idx} uses group '{group_name}'")
 
         # Final output
         out = torch.cat(outputs, dim=1)
