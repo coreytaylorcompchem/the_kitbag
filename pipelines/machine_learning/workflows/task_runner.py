@@ -105,3 +105,59 @@ def run_vhh_active_learning(config_path: str):
 
     logger.info(f"[{workflow_name}] Workflow complete.")
     return current_data
+
+@register_workflow("run_adme_inference", description="Run ADME model inference on SMILES CSV")
+def run_adme_inference(config_path: str):
+    """
+    Dynamically runs ADME inference workflow as defined in a YAML config file.
+    """
+
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    workflow_name = config.get("workflow_name", "inference_adme_model")
+    task_list = config.get("workflow", [])
+
+    if not task_list:
+        raise ValueError("No 'workflow' list found in config.")
+
+    logger.info(f"[{workflow_name}] Starting inference workflow with tasks: {task_list}")
+
+    current_data = {}
+
+    # Optional but useful for debugging / reproducibility
+    current_data["full_config"] = config
+
+    for task_name in task_list:
+        task_func = get_task(task_name)
+
+        if task_func is None:
+            available = ", ".join(sorted(list_tasks()))
+            logger.error(
+                f"❌ Task '{task_name}' not found in registry. Available tasks: {available}"
+            )
+            raise ValueError(f"Task '{task_name}' not found in registry.")
+
+        task_config = config.get(task_name, {})
+
+        logger.info(f">>>>>>>>>> Running task: {task_name}")
+
+        try:
+            result = task_func(task_config, current_data)
+        except Exception as e:
+            logger.error(f"❌ Task '{task_name}' failed: {e}")
+            raise
+
+        if isinstance(result, dict):
+            current_data.update(result)
+        elif result is not None:
+            current_data[task_name] = result
+
+        gc.collect()
+
+    logger.info(f"[{workflow_name}] Inference workflow complete.")
+    return current_data
