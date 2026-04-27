@@ -2,6 +2,7 @@ import random
 from collections import defaultdict
 from pathlib import Path
 import joblib
+import json
 
 import numpy as np
 import pandas as pd
@@ -25,7 +26,7 @@ from catboost import CatBoostRegressor
 # import seaborn as sns
 # from matplotlib import cm
 
-# from pipeline.task_registry import register_task
+from pipeline.task_registry import register_task
 # from modules.utils.plotting import (
 #     compute_multi_condition_pareto,
 #     plot_round_radar,
@@ -39,6 +40,14 @@ from catboost import CatBoostRegressor
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+def make_unique(col, existing_cols):
+    if col not in existing_cols:
+        return col
+    i = 1
+    while f"{col}_{i}" in existing_cols:
+        i += 1
+    return f"{col}_{i}"
 
 @register_task(
     "load_inference_dataset",
@@ -212,7 +221,9 @@ def run_model_inference(config, context):
         mean_pred = preds.mean(axis=1)
         std_pred  = preds.std(axis=1)
 
-        safe_name = prop
+        prefix = config.get("prediction_prefix", "PRED_")
+        base_name = f"{prefix}{prop}"
+        safe_name = make_unique(base_name, df.columns)
 
         df[safe_name] = mean_pred
 
@@ -228,7 +239,9 @@ def run_model_inference(config, context):
                 mean_pred + 1.96*std_pred
             )
 
-    out_csv = config["output_csv"]
+    out_csv = Path(config["output_csv"])
+
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
 
     df.to_csv(
         out_csv,

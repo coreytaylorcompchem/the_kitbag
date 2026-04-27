@@ -41,3 +41,4 @@ run_model_inference:
 
   add_uncertainty: true
   write_embeddings: false
+  prediction_prefix: PRED_
