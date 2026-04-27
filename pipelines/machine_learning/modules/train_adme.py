@@ -364,63 +364,104 @@ def filter_druglike(config, context):
 def ic50_to_pic50(x):
     return -np.log10(x * 1e-9)  # assume values are in nM
 
+import json
+
 @register_task("transform_labels", category="ADME")
 def transform_labels(config, context):
 
-    label_cols = config["label_cols"] # from the yaml
+    label_cols = config["label_cols"]
 
     df = context["dataframe"]
-    task_cols = config["label_cols"]
 
-    for col in task_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+    scalers = {}
+    transform_metadata = {}
+
+    for col in label_cols:
+
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        # -------------------------
+        # Task-specific transforms
+        # -------------------------
 
         if "IC50" in col:
+
             df[col] = df[col].apply(
-                lambda x: ic50_to_pic50(x) if pd.notna(x) and x > 0 else np.nan
+                lambda x: ic50_to_pic50(x)
+                if pd.notna(x) and x > 0 else np.nan
             )
 
+            transform_metadata[col] = {
+                "transform": "ic50_to_pic50"
+            }
+
+
         elif col in ["LogP", "LogD"]:
+
             lower, upper = -5, 10
-            outlier_mask = (df[col] < lower) | (df[col] > upper)
+
+            outlier_mask = (
+                (df[col] < lower) |
+                (df[col] > upper)
+            )
+
             df.loc[outlier_mask, col] = np.nan
 
+            transform_metadata[col] = {
+                "transform": "identity",
+                "outlier_clip": [lower, upper]
+            }
+
+
         elif col == "Solubility":
-            # already LogS → no transform
-            pass
+
+            transform_metadata[col] = {
+                "transform": "identity"
+            }
+
 
         elif "Microsomal Stability" in col:
+
             mask = df[col].notna()
 
-            # remove invalid
             df.loc[mask & (df[col] <= 0), col] = np.nan
 
-            # clip extreme values
-            upper = df[col].quantile(0.99)
+            upper = float(df[col].quantile(0.99))
             df.loc[df[col] > upper, col] = upper
 
-            # safe log
             mask = df[col].notna()
-            df.loc[mask, col] = np.log(np.clip(df.loc[mask, col], 1e-6, None))
+            df.loc[mask, col] = np.log(
+                np.clip(df.loc[mask, col], 1e-6, None)
+            )
+
+            transform_metadata[col] = {
+                "transform": "log",
+                "upper_clip": upper
+            }
+
 
         else:
+
             mask = df[col].notna()
 
-            # remove invalid values before transform
             invalid_mask = mask & (~np.isfinite(df[col]))
             df.loc[invalid_mask, col] = np.nan
 
-            # critical fix: prevent log issues
             too_small = mask & (df[col] <= -0.999999)
             df.loc[too_small, col] = np.nan
 
-            # apply safe transform
             mask = df[col].notna()
             df.loc[mask, col] = np.log1p(df.loc[mask, col])
 
-    scalers = {}
+            transform_metadata[col] = {
+                "transform": "log1p"
+            }
 
-    for col in task_cols:
+
+        # -------------------------
+        # Standard scaling
+        # -------------------------
+
         mask = df[col].notna()
 
         if mask.sum() == 0:
@@ -429,15 +470,16 @@ def transform_labels(config, context):
         scaler = StandardScaler()
 
         scaled = scaler.fit_transform(
-            df.loc[mask, col].values.reshape(-1, 1)
+            df.loc[mask, col].values.reshape(-1,1)
         ).flatten()
 
         df.loc[mask, col] = scaled
 
         scalers[col] = scaler
 
-    # Save scalers for later use
+
     context["label_scalers"] = scalers
+    context["label_transform_metadata"] = transform_metadata
 
     context["task_names"] = label_cols
     context["dataframe"] = df

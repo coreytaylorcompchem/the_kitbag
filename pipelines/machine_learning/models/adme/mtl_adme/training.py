@@ -1,5 +1,8 @@
 import itertools
 import torch
+import joblib
+import json
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -13,7 +16,6 @@ from pathlib import Path
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
-
 
 ########## HELPERS ##########
 
@@ -808,11 +810,29 @@ def train_curriculum(context, config, params):
         model_path = Path(config.get("model_path", "outputs/mtl_adme/models/model.pth"))
         model_path.parent.mkdir(parents=True, exist_ok=True)
 
-        torch.save({
+        torch.save(
+        {
             "model_state_dict": model.state_dict(),
+
+            "input_dim": sample.x.shape[1],
+            "edge_dim": sample.edge_attr.shape[1],
+            "global_feat_dim": sample.global_features.shape[-1],
+            "fp_dim": sample.fp.shape[-1],
+            "num_tasks": sample.y.shape[-1],
+
             "params": params,
-            "task_names": context.get("task_names"),
-        }, model_path)
+
+            "task_names": context["task_names"],
+            "task_groups": context["task_groups"],
+
+            "label_scalers":
+                context["label_scalers"],
+
+            "label_transform_metadata":
+                context["label_transform_metadata"],
+        },
+        model_path,
+        )
 
         logger.info(f"Saved best model to {model_path}")
 
@@ -1121,18 +1141,57 @@ def train(context, config):
             best_model = model
             best_params = params.copy()
 
+            scaler_path = config["scaler_path"]
+            transform_metadata_path = config["transform_metadata_path"]
+
+            Path(scaler_path).parent.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
+            joblib.dump(
+                context["label_scalers"],
+                scaler_path
+            )
+
+            with open(transform_metadata_path,"w") as f:
+                json.dump(
+                    context["label_transform_metadata"],
+                    f,
+                    indent=2
+                )
+
             torch.save(
-                {
-                    "model_state_dict": model.state_dict(),
-                    "input_dim": input_dim,
-                    "edge_dim": edge_dim,
-                    "global_feat_dim": global_feat_dim,
-                    "fp_dim": fp_dim,
-                    "num_tasks": num_tasks,
-                    "params": params,
-                    "task_names": task_names,
-                },
-                model_path,
+            {
+                # -------------------------
+                # model
+                # -------------------------
+                "model_state_dict": model.state_dict(),
+
+                # architecture metadata
+                "input_dim": input_dim,
+                "edge_dim": edge_dim,
+                "global_feat_dim": global_feat_dim,
+                "fp_dim": fp_dim,
+                "num_tasks": num_tasks,
+
+                # hyperparameters
+                "params": params,
+
+                # task bookkeeping
+                "task_names": task_names,
+                "task_groups": context["task_groups"],
+
+                # -------------------------
+                # preprocessing (NEW)
+                # -------------------------
+                "label_scalers": context["label_scalers"],
+
+                "label_transform_metadata":
+                    context["label_transform_metadata"],
+
+            },
+            model_path,
             )
 
             logger.info(f"Saved best model (val_loss={best_loss:.4f})")
