@@ -60,6 +60,10 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
             safe_value(Descriptors.NumHDonors(mol)),
             safe_value(Descriptors.NumHAcceptors(mol)),
             safe_value(Descriptors.TPSA(mol)),
+            safe_value(Descriptors.MolMR(mol)),
+            safe_value(Descriptors.FractionCSP3(mol)),
+            safe_value(Descriptors.HeavyAtomCount(mol)),
+            safe_value(Descriptors.RingCount(mol)),
         ], dtype=np.float32)
 
     global_feats = [process_mol(s) for s in smiles_list]
