@@ -5,7 +5,7 @@ import torch
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class GINRegressor(nn.Module):
     def __init__(self, input_dim, edge_dim, global_feat_dim, fp_dim, num_tasks,

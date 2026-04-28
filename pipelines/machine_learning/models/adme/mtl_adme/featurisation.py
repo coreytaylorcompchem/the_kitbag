@@ -39,7 +39,7 @@ def safe_value(val):
 
 def prepare_features(df, smiles_col="smiles", label_col=None):
     """
-    Runs ONCE before featurisation loop.
+    Runs once before featurisation loop.
     Stores results in module-level globals.
     """
     global GLOBAL_FEATURES, FP_FEATURES
@@ -60,10 +60,10 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
             safe_value(Descriptors.NumHDonors(mol)),
             safe_value(Descriptors.NumHAcceptors(mol)),
             safe_value(Descriptors.TPSA(mol)),
-            safe_value(Descriptors.MolMR(mol)),
-            safe_value(Descriptors.FractionCSP3(mol)),
-            safe_value(Descriptors.HeavyAtomCount(mol)),
-            safe_value(Descriptors.RingCount(mol)),
+            # safe_value(Descriptors.MolMR(mol)),
+            # safe_value(Descriptors.FractionCSP3(mol)),
+            # safe_value(Descriptors.HeavyAtomCount(mol)),
+            # safe_value(Descriptors.RingCount(mol)),
         ], dtype=np.float32)
 
     global_feats = [process_mol(s) for s in smiles_list]

@@ -49,7 +49,6 @@ def featurise_smiles_inference(config, context):
     module = importlib.import_module(feat_cfg["module"])
     featuriser = getattr(module, feat_cfg["function"])
 
-    # ✅ THIS IS THE MISSING LINE
     if hasattr(module, "prepare_features"):
         module.prepare_features(df, smiles_col=smiles_col)
 
@@ -84,6 +83,11 @@ def load_trained_adme_model(config, context):
     model_path = config["model_path"]
 
     checkpoint = torch.load(model_path, map_location="cpu")
+
+    # get scalers 
+
+    context["label_scalers"] = checkpoint.get("label_scalers")
+    context["label_transform_metadata"] = checkpoint.get("label_transform_metadata")
 
     # -------------------------
     # Extract metadata
@@ -142,53 +146,67 @@ def load_trained_adme_model(config, context):
 @register_task("run_adme_inference", category="ADME")
 def run_adme_inference(config, context):
     graphs = context["graphs"]
-    # device = context["device"]
     model = context["model"]
     scalers = context.get("label_scalers")
     task_names = context["task_names"]
 
-    if scalers is not None:
-        preds_rescaled = np.zeros_like(preds)
-
-        for i, task in enumerate(task_names):
-            scaler = scalers[task]
-            preds_rescaled[:, i] = scaler.inverse_transform(
-                preds[:, i].reshape(-1, 1)
-            ).flatten()
-
-        final_preds = preds_rescaled
-    else:
-        logger.warning("Skipping inverse scaling — returning normalised predictions.")
-        final_preds = preds
-
     batch_size = config.get("batch_size", 64)
-
     loader = DataLoader(graphs, batch_size=batch_size, shuffle=False)
 
     preds = []
 
+    # -------------------------
+    # RUN MODEL
+    # -------------------------
     with torch.no_grad():
         for batch in tqdm(loader, desc="Inference"):
-            batch = batch.to('cpu')
+            batch = batch.to("cpu")
             out = model(batch)
             preds.append(out.cpu().numpy())
 
     preds = np.vstack(preds)
-
+    
     # -------------------------
-    # INVERSE SCALING
+    # INVERSE SCALING + TRANSFORMS
     # -------------------------
-    task_names = list(scalers.keys())
+    transform_metadata = context.get("label_transform_metadata")
 
-    preds_rescaled = np.zeros_like(preds)
+    final_preds = np.zeros_like(preds)
 
     for i, task in enumerate(task_names):
-        scaler = scalers[task]
-        preds_rescaled[:, i] = scaler.inverse_transform(
-            preds[:, i].reshape(-1, 1)
-        ).flatten()
 
-    context["predictions"] = preds_rescaled
+        values = preds[:, i]
+
+        # ---- Step 1: inverse scaling ----
+        if scalers is not None and task in scalers:
+            scaler = scalers[task]
+            values = scaler.inverse_transform(values.reshape(-1, 1)).flatten()
+
+        # ---- Step 2: inverse transform ----
+        if transform_metadata and task in transform_metadata:
+
+            meta = transform_metadata[task]
+            transform_type = meta.get("transform")
+
+            if transform_type == "log":
+                values = np.exp(values)
+
+            elif transform_type == "log1p":
+                values = np.expm1(values)
+
+            elif transform_type == "ic50_to_pic50":
+                # invert pIC50 → IC50 (nM)
+                values = 10 ** (-values) * 1e9
+
+            elif transform_type == "identity":
+                pass
+
+            else:
+                logger.warning(f"Unknown transform {transform_type} for task {task}")
+
+        final_preds[:, i] = values
+
+    context["predictions"] = final_preds
     context["task_names"] = task_names
 
     return context
