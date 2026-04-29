@@ -296,7 +296,7 @@ def extract_inhibition_concentration(description):
     patterns = [
         r'at\s+([\d\.]+)\s*u?m',
         r'([\d\.]+)\s*u?m',
-        # r'([\d\.e-]+)\s*m',  # convert M → µM
+        # r'([\d\.e-]+)\s*m',  # convert M → µM might add later
     ]
 
     for pattern in patterns:

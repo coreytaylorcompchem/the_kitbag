@@ -279,7 +279,7 @@ def harmonise_units(config, enriched=None):
                     else:
                         continue
 
-                    r["is_estimated"] = False   # ← ADD THIS
+                    r["is_estimated"] = False
 
                 if endpoint_type is None:
                     continue
@@ -493,7 +493,7 @@ def build_multitask_dataset(config, cleaned=None):
                 if "is_estimated" not in df.columns:
                     df["is_estimated"] = False
 
-                # --- NEW: dynamic grouping ---
+                # Dynamic grouping 
                 group_cols = ["smiles", "tox_type", "inhibition_conc_uM", "is_estimated"]
 
                 df_grouped = (
@@ -509,7 +509,7 @@ def build_multitask_dataset(config, cleaned=None):
                     if row["tox_type"] == "inhibition" and row["inhibition_conc_uM"] > 0:
                         label += f"_{int(row['inhibition_conc_uM'])}uM"
 
-                    # --- NEW: distinguish source ---
+                    # distinguish source
                     if row["is_estimated"]:
                         label += "_est"
                     else:
