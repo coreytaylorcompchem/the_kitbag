@@ -31,7 +31,9 @@ from modules.utils.convert_adme import (
     convert_solubility,
     convert_logp_logd,
     convert_cyp_activity,
-    convert_vd
+    convert_vd,
+    extract_inhibition_concentration,
+    normalise_conc,
 )
 from modules.utils.detect_adme import (
     detect_papp_direction, 
@@ -270,6 +272,15 @@ def harmonise_units(config, enriched=None):
                 elif "%" in str(unit).lower() or "INHIBITION" in stype:
                     endpoint_type = "inhibition"
 
+                    conc = extract_inhibition_concentration(r.get("assay_description"))
+                    if conc is not None:
+                        conc = normalise_conc(conc)
+                        r["inhibition_conc_uM"] = conc
+                    else:
+                        continue
+
+                    r["is_estimated"] = False   # ← ADD THIS
+
                 if endpoint_type is None:
                     continue
 
@@ -299,6 +310,31 @@ def harmonise_units(config, enriched=None):
                     "standard_value": r["standard_value"],
                     "standard_units": r["standard_units"]
                 })
+
+                # -----------------------------
+                # IC50 → pseudo % inhibition
+                # -----------------------------
+                if endpoint_type in {"IC50", "EC50", "KI", "KD"}:
+
+                    # choose reference concentration (uM)
+                    ref_conc_uM = 10.0
+
+                    # convert IC50 (currently nM) → uM
+                    ic50_uM = val / 1000.0 if val is not None else None
+
+                    if ic50_uM and ic50_uM > 0:
+                        inh = 100.0 * ref_conc_uM / (ref_conc_uM + ic50_uM)
+
+                        # create record derived from DR data
+                        inh_record = r.copy()
+                        inh_record["standard_value"] = inh
+                        inh_record["standard_units"] = "%"
+                        inh_record["tox_type"] = "inhibition"
+                        inh_record["inhibition_conc_uM"] = ref_conc_uM
+
+                        inh_record["is_estimated"] = True
+
+                        new_records.append(inh_record)
                 
                 new_records.append(r)
 
@@ -448,26 +484,65 @@ def build_multitask_dataset(config, cleaned=None):
         if "tox_type" in df.columns:
 
             logger.debug(f"Building pivot for tox assay: {assay_name}")
-            logger.debug(
-                f"DataFrame head before grouping:\n"
-                f"{df[['smiles','tox_type','standard_value','endpoint']].head(10)}"
-            )
 
-            df_grouped = (
-                df.groupby(["smiles", "tox_type"])["standard_value"]
-                .agg(["mean", "std", "count"])
-                .reset_index()
-            )
+            # Separate inhibition vs concentration endpoints
+            if "inhibition_conc_uM" in df.columns:
+                df["inhibition_conc_uM"] = df["inhibition_conc_uM"].fillna(-1)
 
-            logger.debug(f"Grouped DataFrame:\n{df_grouped.head(10)}")
+                # Ensure provenance column exists
+                if "is_estimated" not in df.columns:
+                    df["is_estimated"] = False
 
-            df_pivot = df_grouped.pivot(index="smiles", columns="tox_type")
+                # --- NEW: dynamic grouping ---
+                group_cols = ["smiles", "tox_type", "inhibition_conc_uM", "is_estimated"]
 
-            # flatten MultiIndex columns
-            df_pivot.columns = [
-                f"{assay_name}_{tox}_{stat}"
-                for stat, tox in df_pivot.columns
-            ]
+                df_grouped = (
+                    df.groupby(group_cols)["standard_value"]
+                    .agg(["mean", "std", "count"])
+                    .reset_index()
+                )
+
+                # Create readable column labels
+                def make_label(row):
+                    label = row["tox_type"]
+
+                    if row["tox_type"] == "inhibition" and row["inhibition_conc_uM"] > 0:
+                        label += f"_{int(row['inhibition_conc_uM'])}uM"
+
+                    # --- NEW: distinguish source ---
+                    if row["is_estimated"]:
+                        label += "_est"
+                    else:
+                        label += "_exp"
+
+                    return label
+
+                df_grouped["tox_label"] = df_grouped.apply(make_label, axis=1)
+
+                df_pivot = df_grouped.pivot(
+                    index="smiles",
+                    columns="tox_label"
+                )
+
+                df_pivot.columns = [
+                    f"{assay_name}_{tox}_{stat}"
+                    for stat, tox in df_pivot.columns
+                ]
+
+            else:
+                # fallback (IC50 etc.)
+                df_grouped = (
+                    df.groupby(["smiles", "tox_type"])["standard_value"]
+                    .agg(["mean", "std", "count"])
+                    .reset_index()
+                )
+
+                df_pivot = df_grouped.pivot(index="smiles", columns="tox_type")
+
+                df_pivot.columns = [
+                    f"{assay_name}_{tox}_{stat}"
+                    for stat, tox in df_pivot.columns
+                ]
 
             dfs.append(df_pivot.reset_index())
             continue
@@ -514,8 +589,17 @@ def generate_diagnostics(config, mtl_df=None):
     def get_group_cols(mtl_df, keywords):
         cols = []
         for c in mtl_df.columns:
+
+            if (
+                c.endswith("_std")
+                or c.endswith("_count")
+                or "inhibition_conc_uM" in c
+                or "tox_type" in c
+            ):
+                continue
+
             for kw in keywords:
-                if kw.lower() in c.lower():  # match anywhere in column name
+                if kw.lower() in c.lower():
                     cols.append(c)
                     break
         return cols
@@ -542,7 +626,11 @@ def generate_diagnostics(config, mtl_df=None):
 
     task_cols = [
         c for c in mtl_df.columns
-        if not (c.endswith("_std") or c.endswith("_count")) and np.issubdtype(mtl_df[c].dtype, np.number)
+        if (
+            not (c.endswith("_std") or c.endswith("_count"))
+            and "inhibition_conc_uM" not in c
+            and np.issubdtype(mtl_df[c].dtype, np.number)
+        )
     ]
     numeric_cols = task_cols.copy()
     mask = mtl_df[task_cols].notna()
@@ -671,7 +759,11 @@ def generate_diagnostics(config, mtl_df=None):
     # Keep only numeric columns, exclude *_std and *_count
     numeric_cols = [
         c for c in mtl_df.columns
-        if not (c.endswith("_std") or c.endswith("_count")) and np.issubdtype(mtl_df[c].dtype, np.number)
+        if (
+            not (c.endswith("_std") or c.endswith("_count"))
+            and "inhibition_conc_uM" not in c
+            and np.issubdtype(mtl_df[c].dtype, np.number)
+        )
     ]
     corr_df = mtl_df[numeric_cols].corr()
 

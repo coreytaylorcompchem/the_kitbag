@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 
 from rdkit import Chem
@@ -277,3 +279,36 @@ def convert_ppb(value, unit):
     else:
         # units like ug/mL, pmol, etc are ignored
         return None
+    
+def extract_inhibition_concentration(description):
+    """
+    Extract concentration from assay description.
+    Returns concentration in µM (float) or None.
+    """
+
+    if not description:
+        return None
+
+    desc = description.lower().replace("μ", "u")
+
+    # patterns like:
+    # "at 30 uM", "at 100uM", "at 1 um"
+    patterns = [
+        r'at\s+([\d\.]+)\s*u?m',
+        r'([\d\.]+)\s*u?m',
+        # r'([\d\.e-]+)\s*m',  # convert M → µM
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, desc)
+        if match:
+            try:
+                return float(match.group(1))
+            except:
+                continue
+
+    return None
+
+def normalise_conc(conc):
+    allowed = [0.1, 1, 3, 10, 30, 100]
+    return min(allowed, key=lambda x: abs(x - conc))
