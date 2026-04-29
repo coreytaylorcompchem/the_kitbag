@@ -604,6 +604,7 @@ def generate_diagnostics(config, mtl_df=None):
                 or c.endswith("_count")
                 or "inhibition_conc_uM" in c
                 or "tox_type" in c
+                or "is_estimated" in c
             ):
                 continue
 
@@ -639,6 +640,8 @@ def generate_diagnostics(config, mtl_df=None):
             not (c.endswith("_std") or c.endswith("_count"))
             and "inhibition_conc_uM" not in c
             and np.issubdtype(mtl_df[c].dtype, np.number)
+            and not pd.api.types.is_bool_dtype(mtl_df[c])   # ← ADD
+            and "is_estimated" not in c                     # ← ADD
         )
     ]
     numeric_cols = task_cols.copy()
@@ -772,6 +775,8 @@ def generate_diagnostics(config, mtl_df=None):
             not (c.endswith("_std") or c.endswith("_count"))
             and "inhibition_conc_uM" not in c
             and np.issubdtype(mtl_df[c].dtype, np.number)
+            and not pd.api.types.is_bool_dtype(mtl_df[c])   # ← ADD
+            and "is_estimated" not in c                     # ← ADD
         )
     ]
     corr_df = mtl_df[numeric_cols].corr()
