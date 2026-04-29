@@ -485,31 +485,31 @@ def build_multitask_dataset(config, cleaned=None):
 
             logger.debug(f"Building pivot for tox assay: {assay_name}")
 
-            # Separate inhibition vs concentration endpoints
-            if "inhibition_conc_uM" in df.columns:
-                df["inhibition_conc_uM"] = df["inhibition_conc_uM"].fillna(-1)
+            # --- SPLIT DATA ---
+            df_inh = df[df["tox_type"] == "inhibition"].copy()
+            df_aff = df[df["tox_type"].isin(["IC50", "EC50", "KI", "KD"])].copy()
 
-                # Ensure provenance column exists
-                if "is_estimated" not in df.columns:
-                    df["is_estimated"] = False
+            pivots = []
 
-                # Dynamic grouping 
-                group_cols = ["smiles", "tox_type", "inhibition_conc_uM", "is_estimated"]
+            # -----------------------------
+            # 1. Inhibition block (measured + estimated)
+            # -----------------------------
+            if not df_inh.empty:
 
-                df_grouped = (
-                    df.groupby(group_cols)["standard_value"]
+                df_inh["inhibition_conc_uM"] = df_inh.get("inhibition_conc_uM", -1).fillna(-1)
+
+                if "is_estimated" not in df_inh.columns:
+                    df_inh["is_estimated"] = False
+
+                df_grouped_inh = (
+                    df_inh.groupby(["smiles", "inhibition_conc_uM", "is_estimated"])["standard_value"]
                     .agg(["mean", "std", "count"])
                     .reset_index()
                 )
 
-                # Create readable column labels
-                def make_label(row):
-                    label = row["tox_type"]
+                def make_inh_label(row):
+                    label = f"inhibition_{int(row['inhibition_conc_uM'])}uM" if row["inhibition_conc_uM"] > 0 else "inhibition"
 
-                    if row["tox_type"] == "inhibition" and row["inhibition_conc_uM"] > 0:
-                        label += f"_{int(row['inhibition_conc_uM'])}uM"
-
-                    # distinguish source
                     if row["is_estimated"]:
                         label += "_est"
                     else:
@@ -517,34 +517,43 @@ def build_multitask_dataset(config, cleaned=None):
 
                     return label
 
-                df_grouped["tox_label"] = df_grouped.apply(make_label, axis=1)
+                df_grouped_inh["tox_label"] = df_grouped_inh.apply(make_inh_label, axis=1)
 
-                df_pivot = df_grouped.pivot(
-                    index="smiles",
-                    columns="tox_label"
-                )
-
-                df_pivot.columns = [
+                df_pivot_inh = df_grouped_inh.pivot(index="smiles", columns="tox_label")
+                df_pivot_inh.columns = [
                     f"{assay_name}_{tox}_{stat}"
-                    for stat, tox in df_pivot.columns
+                    for stat, tox in df_pivot_inh.columns
                 ]
 
-            else:
-                # fallback (IC50 etc.)
-                df_grouped = (
-                    df.groupby(["smiles", "tox_type"])["standard_value"]
+                pivots.append(df_pivot_inh)
+
+            # -----------------------------
+            # 2. Affinity block (IC50, EC50, etc.)
+            # -----------------------------
+            if not df_aff.empty:
+
+                df_grouped_aff = (
+                    df_aff.groupby(["smiles", "tox_type"])["standard_value"]
                     .agg(["mean", "std", "count"])
                     .reset_index()
                 )
 
-                df_pivot = df_grouped.pivot(index="smiles", columns="tox_type")
+                df_pivot_aff = df_grouped_aff.pivot(index="smiles", columns="tox_type")
 
-                df_pivot.columns = [
+                df_pivot_aff.columns = [
                     f"{assay_name}_{tox}_{stat}"
-                    for stat, tox in df_pivot.columns
+                    for stat, tox in df_pivot_aff.columns
                 ]
 
-            dfs.append(df_pivot.reset_index())
+                pivots.append(df_pivot_aff)
+
+            # -----------------------------
+            # 3. Merge both (if both exist)
+            # -----------------------------
+            if pivots:
+                df_pivot = reduce(lambda l, r: pd.merge(l, r, on="smiles", how="outer"), pivots)
+                dfs.append(df_pivot.reset_index())
+
             continue
 
         # -----------------------------
