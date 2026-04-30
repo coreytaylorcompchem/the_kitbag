@@ -22,7 +22,6 @@ from PIL import Image, ImageDraw
 import networkx as nx
 
 from pipeline.task_registry import register_task
-from pipeline.logger import setup_logger
 
 from modules.utils.convert_adme import (
     convert_permeability,
@@ -34,6 +33,9 @@ from modules.utils.convert_adme import (
     convert_vd,
     extract_inhibition_concentration,
     normalise_conc,
+    extract_cyp3a4_substrate,
+    train_cyp_classifier,
+    extract_cyp3a4_substrate_hybrid
 )
 from modules.utils.detect_adme import (
     detect_papp_direction, 
@@ -41,7 +43,9 @@ from modules.utils.detect_adme import (
     extract_species
 )
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 # Assay categories
 permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
@@ -146,22 +150,91 @@ def harmonise_units(config, enriched=None):
                     new_records.append(r)
 
         elif any(x in lname for x in cyp_assays):  # CYPs are ADME (type A)
+            
+            import re
+
+            def normalise_text(t):
+                if not t:
+                    return ""
+                t = t.lower()
+                t = t.replace("μ", "u")
+                t = t.replace("β", "beta")
+                t = t.replace("′", "'")
+                t = re.sub(r"[’']", "", t)
+                t = re.sub(r"[\-_/]", " ", t)
+                t = re.sub(r"\s+", " ", t)
+                return t
+            
+            from collections import Counter
+
+            sample = [
+                r.get("assay_description")
+                for r in records
+            ]
+
+            # Existing crude sanity checks
+            logger.debug(f"midazolam raw mentions: {sum('midazolam' in str(t).lower() for t in sample)}")
+            logger.debug(f"testosterone raw mentions: {sum('testosterone' in str(t).lower() for t in sample)}")
+
+            # NEW: test substrate classifier directly on raw records
+            # Build weak labels using rules
+            texts = []
+            labels = []
+
+            for r in records:
+                desc = r.get("assay_description")
+                if not desc:
+                    continue
+
+                label = extract_cyp3a4_substrate(desc)
+
+                if label in ["midazolam_like", "testosterone_like"]:
+                    texts.append(desc)
+                    labels.append(label)
+
+            # Train ML model if enough data
+            if len(texts) > 50:
+                train_cyp_classifier(texts, labels)
+                logger.debug(f"Trained CYP classifier on {len(texts)} samples")
+
+            logger.debug(f"substrate classification counts: {Counter(labels)}")
+
             for r in records:
                 val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val, endpoint, new_unit = convert_cyp_activity(val, unit)
+
                 if new_val is None:
                     continue
+
                 r["standard_value"], r["standard_units"] = new_val, new_unit
-                r["cyp_endpoint"] = endpoint  # e.g., IC50 or inhibition
+                r["cyp_endpoint"] = endpoint
+
+                def map_substrate_label(label):
+                    return {
+                        "midazolam_like": "mdz",
+                        "testosterone_like": "tes"
+                    }.get(label, label)
+
+                # Only split CYP3A4
+                if "cyp3a4" in lname:
+                    raw_label = extract_cyp3a4_substrate_hybrid(
+                    r.get("assay_description")
+                )
+                    
+                    r["cyp_substrate"] = map_substrate_label(raw_label)
+                else:
+                    r["cyp_substrate"] = "na"   # important: keeps grouping stable
+
                 if endpoint == "IC50":
                     r["IC50"] = new_val
                     r["IC50_unit"] = new_unit
                 elif endpoint == "inhibition":
                     r["inhibition"] = new_val
                     r["inhibition_unit"] = new_unit
-                # Also keep for generic pivoting
+
                 r["tox_endpoint"] = endpoint
                 new_records.append(r)
+            logger.debug(f"{assay_name}: kept after conversion = {len(new_records)}")
         # elif any(x in lname for x in bbb_assays):
         #     for r in records:
         #         val, unit = r.get("standard_value"), r.get("standard_units")
@@ -303,13 +376,13 @@ def harmonise_units(config, enriched=None):
                 r["endpoint"] = assay_name
 
                 # debug log for verification
-                logger.debug({
-                    "smiles": r.get("smiles"),
-                    "assay_name": assay_name,
-                    "tox_type": r["tox_type"],
-                    "standard_value": r["standard_value"],
-                    "standard_units": r["standard_units"]
-                })
+                # logger.debug({
+                #     "smiles": r.get("smiles"),
+                #     "assay_name": assay_name,
+                #     "tox_type": r["tox_type"],
+                #     "standard_value": r["standard_value"],
+                #     "standard_units": r["standard_units"]
+                # })
 
                 # -----------------------------
                 # IC50 → pseudo % inhibition
@@ -381,15 +454,15 @@ def harmonise_units(config, enriched=None):
         
         # debug checks of assay data
 
-        if lname in tox_assays:
-            logger.debug(f"{assay_name} example records after harmonisation:")
-            for r in new_records[:5]:
-                logger.debug({
-                    "standard_type": r.get("standard_type"),
-                    "endpoint": r.get("endpoint"),
-                    "standard_units": r.get("standard_units"),
-                    "standard_value": r.get("standard_value")
-                })
+        # if lname in tox_assays:
+        #     logger.debug(f"{assay_name} example records after harmonisation:")
+        #     for r in new_records[:5]:
+        #         logger.debug({
+        #             "standard_type": r.get("standard_type"),
+        #             "endpoint": r.get("endpoint"),
+        #             "standard_units": r.get("standard_units"),
+        #             "standard_value": r.get("standard_value")
+        #         })
 
         cleaned[assay_name] = new_records
 
@@ -441,14 +514,14 @@ def build_multitask_dataset(config, cleaned=None):
 
         logger.debug(f"{assay_name} DataFrame columns after harmonisation: {df.columns.tolist()}")
 
-        logger.debug(f"Processing assay: {assay_name}")
-        logger.debug(f"df columns: {df.columns.tolist()}")
-        if len(records) > 0:
-            logger.debug(f"Sample record: {records[0]}")
+        # logger.debug(f"Processing assay: {assay_name}")
+        # logger.debug(f"df columns: {df.columns.tolist()}")
+        # if len(records) > 0:
+        #     logger.debug(f"Sample record: {records[0]}")
 
-        if assay_name.lower() in {"herg", "nav1.5"}:
-            logger.debug(f"{assay_name} columns in DataFrame: {df.columns.tolist()}")
-            logger.debug(df[["standard_type","endpoint","standard_units"]].head())
+        # if assay_name.lower() in {"herg", "nav1.5"}:
+        #     logger.debug(f"{assay_name} columns in DataFrame: {df.columns.tolist()}")
+        #     logger.debug(df[["standard_type","endpoint","standard_units"]].head())
     
         df["standard_value"] = pd.to_numeric(df["standard_value"], errors="coerce")
         df = df.dropna(subset=["standard_value"])
@@ -465,17 +538,56 @@ def build_multitask_dataset(config, cleaned=None):
             group_cols.append("papp_direction")
         if "cyp_endpoint" in df.columns:
             group_cols.append("cyp_endpoint")
+        if "cyp_substrate" in df.columns:
+            if df["cyp_substrate"].nunique() > 1:
+                group_cols.append("cyp_substrate")
 
         if group_cols:
-            df[group_cols] = df[group_cols].fillna("unknown")
-            df_grouped = df.groupby(["smiles"] + group_cols)["standard_value"].agg(["mean", "std", "count"]).reset_index()
+
+            logger.debug(f"{assay_name} raw rows entering grouping: {len(df)}")
+            logger.debug(f"{assay_name} unique smiles before grouping: {df['smiles'].nunique()}")
+
+            if "cyp_substrate" in df.columns:
+                logger.debug(
+                    f"{assay_name} substrate counts before grouping: "
+                    f"{df['cyp_substrate'].value_counts(dropna=False).to_dict()}"
+                )
+
+            logger.debug(f"group_cols = {group_cols}")
+
+            df_grouped = df.groupby(
+                ["smiles"] + group_cols
+            )["standard_value"].agg(
+                ["mean","std","count"]
+            ).reset_index()
+
+            logger.debug(f"{assay_name} rows after grouping: {len(df_grouped)}")
+
             df_pivot = df_grouped.pivot(index="smiles", columns=group_cols)
+
+            logger.debug(
+                f"{assay_name} unique smiles after pivot: {len(df_pivot)}"
+            )
+
             # Properly join MultiIndex columns without splitting letters
             df_pivot.columns = [
-                f"{assay_name}_{'_'.join(map(str, col))}_{stat}" if isinstance(col, tuple) else f"{assay_name}_{col}_{stat}"
-                for stat, col in df_pivot.columns
+                f"{assay_name}_{'_'.join(map(str, col[1:]))}_{col[0]}"
+                for col in df_pivot.columns
             ]
             dfs.append(df_pivot.reset_index())
+            substr_cols = [
+                c for c in df_pivot.columns
+                if "midazolam" in c or "testosterone" in c
+            ]
+
+            logger.debug(
+                f"Compounds with any substrate data: "
+                f"{df_pivot[substr_cols].notna().any(axis=1).sum()}"
+            )
+            logger.debug(
+                "Non-null counts per CYP3A4 column:\n"
+                f"{df_pivot.notna().sum().sort_values(ascending=False)}"
+            )
             continue
 
         # -----------------------------
@@ -670,7 +782,7 @@ def generate_diagnostics(config, mtl_df=None):
             y=counts.values,
             ax=ax,
             palette="Blues_d",
-            ci=None
+            errorbar=None
         )
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=10)
         ax.set_ylabel("Number of Data Points")
