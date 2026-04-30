@@ -1,5 +1,6 @@
 import re
 
+from collections import Counter
 import numpy as np
 
 from rdkit import Chem
@@ -558,8 +559,6 @@ def extract_cyp3a4_substrate(text):
     
 def train_cyp_classifier(texts, labels):
     global _CYP_MODEL, _CYP_VECTORIZER
-
-    from collections import Counter
 
     # Balance dataset
     counts = Counter(labels)
