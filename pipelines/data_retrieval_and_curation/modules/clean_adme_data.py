@@ -45,7 +45,7 @@ from modules.utils.detect_adme import (
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 # Assay categories
 permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
@@ -151,22 +151,6 @@ def harmonise_units(config, enriched=None):
 
         elif any(x in lname for x in cyp_assays):  # CYPs are ADME (type A)
             
-            import re
-
-            def normalise_text(t):
-                if not t:
-                    return ""
-                t = t.lower()
-                t = t.replace("μ", "u")
-                t = t.replace("β", "beta")
-                t = t.replace("′", "'")
-                t = re.sub(r"[’']", "", t)
-                t = re.sub(r"[\-_/]", " ", t)
-                t = re.sub(r"\s+", " ", t)
-                return t
-            
-            from collections import Counter
-
             sample = [
                 r.get("assay_description")
                 for r in records
