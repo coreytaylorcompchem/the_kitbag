@@ -86,6 +86,7 @@ def multitask_loss(pred, target, log_vars, active_tasks=None):
         target_i = target[mask, i]
 
         mse = F.mse_loss(pred_i, target_i)
+        mse = F.huber_loss(pred_i, target_i, delta=1.0)
 
         log_var = torch.clamp(log_vars[i], -5.0, 5.0)
         precision = torch.exp(-log_var)
@@ -329,7 +330,8 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
                 # loss_i = precision * mse + log_var
                 # losses.append(loss_i)
 
-                mse = F.mse_loss(pred_i, target_i)
+                # mse = F.mse_loss(pred_i, target_i)
+                mse = F.huber_loss(pred_i, target_i, delta=1.0)
                 losses.append(mse)
 
             if any(l is not None for l in losses):

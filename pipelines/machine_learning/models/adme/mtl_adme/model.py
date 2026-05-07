@@ -125,9 +125,17 @@ class GINRegressor(nn.Module):
 
         for group_name in self.task_groups.keys():
             self.group_trunks[group_name] = nn.Sequential(
+                # nn.Linear(512, 256),
+                # nn.ReLU(),
+                # nn.Dropout(dropout)
+                nn.Linear(512, 512),
+                nn.ReLU(),
+                nn.BatchNorm1d(512),
+                nn.Dropout(dropout),
+
                 nn.Linear(512, 256),
                 nn.ReLU(),
-                nn.Dropout(dropout)
+                nn.Dropout(dropout),
             )
 
         # =========================
