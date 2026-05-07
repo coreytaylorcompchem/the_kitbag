@@ -85,7 +85,7 @@ def multitask_loss(pred, target, log_vars, active_tasks=None):
         pred_i = pred[mask, i]
         target_i = target[mask, i]
 
-        mse = F.mse_loss(pred_i, target_i)
+        # mse = F.mse_loss(pred_i, target_i)
         mse = F.huber_loss(pred_i, target_i, delta=1.0)
 
         log_var = torch.clamp(log_vars[i], -5.0, 5.0)
@@ -104,30 +104,22 @@ def multitask_loss(pred, target, log_vars, active_tasks=None):
 
     return total_loss
 
-# def compute_task_losses(pred, target, log_vars, active_tasks=None):
-#     task_losses = []
+# =========================
+# LOSS FACTORY
+# =========================
+def compute_base_loss(pred, target, loss_name="huber", huber_delta=1.0):
 
-#     for i in range(pred.shape[1]):
+    if loss_name == "mse":
+        return F.mse_loss(pred, target)
 
-#         if active_tasks is not None and i not in active_tasks:
-#             continue
+    elif loss_name == "mae":
+        return F.l1_loss(pred, target)
 
-#         mask = ~torch.isnan(target[:, i])
-#         if mask.sum() == 0:
-#             continue
+    elif loss_name == "huber":
+        return F.huber_loss(pred, target, delta=huber_delta)
 
-#         pred_i = pred[mask, i]
-#         target_i = target[mask, i]
-
-#         mse = F.mse_loss(pred_i, target_i)
-
-#         log_var = torch.clamp(log_vars[i], -5.0, 5.0)
-#         precision = torch.exp(-log_var)
-
-#         loss_i = precision * mse + log_var
-#         task_losses.append(loss_i)
-
-#     return task_losses
+    else:
+        raise ValueError(f"Unknown loss: {loss_name}")
 
 ########### PCGrad implmentation
 
@@ -331,7 +323,13 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
                 # losses.append(loss_i)
 
                 # mse = F.mse_loss(pred_i, target_i)
-                mse = F.huber_loss(pred_i, target_i, delta=1.0)
+                # mse = F.huber_loss(pred_i, target_i, delta=1.0)
+                mse = compute_base_loss(
+                    pred_i,
+                    target_i,
+                    loss_name=model.loss_name,
+                    huber_delta=model.huber_delta
+                )
                 losses.append(mse)
 
             if any(l is not None for l in losses):
@@ -386,7 +384,15 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
 
             if loss.requires_grad:
                 optimizer.zero_grad(set_to_none=True)
+                # loss.backward()
+                # optimizer.step()
                 loss.backward()
+
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(),
+                    max_norm=1.0
+                )
+
                 optimizer.step()
             else:
                 # No valid tasks in this batch; skip update safely

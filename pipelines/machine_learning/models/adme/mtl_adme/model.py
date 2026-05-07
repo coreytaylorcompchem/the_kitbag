@@ -1,4 +1,6 @@
 from torch_geometric.nn import GINEConv, global_add_pool, BatchNorm, global_mean_pool
+from torch_geometric.nn import GlobalAttention
+from torch_geometric.nn import AttentionalAggregation
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
@@ -9,13 +11,26 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 class GINRegressor(nn.Module):
     def __init__(self, input_dim, edge_dim, global_feat_dim, fp_dim, num_tasks,
-                 hidden_dim=512, fp_hidden_dim=512, num_layers=5, dropout=0.1, task_groups=None):
+                 hidden_dim=256, fp_hidden_dim=256, num_layers=5, dropout=0.1, task_groups=None, 
+                 loss_name="huber",huber_delta=1.0,):
         super().__init__()
         self._debug_printed = False
         self.num_layers = num_layers
         self.dropout = dropout
         self.num_tasks = num_tasks 
         self.input_proj = nn.Linear(input_dim, hidden_dim)
+        self.loss_name = loss_name
+        self.huber_delta = huber_delta
+        self.att_pool = AttentionalAggregation(
+            gate_nn=nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim // 2, 1)
+            )
+        )
+        self.film = nn.Sequential(
+            nn.Linear(global_feat_dim, hidden_dim * 2)
+        )
 
         # =========================
         # TASK GROUPING
@@ -69,6 +84,7 @@ class GINRegressor(nn.Module):
         )
 
         self.fp_gate = nn.Parameter(torch.zeros(fp_hidden_dim))
+        self.global_gate = nn.Parameter(torch.ones(hidden_dim)) # delete if things crash
 
         # =========================
         # Global features MLP
@@ -166,15 +182,39 @@ class GINRegressor(nn.Module):
         # GNN forward + residuals
         # =========================
         x = self.input_proj(x)
+        global_feat = data.global_features
+
+        if global_feat.dim() == 3:
+            global_feat = global_feat.squeeze(1)
+
+        film_params = self.film(global_feat)
+
+        gamma, beta = torch.chunk(film_params, 2, dim=-1)
+
+        gamma = 1.0 + 0.1 * torch.tanh(gamma)
+        beta = 0.1 * beta
+
+        gamma = gamma[batch]
+        beta = beta[batch]
 
         for conv, norm in zip(self.convs, self.norms):
+
+            residual = x
+
             h = conv(x, edge_index, edge_attr)
             h = norm(h)
+
+            # FiLM conditioning
+            h = gamma * h + beta
+
             h = F.relu(h)
-            x = x + h
+            h = F.dropout(h, p=self.dropout, training=self.training)
+
+            x = residual + h
 
         # Pooling
-        x = global_mean_pool(x, batch)
+        # x = global_mean_pool(x, batch)
+        x = self.att_pool(x, batch)
 
         # =========================
         # Fingerprints
@@ -203,6 +243,8 @@ class GINRegressor(nn.Module):
             fp_out * torch.sigmoid(self.fp_gate),
             global_out * torch.sigmoid(self.global_gate)
         ], dim=1)
+
+        x = F.layer_norm(x, x.shape[1:])
 
         # =========================
         # Shared trunk

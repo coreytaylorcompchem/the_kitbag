@@ -7,6 +7,8 @@ import seaborn as sns
 
 from pathlib import Path
 from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import mean_absolute_error
+from scipy.stats import spearmanr, pearsonr
 
 from pipeline.logger import setup_logger
 
@@ -89,16 +91,34 @@ def evaluate(context, config):
         y_t = y_true[mask, i]
         y_p = y_pred[mask, i]
 
+        # r2 = r2_score(y_t, y_p)
+        # rmse = np.sqrt(mean_squared_error(y_t, y_p))
         r2 = r2_score(y_t, y_p)
-        rmse = np.sqrt(mean_squared_error(y_t, y_p))
 
-        logger.info(f"{task}: n={n}, R2={r2:.3f}, RMSE={rmse:.3f}")
+        rmse = np.sqrt(mean_squared_error(y_t, y_p))
+        mae = mean_absolute_error(y_t, y_p)
+        median_ae = np.median(np.abs(y_t - y_p))
+        spearman = spearmanr(y_t, y_p).correlation
+        pearson = pearsonr(y_t, y_p)[0]
+
+        logger.info(
+            f"{task}: "
+            f"n={n}, "
+            f"R2={r2:.3f}, "
+            f"RMSE={rmse:.3f}, "
+            f"MAE={mae:.3f}, "
+            f"Spearman={spearman:.3f}"
+        )
 
         rows.append({
             "task": task,
             "n_samples": int(n),
             "r2": float(r2),
             "rmse": float(rmse),
+            "mae": float(mae),
+            "median_ae": float(median_ae),
+            "pearson": float(pearson),
+            "spearman": float(spearman),
         })
 
     pd.DataFrame(rows).to_csv(plot_dir / "task_metrics.csv", index=False)
@@ -143,7 +163,13 @@ def evaluate(context, config):
         ax.plot([min_val, max_val], [min_val, max_val], 'r--')
 
         r2 = r2_score(y_t, y_p)
-        ax.set_title(f"{task}\nR²={r2:.2f}")
+        ax.set_title(
+            f"{task}\n"
+            f"R²={r2:.2f} | "
+            f"RMSE={rmse:.2f}\n"
+            f"MAE={mae:.2f} | "
+            f"ρ={spearman:.2f}"
+        )
         ax.set_xlabel("True")
         ax.set_ylabel("Predicted")
         ax.grid(True)
@@ -188,6 +214,40 @@ def evaluate(context, config):
 
     plt.tight_layout()
     plt.savefig(plot_dir / "residuals.png", dpi=300)
+    plt.close()
+
+    # =========================
+    # 5. RESIDUAL HISTOGRAMS
+    # =========================
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
+    axes = axes.flatten()
+
+    for i, task in enumerate(task_names):
+
+        ax = axes[i]
+
+        mask = ~np.isnan(y_true[:, i])
+
+        if mask.sum() == 0:
+            ax.axis("off")
+            continue
+
+        y_t = y_true[mask, i]
+        y_p = y_pred[mask, i]
+
+        residuals = y_p - y_t
+
+        ax.hist(residuals, bins=40)
+        ax.set_title(task)
+        ax.set_xlabel("Residual")
+        ax.set_ylabel("Count")
+
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.savefig(plot_dir / "residual_histograms.png", dpi=300)
     plt.close()
 
     logger.info(f"Saved evaluation plots to {plot_dir}")
