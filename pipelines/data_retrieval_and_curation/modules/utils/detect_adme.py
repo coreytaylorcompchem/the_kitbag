@@ -109,3 +109,102 @@ def extract_species(text):
         if k in t:
             return v
     return "unknown"
+
+def classify_permeability_system(record):
+    """
+    Classify permeability assay system.
+
+    Returns
+    -------
+    tuple:
+        (system, directionality)
+
+    system:
+        - "caco2"
+        - "mdck"
+        - "pampa"
+        - None
+
+    directionality:
+        - "directional"
+        - "non_directional"
+    """
+
+    text = " ".join([
+        str(record.get("assay_description", "")),
+        str(record.get("assay_type", "")),
+        str(record.get("standard_type", "")),
+        str(record.get("document_chembl_id", "")),
+    ]).lower()
+
+    # -------------------------
+    # PAMPA
+    # -------------------------
+    if any(x in text for x in [
+        "pampa",
+        "parallel artificial membrane",
+        "artificial membrane permeability",
+    ]):
+        return "pampa", "non_directional"
+
+    # -------------------------
+    # Caco-2
+    # -------------------------
+    if any(x in text for x in [
+        "caco",
+        "caco-2",
+        "caco2",
+    ]):
+        return "caco2", "directional"
+
+    # -------------------------
+    # MDCK
+    # -------------------------
+    if any(x in text for x in [
+        "mdck",
+        "mdcki",
+        "mdr1-mdck",
+        "mdckii",
+    ]):
+        return "mdck", "directional"
+
+    return None, None
+
+def flatten_pivot_columns(df_pivot, assay_name):
+    """
+    Flatten MultiIndex columns from grouped assay pivots.
+
+    Expected MultiIndex structure:
+        (stat, group1, group2, ...)
+
+    Produces:
+        assay_group1_group2_stat
+
+    Example:
+        ("mean", "caco2", "AB")
+    ->
+        Caco-2_caco2_AB_mean
+    """
+
+    new_cols = []
+
+    for col in df_pivot.columns:
+
+        # Non-MultiIndex fallback
+        if not isinstance(col, tuple):
+            new_cols.append(f"{assay_name}_{col}")
+            continue
+
+        stat = col[0]
+        groups = [str(x) for x in col[1:] if x not in [None, "", "nan"]]
+
+        label = "_".join([assay_name] + groups + [stat])
+
+        # cleanup accidental duplicates
+        label = label.replace("__", "_")
+
+        new_cols.append(label)
+
+    df_pivot.columns = new_cols
+
+    return df_pivot

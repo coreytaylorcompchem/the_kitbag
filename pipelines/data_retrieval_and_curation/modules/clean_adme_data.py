@@ -41,7 +41,9 @@ from modules.utils.convert_adme import (
 from modules.utils.detect_adme import (
     detect_papp_direction, 
     detect_metstab_system, 
-    extract_species
+    extract_species,
+    classify_permeability_system,
+    flatten_pivot_columns
 )
 
 from pipeline.logger import setup_logger
@@ -100,17 +102,54 @@ def harmonise_units(config, enriched=None):
         # ADME assays
         # -----------------------------
         if any(x in lname for x in permeability_assays):
+
             logger.debug(f"Matched permeability assay: {assay_name}")
             logger.debug(f"Number of raw records: {len(records)}")
+
             for r in records:
-                r["papp_direction"] = detect_papp_direction(r.get("assay_description"))
+
+                system, directionality = classify_permeability_system(r)
+
+                # Skip unclassified permeability assays
+                if system is None:
+                    continue
+
+                assay_family = assay_name.lower()
+
+                if "caco" in assay_family and system != "caco2":
+                    continue
+
+                if "mdck" in assay_family and system != "mdck":
+                    continue
+
+                if "pampa" in assay_family and system != "pampa":
+                    continue
+
+                r["permeability_system"] = system
+
+                # Only directional systems get AB/BA labels
+                if directionality == "directional":
+                    r["papp_direction"] = detect_papp_direction(
+                        r.get("assay_description")
+                    )
+                else:
+                    r["papp_direction"] = "NA"
+
                 val, unit = r.get("standard_value"), r.get("standard_units")
+
                 new_val, new_unit = convert_permeability(val, unit)
-                logger.debug(f"{assay_name}: {len(new_records)} records after harmonisation")
-                if new_val is not None:
-                    r["standard_value"], r["standard_units"] = new_val, new_unit
-                    logger.debug(f"Adding {len(new_records)} records to cleaned['{assay_name}']")
-                    new_records.append(r)
+
+                if new_val is None:
+                    continue
+
+                r["standard_value"] = new_val
+                r["standard_units"] = new_unit
+
+                new_records.append(r)
+
+            logger.debug(
+                f"{assay_name}: kept {len(new_records)} permeability records"
+            )
 
         elif any(x in lname for x in solubility_assays):
             for r in records:
@@ -523,7 +562,13 @@ def build_multitask_dataset(config, cleaned=None):
         group_cols = []
         if "species" in df.columns:
             group_cols.append("species")
-        if "papp_direction" in df.columns:
+        if "permeability_system" in df.columns:
+            group_cols.append("permeability_system")
+
+        if (
+            "papp_direction" in df.columns
+            and df["papp_direction"].nunique() > 1
+        ):
             group_cols.append("papp_direction")
         if "cyp_endpoint" in df.columns:
             group_cols.append("cyp_endpoint")
@@ -559,10 +604,11 @@ def build_multitask_dataset(config, cleaned=None):
             )
 
             # Properly join MultiIndex columns without splitting letters
-            df_pivot.columns = [
-                f"{assay_name}_{'_'.join(map(str, col[1:]))}_{col[0]}"
-                for col in df_pivot.columns
-            ]
+            # df_pivot.columns = [
+            #     f"{assay_name}_{'_'.join(map(str, col[1:]))}_{col[0]}"
+            #     for col in df_pivot.columns
+            # ]
+            df_pivot = flatten_pivot_columns(df_pivot, assay_name)
             dfs.append(df_pivot.reset_index())
             substr_cols = [
                 c for c in df_pivot.columns
@@ -621,10 +667,11 @@ def build_multitask_dataset(config, cleaned=None):
                 df_grouped_inh["tox_label"] = df_grouped_inh.apply(make_inh_label, axis=1)
 
                 df_pivot_inh = df_grouped_inh.pivot(index="smiles", columns="tox_label")
-                df_pivot_inh.columns = [
-                    f"{assay_name}_{tox}_{stat}"
-                    for stat, tox in df_pivot_inh.columns
-                ]
+                # df_pivot_inh.columns = [
+                #     f"{assay_name}_{tox}_{stat}"
+                #     for stat, tox in df_pivot_inh.columns
+                # ]
+                df_pivot_inh = flatten_pivot_columns(df_pivot_inh, assay_name)
 
                 pivots.append(df_pivot_inh)
 
@@ -641,10 +688,11 @@ def build_multitask_dataset(config, cleaned=None):
 
                 df_pivot_aff = df_grouped_aff.pivot(index="smiles", columns="tox_type")
 
-                df_pivot_aff.columns = [
-                    f"{assay_name}_{tox}_{stat}"
-                    for stat, tox in df_pivot_aff.columns
-                ]
+                # df_pivot_aff.columns = [
+                #     f"{assay_name}_{tox}_{stat}"
+                #     for stat, tox in df_pivot_aff.columns
+                # ]
+                df_pivot_aff = flatten_pivot_columns(df_pivot_aff, assay_name)
 
                 pivots.append(df_pivot_aff)
 
