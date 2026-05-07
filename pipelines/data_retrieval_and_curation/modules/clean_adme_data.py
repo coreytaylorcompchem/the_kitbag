@@ -35,7 +35,8 @@ from modules.utils.convert_adme import (
     normalise_conc,
     extract_cyp3a4_substrate,
     train_cyp_classifier,
-    extract_cyp3a4_substrate_hybrid
+    extract_cyp3a4_substrate_hybrid,
+    classify_metstab_record
 )
 from modules.utils.detect_adme import (
     detect_papp_direction, 
@@ -130,6 +131,10 @@ def harmonise_units(config, enriched=None):
 
         elif any(x in lname for x in metstab_assays):
             for r in records:
+                
+                if not classify_metstab_record(r): # new met stab classifier
+                    continue
+
                 val, unit = r.get("standard_value"), r.get("standard_units")
                 new_val, new_unit = convert_met_stab(val, unit)
                 if new_val is not None:

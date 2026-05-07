@@ -263,7 +263,8 @@ def convert_met_stab(value, unit):
     if any(r in u for r in reject_patterns):
         return None, None
 
-    return val, canonical
+    # return val, canonical
+    return None, None
 
 def convert_ppb(value, unit):
     """
@@ -630,3 +631,81 @@ def extract_cyp3a4_substrate_hybrid(text, threshold=0.5):
             return pred
 
     return rule
+
+def classify_metstab_record(record):
+    """
+    Determine whether a record is genuinely a metabolic stability assay
+    rather than a CYP inhibition/metabolism assay performed in microsomes.
+    """
+
+    desc = normalise_text(record.get("assay_description"))
+    stype = normalise_text(record.get("standard_type"))
+    unit = normalise_text(record.get("standard_units"))
+
+    combined = f"{desc} {stype} {unit}"
+
+    # -------------------------
+    # Positive signals
+    # -------------------------
+    positive_patterns = [
+
+        # intrinsic clearance
+        "intrinsic clearance",
+        "clint",
+
+        # stability language
+        "metabolic stability",
+        "microsomal stability",
+        "hepatocyte stability",
+        "substrate depletion",
+
+        # half-life
+        "half life",
+        "t1/2",
+
+        # common units
+        "ul/min/mg",
+        "ml/min/g",
+        "ul/min/10^6",
+
+        # depletion style
+        "% remaining",
+        "percent remaining",
+    ]
+
+    # -------------------------
+    # Negative signals
+    # -------------------------
+    negative_patterns = [
+
+        # CYP inhibition
+        "inhibition",
+        "ic50",
+        "ec50",
+        "ki",
+        "kd",
+
+        # enzyme phenotyping
+        "metabolite formation",
+        "enzyme activity",
+        "probe substrate",
+
+        # common CYP wording
+        "cyp1a2",
+        "cyp2c9",
+        "cyp2c19",
+        "cyp2d6",
+        "cyp3a4",
+        "cyp3a5",
+
+        # classic probe substrates
+        "midazolam",
+        "testosterone",
+        "diclofenac",
+        "dextromethorphan",
+    ]
+
+    positive = any(p in combined for p in positive_patterns)
+    negative = any(n in combined for n in negative_patterns)
+
+    return positive and not negative
