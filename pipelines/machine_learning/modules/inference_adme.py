@@ -1,6 +1,7 @@
 import importlib
 import joblib
 
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from joblib import Parallel, delayed
@@ -56,11 +57,35 @@ def featurise_smiles_inference(config, context):
     valid_indices = []
 
     for i, smi in enumerate(tqdm(df[smiles_col], desc="Featurising")):
-        g = featuriser(smi, label=None, idx=i)
 
-        if g is not None:
-            graphs.append(g)
-            valid_indices.append(i)
+        # -------------------------
+        # Skip missing SMILES
+        # -------------------------
+        if pd.isna(smi):
+            logger.warning(f"Skipping row {i}: SMILES is NaN")
+            continue
+
+        smi = str(smi).strip()
+
+        if smi == "":
+            logger.warning(f"Skipping row {i}: SMILES is empty")
+            continue
+
+        # -------------------------
+        # Featurise safely
+        # -------------------------
+        try:
+            g = featuriser(smi, label=None, idx=i)
+
+            if g is not None:
+                graphs.append(g)
+                valid_indices.append(i)
+            else:
+                logger.warning(f"Skipping row {i}: featuriser returned None")
+
+        except Exception as e:
+            logger.warning(f"Failed to featurise row {i} ({smi}): {e}")
+            continue
 
     if not graphs:
         raise ValueError("No valid molecules for inference.")
@@ -224,9 +249,16 @@ def save_adme_predictions(config, context):
     for col in task_names:
         df[col + "_pred"] = np.nan
 
-    df.loc[valid_indices, [col + "_pred" for col in task_names]] = pred_df.values
+    df.loc[
+        valid_indices,
+        [col + "_pred" for col in task_names]
+    ] = pred_df.values
 
-    output_path = config["output_path"]
+    output_path = Path(config["output_path"])
+
+    # Create directory if needed
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     df.to_csv(output_path, index=False)
 
-    return {"output_path": output_path}
+    return {"output_path": str(output_path)}
