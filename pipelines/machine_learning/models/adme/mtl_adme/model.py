@@ -1,4 +1,4 @@
-from torch_geometric.nn import GINEConv, global_add_pool, BatchNorm, global_mean_pool
+from torch_geometric.nn import GINEConv, global_add_pool, global_mean_pool
 from torch_geometric.nn import GlobalAttention
 from torch_geometric.nn import AttentionalAggregation
 import torch.nn as nn
@@ -70,7 +70,7 @@ class GINRegressor(nn.Module):
                 nn.Linear(hidden_dim, hidden_dim)
             )
             self.convs.append(GINEConv(nn_layer, edge_dim=edge_dim))
-            self.norms.append(BatchNorm(hidden_dim))
+            self.norms.append(nn.LayerNorm(hidden_dim))
 
         # =========================
         # Fingerprint MLP
@@ -83,8 +83,11 @@ class GINRegressor(nn.Module):
             nn.ReLU()
         )
 
-        self.fp_gate = nn.Parameter(torch.zeros(fp_hidden_dim))
-        self.global_gate = nn.Parameter(torch.ones(hidden_dim)) # delete if things crash
+        # self.fp_gate = nn.Parameter(torch.zeros(fp_hidden_dim))
+        # self.global_gate = nn.Parameter(torch.ones(hidden_dim)) # delete if things crash
+
+        self.fp_gate = nn.Parameter(torch.ones(fp_hidden_dim))
+        self.global_gate = nn.Parameter(torch.ones(hidden_dim))
 
         # =========================
         # Global features MLP
@@ -97,7 +100,7 @@ class GINRegressor(nn.Module):
             nn.ReLU()
         )
 
-        self.global_gate = nn.Parameter(torch.zeros(hidden_dim))
+        # self.global_gate = nn.Parameter(torch.zeros(hidden_dim))
 
         # =========================
         # SHARED TRUNK
@@ -105,8 +108,11 @@ class GINRegressor(nn.Module):
 
         final_dim = hidden_dim + fp_hidden_dim + hidden_dim
 
+        self.pre_shared_norm = nn.LayerNorm(final_dim)
+
         self.shared = nn.Sequential(
             nn.Linear(final_dim, 512),
+            nn.LayerNorm(512),
             nn.ReLU(),
             nn.Dropout(dropout)
         )
@@ -146,7 +152,7 @@ class GINRegressor(nn.Module):
                 # nn.Dropout(dropout)
                 nn.Linear(512, 512),
                 nn.ReLU(),
-                nn.BatchNorm1d(512),
+                # nn.LayerNorm(512),
                 nn.Dropout(dropout),
 
                 nn.Linear(512, 256),
@@ -191,8 +197,8 @@ class GINRegressor(nn.Module):
 
         gamma, beta = torch.chunk(film_params, 2, dim=-1)
 
-        gamma = 1.0 + 0.1 * torch.tanh(gamma)
-        beta = 0.1 * beta
+        gamma = 1.0 + 0.05 * torch.tanh(gamma)
+        beta = 0.05 * beta
 
         gamma = gamma[batch]
         beta = beta[batch]
@@ -207,10 +213,14 @@ class GINRegressor(nn.Module):
             # FiLM conditioning
             h = gamma * h + beta
 
-            h = F.relu(h)
-            h = F.dropout(h, p=self.dropout, training=self.training)
+            # h = F.relu(h)
+            # h = F.dropout(h, p=self.dropout, training=self.training)
 
+            # x = residual + h
+
+            h = F.relu(h)
             x = residual + h
+            x = F.dropout(x, p=self.dropout, training=self.training)
 
         # Pooling
         # x = global_mean_pool(x, batch)
@@ -244,7 +254,8 @@ class GINRegressor(nn.Module):
             global_out * torch.sigmoid(self.global_gate)
         ], dim=1)
 
-        x = F.layer_norm(x, x.shape[1:])
+        # x = F.layer_norm(x, x.shape[1:])
+        x = self.pre_shared_norm(x)
 
         # =========================
         # Shared trunk
