@@ -572,12 +572,8 @@ def train_curriculum(context, config, params):
     stages = curriculum_cfg["stages"]
     strategy = curriculum_cfg.get("strategy", "none")
 
-    # Dataloaders
-    train_list, val_list = train_test_split(
-        data_list,
-        test_size=config.get("val_fraction", 0.2),
-        random_state=config.get("random_seed", 42),
-    )
+    train_list = context["train_list"]
+    val_list = context["val_list"]
 
    # Model init
     sample = data_list[0]
@@ -619,12 +615,6 @@ def train_curriculum(context, config, params):
         stage_epochs = stage["epochs"]
 
          # Stage-specific dataset
-        # stage_train_list = filter_dataset_for_tasks(train_list, stage_tasks)
-        # stage_val_list = filter_dataset_for_tasks(val_list, stage_tasks)
-
-        # if len(stage_train_list) == 0:
-        #     logger.warning(f"No data for stage {stage['name']}, skipping")
-        #     continue
 
         stage_train_list = train_list
         stage_val_list = val_list
@@ -716,7 +706,7 @@ def train_curriculum(context, config, params):
             ).detach().cpu().numpy()
 
             # =========================
-            # STORE HISTORY (NEW)
+            # STORE HISTORY
             # =========================
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -924,33 +914,11 @@ def train(context, config):
     def format_params(param_dict):
         return "_".join(f"{k}={v}" for k, v in param_dict.items())
 
-    # -------------------------
-    # SPLIT # using random splits
-    # -------------------------
-    train_list, val_list = train_test_split(
-        data_list,
-        test_size=config.get("val_fraction", 0.2),
-        random_state=config.get("random_seed", 42),
-    )
+    train_list = context["train_list"]
+    val_list = context["val_list"]
 
-    # Use scaffold splits TODO: add this choice to yaml
-
-    # train_list = context["train_loader"].dataset
-    # val_list = context["val_loader"].dataset
-
-    train_loader = DataLoader(
-        train_list,
-        batch_size=config["batch_size"],
-        shuffle=True,
-        collate_fn=custom_collate,
-    )
-
-    val_loader = DataLoader(
-        val_list,
-        batch_size=config["batch_size"],
-        shuffle=False,
-        collate_fn=custom_collate,
-    )
+    train_loader = context["train_loader"]
+    val_loader = context["val_loader"]
 
     # -------------------------
     # DIMENSIONS

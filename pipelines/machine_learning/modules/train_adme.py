@@ -561,35 +561,85 @@ def featurise_smiles(config, context):
 
     return context
 
-@register_task("split_data", category="ADME", description="Perform train/test/val splits.")
+@register_task(
+    "split_data",
+    category="ADME",
+    description="Perform train/validation splits."
+)
 def split_data(config, context):
+
     graphs = context["graphs"]
     valid_indices = context["valid_indices"]
     smiles = context["dataframe"]["smiles"].tolist()
-    # only keep valid ones
+
+    # only keep valid featurised molecules
     smiles = [smiles[i] for i in valid_indices]
-
-    test_size = config.get("val_size", 0.2)
+    method = config.get("method", "random")
+    val_size = config.get("val_size", 0.2)
     batch_size = config.get("batch_size", 32)
+    random_seed = config.get("random_seed", 42)
 
-    train_list, val_list = scaffold_split(
-        graphs,
-        smiles,
-        val_fraction=config.get("val_size", 0.2),
-        seed=42
+    logger.info(f"Using split method: {method}")
+
+    # ==========================================
+    # RANDOM SPLIT
+    # ==========================================
+    if method == "random":
+
+        train_list, val_list = train_test_split(
+            graphs,
+            test_size=val_size,
+            random_state=random_seed,
+        )
+
+    # ==========================================
+    # SCAFFOLD SPLIT
+    # ==========================================
+    elif method == "scaffold":
+
+        train_list, val_list = scaffold_split(
+            graphs,
+            smiles,
+            val_fraction=val_size,
+            seed=random_seed
+        )
+
+    else:
+        raise ValueError(f"Unknown split method: {method}")
+
+    logger.info(
+        f"Split sizes | train={len(train_list)} | val={len(val_list)}"
     )
 
-    train_loader = DataLoader(train_list, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_list, batch_size=batch_size, shuffle=False)
+    # ==========================================
+    # DATALOADERS
+    # ==========================================
+    train_loader = DataLoader(
+        train_list,
+        batch_size=batch_size,
+        shuffle=True
+    )
 
+    val_loader = DataLoader(
+        val_list,
+        batch_size=batch_size,
+        shuffle=False
+    )
+
+    # ==========================================
+    # STORE EVERYTHING
+    # ==========================================
     context.update({
+        "train_list": train_list,
+        "val_list": val_list,
         "train_loader": train_loader,
-        "val_loader": val_loader
+        "val_loader": val_loader,
+        "split_method": method,
     })
 
     return {
         "train_loader": train_loader,
-        "val_loader": val_loader
+        "val_loader": val_loader,
     }
 
 @register_task("load_adme_model_spec", category="ADME", description="Instantiate Pytorch ADME models.")
