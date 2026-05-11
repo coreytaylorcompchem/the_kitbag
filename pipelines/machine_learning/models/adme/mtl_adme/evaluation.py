@@ -14,6 +14,33 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+#### HELPERS
+
+def compute_metrics(y_true, y_pred):
+
+    r2 = r2_score(y_true, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    mae = mean_absolute_error(y_true, y_pred)
+    median_ae = np.median(np.abs(y_true - y_pred))
+
+    try:
+        spearman = spearmanr(y_true, y_pred).correlation
+    except Exception:
+        spearman = np.nan
+
+    try:
+        pearson = pearsonr(y_true, y_pred)[0]
+    except Exception:
+        pearson = np.nan
+
+    return {
+        "r2": r2,
+        "rmse": rmse,
+        "mae": mae,
+        "median_ae": median_ae,
+        "spearman": spearman,
+        "pearson": pearson,
+    }
 
 def evaluate(context, config):
     plot_dir = Path(config.get("eval_plot_dir", "outputs/eval"))
@@ -52,6 +79,8 @@ def evaluate(context, config):
     if scalers is not None:
         logger.info("Applying inverse label scaling")
 
+        metrics_by_task = {}
+
         for i, task in enumerate(task_names):
             scaler = scalers.get(task)
 
@@ -81,44 +110,33 @@ def evaluate(context, config):
     # =========================
     rows = []
 
-    for i, task in enumerate(task_names):
-        mask = ~np.isnan(y_true[:, i])
-        n = np.sum(mask)
+    metrics_by_task = {}
 
-        if n == 0:
+    for i, task in enumerate(task_names):
+
+        mask = ~np.isnan(y_true[:, i])
+
+        if mask.sum() == 0:
             continue
 
         y_t = y_true[mask, i]
         y_p = y_pred[mask, i]
 
-        # r2 = r2_score(y_t, y_p)
-        # rmse = np.sqrt(mean_squared_error(y_t, y_p))
-        r2 = r2_score(y_t, y_p)
+        metrics = compute_metrics(y_t, y_p)
 
-        rmse = np.sqrt(mean_squared_error(y_t, y_p))
-        mae = mean_absolute_error(y_t, y_p)
-        median_ae = np.median(np.abs(y_t - y_p))
-        spearman = spearmanr(y_t, y_p).correlation
-        pearson = pearsonr(y_t, y_p)[0]
+        metrics_by_task[task] = metrics
 
         logger.info(
             f"{task}: "
-            f"n={n}, "
-            f"R2={r2:.3f}, "
-            f"RMSE={rmse:.3f}, "
-            f"MAE={mae:.3f}, "
-            f"Spearman={spearman:.3f}"
+            f"R2={metrics['r2']:.3f}, "
+            f"RMSE={metrics['rmse']:.3f}, "
+            f"MAE={metrics['mae']:.3f}"
         )
 
         rows.append({
             "task": task,
-            "n_samples": int(n),
-            "r2": float(r2),
-            "rmse": float(rmse),
-            "mae": float(mae),
-            "median_ae": float(median_ae),
-            "pearson": float(pearson),
-            "spearman": float(spearman),
+            "n_samples": int(mask.sum()),
+            **metrics
         })
 
     pd.DataFrame(rows).to_csv(plot_dir / "task_metrics.csv", index=False)
@@ -163,12 +181,14 @@ def evaluate(context, config):
         ax.plot([min_val, max_val], [min_val, max_val], 'r--')
 
         r2 = r2_score(y_t, y_p)
+        metrics = metrics_by_task[task]
+
         ax.set_title(
             f"{task}\n"
-            f"R²={r2:.2f} | "
-            f"RMSE={rmse:.2f}\n"
-            f"MAE={mae:.2f} | "
-            f"ρ={spearman:.2f}"
+            f"R²={metrics['r2']:.2f} | "
+            f"RMSE={metrics['rmse']:.2f}\n"
+            f"MAE={metrics['mae']:.2f} | "
+            f"ρ={metrics['spearman']:.2f}"
         )
         ax.set_xlabel("True")
         ax.set_ylabel("Predicted")
