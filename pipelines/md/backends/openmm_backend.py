@@ -792,16 +792,44 @@ class OpenMMBackend:
             modeller.delete([a for a in modeller.topology.atoms() if a not in atoms_to_keep])
 
             # Ligand coordinates post-orientation
-            ligand_coords_post = np.array([
-                pos.value_in_unit(unit.angstrom)
-                for atom, pos in zip(modeller.topology.atoms(), modeller.positions)
-                if has_ligand and atom.residue.name.upper() == ligand_resname.upper()
-            ])
+            # ligand_coords_post = np.array([
+            #     pos.value_in_unit(unit.angstrom)
+            #     for atom, pos in zip(modeller.topology.atoms(), modeller.positions)
+            #     if has_ligand and atom.residue.name.upper() == ligand_resname.upper()
+            # ])
 
-            R, t = None, None
+            # R, t = None, None
+            # if has_ligand:
+            #     R, t = compute_rigid_transform(ligand_coords_pre, ligand_coords_post)
+            #     logger.debug(f"Ligand atoms post-orientation: {ligand_coords_post.shape}")
+            ligand_positions_oriented = None
+            ligand_topology = None
+
             if has_ligand:
-                R, t = compute_rigid_transform(ligand_coords_pre, ligand_coords_post)
-                logger.debug(f"Ligand atoms post-orientation: {ligand_coords_post.shape}")
+
+                ligand_atoms_oriented = [
+                    atom for atom in modeller.topology.atoms()
+                    if atom.residue.name.upper() == ligand_resname.upper()
+                ]
+
+                ligand_indices = [a.index for a in ligand_atoms_oriented]
+
+                # ligand_positions_oriented = unit.Quantity(
+                #     [modeller.positions[i] for i in ligand_indices],
+                #     unit.nanometer
+                # )
+                
+                ligand_positions_oriented = [modeller.positions[i] for i in ligand_indices]
+
+                ligand_topology = self.extract_sub_topology(
+                    modeller.topology,
+                    ligand_indices
+                )
+
+                logger.debug(
+                    f"Captured oriented ligand directly from oriented PDB "
+                    f"({len(ligand_indices)} atoms)"
+                )
 
         # Step 7b: Parameterise ligand
         ligand_offmol = None
@@ -876,12 +904,18 @@ class OpenMMBackend:
 
         # Step 7e: Re-add ligand with full coordinates
         if cfg.get("membrane", False) and has_ligand and ligand_offmol is not None:
-            coords_array = ligand_offmol.conformers[0].to('angstrom').magnitude
-            coords_array = (R @ coords_array.T).T + t
-            ligand_positions_oriented = unit.Quantity([Vec3(*c) for c in coords_array], unit.angstrom).in_units_of(unit.nanometer)
+
             ligand_topology = ligand_offmol.to_topology().to_openmm()
-            modeller.add(ligand_topology, ligand_positions_oriented)
-            logger.debug(f"Re-added ligand {ligand_resname} with {len(ligand_positions_oriented)} atoms after membrane insertion")
+
+            modeller.add(
+                ligand_topology,
+                ligand_positions_oriented
+            )
+
+            logger.debug(
+                f"Re-added ligand {ligand_resname} "
+                f"using OFF topology after membrane insertion"
+            )
 
         # Register ligand template with SMIRNOFF
         if has_ligand and ligand_offmol is not None:
