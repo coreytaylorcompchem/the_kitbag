@@ -13,7 +13,8 @@ prepare_system:
   pdb_file: input/5L7I.pdb
   protein_chains: ["A"] # Mandatory; no fallback (yet) if one is not specified. Add as many as necessary / you want to keep. 
   opm_reference: "7X8S"
-  ligand:
+  opm_align_chain: "A" # chain in your protein you want to align to OPM on
+  ligand: # can safely comment out if you don't have a lig.
     resname: VIS
     chain: B
     # RDKit often fails on unusual moieties (inorganics, strained moieties like bicyclo[1.1.1]pentane, cubanes, etc.). 
@@ -36,7 +37,7 @@ setup_simulation:
   hmr: true        # Enable Hydrogen Mass Repartitioning
   # friction: 1.0
 
-heat_and_equilibrate:
+eat_and_equilibrate:
   heating:
     num_steps: 8
     steps_per_round: 5000 # 5000 for prod
@@ -51,6 +52,7 @@ heat_and_equilibrate:
       type: Anisotropic          # Options: MonteCarlo, Anisotropic, Andersen
       frequency: 25             # Attempt volume changes every N steps
       anisotropic: true        # Only used if type=Anisotropic. For membrane sims
+    restraint_schedule: [10.0, 5.0, 2.0, 1.0, 0.5, 0.1]
   output_dir: "output_multiple_membrane"
 
 production:
@@ -71,11 +73,15 @@ post_processing:
   stop: -1
   step: 10 # stride length for the traj. For sims > 5 ns, you'd probably bump this to 100. This is for demonstration purposes.
   trajectory_analysis:
-    # time_series: ["interactions"]
-    time_series: ["rmsd", "rmsf", "interactions"]
+    time_series: ["rmsd", "rmsf", "interactions", "clusters"] # can also run PPI interactions with 'protein_protein_interactions'
     # structural: ["torsions", "ramachandran", "solvent_lifetimes"] WIP
     graph_analyses: ["protein_ligand_communities", "hydration_site_energy", "temporal_motif_persistence", "network_embedding_analysis"]
     # graph_analyses: ["protein_ligand_communities", "hydration_site_energy", "temporal_motif_persistence", "network_embedding_analysis", "protein_protein_network_embedding"]
+  # protein_protein_interactions: # only if you actually have a PPI
+  #   receptor_chains: ["A", "B"]   # GPCR - list all your protein chains here
+  #   partner_chains: ["C"]         # VHH
+  #   cutoff: 6.0                   # optional, for contact prefiltering
+  #   frequency_cutoff: 0.2   # keep interactions present ≥30% of frames
   solvent_analyses:
     enabled: true
     binding_site_cutoff: 5.0 # distance around the ligand (A) to find hbonds. 

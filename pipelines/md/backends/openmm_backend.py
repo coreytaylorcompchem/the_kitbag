@@ -21,6 +21,9 @@ from openmm.app import Topology as Topology
 from openmm.app import PDBFile, Modeller, ForceField, PME, HBonds
 from openmm import unit
 from openmm import XmlSerializer
+from openmm.app import Topology, Element, Modeller
+from openmm import Vec3, unit
+import string
 
 from simtk.openmm.app import PDBFile
 import parmed as pmd
@@ -82,10 +85,6 @@ class OpenMMBackend:
         and rebuild downstream residues with N-terminal Hs.
         Also ensures true chain termini get proper OXT.
         """
-        from openmm.app import Topology, Element, Modeller
-        from openmm import Vec3, unit
-        import numpy as np
-        import string
 
         logger.info("Checking for internal protein chain breaks and fixing termini...")
 

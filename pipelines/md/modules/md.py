@@ -16,6 +16,8 @@ from openmm.unit import *
 from openmm.unit import picoseconds
 from openmm import Vec3
 from openmm.unit import nanometer, kelvin, atmosphere, picoseconds, kilojoule, mole
+from openmm import CMMotionRemover
+from openmm import CustomCentroidBondForce
 
 import numpy as np
 import pandas as pd
@@ -210,7 +212,7 @@ class MDWorkflow:
             self.simulation.context.setParameter("k_lig", stage["k_lig"] * kilojoule/(mole*nanometer**2))
             logger.debug(f"Applied restraints: protein={stage['k_prot']}, ligand={stage['k_lig']}")
 
-            # Minimisation loop with chunking
+            # Display minimisation loop with chunking
             minim_chunk = 5 # how often to output updates
             total_iter = stage["iter"]
             tolerance = stage.get("tolerance", 10) * kilojoule/(mole*nanometer)
@@ -281,7 +283,6 @@ class MDWorkflow:
         logger.info(f"Minimised PDB written: {minimised_pdb_path}")
     
     def add_protein_membrane_z_restraint(self, k_value):
-        from openmm import CustomCentroidBondForce
 
         atoms = list(self.topology.atoms())
 
@@ -318,9 +319,8 @@ class MDWorkflow:
         atoms_list = list(self.topology.atoms())
 
         # -------------------------------
-        # REMOVE CENTER-OF-MASS DRIFT
+        # REMOVE COM DRIFT
         # -------------------------------
-        from openmm import CMMotionRemover
 
         has_cmm = any(
             isinstance(self.system.getForce(i), CMMotionRemover)
@@ -363,12 +363,6 @@ class MDWorkflow:
         restraints = heating_cfg.get("restraint_strengths", [2.0, 1.5, 1.0, 0.5, 0.25, 0.1, 0.05, 0.0])
 
         logger.info(f"Heating with {num_rounds} rounds up to {target_temp} K")
-
-        # backbone + ligand atoms to restrain
-
-        # backbone_atoms = [atom.index for atom in atoms_list
-        #                 if atom.residue.name in protein_resnames and atom.name in {"N","CA","C","O"}]
-        # restrain_atoms = backbone_atoms + ligand_atoms
         
         initial_k = restraints[0]
 
@@ -376,61 +370,9 @@ class MDWorkflow:
 
         restraint_index = self.system.addForce(z_restraint)
 
-        # Reinitialize once
+        # Reinitialise once
         self.simulation.context.reinitialize(preserveState=True)
         self.simulation.context.setVelocitiesToTemperature(10*kelvin)
-
-        # -------------------------------
-        # Create restraint force (one reinit)
-        # -------------------------------
-        # restraint_force = CustomExternalForce("k_heating*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
-        # restraint_force.addGlobalParameter("k_heating", restraints[0] * kilojoule/(mole*nanometer**2))
-        # self.simulation.context.setParameter("k", k_value * kilojoule/(mole*nanometer**2))
-        # restraint_force.addPerParticleParameter("x0")
-        # restraint_force.addPerParticleParameter("y0")
-        # restraint_force.addPerParticleParameter("z0")
-
-        # state = self.simulation.context.getState(getPositions=True)
-        # positions = state.getPositions()
-        # for idx in restrain_atoms:
-        #     pos = positions[idx]
-        #     restraint_force.addParticle(idx, [pos.x, pos.y, pos.z])
-
-        # Debug: check initial displacement before adding to system TODO: this is broken
-        # max_disp = 0.0
-        # for i in range(restraint_force.getNumParticles()):
-        #     particle_index, params = restraint_force.getParticleParameters(i)
-        #     x0, y0, z0 = params
-        #     pos = positions[particle_index]
-        #     disp = np.linalg.norm([pos.x - x0, pos.y - y0, pos.z - z0])
-        #     max_disp = max(max_disp, disp)
-        # logger.debug(f"Max initial displacement before adding restraint: {max_disp:.6f} nm")
-
-        # # Add to system and reinitialise context once
-        # restraint_index = self.system.addForce(restraint_force)
-        # self.simulation.context.reinitialize(preserveState=True)
-        # self.simulation.context.setPositions(positions)
-        # self.simulation.context.setVelocitiesToTemperature(10*kelvin)
-
-        # # Debug: check displacements after reinit
-        # state = self.simulation.context.getState(getPositions=True)
-        # positions_post = state.getPositions()
-        # max_disp_post = 0.0
-        # for i in range(restraint_force.getNumParticles()):
-        #     particle_index, params = restraint_force.getParticleParameters(i)
-        #     x0, y0, z0 = params
-        #     pos = positions_post[particle_index]
-        #     disp = np.linalg.norm([pos.x - x0, pos.y - y0, pos.z - z0])
-        #     max_disp_post = max(max_disp_post, disp)
-        # logger.debug(f"Max displacement after reinit: {max_disp_post:.6f} nm")
-
-        # Debug: check initial forces
-        # state = self.simulation.context.getState(getForces=True)
-        # forces = state.getForces(asNumpy=True) / (kilojoule / mole / nanometer)
-        # # max force on restrained atoms only
-        # restrained_indices = [restraint_force.getParticleParameters(i)[0] for i in range(restraint_force.getNumParticles())]
-        # max_force = np.max(np.linalg.norm(forces[restrained_indices], axis=1))
-        # logger.debug(f"Max force on restrained atoms before stepping: {max_force:.2f} kJ/mol/nm")
 
         # -------------------------------
         # Heating loop
@@ -504,7 +446,6 @@ class MDWorkflow:
 
         self.system.removeForce(restraint_index)
         self.simulation.context.reinitialize(preserveState=True)
-        # self.simulation.context.setPositions(state.getPositions())
         self.simulation.context.setVelocitiesToTemperature(target_temp * kelvin)
 
         logger.info("Heating stage complete")
@@ -530,14 +471,12 @@ class MDWorkflow:
             if atom.residue.name in protein_resnames and atom.name in {"N","CA","C","O"}
         ]
 
-        # Lipid headgroup atoms (POPC: P + N is a good minimal choice)
+        # Lipid headgroup atoms (POPC: P + N is the minimal choice.)
+        # TODO: make this more betterer
         lipid_head_atoms = [
             atom.index for atom in atoms_list
             if atom.residue.name in {"POP"} and atom.name in {"P", "N"}
         ]
-
-        # logger.debug(f"Backbone atoms restrained: {len(backbone_atoms)}")
-        # logger.debug(f"Lipid headgroup atoms restrained: {len(lipid_head_atoms)}")
         
         logger.debug(f"Protein atoms in COM group: {n_prot}")
         logger.debug(f"Membrane atoms in COM group: {n_mem}")
@@ -553,25 +492,6 @@ class MDWorkflow:
 
         self.simulation.context.reinitialize(preserveState=True)
         self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
-
-        # equil_restraint_force.addGlobalParameter("k_eq", equil_restraints_cfg[0] * kilojoule/(mole*nanometer**2))
-        # equil_restraint_force.addPerParticleParameter("x0")
-        # equil_restraint_force.addPerParticleParameter("y0")
-        # equil_restraint_force.addPerParticleParameter("z0")
-
-        # # Reference positions
-        # state = self.simulation.context.getState(getPositions=True)
-        # positions = state.getPositions()
-
-        # # add restraints
-
-        # restrain_atoms = backbone_atoms + lipid_head_atoms
-
-        # for idx in restrain_atoms:
-        #     p = positions[idx]
-        #     equil_restraint_force.addParticle(idx, [p.x, p.y, p.z])
-
-        # equil_restraint_index = self.system.addForce(equil_restraint_force)
 
         logger.info(
             f"Equil restraint groups: {equil_restraint_force.getNumGroups()}, "
@@ -619,8 +539,6 @@ class MDWorkflow:
             self.system.addForce(barostat)
             self.simulation.context.reinitialize(preserveState=True)
             self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
-            # self.simulation.context.reinitialize(preserveState=True)
-            # self.simulation.context.setPositions(state.getPositions())
             self.simulation.context.setVelocitiesToTemperature(equil_temp * kelvin)
             logger.info(f"Added MonteCarloBarostat: {pressure} atm, {equil_temp} K")
 
@@ -774,12 +692,6 @@ class MDWorkflow:
         # output equilibrated pdb
         
         equilibrated_pdb_path = os.path.join(output_dir, "equilibrated_system.pdb")
-        # psf_path = os.path.join(output_dir, "topology.psf")
-
-        # with open(psf_path, "w") as f:
-        #     CharmmPsfFile.writeFile(self.topology, f)
-
-        # logger.info(f"PSF written: {psf_path}")
 
         # Write raw coordinates
         raw_pdb = os.path.join(output_dir, "_temp_raw.pdb")
@@ -813,7 +725,7 @@ class MDWorkflow:
             logger.warning("No membrane found, centering on protein")
 
         transformations = [
-            unwrap(u.atoms),  # required for your version
+            unwrap(u.atoms),  
             center_in_box(anchor, wrap=False),
             wrap(u.atoms)
         ]

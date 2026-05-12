@@ -87,6 +87,7 @@ def align_to_opm_reference(
     output_path,
     opm_pdb,
     target_chain,
+    opm_align_chain=None,
     ligand_resnames=None,
 ):
 
@@ -108,28 +109,45 @@ def align_to_opm_reference(
     mobile = parser.get_structure("mobile", pdb_path)
     ref = parser.get_structure("ref", ref_path)
 
+    # Default to same chain if not specified
+    if opm_align_chain is None:
+        opm_align_chain = target_chain
+
     # Get CA atoms for target GPCR chain 
     mob_atoms = [
         a for a in mobile.get_atoms()
         if a.get_parent().get_parent().id == target_chain and a.name == "CA"
     ]
 
-    ref_atoms = [a for a in ref.get_atoms() if a.name == "CA"]
+    ref_atoms = [
+        a for a in ref.get_atoms()
+        if a.get_parent().get_parent().id == opm_align_chain
+        and a.name == "CA"
+    ]
 
     if len(mob_atoms) < 10 or len(ref_atoms) < 10:
         raise RuntimeError("Not enough CA atoms for stable alignment")
 
     # Compute principal axes 
-    def principal_axis(coords):
+    # def principal_axis(coords):
+    #     coords_centered = coords - coords.mean(axis=0)
+    #     _, _, vh = np.linalg.svd(coords_centered)
+    #     return vh[0]
+
+    def membrane_normal(coords):
         coords_centered = coords - coords.mean(axis=0)
         _, _, vh = np.linalg.svd(coords_centered)
-        return vh[0]
+
+        # smallest variance axis = membrane normal
+        axis = vh[-1]
+
+        return axis / np.linalg.norm(axis)
 
     A = np.array([a.coord for a in mob_atoms])
     B = np.array([a.coord for a in ref_atoms])
 
-    axis_mobile = principal_axis(A)
-    axis_ref = principal_axis(B)
+    axis_mobile = membrane_normal(A)
+    axis_ref = membrane_normal(B)
 
     # Ensure consistent direction
     if np.dot(axis_mobile, axis_ref) < 0:
@@ -158,11 +176,29 @@ def align_to_opm_reference(
         atom.coord = R @ (atom.coord - com)
 
     # Center system at origin
-    new_coords = np.array([a.coord for a in mobile.get_atoms()])
-    new_com = new_coords.mean(axis=0)
+    # new_coords = np.array([a.coord for a in mobile.get_atoms()])
+    # new_com = new_coords.mean(axis=0)
+
+    # for atom in mobile.get_atoms():
+    #     atom.coord -= new_com
+
+    # Center GPCR TM bundle at membrane midplane (z = 0)
+
+    gpcr_ca = np.array([
+        a.coord for a in mobile.get_atoms()
+        if (
+            a.name == "CA"
+            and a.get_parent().get_parent().id == target_chain
+        )
+    ])
+
+    z_mid = 0.5 * (
+        gpcr_ca[:, 2].max() +
+        gpcr_ca[:, 2].min()
+    )
 
     for atom in mobile.get_atoms():
-        atom.coord -= new_com
+        atom.coord[2] -= z_mid
 
     # Safety check 
     coords = np.array([a.coord for a in mobile.get_atoms()])
