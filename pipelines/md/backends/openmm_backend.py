@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 import itertools
+import string
 
 import numpy as np
 
@@ -16,20 +17,21 @@ from openmmforcefields.generators import SMIRNOFFTemplateGenerator
 
 from openmm import *
 from openmm.unit import *
+from openmm import Vec3, unit
 from openmm import unit as unit 
 from openmm.app import Topology as Topology
-from openmm.app import PDBFile, Modeller, ForceField, PME, HBonds
-from openmm import unit
+from openmm.app import PDBFile, Modeller, ForceField, PME, HBonds, Element
+# from openmm import unit
 from openmm import XmlSerializer
-from openmm.app import Topology, Element, Modeller
-from openmm import Vec3, unit
-import string
+from openmm.app import Topology, Modeller
+from openmm import CustomExternalForce, VerletIntegrator, Context, LocalEnergyMinimizer
 
 from simtk.openmm.app import PDBFile
 import parmed as pmd
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from rdkit.Chem import rdMolAlign, rdFMCS
 
 from openbabel import openbabel as ob
 
@@ -205,8 +207,6 @@ class OpenMMBackend:
         - N-terminal hydrogens and OXT atoms are free.
         - Works regardless of membrane, ligands, or waters.
         """
-        from openmm import CustomExternalForce, VerletIntegrator, Context, LocalEnergyMinimizer
-        from openmm import unit, Vec3
 
         logger.info("Performing short minimisation of termini atoms")
 
@@ -592,17 +592,18 @@ class OpenMMBackend:
 
                 smiles = ligand_cfg.get("smiles")
 
+                # PATH 1 — SMILES supplied
+                
                 if smiles:
+
                     logger.info("SMILES provided → aligning via MCS + coordinate transfer")
                     logger.info("Protonating ligand at pH 7.4")
 
                     smiles = get_smi_with_pH(smiles, pH=ph)
 
-                    logger.info(f"Using protonated SMILES: {smiles}")
+                    logger.info(f"Using SMILES: {smiles}")
 
-                    from rdkit.Chem import rdMolAlign, rdFMCS
-
-                    # 1. Load ligand from PDB 
+                    # 1. Load ligand from PDB
                     mol_pdb = Chem.MolFromPDBFile(
                         ligand_pdb_path,
                         removeHs=True,
@@ -613,13 +614,34 @@ class OpenMMBackend:
                     if mol_pdb is None:
                         raise RuntimeError("RDKit failed to read ligand from PDB")
 
+                    try:
+                        Chem.SanitizeMol(mol_pdb)
+                    except Exception as e:
+                        logger.warning(f"PDB ligand sanitization warning: {e}")
+
                     # 2. Build ligand from SMILES
                     mol = Chem.MolFromSmiles(smiles)
+
                     if mol is None:
                         raise RuntimeError("Invalid SMILES provided")
 
+                    mol = Chem.AddHs(mol)
+
                     # 3. Generate conformer
-                    AllChem.EmbedMolecule(mol, randomSeed=42)
+                    embed_status = AllChem.EmbedMolecule(
+                        mol,
+                        randomSeed=42,
+                        useRandomCoords=True
+                    )
+
+                    if embed_status != 0:
+                        raise RuntimeError("RDKit conformer generation failed")
+
+                    # Geometry optimisation
+                    try:
+                        AllChem.UFFOptimizeMolecule(mol)
+                    except Exception:
+                        logger.warning("UFF optimisation failed; continuing")
 
                     # 4. Remove Hs for matching
                     mol_noH = Chem.RemoveHs(mol)
@@ -645,74 +667,121 @@ class OpenMMBackend:
                     if not matches1 or not matches2:
                         raise RuntimeError("Failed to obtain MCS atom mappings")
 
-                    if len(matches1[0]) / mol_noH.GetNumAtoms() < 0.9:
+                    overlap = len(matches1[0]) / mol_noH.GetNumAtoms()
+
+                    logger.debug(f"MCS overlap fraction: {overlap:.3f}")
+
+                    if overlap < 0.9:
                         raise RuntimeError("MCS overlap too small - ligand mismatch")
 
-                    logger.debug(f"MCS match size: {len(matches1[0])} atoms")
-                    logger.debug(f"Number of match combinations: {len(matches1) * len(matches2)}")
-
-                    # find best atom map by RMSD
+                    # Best RMSD mapping
                     best_rmsd = float("inf")
                     best_map = None
 
                     for m1 in matches1:
                         for m2 in matches2:
+
                             atom_map = list(zip(m1, m2))
+
                             try:
-                                rmsd = rdMolAlign.AlignMol(mol, mol_pdb, atomMap=atom_map)
+                                rmsd = rdMolAlign.AlignMol(
+                                    mol,
+                                    mol_pdb,
+                                    atomMap=atom_map
+                                )
+
                                 if rmsd < best_rmsd:
                                     best_rmsd = rmsd
                                     best_map = atom_map
+
                             except Exception:
                                 continue
 
                     if best_map is None:
-                        raise RuntimeError("MCS-based alignment failed for all mappings")
+                        raise RuntimeError("MCS-based alignment failed")
 
-                    logger.debug(f"Best RMSD from MCS alignment: {best_rmsd:.3f} Å")
+                    logger.debug(f"Best RMSD: {best_rmsd:.3f} Å")
 
-                    # Expand mapping by 1-bond neighbors
+                    # Expand mapping to neighbours
                     expanded_map = dict(best_map)
 
                     pdb_conf = mol_pdb.GetConformer()
                     mol_conf = mol.GetConformer()
 
                     for smi_idx, pdb_idx in best_map:
+
                         smi_atom = mol_noH.GetAtomWithIdx(smi_idx)
                         pdb_atom = mol_pdb_noH.GetAtomWithIdx(pdb_idx)
 
                         for smi_nbr in smi_atom.GetNeighbors():
+
                             smi_nbr_idx = smi_nbr.GetIdx()
+
                             if smi_nbr_idx in expanded_map:
                                 continue
 
                             for pdb_nbr in pdb_atom.GetNeighbors():
+
                                 pdb_nbr_idx = pdb_nbr.GetIdx()
 
-                                # match by element only
                                 if smi_nbr.GetSymbol() == pdb_nbr.GetSymbol():
+
                                     expanded_map[smi_nbr_idx] = pdb_nbr_idx
                                     break
 
-                    logger.debug(f"Expanded map size: {len(expanded_map)} atoms")
+                    logger.debug(f"Expanded atom map size: {len(expanded_map)}")
 
-                    # Coordinate transfer
+                    # Transfer coordinates
                     for smi_idx, pdb_idx in expanded_map.items():
+
                         pos = pdb_conf.GetAtomPosition(pdb_idx)
                         mol_conf.SetAtomPosition(smi_idx, pos)
 
-                    logger.debug("Applied direct coordinate transfer (expanded mapping)")
+                    logger.debug("Applied coordinate transfer")
 
-                    # 9. Sanitise
-                    Chem.SanitizeMol(mol)
+                    # Final sanitise
+                    try:
+                        Chem.SanitizeMol(mol)
+                    except Exception as e:
+                        logger.warning(f"Final sanitization warning: {e}")
 
-                    # 10. Add hydrogens with coordinates
-                    mol = Chem.AddHs(mol, addCoords=True)
-
-                    # 11. Write SDF
+                    # Write SDF
                     Chem.MolToMolFile(mol, ligand_sdf_path)
 
-                logger.debug(f"Generated ligand SDF: {ligand_sdf_path}")
+                    logger.info(f"Wrote ligand SDF from SMILES: {ligand_sdf_path}")
+
+                # PATH 2 — No SMILES supplied
+
+                else:
+
+                    logger.warning(
+                        "No SMILES supplied — using OpenBabel fallback for PDB→SDF conversion"
+                    )
+
+                    obConversion = ob.OBConversion()
+                    obConversion.SetInAndOutFormats("pdb", "sdf")
+
+                    obmol = ob.OBMol()
+
+                    success = obConversion.ReadFile(obmol, ligand_pdb_path)
+
+                    if not success:
+                        raise RuntimeError(
+                            f"OpenBabel failed to read ligand PDB: {ligand_pdb_path}"
+                        )
+
+                    # Preserve coordinates 
+
+                    success = obConversion.WriteFile(obmol, ligand_sdf_path)
+
+                    if not success:
+                        raise RuntimeError(
+                            f"OpenBabel failed to write ligand SDF: {ligand_sdf_path}"
+                        )
+
+                    logger.info(
+                        f"Wrote ligand SDF via OpenBabel fallback: {ligand_sdf_path}"
+                    )
 
         # Step 5: Keep only protein + waters
         residues_to_keep = [
@@ -861,7 +930,7 @@ class OpenMMBackend:
             residues = [res.name for res in chain.residues()]
             logger.debug(f"Chain {chain.id}: {len(residues)} residues -> {residues}")
 
-        # --- Step 7d: Add membrane (protein-only) ---
+        # Step 7d: Add membrane (protein-only)
         if cfg.get("membrane", False):
             lipid_type = cfg.get("lipid_type", "POPC")
             padding = cfg.get("membrane_padding", 1.0) * unit.nanometer
@@ -870,7 +939,7 @@ class OpenMMBackend:
             # Make a copy for membrane insertion
             temp_modeller = Modeller(modeller.topology, modeller.positions)
 
-            # Keep only canonical protein residues + water ---
+            # Keep only canonical protein residues + water
             canonical_aas = {
                 'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE',
                 'LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL'
@@ -949,9 +1018,7 @@ class OpenMMBackend:
         )
         self.topology = modeller.topology
         self.positions = modeller.positions
-
-        # Short minimisation of terminal caps.
-        
+      
         self._pre_minimise_termini()
 
         logger.info(f"Final system created. Saving topology.")
