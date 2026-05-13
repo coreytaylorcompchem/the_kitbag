@@ -200,7 +200,7 @@ class GINRegressor(nn.Module):
         # =========================
         # Uncertainty weights
         # =========================
-        # self.log_vars = nn.Parameter(torch.zeros(num_tasks))
+        self.log_vars = nn.Parameter(torch.zeros(num_tasks))
 
     def forward(self, data):
         x, edge_index, edge_attr, batch = (

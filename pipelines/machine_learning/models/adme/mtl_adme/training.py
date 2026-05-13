@@ -70,39 +70,71 @@ def per_task_mse(pred, target):
 
     return losses, counts
 
-def multitask_loss(pred, target, log_vars, active_tasks=None):
-    total_loss = None
+# def multitask_loss(pred, target, log_vars, active_tasks=None):
+#     total_loss = None
+
+#     for i in range(pred.shape[1]):
+
+#         if active_tasks is not None and i not in active_tasks:
+#             continue
+
+#         mask = ~torch.isnan(target[:, i])
+#         if mask.sum() == 0:
+#             continue
+
+#         pred_i = pred[mask, i]
+#         target_i = target[mask, i]
+
+#         # mse = F.mse_loss(pred_i, target_i)
+#         mse = F.huber_loss(pred_i, target_i, delta=1.0)
+
+#         log_var = torch.clamp(log_vars[i], -5.0, 5.0)
+#         precision = torch.exp(-log_var)
+
+#         loss_i = precision * mse + log_var
+
+#         if total_loss is None:
+#             total_loss = loss_i
+#         else:
+#             total_loss = total_loss + loss_i
+
+#     # fallback
+#     if total_loss is None:
+#         return pred.sum() * 0.0
+
+#     return total_loss
+
+def multitask_loss(pred, target, task_weights=None):
+
+    total_loss = torch.tensor(0.0, device=pred.device)
+    count = 0
 
     for i in range(pred.shape[1]):
 
-        if active_tasks is not None and i not in active_tasks:
-            continue
-
         mask = ~torch.isnan(target[:, i])
+
         if mask.sum() == 0:
             continue
 
         pred_i = pred[mask, i]
         target_i = target[mask, i]
 
-        # mse = F.mse_loss(pred_i, target_i)
-        mse = F.huber_loss(pred_i, target_i, delta=1.0)
+        loss_i = F.huber_loss(
+            pred_i,
+            target_i,
+            delta=1.0
+        )
 
-        log_var = torch.clamp(log_vars[i], -5.0, 5.0)
-        precision = torch.exp(-log_var)
+        if task_weights is not None:
+            loss_i = loss_i * task_weights[i]
 
-        loss_i = precision * mse + log_var
+        total_loss += loss_i
+        count += 1
 
-        if total_loss is None:
-            total_loss = loss_i
-        else:
-            total_loss = total_loss + loss_i
+    if count == 0:
+        return torch.tensor(0.0, device=pred.device)
 
-    # fallback
-    if total_loss is None:
-        return pred.sum() * 0.0
-
-    return total_loss
+    return total_loss / count
 
 # =========================
 # LOSS FACTORY
@@ -336,38 +368,38 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
                 pcgrad.pc_backward(losses, params)
                 pcgrad.step()
 
-                # --- Recompute forward for log_vars---
-                if hasattr(model, "log_vars"):
+                # # --- Recompute forward for log_vars---
+                # if hasattr(model, "log_vars"):
 
-                    optimizer.zero_grad(set_to_none=True)
+                #     optimizer.zero_grad(set_to_none=True)
 
-                    out2 = model(batch)  # <-- NEW forward pass
-                    target2 = batch.y.float()
+                #     out2 = model(batch)  # <-- NEW forward pass
+                #     target2 = batch.y.float()
 
-                    weighted_loss = 0.0
-                    valid_count = 0
+                #     weighted_loss = 0.0
+                #     valid_count = 0
 
-                    for task_idx in task_indices:
+                #     for task_idx in task_indices:
 
-                        mask = ~torch.isnan(target2[:, task_idx])
-                        if mask.sum() == 0:
-                            continue
+                #         mask = ~torch.isnan(target2[:, task_idx])
+                #         if mask.sum() == 0:
+                #             continue
 
-                        pred_i = out2[mask, task_idx]
-                        target_i = target2[mask, task_idx]
+                #         pred_i = out2[mask, task_idx]
+                #         target_i = target2[mask, task_idx]
 
-                        mse = F.mse_loss(pred_i, target_i)
+                #         mse = F.mse_loss(pred_i, target_i)
 
-                        log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
-                        precision = torch.exp(-log_var)
+                #         log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
+                #         precision = torch.exp(-log_var)
 
-                        weighted_loss = weighted_loss + (precision * mse + log_var)
-                        valid_count += 1
+                #         weighted_loss = weighted_loss + (precision * mse + log_var)
+                #         valid_count += 1
 
-                    if valid_count > 0:
-                        weighted_loss = weighted_loss / valid_count
-                        weighted_loss.backward()
-                        optimizer.step()
+                #     if valid_count > 0:
+                #         weighted_loss = weighted_loss / valid_count
+                #         weighted_loss.backward()
+                #         optimizer.step()
 
                 # --- REAL LOSS FOR LOGGING ---
                 with torch.no_grad():
@@ -380,7 +412,8 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
             else:
                 loss = torch.tensor(0.0, device=device)
         else:
-            loss = multitask_loss(out, target, model.log_vars, active_tasks)
+            # loss = multitask_loss(out, target, model.log_vars, active_tasks)
+            loss = multitask_loss(out, target)
 
             if loss.requires_grad:
                 optimizer.zero_grad(set_to_none=True)
@@ -410,8 +443,8 @@ def train_epoch(model, loader, optimizer, device, active_tasks=None):
         task_losses += losses
         task_counts += counts
 
-        all_preds.append(out_detached)
-        all_labels.append(target.detach())
+        all_preds.append(out_detached.cpu())
+        all_labels.append(target.detach().cpu())
 
     task_mse = (task_losses / (task_counts + 1e-8))
     task_rmse = torch.sqrt(task_mse).detach().cpu().numpy()
@@ -451,7 +484,8 @@ def eval_epoch(model, loader, device, active_tasks=None):
             out_detached = out.detach()
             target = batch.y.float()
 
-            loss = multitask_loss(out, target, model.log_vars, active_tasks)
+            # loss = multitask_loss(out, target, model.log_vars, active_tasks)
+            loss = multitask_loss(out, target)
             total_loss += loss.item()
 
             all_preds.append(out.cpu())
@@ -620,6 +654,12 @@ def train_curriculum(context, config, params):
         stage_val_list = val_list
 
         logger.info(f"Stage {stage['name']} dataset size: train={len(stage_train_list)}, val={len(stage_val_list)}")
+
+        if len(stage_train_list) == 0:
+            raise RuntimeError(f"Empty train set for stage {stage['name']}")
+
+        if len(stage_val_list) == 0:
+            raise RuntimeError(f"Empty val set for stage {stage['name']}")
 
         train_loader = DataLoader(
             stage_train_list,
@@ -861,7 +901,29 @@ def train_curriculum(context, config, params):
 # =========================
 
 def train(context, config):
+    param_grid = config["param_grid"]
     training_mode = config.get("training_mode", "multitask")
+    
+    required_params = {
+        "lr",
+        "hidden_dim",
+        "num_layers",
+        "dropout",
+    }
+
+    missing = required_params - set(param_grid.keys())
+
+    if missing:
+        raise ValueError(
+            "The grid search in the YAML is missing required hyperparameters: "
+            f"{sorted(missing)}. You need to add a minimum of 1 value per hyperparameter to train the model."
+            f"\n\nExample:"
+            f"\n\nparam_grid:"
+            f"\n  lr: [0.001]"
+            f"\n  hidden_dim: [256]"
+            f"\n  num_layers: [4]"
+            f"\n  dropout: [0.1]"
+        )
 
     if training_mode == "curriculum":
 
@@ -1026,9 +1088,17 @@ def train(context, config):
         ):
             train_loss, _, _, train_task_rmse, train_task_r2 = train_epoch(model, train_loader, optimizer, device)
 
+            if train_loss is None:
+                raise RuntimeError("train_loss is None")
+
             val_loss, val_preds, val_labels, val_mse = eval_epoch(model, val_loader, device)
+
+            if val_loss is None:
+                raise RuntimeError("val_loss is None")
+
             val_task_rmse = np.sqrt(val_mse)
-            scheduler.step(val_loss)
+            if val_loss is not None and not np.isnan(val_loss):
+                scheduler.step(val_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
