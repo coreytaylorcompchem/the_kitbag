@@ -25,33 +25,33 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 def custom_collate(batch_list):
     return Batch.from_data_list(batch_list)
 
-def filter_dataset_min_labels(data_list, task_indices, min_labels=1):
-    filtered = []
+# def filter_dataset_min_labels(data_list, task_indices, min_labels=1):
+#     filtered = []
 
-    for data in data_list:
-        y = data.y
-        if y.dim() == 2:
-            y = y.squeeze(0)
+#     for data in data_list:
+#         y = data.y
+#         if y.dim() == 2:
+#             y = y.squeeze(0)
 
-        num_present = (~torch.isnan(y[task_indices])).sum().item()
+#         num_present = (~torch.isnan(y[task_indices])).sum().item()
 
-        if num_present >= min_labels:
-            filtered.append(data)
+#         if num_present >= min_labels:
+#             filtered.append(data)
 
-    return filtered
+#     return filtered
 
-def build_replay_buffer(data_list, task_indices, fraction=0.15):
+# def build_replay_buffer(data_list, task_indices, fraction=0.15):
 
-    filtered = filter_dataset_for_tasks(data_list, task_indices)
+#     filtered = filter_dataset_for_tasks(data_list, task_indices)
 
-    if len(filtered) == 0:
-        return []
+#     if len(filtered) == 0:
+#         return []
 
-    n = max(1, int(len(filtered) * fraction))
+#     n = max(1, int(len(filtered) * fraction))
 
-    perm = torch.randperm(len(filtered))[:n]
+#     perm = torch.randperm(len(filtered))[:n]
 
-    return [filtered[i] for i in perm]
+#     return [filtered[i] for i in perm]
 
 def compute_task_weights(data_list, num_tasks, power=0.5, eps=1e-8):
     """
@@ -604,23 +604,41 @@ def set_requires_grad(module, requires_grad):
 # def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
 #     strategy = curriculum_cfg.get("strategy", "none")
 
+#     # =====================================
+#     # RESET EVERYTHING FIRST
+#     # =====================================
+#     for p in model.parameters():
+#         p.requires_grad = False
+
 #     if strategy == "none":
+#         for p in model.parameters():
+#             p.requires_grad = True
 #         return
-
-#     # First freeze everything
-#     # for p in model.parameters():
-#     #     p.requires_grad = False
-
-#     # Always allow shared trunk + backbone
-#     set_requires_grad(model.input_proj, True)
-#     set_requires_grad(model.convs, True)
-#     set_requires_grad(model.norms, True)
-#     set_requires_grad(model.shared, True)
-#     set_requires_grad(model.fp_mlp, True)
-#     set_requires_grad(model.global_proj, True)
 
 #     stages = curriculum_cfg["stages"]
 
+#     # =====================================
+#     # ALWAYS TRAIN BACKBONE
+#     # =====================================
+#     shared_modules = [
+#         model.input_proj,
+#         model.convs,
+#         model.norms,
+#         model.shared,
+#         model.fp_mlp,
+#         model.global_proj,
+#         model.pre_shared_norm,
+#         model.graph_norm,
+#         model.fp_norm,
+#         model.global_norm,
+#     ]
+
+#     for module in shared_modules:
+#         set_requires_grad(module, True)
+
+#     # =====================================
+#     # DETERMINE ACTIVE STAGES
+#     # =====================================
 #     if strategy == "freeze_previous":
 #         active_stages = [stage_idx]
 
@@ -628,12 +646,15 @@ def set_requires_grad(module, requires_grad):
 #         active_stages = list(range(stage_idx + 1))
 
 #     else:
-#         raise ValueError(f"Unknown curriculum strategy: {strategy}")
+#         raise ValueError(f"Unknown strategy: {strategy}")
 
-#     # Enable group trunks + heads for active stages
+#     # =====================================
+#     # ENABLE ONLY ACTIVE GROUPS
+#     # =====================================
 #     for i in active_stages:
 #         stage = stages[i]
 #         group_name = stage["name"]
+
 #         if isinstance(stage["tasks"][0], str):
 #             task_indices = [
 #                 context["task_names"].index(t)
@@ -647,80 +668,19 @@ def set_requires_grad(module, requires_grad):
 #         for t in task_indices:
 #             set_requires_grad(model.heads[t], True)
 
+#     # =====================================
+#     # OPTIONAL: FREEZE SHARED BACKBONE
+#     freeze_shared = curriculum_cfg.get("freeze_shared", False)
+
+#     if freeze_shared:
+#         for module in shared_modules:
+#             set_requires_grad(module, False)
+
 def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
-    strategy = curriculum_cfg.get("strategy", "none")
 
-    # =====================================
-    # RESET EVERYTHING FIRST
-    # =====================================
+    # KEEP EVERYTHING TRAINABLE
     for p in model.parameters():
-        p.requires_grad = False
-
-    if strategy == "none":
-        for p in model.parameters():
-            p.requires_grad = True
-        return
-
-    stages = curriculum_cfg["stages"]
-
-    # =====================================
-    # ALWAYS TRAIN BACKBONE
-    # =====================================
-    shared_modules = [
-        model.input_proj,
-        model.convs,
-        model.norms,
-        model.shared,
-        model.fp_mlp,
-        model.global_proj,
-        model.pre_shared_norm,
-        model.graph_norm,
-        model.fp_norm,
-        model.global_norm,
-    ]
-
-    for module in shared_modules:
-        set_requires_grad(module, True)
-
-    # =====================================
-    # DETERMINE ACTIVE STAGES
-    # =====================================
-    if strategy == "freeze_previous":
-        active_stages = [stage_idx]
-
-    elif strategy == "progressive_unfreeze":
-        active_stages = list(range(stage_idx + 1))
-
-    else:
-        raise ValueError(f"Unknown strategy: {strategy}")
-
-    # =====================================
-    # ENABLE ONLY ACTIVE GROUPS
-    # =====================================
-    for i in active_stages:
-        stage = stages[i]
-        group_name = stage["name"]
-
-        if isinstance(stage["tasks"][0], str):
-            task_indices = [
-                context["task_names"].index(t)
-                for t in stage["tasks"]
-            ]
-        else:
-            task_indices = stage["tasks"]
-
-        set_requires_grad(model.group_trunks[group_name], True)
-
-        for t in task_indices:
-            set_requires_grad(model.heads[t], True)
-
-    # =====================================
-    # OPTIONAL: FREEZE SHARED BACKBONE
-    freeze_shared = curriculum_cfg.get("freeze_shared", False)
-
-    if freeze_shared:
-        for module in shared_modules:
-            set_requires_grad(module, False)
+        p.requires_grad = True
 
 def filter_dataset_for_tasks(data_list, task_indices):
     filtered = []
@@ -800,29 +760,43 @@ def train_curriculum(context, config, params):
 
     logger.info(f"Curriculum freezing strategy applied: {strategy}")
 
-    replay_buffer = []
+    # replay_buffer = []
 
     optimizer = None
     scheduler = None
 
+    cumulative_tasks = []
+
     for stage_idx, stage in enumerate(stages):
 
-        logger.debug(f"[Stage: {stage['name']}] Available group trunks: {list(model.group_trunks.keys())}")
-
         if isinstance(stage["tasks"][0], str):
-            stage_tasks = [
+            current_stage_tasks = [
                 context["task_names"].index(t)
                 for t in stage["tasks"]
             ]
         else:
-            stage_tasks = stage["tasks"]
-        stage_epochs = stage["epochs"]
+            current_stage_tasks = stage["tasks"]
+
+        # ADD NEW TASKS TO CUMULATIVE SET
+        for t in current_stage_tasks:
+            if t not in cumulative_tasks:
+                cumulative_tasks.append(t)
 
          # Stage-specific dataset
 
+        # stage_train_list = filter_dataset_for_tasks(
+        #     train_list,
+        #     stage_tasks
+        # )
+
         stage_train_list = filter_dataset_for_tasks(
             train_list,
-            stage_tasks
+            cumulative_tasks
+        )
+
+        stage_val_list = filter_dataset_for_tasks(
+            val_list,
+            cumulative_tasks
         )
 
         # =====================================
@@ -844,12 +818,12 @@ def train_curriculum(context, config, params):
         # =====================================
         # REPLAY EARLIER TASKS
         # =====================================
-        if len(replay_buffer) > 0:
-            stage_train_list = stage_train_list + replay_buffer
+        # if len(replay_buffer) > 0:
+        #     stage_train_list = stage_train_list + replay_buffer
 
         stage_val_list = filter_dataset_for_tasks(
             val_list,
-            stage_tasks
+            cumulative_tasks
         )
 
         logger.info(f"Stage {stage['name']} dataset size: train={len(stage_train_list)}, val={len(stage_val_list)}")
@@ -883,7 +857,7 @@ def train_curriculum(context, config, params):
         #     )
         patience = stage.get("patience", 10)
 
-        logger.info(f"=== Curriculum stage: {stage['name']} | tasks={stage_tasks} ===")
+        logger.info(f"=== Curriculum stage: {stage['name']} | tasks={cumulative_tasks} ===")
 
         # History tracking
         train_losses = []
@@ -903,9 +877,44 @@ def train_curriculum(context, config, params):
 
         if need_new_optimizer:
 
+            # optimizer = torch.optim.Adam(
+            #     filter(lambda p: p.requires_grad, model.parameters()),
+            #     lr=lr
+            # )
+
+            backbone_modules = [
+                model.input_proj,
+                model.convs,
+                model.norms,
+                model.shared,
+                model.fp_mlp,
+                model.global_proj,
+            ]
+
+            backbone_params = []
+            for module in backbone_modules:
+                backbone_params.extend(list(module.parameters()))
+
+            backbone_param_ids = set(id(p) for p in backbone_params)
+
+            head_params = [
+                p for p in model.parameters()
+                if id(p) not in backbone_param_ids
+            ]
+
+            stage_backbone_lr = lr * (0.5 ** stage_idx)
+
             optimizer = torch.optim.Adam(
-                filter(lambda p: p.requires_grad, model.parameters()),
-                lr=lr
+                [
+                    {
+                        "params": backbone_params,
+                        "lr": stage_backbone_lr,
+                    },
+                    {
+                        "params": head_params,
+                        "lr": lr,
+                    }
+                ]
             )
 
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -955,6 +964,8 @@ def train_curriculum(context, config, params):
             logger.info(
                 f"Optimizer PRESERVED at stage {stage['name']}"
             )
+        
+        stage_epochs = stage.get("epochs", config.get("max_epochs", 100))
 
         # Per-stage early stopping
         best_stage_loss = float("inf")
@@ -974,7 +985,7 @@ def train_curriculum(context, config, params):
                 train_loader,
                 optimizer,
                 device,
-                active_tasks=stage_tasks,
+                active_tasks=cumulative_tasks,
                 task_weights=task_weights,
             )
 
@@ -983,7 +994,7 @@ def train_curriculum(context, config, params):
             # =========================
             train_rmse_stage = train_rmse.copy()
             mask_arr = np.ones_like(train_rmse_stage, dtype=bool)
-            mask_arr[stage_tasks] = False
+            mask_arr[cumulative_tasks] = False
             train_rmse_stage[mask_arr] = np.nan
 
             # =========================
@@ -997,13 +1008,13 @@ def train_curriculum(context, config, params):
                 model,
                 val_loader,
                 device,
-                active_tasks=stage_tasks
+                active_tasks=cumulative_tasks
             )
 
             stage_val_loss = compute_stage_loss(
                 val_preds.to(device),
                 val_labels.to(device),
-                stage_tasks
+                cumulative_tasks
             ).item()
 
             scheduler.step(stage_val_loss)
@@ -1012,7 +1023,7 @@ def train_curriculum(context, config, params):
 
             val_rmse_stage = val_rmse.copy()
             mask_arr = np.ones_like(val_rmse_stage, dtype=bool)
-            mask_arr[stage_tasks] = False
+            mask_arr[cumulative_tasks] = False
             val_rmse_stage[mask_arr] = np.nan
 
             val_r2 = per_task_r2(
@@ -1055,13 +1066,13 @@ def train_curriculum(context, config, params):
         # =====================================
         # UPDATE REPLAY BUFFER
         # =====================================
-        new_buffer = build_replay_buffer(
-            train_list,
-            stage_tasks,
-            fraction=0.10
-        )
+        # new_buffer = build_replay_buffer(
+        #     train_list,
+        #     cumulative_tasks,
+        #     fraction=0.10
+        # )
 
-        replay_buffer.extend(new_buffer)
+        # replay_buffer.extend(new_buffer)
 
         # Restore best weights for this stage
         if best_stage_state is not None:
@@ -1113,7 +1124,12 @@ def train_curriculum(context, config, params):
         plt.close()
 
         # validation per stage (for saving preds + global best tracking)
-        val_loss, val_preds, val_labels, _ = eval_epoch(model, val_loader, device)
+        val_loss, val_preds, val_labels, _ = eval_epoch(
+            model,
+            val_loader,
+            device,
+            active_tasks=cumulative_tasks
+        )
 
         y_pred = val_preds.cpu().numpy()
         y_true = val_labels.cpu().numpy()
@@ -1161,8 +1177,8 @@ def train_curriculum(context, config, params):
         logger.info(f"Saved best model to {model_path}")
 
         # Store best model
-        if val_loss < best_loss:
-            best_loss = val_loss
+        if stage_val_loss < best_loss:
+            best_loss = stage_val_loss
             best_model_state = {
                 k: v.detach().cpu() for k, v in model.state_dict().items()
             }

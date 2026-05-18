@@ -1,7 +1,6 @@
 import yaml
 import gc
 from pathlib import Path
-import traceback
 
 from workflows import register_workflow
 from pipeline.logger import setup_logger
@@ -44,7 +43,7 @@ def train_model(config_path: str):
             result = task_func(task_config, current_data)
         except Exception as e:
             logger.error(f"❌ Task '{task_name}' failed: {e}")
-            traceback.print_exc()
+            raise
 
         if isinstance(result, dict):
             current_data.update(result)
@@ -95,6 +94,7 @@ def run_vhh_active_learning(config_path: str):
             result = task_func(task_config, current_data)
         except Exception as e:
             logger.error(f"❌ Task '{task_name}' failed: {e}")
+            raise
 
         if isinstance(result, dict):
             current_data.update(result)
