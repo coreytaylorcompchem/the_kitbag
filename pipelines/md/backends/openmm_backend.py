@@ -620,12 +620,12 @@ class OpenMMBackend:
                         logger.warning(f"PDB ligand sanitization warning: {e}")
 
                     # 2. Build ligand from SMILES
-                    mol = Chem.MolFromSmiles(smiles)
+                    mol = Chem.AddHs(Chem.MolFromSmiles(smiles), addCoords=True)
 
                     if mol is None:
                         raise RuntimeError("Invalid SMILES provided")
 
-                    mol = Chem.AddHs(mol)
+                    # mol = Chem.AddHs(mol)
 
                     # 3. Generate conformer
                     embed_status = AllChem.EmbedMolecule(
@@ -839,6 +839,45 @@ class OpenMMBackend:
             pdb_oriented = PDBFile(oriented_pdb_path)
             modeller = Modeller(pdb_oriented.topology, pdb_oriented.positions)
 
+            # Capture oriented ligand PDB path only
+            ligand_pdb_oriented_path = None
+
+            if has_ligand:
+
+                ligand_atoms_oriented = [
+                    atom for atom in modeller.topology.atoms()
+                    if atom.residue.name.upper() == ligand_resname.upper()
+                ]
+
+                ligand_indices = [a.index for a in ligand_atoms_oriented]
+
+                ligand_topology = self.extract_sub_topology(
+                    modeller.topology,
+                    ligand_indices
+                )
+
+                ligand_positions = unit.Quantity(
+                    [modeller.positions[i].value_in_unit(unit.nanometer)
+                    for i in ligand_indices],
+                    unit.nanometer
+                )
+
+                ligand_pdb_oriented_path = os.path.join(
+                    input_pdb_dir,
+                    f"{ligand_resname}_oriented.pdb"
+                )
+
+                with open(ligand_pdb_oriented_path, "w") as f:
+                    PDBFile.writeFile(
+                        ligand_topology,
+                        ligand_positions,
+                        f
+                    )
+
+                logger.debug(
+                    f"Wrote oriented ligand PDB: {ligand_pdb_oriented_path}"
+                )
+
             # Detect protein chains post-orient
             protein_chains_after_orient = [
                 chain.id for chain in modeller.topology.chains()
@@ -860,45 +899,45 @@ class OpenMMBackend:
             atoms_to_keep = [a for r in residues_to_keep for a in r.atoms()]
             modeller.delete([a for a in modeller.topology.atoms() if a not in atoms_to_keep])
 
-            # Ligand coordinates post-orientation
-            # ligand_coords_post = np.array([
-            #     pos.value_in_unit(unit.angstrom)
-            #     for atom, pos in zip(modeller.topology.atoms(), modeller.positions)
-            #     if has_ligand and atom.residue.name.upper() == ligand_resname.upper()
-            # ])
+            # # Ligand coordinates post-orientation
+            # # ligand_coords_post = np.array([
+            # #     pos.value_in_unit(unit.angstrom)
+            # #     for atom, pos in zip(modeller.topology.atoms(), modeller.positions)
+            # #     if has_ligand and atom.residue.name.upper() == ligand_resname.upper()
+            # # ])
 
-            # R, t = None, None
+            # # R, t = None, None
+            # # if has_ligand:
+            # #     R, t = compute_rigid_transform(ligand_coords_pre, ligand_coords_post)
+            # #     logger.debug(f"Ligand atoms post-orientation: {ligand_coords_post.shape}")
+            # ligand_positions_oriented = None
+            # ligand_topology = None
+
             # if has_ligand:
-            #     R, t = compute_rigid_transform(ligand_coords_pre, ligand_coords_post)
-            #     logger.debug(f"Ligand atoms post-orientation: {ligand_coords_post.shape}")
-            ligand_positions_oriented = None
-            ligand_topology = None
 
-            if has_ligand:
+            #     ligand_atoms_oriented = [
+            #         atom for atom in modeller.topology.atoms()
+            #         if atom.residue.name.upper() == ligand_resname.upper()
+            #     ]
 
-                ligand_atoms_oriented = [
-                    atom for atom in modeller.topology.atoms()
-                    if atom.residue.name.upper() == ligand_resname.upper()
-                ]
+            #     ligand_indices = [a.index for a in ligand_atoms_oriented]
 
-                ligand_indices = [a.index for a in ligand_atoms_oriented]
-
-                # ligand_positions_oriented = unit.Quantity(
-                #     [modeller.positions[i] for i in ligand_indices],
-                #     unit.nanometer
-                # )
+            #     # ligand_positions_oriented = unit.Quantity(
+            #     #     [modeller.positions[i] for i in ligand_indices],
+            #     #     unit.nanometer
+            #     # )
                 
-                ligand_positions_oriented = [modeller.positions[i] for i in ligand_indices]
+            #     ligand_positions_oriented = [modeller.positions[i] for i in ligand_indices]
 
-                ligand_topology = self.extract_sub_topology(
-                    modeller.topology,
-                    ligand_indices
-                )
+            #     ligand_topology = self.extract_sub_topology(
+            #         modeller.topology,
+            #         ligand_indices
+            #     )
 
-                logger.debug(
-                    f"Captured oriented ligand directly from oriented PDB "
-                    f"({len(ligand_indices)} atoms)"
-                )
+            #     logger.debug(
+            #         f"Captured oriented ligand directly from oriented PDB "
+            #         f"({len(ligand_indices)} atoms)"
+            #     )
 
         # Step 7b: Parameterise ligand
         ligand_offmol = None
@@ -909,6 +948,71 @@ class OpenMMBackend:
             if rdkit_mol is None:
                 raise RuntimeError("RDKit failed to load ligand from SDF")
             ligand_offmol = Molecule.from_rdkit(rdkit_mol, allow_undefined_stereo=True)
+            # ------------------------------------------------------------------
+            # Re-align OFF molecule onto the ORIENTED ligand coordinates
+            # ------------------------------------------------------------------
+
+            if cfg.get("membrane", False) and ligand_pdb_oriented_path:
+
+                logger.info("Aligning protonated OFF ligand onto oriented PDB ligand")
+
+                mol_ref = Chem.MolFromPDBFile(
+                    ligand_pdb_oriented_path,
+                    removeHs=False,
+                    sanitize=False,
+                    proximityBonding=True
+                )
+
+                if mol_ref is None:
+                    raise RuntimeError("Failed to load oriented ligand PDB")
+
+                mol_probe = ligand_offmol.to_rdkit()
+
+                ref_noH = Chem.RemoveHs(mol_ref)
+                probe_noH = Chem.RemoveHs(mol_probe)
+
+                mcs = rdFMCS.FindMCS(
+                    [probe_noH, ref_noH],
+                    bondCompare=rdFMCS.BondCompare.CompareOrder,
+                    atomCompare=rdFMCS.AtomCompare.CompareElements,
+                    ringMatchesRingOnly=True
+                )
+
+                patt = Chem.MolFromSmarts(mcs.smartsString)
+
+                probe_match = probe_noH.GetSubstructMatch(patt)
+                ref_match = ref_noH.GetSubstructMatch(patt)
+
+                atom_map = list(zip(probe_match, ref_match))
+
+                rmsd = rdMolAlign.AlignMol(
+                    mol_probe,
+                    mol_ref,
+                    atomMap=atom_map
+                )
+
+                logger.info(f"Ligand alignment RMSD = {rmsd:.3f} Å")
+
+                aligned_conf = mol_probe.GetConformer()
+
+                ligand_positions_oriented = []
+
+                for i in range(mol_probe.GetNumAtoms()):
+
+                    pos = aligned_conf.GetAtomPosition(i)
+
+                    ligand_positions_oriented.append(
+                        Vec3(
+                            pos.x / 10.0,
+                            pos.y / 10.0,
+                            pos.z / 10.0
+                        )
+                    )
+
+                ligand_positions_oriented = unit.Quantity(
+                    ligand_positions_oriented,
+                    unit.nanometer
+                )
             if not ligand_offmol.conformers:
                 raise RuntimeError("Ligand SDF has no 3D coordinates")
 
@@ -976,6 +1080,59 @@ class OpenMMBackend:
 
             ligand_topology = ligand_offmol.to_topology().to_openmm()
 
+            # logger.debug("=== LIGAND DEBUG ===")
+
+            # # --- topology atom inspection ---
+            # lig_top_atoms = list(ligand_topology.atoms())
+
+            # logger.debug(f"Topology atom count: {len(lig_top_atoms)}")
+            # logger.debug(f"Coordinate count: {len(ligand_positions_oriented)}")
+
+            # for i, atom in enumerate(lig_top_atoms):
+            #     logger.debug(
+            #         f"TOPO ATOM {i:4d} | "
+            #         f"name={atom.name:<4} "
+            #         f"element={atom.element.symbol:<2} "
+            #         f"res={atom.residue.name}"
+            #     )
+
+            # logger.debug("=== POSITION CHECK ===")
+
+            # for i, pos in enumerate(ligand_positions_oriented):
+            #     try:
+            #         xyz = pos.value_in_unit(unit.angstrom)
+            #         logger.debug(
+            #             f"POS {i:4d} | "
+            #             f"{xyz[0]:8.3f} "
+            #             f"{xyz[1]:8.3f} "
+            #             f"{xyz[2]:8.3f}"
+            #         )
+            #     except Exception as e:
+            #         logger.debug(f"POS {i:4d} | INVALID POSITION | {e}")
+
+            # # Explicit mismatch detection
+            # if len(lig_top_atoms) != len(ligand_positions_oriented):
+
+            #     logger.error(
+            #         "LIGAND TOPOLOGY/POSITION COUNT MISMATCH "
+            #         f"({len(lig_top_atoms)} vs {len(ligand_positions_oriented)})"
+            #     )
+
+            #     # dump missing atoms
+            #     if len(lig_top_atoms) > len(ligand_positions_oriented):
+
+            #         logger.error("Atoms without coordinates:")
+
+            #         for atom in lig_top_atoms[len(ligand_positions_oriented):]:
+            #             logger.error(
+            #                 f"Missing coord -> "
+            #                 f"name={atom.name} "
+            #                 f"element={atom.element.symbol} "
+            #                 f"res={atom.residue.name}"
+            #             )
+
+            #     raise RuntimeError("Ligand topology/coordinate mismatch")
+            
             modeller.add(
                 ligand_topology,
                 ligand_positions_oriented
