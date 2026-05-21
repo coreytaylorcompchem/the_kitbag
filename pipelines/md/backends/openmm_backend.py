@@ -1168,11 +1168,83 @@ class OpenMMBackend:
         logger.info(f"Creating final system ...")
 
         # Step 9: Create OpenMM system
-        self.system = forcefield.createSystem(
+        system = forcefield.createSystem(
             modeller.topology,
             nonbondedMethod=PME,
             constraints=HBonds
         )
+
+        # ------------------------------------------------------------
+        # Validate ligand bonded terms
+        # ------------------------------------------------------------
+
+        if has_ligand:
+
+            logger.info("Validating ligand bonded terms")
+
+            # Find ligand atoms by exclusion:
+            # anything non-protein/non-water added late is ligand
+
+            protein_resnames = {
+                'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY',
+                'HIS','ILE','LEU','LYS','MET','PHE','PRO',
+                'SER','THR','TRP','TYR','VAL'
+            }
+
+            water_resnames = {'HOH', 'WAT', 'SOL', 'POP', 'POPC'}
+
+            ligand_atom_indices = set()
+
+            for atom in modeller.topology.atoms():
+
+                resname = atom.residue.name.upper()
+
+                if (
+                    resname not in protein_resnames
+                    and resname not in water_resnames
+                ):
+                    ligand_atom_indices.add(atom.index)
+
+            logger.info(f"Detected {len(ligand_atom_indices)} ligand atoms")
+
+            # --- Bonds ---
+
+            bond_force = next(
+                (
+                    f for f in system.getForces()
+                    if isinstance(f, HarmonicBondForce)
+                ),
+                None
+            )
+
+            ligand_bonds = []
+
+            if bond_force is not None:
+
+                for i in range(bond_force.getNumBonds()):
+
+                    a1, a2, length, k = bond_force.getBondParameters(i)
+
+                    if (
+                        a1 in ligand_atom_indices
+                        and a2 in ligand_atom_indices
+                    ):
+
+                        ligand_bonds.append((a1, a2))
+
+                        logger.debug(
+                            f"LIG BOND {a1}-{a2} "
+                            f"length={length.value_in_unit(unit.nanometer):.4f} nm"
+                        )
+
+            logger.info(f"Detected {len(ligand_bonds)} ligand bond terms")
+
+            if len(ligand_bonds) == 0:
+                raise RuntimeError(
+                    "No ligand bond parameters detected!"
+                )
+
+        self.system = system
         self.topology = modeller.topology
         self.positions = modeller.positions
       
