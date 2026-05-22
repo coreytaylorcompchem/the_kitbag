@@ -7,9 +7,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import trange
+
 from torch_geometric.loader import DataLoader
 from torch_geometric.data import Batch
 import torch.nn.functional as F
+
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 
@@ -221,96 +223,210 @@ def compute_stage_loss(pred, target, stage_tasks):
 
 ########### PCGrad implmentation
 
+# class PCGrad:
+#     def __init__(self, optimizer):
+#         self.optimizer = optimizer
+
+#     def pc_backward(self, losses, params):
+
+#         grads = []
+
+#         # --- compute gradients per task (single forward graph) ---
+#         valid_losses = [l for l in losses if l is not None]
+
+#         for i, loss in enumerate(valid_losses):
+
+#             self.optimizer.zero_grad(set_to_none=True)
+
+#             retain = i < (len(valid_losses) - 1)
+#             loss.backward(retain_graph=retain)
+
+#             grad_i = [
+#                 p.grad.clone() if p.grad is not None else None
+#                 for p in params
+#             ]
+
+#             grads.append(grad_i)
+        
+#         # free graph explicitly
+#         for p in params:
+#             if p.grad is not None:
+#                 p.grad = p.grad.detach()
+
+#         if len(grads) == 0:
+#             return
+        
+#         # --- NORMALISE TASK GRADIENTS ---
+#         for i in range(len(grads)):
+#             total_norm = 0.0
+
+#             for g in grads[i]:
+#                 if g is not None:
+#                     total_norm += torch.sum(g * g)
+
+#             total_norm = torch.sqrt(total_norm + 1e-12)
+
+#             for k in range(len(grads[i])):
+#                 if grads[i][k] is not None:
+#                     grads[i][k] = grads[i][k] / (total_norm + 1e-12)
+
+#         # --- PCGrad projection ---
+#         for i in range(len(grads)):
+#             for j in range(len(grads)):
+#                 if i == j:
+#                     continue
+
+#                 dot = 0.0
+#                 norm_j = 0.0
+
+#                 for g_i, g_j in zip(grads[i], grads[j]):
+#                     if g_i is not None and g_j is not None:
+#                         dot += torch.sum(g_i * g_j)
+#                         norm_j += torch.sum(g_j * g_j) + 1e-12
+
+#                 if dot < 0:
+#                     coeff = dot / (norm_j + 1e-12)
+
+#                     # clip projection strength
+#                     coeff = torch.clamp(coeff, min=-1.0, max=0.0)
+#                     for k in range(len(grads[i])):
+#                         if grads[i][k] is not None and grads[j][k] is not None:
+#                             grads[i][k] -= coeff * grads[j][k]
+
+#         # --- aggregate ---
+#         final_grads = [torch.zeros_like(p) for p in params]
+
+#         for grad in grads:
+#             for k in range(len(final_grads)):
+#                 if grad[k] is not None:
+#                     final_grads[k] += grad[k]
+
+#         # --- assign ---
+#         self.optimizer.zero_grad(set_to_none=True)
+
+#         for p, g in zip(params, final_grads):
+#             if g is not None:
+#                 p.grad = g / len(grads)
+
+#     def step(self):
+#         torch.nn.utils.clip_grad_norm_(
+#             [p for group in self.optimizer.param_groups for p in group["params"]],
+#             max_norm=1.0
+#         )
+#         self.optimizer.step()
+
 class PCGrad:
     def __init__(self, optimizer):
         self.optimizer = optimizer
 
+    @staticmethod
+    def _flatten_grads(grads, params):
+        flat_grads = []
+        shapes = []
+
+        for g, p in zip(grads, params):
+            if g is None:
+                g = torch.zeros_like(p)
+
+            shapes.append(p.shape)
+            flat_grads.append(g.reshape(-1))
+
+        return torch.cat(flat_grads), shapes
+
+    @staticmethod
+    def _unflatten_grad(flat_grad, params):
+        grads = []
+        idx = 0
+
+        for p in params:
+            numel = p.numel()
+
+            grads.append(
+                flat_grad[idx:idx+numel].view_as(p)
+            )
+
+            idx += numel
+
+        return grads
+
     def pc_backward(self, losses, params):
 
-        grads = []
-
-        # --- compute gradients per task (single forward graph) ---
         valid_losses = [l for l in losses if l is not None]
+
+        if len(valid_losses) == 0:
+            return
+
+        # ==========================================
+        # Compute gradients with autograd.grad
+        # ==========================================
+        grad_vecs = []
 
         for i, loss in enumerate(valid_losses):
 
-            self.optimizer.zero_grad(set_to_none=True)
-
             retain = i < (len(valid_losses) - 1)
-            loss.backward(retain_graph=retain)
 
-            grad_i = [
-                p.grad.clone() if p.grad is not None else None
-                for p in params
-            ]
+            grads = torch.autograd.grad(
+                loss,
+                params,
+                retain_graph=retain,
+                allow_unused=True,
+            )
 
-            grads.append(grad_i)
-        
-        # free graph explicitly
-        for p in params:
-            if p.grad is not None:
-                p.grad = p.grad.detach()
+            flat_grad, _ = self._flatten_grads(grads, params)
 
-        if len(grads) == 0:
-            return
-        
-        # --- NORMALISE TASK GRADIENTS ---
-        for i in range(len(grads)):
-            total_norm = 0.0
+            grad_vecs.append(flat_grad)
 
-            for g in grads[i]:
-                if g is not None:
-                    total_norm += torch.sum(g * g)
+        G = torch.stack(grad_vecs)   # [T, P]
 
-            total_norm = torch.sqrt(total_norm + 1e-12)
+        # ==========================================
+        # PCGrad projection
+        # ==========================================
+        proj_grads = G.clone()
 
-            for k in range(len(grads[i])):
-                if grads[i][k] is not None:
-                    grads[i][k] = grads[i][k] / (total_norm + 1e-12)
+        num_tasks = G.shape[0]
 
-        # --- PCGrad projection ---
-        for i in range(len(grads)):
-            for j in range(len(grads)):
+        for i in range(num_tasks):
+
+            order = torch.randperm(num_tasks, device=G.device)
+
+            for j in order:
+
                 if i == j:
                     continue
 
-                dot = 0.0
-                norm_j = 0.0
+                gij = torch.dot(proj_grads[i], G[j])
 
-                for g_i, g_j in zip(grads[i], grads[j]):
-                    if g_i is not None and g_j is not None:
-                        dot += torch.sum(g_i * g_j)
-                        norm_j += torch.sum(g_j * g_j) + 1e-12
+                if gij < 0:
 
-                if dot < 0:
-                    coeff = dot / (norm_j + 1e-12)
+                    gj_norm_sq = torch.dot(G[j], G[j]) + 1e-12
 
-                    # clip projection strength
-                    coeff = torch.clamp(coeff, min=-1.0, max=0.0)
-                    for k in range(len(grads[i])):
-                        if grads[i][k] is not None and grads[j][k] is not None:
-                            grads[i][k] -= coeff * grads[j][k]
+                    proj_grads[i] -= (
+                        gij / gj_norm_sq
+                    ) * G[j]
 
-        # --- aggregate ---
-        final_grads = [torch.zeros_like(p) for p in params]
+        final_grad = proj_grads.mean(dim=0)
 
-        for grad in grads:
-            for k in range(len(final_grads)):
-                if grad[k] is not None:
-                    final_grads[k] += grad[k]
+        # ==========================================
+        # Write gradients back
+        # ==========================================
+        unflat = self._unflatten_grad(final_grad, params)
 
-        # --- assign ---
         self.optimizer.zero_grad(set_to_none=True)
 
-        for p, g in zip(params, final_grads):
-            if g is not None:
-                p.grad = g / len(grads)
+        for p, g in zip(params, unflat):
+            p.grad = g
 
     def step(self):
+
         torch.nn.utils.clip_grad_norm_(
-            [p for group in self.optimizer.param_groups for p in group["params"]],
+            [
+                p
+                for group in self.optimizer.param_groups
+                for p in group["params"]
+            ],
             max_norm=1.0
         )
+
         self.optimizer.step()
 
 # =========================
@@ -401,91 +517,122 @@ def train_epoch(
             #     pcgrad.pc_backward(model, batch, target, loss_fns)
             #     pcgrad.step()
 
-            params = [p for p in model.parameters() if p.requires_grad]
+            # ==========================================
+            # Shared backbone params only
+            # ==========================================
 
-            # include uncertainty params
-            # if hasattr(model, "log_vars"):
-            #     params = params + [model.log_vars]
+            shared_modules = [
+                model.input_proj,
+                model.convs,
+                model.norms,
+                model.shared,
+                model.fp_mlp,
+                model.global_proj,
+            ]
 
-            losses = []
+            params = []
 
-            for task_idx in task_indices:
-
-                mask = ~torch.isnan(target[:, task_idx])
-                if mask.sum() == 0:
-                    losses.append(None)
-                    continue
-
-                pred_i = out[mask, task_idx]
-                target_i = target[mask, task_idx]
-
-                # mse = F.mse_loss(pred_i, target_i)
-
-                # log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
-                # precision = torch.exp(-log_var)
-
-                # loss_i = precision * mse + log_var
-                # losses.append(loss_i)
-
-                # mse = F.mse_loss(pred_i, target_i)
-                # mse = F.huber_loss(pred_i, target_i, delta=1.0)
-                loss_i = compute_base_loss(
-                    pred_i,
-                    target_i,
-                    loss_name=model.loss_name,
-                    huber_delta=model.huber_delta
+            for module in shared_modules:
+                params.extend(
+                    [p for p in module.parameters() if p.requires_grad]
                 )
 
-                if task_weights is not None:
-                    loss_i = loss_i * task_weights[task_idx]
+            # losses = []
 
-                losses.append(loss_i)
+            # for task_idx in task_indices:
 
-            if any(l is not None for l in losses):
-                pcgrad.pc_backward(losses, params)
-                pcgrad.step()
+            #     mask = ~torch.isnan(target[:, task_idx])
+            #     if mask.sum() == 0:
+            #         losses.append(None)
+            #         continue
 
-                # # --- Recompute forward for log_vars---
-                # if hasattr(model, "log_vars"):
+            #     pred_i = out[mask, task_idx]
+            #     target_i = target[mask, task_idx]
 
-                #     optimizer.zero_grad(set_to_none=True)
+            #     # mse = F.mse_loss(pred_i, target_i)
 
-                #     out2 = model(batch)  # <-- NEW forward pass
-                #     target2 = batch.y.float()
+            #     # log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
+            #     # precision = torch.exp(-log_var)
 
-                #     weighted_loss = 0.0
-                #     valid_count = 0
+            #     # loss_i = precision * mse + log_var
+            #     # losses.append(loss_i)
 
-                #     for task_idx in task_indices:
+            #     # mse = F.mse_loss(pred_i, target_i)
+            #     # mse = F.huber_loss(pred_i, target_i, delta=1.0)
+            #     loss_i = compute_base_loss(
+            #         pred_i,
+            #         target_i,
+            #         loss_name=model.loss_name,
+            #         huber_delta=model.huber_delta
+            #     )
 
-                #         mask = ~torch.isnan(target2[:, task_idx])
-                #         if mask.sum() == 0:
-                #             continue
+            #     if task_weights is not None:
+            #         loss_i = loss_i * task_weights[task_idx]
 
-                #         pred_i = out2[mask, task_idx]
-                #         target_i = target2[mask, task_idx]
+            #     losses.append(loss_i)
 
-                #         mse = F.mse_loss(pred_i, target_i)
+            group_losses = []
 
-                #         log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
-                #         precision = torch.exp(-log_var)
+            task_groups = getattr(model, "task_groups", None)
 
-                #         weighted_loss = weighted_loss + (precision * mse + log_var)
-                #         valid_count += 1
+            if task_groups is None:
+                raise ValueError("task_groups missing for PCGrad")
 
-                #     if valid_count > 0:
-                #         weighted_loss = weighted_loss / valid_count
-                #         weighted_loss.backward()
-                #         optimizer.step()
+            for group_name, group_tasks in task_groups.items():
 
-                # --- REAL LOSS FOR LOGGING ---
+                active_group_tasks = [
+                    t for t in group_tasks
+                    if active_tasks is None or t in active_tasks
+                ]
+
+                if len(active_group_tasks) == 0:
+                    continue
+
+                group_task_losses = []
+
+                for task_idx in active_group_tasks:
+
+                    mask = ~torch.isnan(target[:, task_idx])
+
+                    if mask.sum() == 0:
+                        continue
+
+                    pred_i = out[mask, task_idx]
+                    target_i = target[mask, task_idx]
+
+                    loss_i = compute_base_loss(
+                        pred_i,
+                        target_i,
+                        loss_name=model.loss_name,
+                        huber_delta=model.huber_delta
+                    )
+
+                    if task_weights is not None:
+                        loss_i = loss_i * task_weights[task_idx]
+
+                    group_task_losses.append(loss_i)
+
+                if len(group_task_losses) > 0:
+                    group_loss = torch.stack(group_task_losses).mean()
+                    group_losses.append(group_loss)
+
+            if len(group_losses) > 0:
+
+                pcgrad.pc_backward(group_losses, params)
+
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(),
+                    max_norm=1.0
+                )
+
+                optimizer.step()
+
+                # logging loss
                 with torch.no_grad():
-                    valid_losses = [l for l in losses if l is not None]
+                    loss = torch.stack(
+                        [g.detach() for g in group_losses]
+                    ).mean()
 
-                    if len(valid_losses) > 0:
-                        loss = torch.stack([l.detach() for l in valid_losses]).mean()
-                    else:
-                        loss = torch.tensor(0.0, device=device)
             else:
                 loss = torch.tensor(0.0, device=device)
         else:
