@@ -27,34 +27,6 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 def custom_collate(batch_list):
     return Batch.from_data_list(batch_list)
 
-# def filter_dataset_min_labels(data_list, task_indices, min_labels=1):
-#     filtered = []
-
-#     for data in data_list:
-#         y = data.y
-#         if y.dim() == 2:
-#             y = y.squeeze(0)
-
-#         num_present = (~torch.isnan(y[task_indices])).sum().item()
-
-#         if num_present >= min_labels:
-#             filtered.append(data)
-
-#     return filtered
-
-# def build_replay_buffer(data_list, task_indices, fraction=0.15):
-
-#     filtered = filter_dataset_for_tasks(data_list, task_indices)
-
-#     if len(filtered) == 0:
-#         return []
-
-#     n = max(1, int(len(filtered) * fraction))
-
-#     perm = torch.randperm(len(filtered))[:n]
-
-#     return [filtered[i] for i in perm]
-
 def compute_task_weights(data_list, num_tasks, power=0.5, eps=1e-8):
     """
     Inverse-frequency task weighting.
@@ -108,40 +80,6 @@ def per_task_mse(pred, target):
             counts[t] = m.sum()
 
     return losses, counts
-
-# def multitask_loss(pred, target, log_vars, active_tasks=None):
-#     total_loss = None
-
-#     for i in range(pred.shape[1]):
-
-#         if active_tasks is not None and i not in active_tasks:
-#             continue
-
-#         mask = ~torch.isnan(target[:, i])
-#         if mask.sum() == 0:
-#             continue
-
-#         pred_i = pred[mask, i]
-#         target_i = target[mask, i]
-
-#         # mse = F.mse_loss(pred_i, target_i)
-#         mse = F.huber_loss(pred_i, target_i, delta=1.0)
-
-#         log_var = torch.clamp(log_vars[i], -5.0, 5.0)
-#         precision = torch.exp(-log_var)
-
-#         loss_i = precision * mse + log_var
-
-#         if total_loss is None:
-#             total_loss = loss_i
-#         else:
-#             total_loss = total_loss + loss_i
-
-#     # fallback
-#     if total_loss is None:
-#         return pred.sum() * 0.0
-
-#     return total_loss
 
 def multitask_loss(pred, target, active_tasks=None, task_weights=None):
 
@@ -222,98 +160,6 @@ def compute_stage_loss(pred, target, stage_tasks):
     return torch.stack(losses).mean()
 
 ########### PCGrad implmentation
-
-# class PCGrad:
-#     def __init__(self, optimizer):
-#         self.optimizer = optimizer
-
-#     def pc_backward(self, losses, params):
-
-#         grads = []
-
-#         # --- compute gradients per task (single forward graph) ---
-#         valid_losses = [l for l in losses if l is not None]
-
-#         for i, loss in enumerate(valid_losses):
-
-#             self.optimizer.zero_grad(set_to_none=True)
-
-#             retain = i < (len(valid_losses) - 1)
-#             loss.backward(retain_graph=retain)
-
-#             grad_i = [
-#                 p.grad.clone() if p.grad is not None else None
-#                 for p in params
-#             ]
-
-#             grads.append(grad_i)
-        
-#         # free graph explicitly
-#         for p in params:
-#             if p.grad is not None:
-#                 p.grad = p.grad.detach()
-
-#         if len(grads) == 0:
-#             return
-        
-#         # --- NORMALISE TASK GRADIENTS ---
-#         for i in range(len(grads)):
-#             total_norm = 0.0
-
-#             for g in grads[i]:
-#                 if g is not None:
-#                     total_norm += torch.sum(g * g)
-
-#             total_norm = torch.sqrt(total_norm + 1e-12)
-
-#             for k in range(len(grads[i])):
-#                 if grads[i][k] is not None:
-#                     grads[i][k] = grads[i][k] / (total_norm + 1e-12)
-
-#         # --- PCGrad projection ---
-#         for i in range(len(grads)):
-#             for j in range(len(grads)):
-#                 if i == j:
-#                     continue
-
-#                 dot = 0.0
-#                 norm_j = 0.0
-
-#                 for g_i, g_j in zip(grads[i], grads[j]):
-#                     if g_i is not None and g_j is not None:
-#                         dot += torch.sum(g_i * g_j)
-#                         norm_j += torch.sum(g_j * g_j) + 1e-12
-
-#                 if dot < 0:
-#                     coeff = dot / (norm_j + 1e-12)
-
-#                     # clip projection strength
-#                     coeff = torch.clamp(coeff, min=-1.0, max=0.0)
-#                     for k in range(len(grads[i])):
-#                         if grads[i][k] is not None and grads[j][k] is not None:
-#                             grads[i][k] -= coeff * grads[j][k]
-
-#         # --- aggregate ---
-#         final_grads = [torch.zeros_like(p) for p in params]
-
-#         for grad in grads:
-#             for k in range(len(final_grads)):
-#                 if grad[k] is not None:
-#                     final_grads[k] += grad[k]
-
-#         # --- assign ---
-#         self.optimizer.zero_grad(set_to_none=True)
-
-#         for p, g in zip(params, final_grads):
-#             if g is not None:
-#                 p.grad = g / len(grads)
-
-#     def step(self):
-#         torch.nn.utils.clip_grad_norm_(
-#             [p for group in self.optimizer.param_groups for p in group["params"]],
-#             max_norm=1.0
-#         )
-#         self.optimizer.step()
 
 class PCGrad:
     def __init__(self, optimizer):
@@ -404,7 +250,8 @@ class PCGrad:
                         gij / gj_norm_sq
                     ) * G[j]
 
-        final_grad = proj_grads.mean(dim=0)
+        # final_grad = proj_grads.mean(dim=0) # hurts training with pcgrad
+        final_grad = proj_grads.sum(dim=0)
 
         # ==========================================
         # Write gradients back
@@ -490,33 +337,6 @@ def train_epoch(
                 perm = torch.randperm(len(task_indices))
                 task_indices = [task_indices[i] for i in perm]
 
-            # # -------------------------
-            # # Build loss functions
-            # # -------------------------
-            # def make_loss_fn(task_idx):
-            #     def loss_fn(out, target):
-            #         mask = ~torch.isnan(target[:, task_idx])
-            #         if mask.sum() == 0:
-            #             return None
-
-            #         pred_i = out[mask, task_idx]
-            #         target_i = target[mask, task_idx]
-
-            #         mse = F.mse_loss(pred_i, target_i)
-
-            #         log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
-            #         precision = torch.exp(-log_var)
-
-            #         return precision * mse + log_var
-            #     return loss_fn
-
-            # loss_fns = [make_loss_fn(i) for i in task_indices]
-
-            # if len(loss_fns) > 0:
-            #     # --- PCGrad update ---
-            #     pcgrad.pc_backward(model, batch, target, loss_fns)
-            #     pcgrad.step()
-
             # ==========================================
             # Shared backbone params only
             # ==========================================
@@ -537,88 +357,98 @@ def train_epoch(
                     [p for p in module.parameters() if p.requires_grad]
                 )
 
-            # losses = []
+            # group_losses = [] # KEEP FOR NOW IN CASE WE REVERT TO GROUP LOSSES - GENERALLY HURTS PCGRAD
 
-            # for task_idx in task_indices:
+            # task_groups = getattr(model, "task_groups", None)
 
-            #     mask = ~torch.isnan(target[:, task_idx])
-            #     if mask.sum() == 0:
-            #         losses.append(None)
+            # if task_groups is None:
+            #     raise ValueError("task_groups missing for PCGrad")
+
+            # for group_name, group_tasks in task_groups.items():
+
+            #     active_group_tasks = [
+            #         t for t in group_tasks
+            #         if active_tasks is None or t in active_tasks
+            #     ]
+
+            #     if len(active_group_tasks) == 0:
             #         continue
 
-            #     pred_i = out[mask, task_idx]
-            #     target_i = target[mask, task_idx]
+            #     group_task_losses = []
 
-            #     # mse = F.mse_loss(pred_i, target_i)
+            #     for task_idx in active_group_tasks:
 
-            #     # log_var = torch.clamp(model.log_vars[task_idx], -5.0, 5.0)
-            #     # precision = torch.exp(-log_var)
+            #         mask = ~torch.isnan(target[:, task_idx])
 
-            #     # loss_i = precision * mse + log_var
-            #     # losses.append(loss_i)
+            #         if mask.sum() == 0:
+            #             continue
 
-            #     # mse = F.mse_loss(pred_i, target_i)
-            #     # mse = F.huber_loss(pred_i, target_i, delta=1.0)
-            #     loss_i = compute_base_loss(
-            #         pred_i,
-            #         target_i,
-            #         loss_name=model.loss_name,
-            #         huber_delta=model.huber_delta
+            #         pred_i = out[mask, task_idx]
+            #         target_i = target[mask, task_idx]
+
+            #         loss_i = compute_base_loss(
+            #             pred_i,
+            #             target_i,
+            #             loss_name=model.loss_name,
+            #             huber_delta=model.huber_delta
+            #         )
+
+            #         if task_weights is not None:
+            #             loss_i = loss_i * task_weights[task_idx]
+
+            #         group_task_losses.append(loss_i)
+
+            #     if len(group_task_losses) > 0:
+            #         group_loss = torch.stack(group_task_losses).mean()
+            #         group_losses.append(group_loss)
+
+            # if len(group_losses) > 0:
+
+            #     pcgrad.pc_backward(group_losses, params)
+
+            #     torch.nn.utils.clip_grad_norm_(
+            #         model.parameters(),
+            #         max_norm=1.0
             #     )
 
-            #     if task_weights is not None:
-            #         loss_i = loss_i * task_weights[task_idx]
+            #     optimizer.step()
 
-            #     losses.append(loss_i)
+            #     # logging loss
+            #     with torch.no_grad():
+            #         loss = torch.stack(
+            #             [g.detach() for g in group_losses]
+            #         ).mean()
 
-            group_losses = []
+            # else:
+            #     loss = torch.tensor(0.0, device=device)
 
-            task_groups = getattr(model, "task_groups", None)
+            task_losses_pcgrad = []
 
-            if task_groups is None:
-                raise ValueError("task_groups missing for PCGrad")
+            for task_idx in task_indices:
 
-            for group_name, group_tasks in task_groups.items():
+                mask = ~torch.isnan(target[:, task_idx])
 
-                active_group_tasks = [
-                    t for t in group_tasks
-                    if active_tasks is None or t in active_tasks
-                ]
-
-                if len(active_group_tasks) == 0:
+                if mask.sum() == 0:
                     continue
 
-                group_task_losses = []
+                pred_i = out[mask, task_idx]
+                target_i = target[mask, task_idx]
 
-                for task_idx in active_group_tasks:
+                loss_i = compute_base_loss(
+                    pred_i,
+                    target_i,
+                    loss_name=model.loss_name,
+                    huber_delta=model.huber_delta
+                )
 
-                    mask = ~torch.isnan(target[:, task_idx])
+                if task_weights is not None:
+                    loss_i = loss_i * task_weights[task_idx]
 
-                    if mask.sum() == 0:
-                        continue
+                task_losses_pcgrad.append(loss_i)
 
-                    pred_i = out[mask, task_idx]
-                    target_i = target[mask, task_idx]
+            if len(task_losses_pcgrad) > 0:
 
-                    loss_i = compute_base_loss(
-                        pred_i,
-                        target_i,
-                        loss_name=model.loss_name,
-                        huber_delta=model.huber_delta
-                    )
-
-                    if task_weights is not None:
-                        loss_i = loss_i * task_weights[task_idx]
-
-                    group_task_losses.append(loss_i)
-
-                if len(group_task_losses) > 0:
-                    group_loss = torch.stack(group_task_losses).mean()
-                    group_losses.append(group_loss)
-
-            if len(group_losses) > 0:
-
-                pcgrad.pc_backward(group_losses, params)
+                pcgrad.pc_backward(task_losses_pcgrad, params)
 
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(),
@@ -630,13 +460,12 @@ def train_epoch(
                 # logging loss
                 with torch.no_grad():
                     loss = torch.stack(
-                        [g.detach() for g in group_losses]
+                        [l.detach() for l in task_losses_pcgrad]
                     ).mean()
 
             else:
                 loss = torch.tensor(0.0, device=device)
         else:
-            # loss = multitask_loss(out, target, model.log_vars, active_tasks)
             loss = multitask_loss(
                 out,
                 target,
@@ -646,8 +475,6 @@ def train_epoch(
 
             if loss.requires_grad:
                 optimizer.zero_grad(set_to_none=True)
-                # loss.backward()
-                # optimizer.step()
                 loss.backward()
 
                 torch.nn.utils.clip_grad_norm_(
@@ -713,8 +540,6 @@ def eval_epoch(model, loader, device, active_tasks=None):
             out_detached = out.detach()
             target = batch.y.float()
 
-            # loss = multitask_loss(out, target, model.log_vars, active_tasks)
-            # loss = multitask_loss(out, target)
             loss = multitask_loss(
                 out,
                 target,
@@ -748,84 +573,8 @@ def set_requires_grad(module, requires_grad):
     for p in module.parameters():
         p.requires_grad = requires_grad
 
-# def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
-#     strategy = curriculum_cfg.get("strategy", "none")
-
-#     # =====================================
-#     # RESET EVERYTHING FIRST
-#     # =====================================
-#     for p in model.parameters():
-#         p.requires_grad = False
-
-#     if strategy == "none":
-#         for p in model.parameters():
-#             p.requires_grad = True
-#         return
-
-#     stages = curriculum_cfg["stages"]
-
-#     # =====================================
-#     # ALWAYS TRAIN BACKBONE
-#     # =====================================
-#     shared_modules = [
-#         model.input_proj,
-#         model.convs,
-#         model.norms,
-#         model.shared,
-#         model.fp_mlp,
-#         model.global_proj,
-#         model.pre_shared_norm,
-#         model.graph_norm,
-#         model.fp_norm,
-#         model.global_norm,
-#     ]
-
-#     for module in shared_modules:
-#         set_requires_grad(module, True)
-
-#     # =====================================
-#     # DETERMINE ACTIVE STAGES
-#     # =====================================
-#     if strategy == "freeze_previous":
-#         active_stages = [stage_idx]
-
-#     elif strategy == "progressive_unfreeze":
-#         active_stages = list(range(stage_idx + 1))
-
-#     else:
-#         raise ValueError(f"Unknown strategy: {strategy}")
-
-#     # =====================================
-#     # ENABLE ONLY ACTIVE GROUPS
-#     # =====================================
-#     for i in active_stages:
-#         stage = stages[i]
-#         group_name = stage["name"]
-
-#         if isinstance(stage["tasks"][0], str):
-#             task_indices = [
-#                 context["task_names"].index(t)
-#                 for t in stage["tasks"]
-#             ]
-#         else:
-#             task_indices = stage["tasks"]
-
-#         set_requires_grad(model.group_trunks[group_name], True)
-
-#         for t in task_indices:
-#             set_requires_grad(model.heads[t], True)
-
-#     # =====================================
-#     # OPTIONAL: FREEZE SHARED BACKBONE
-#     freeze_shared = curriculum_cfg.get("freeze_shared", False)
-
-#     if freeze_shared:
-#         for module in shared_modules:
-#             set_requires_grad(module, False)
-
 def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
 
-    # KEEP EVERYTHING TRAINABLE
     for p in model.parameters():
         p.requires_grad = True
 
@@ -907,8 +656,6 @@ def train_curriculum(context, config, params):
 
     logger.info(f"Curriculum freezing strategy applied: {strategy}")
 
-    # replay_buffer = []
-
     optimizer = None
     scheduler = None
 
@@ -928,13 +675,6 @@ def train_curriculum(context, config, params):
         for t in current_stage_tasks:
             if t not in cumulative_tasks:
                 cumulative_tasks.append(t)
-
-         # Stage-specific dataset
-
-        # stage_train_list = filter_dataset_for_tasks(
-        #     train_list,
-        #     stage_tasks
-        # )
 
         stage_train_list = filter_dataset_for_tasks(
             train_list,
@@ -965,8 +705,6 @@ def train_curriculum(context, config, params):
         # =====================================
         # REPLAY EARLIER TASKS
         # =====================================
-        # if len(replay_buffer) > 0:
-        #     stage_train_list = stage_train_list + replay_buffer
 
         stage_val_list = filter_dataset_for_tasks(
             val_list,
@@ -998,10 +736,6 @@ def train_curriculum(context, config, params):
         # Stage-specific params
         lr = params.get("lr", 1e-3)
 
-        # optimizer = torch.optim.Adam(
-        #     filter(lambda p: p.requires_grad, model.parameters()),
-        #     lr=lr
-        #     )
         patience = stage.get("patience", 10)
 
         logger.info(f"=== Curriculum stage: {stage['name']} | tasks={cumulative_tasks} ===")
@@ -1023,11 +757,6 @@ def train_curriculum(context, config, params):
         )
 
         if need_new_optimizer:
-
-            # optimizer = torch.optim.Adam(
-            #     filter(lambda p: p.requires_grad, model.parameters()),
-            #     lr=lr
-            # )
 
             backbone_modules = [
                 model.input_proj,
@@ -1124,9 +853,6 @@ def train_curriculum(context, config, params):
             # =========================
             # TRAIN
             # =========================
-            # train_loss, train_preds, train_labels, train_rmse, train_r2 = train_epoch(
-            #     model, train_loader, optimizer, device, active_tasks=None
-            # )
             train_loss, train_preds, train_labels, train_rmse, train_r2 = train_epoch(
                 model,
                 train_loader,
@@ -1147,9 +873,6 @@ def train_curriculum(context, config, params):
             # =========================
             # VALIDATION
             # =========================
-            # val_loss, val_preds, val_labels, val_mse = eval_epoch(
-            #     model, val_loader, device, active_tasks=None
-            # )
 
             val_loss, val_preds, val_labels, val_mse = eval_epoch(
                 model,
@@ -1210,17 +933,6 @@ def train_curriculum(context, config, params):
                 logger.info(f"Early stopping in stage {stage['name']}")
                 break
         
-        # =====================================
-        # UPDATE REPLAY BUFFER
-        # =====================================
-        # new_buffer = build_replay_buffer(
-        #     train_list,
-        #     cumulative_tasks,
-        #     fraction=0.10
-        # )
-
-        # replay_buffer.extend(new_buffer)
-
         # Restore best weights for this stage
         if best_stage_state is not None:
             model.load_state_dict(best_stage_state)
