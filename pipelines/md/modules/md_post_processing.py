@@ -83,7 +83,7 @@ class MDPostProcessingWorkflow:
         if not topology:
             prep_cfg = self.config.get("prepare_system", {})
             prep_out = prep_cfg.get("output_trajectory", "output")
-            topology = os.path.join(prep_out, "topology.pdb")
+            topology = os.path.join(prep_out, "topology.psf")
 
         if not trajectory:
             prod_cfg = self.config.get("production", {})
@@ -183,13 +183,29 @@ class MDPostProcessingWorkflow:
             task = ProteinProteinInteractionFingerprintTask(
                 topology=topology,
                 trajectory=wrapped_trajectories or trajectories,
-                receptor_chains=ppi_cfg.get("receptor_chains", ["A"]),
-                partner_chains=ppi_cfg.get("partner_chains", ["B"]),
+
+                systems=ppi_cfg.get(
+                    "systems",
+                    [
+                        {
+                            "name": "default_ppi",
+                            "receptor_chains": ["A"],
+                            "partner_chains": ["B"],
+                        }
+                    ],
+                ),
+
+                cutoff=ppi_cfg.get("cutoff", 6.0),
                 frequency_cutoff=ppi_cfg.get("frequency_cutoff", 0.1),
+
                 start=start,
                 stop=stop,
                 step=step,
-                output_dir=os.path.join(output_dir, "protein_protein_interactions"),
+
+                output_dir=os.path.join(
+                    output_dir,
+                    "protein_protein_interactions"
+                ),
             )
 
             results["protein_protein_interactions"] = task.run()
