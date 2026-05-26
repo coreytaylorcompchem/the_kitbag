@@ -66,6 +66,13 @@ production:
 # Just comment out previous steps in the workflow above.
 
 post_processing:
+  # analysis_components: # add these for the RMSF/F analysis. TODO: consolidate to avoid redundancy.
+  #   - name: "GPCR"
+  #     chains: ["A"]
+  #   - name: "VHH"
+  #     chains: ["K"]
+  #   - name: "G-protein"
+  #     chains: ["B", "C", "D", "E", "F", "G", "H", "I", "J"]
   output_dir: "output_multiple_membrane"
   ligand_resname: "UNK"
   water_resname: "HOH"

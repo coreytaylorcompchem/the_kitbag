@@ -149,9 +149,6 @@ class ComponentDetector:
         # STEP 3: return components
         # -----------------------------
         return {
-            "receptor": receptor,
-            "partner": partner,
             "ligand": ligand,
-            "has_partner": partner is not None,
             "has_ligand": ligand is not None
         }

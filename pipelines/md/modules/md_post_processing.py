@@ -83,7 +83,7 @@ class MDPostProcessingWorkflow:
         if not topology:
             prep_cfg = self.config.get("prepare_system", {})
             prep_out = prep_cfg.get("output_trajectory", "output")
-            topology = os.path.join(prep_out, "topology.psf")
+            topology = os.path.join(prep_out, "topology.pdb")
 
         if not trajectory:
             prod_cfg = self.config.get("production", {})
@@ -137,6 +137,7 @@ class MDPostProcessingWorkflow:
             rmsd_task = RMSDAnalysisTask(
                 topology=topology,
                 trajectory=trajectories,
+                analysis_components=post_cfg.get("analysis_components", []),
                 start=start,
                 stop=stop,
                 step=step,
@@ -152,6 +153,7 @@ class MDPostProcessingWorkflow:
             rmsf_task = RMSFAnalysisTask(
                 topology=topology,
                 trajectory=trajectories,
+                analysis_components=post_cfg.get("analysis_components", []),
                 start=start,
                 stop=stop,
                 step=step,
