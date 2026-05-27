@@ -141,7 +141,30 @@ def retrieve_assay_activities(config, assay_ids=None):
 
         while url:
             async with session.get(url) as response:
-                data = await response.json()
+                try:
+                    data = await response.json()
+                except Exception as e:
+                    logger.warning(f"Failed JSON decode for {url}: {e}")
+                    break
+
+                if not isinstance(data, dict):
+                    logger.warning(f"Non-dict response for {url}")
+                    break
+
+                if "activities" not in data:
+                    logger.warning(
+                        f"Missing activities field for {url}. "
+                        f"Keys: {list(data.keys())}"
+                    )
+                    break
+
+                if "page_meta" not in data:
+                    logger.warning(
+                        f"Missing page_meta for {url}. "
+                        f"Keys: {list(data.keys())}"
+                    )
+                    break
+
                 results.extend(data.get("activities", []))
 
                 next_url = data["page_meta"].get("next")

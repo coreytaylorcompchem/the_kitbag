@@ -43,7 +43,8 @@ from modules.utils.detect_adme import (
     detect_metstab_system, 
     extract_species,
     classify_permeability_system,
-    flatten_pivot_columns
+    classify_bioavailability_record,
+    flatten_pivot_columns,
 )
 
 from pipeline.logger import setup_logger
@@ -287,9 +288,15 @@ def harmonise_units(config, enriched=None):
                     val = float(val)
                 except (TypeError, ValueError):
                     continue
+                if not classify_bioavailability_record(r):
+                    continue
                 # Assume %; store species if available
                 r["standard_value"], r["standard_units"] = val, "%"
-                r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+                # r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+                r["species"] = extract_species(
+                    r.get("target_organism") or r.get("assay_description"),
+                    context="pk"
+                )
                 r["harmonised_endpoint"] = "F_percent"
                 new_records.append(r)
 
@@ -301,6 +308,10 @@ def harmonise_units(config, enriched=None):
                     val = float(val)
                 except (TypeError, ValueError):
                     continue
+                r["species"] = extract_species(
+                    r.get("target_organism") or r.get("assay_description"),
+                    context="pk"
+                )
                 val, unit = convert_vd(val, unit)
                 r["standard_value"], r["standard_units"] = val, unit
                 r["harmonised_endpoint"] = "Vd"

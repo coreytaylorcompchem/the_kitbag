@@ -95,19 +95,95 @@ def detect_papp_direction(description):
                 return "BA"
         return None
 
-def extract_species(text):
+def extract_species(text, context="generic"):
+
     if not text:
         return "unknown"
+
     t = str(text).lower()
-    species_map = {
-        "human": "Human", "homo sapiens": "Human",
-        "mouse": "Mouse", "mus musculus": "Mouse",
-        "rat": "Rat", "rattus": "Rat",
-        "monkey": "Monkey", "macaca": "Monkey", "cyno": "Monkey"
+
+    species_patterns = {
+        "Human": [
+            "human",
+            "homo sapiens",
+        ],
+        "Mouse": [
+            "mouse",
+            "mice",
+            "mus musculus",
+            "cd-1",
+            "c57bl/6",
+        ],
+        "Rat": [
+            "rat",
+            "rats",
+            "rattus",
+            "sprague-dawley",
+            "wistar",
+        ],
+        "Monkey": [
+            "monkey",
+            "macaca",
+            "cyno",
+            "cynomolgus",
+            "rhesus",
+            "macaque",
+        ],
+        "Dog": [
+            "dog",
+            "dogs",
+            "beagle",
+        ]
     }
-    for k, v in species_map.items():
-        if k in t:
-            return v
+
+    # -----------------------------
+    # PK-specific exclusions
+    # -----------------------------
+    if context == "pk":
+
+        exclude_terms = [
+            "microsome",
+            "microsomal",
+            "hepatocyte",
+            "hepatocytes",
+            "s9",
+            "cytosol",
+            "recombinant",
+            "transfected",
+            "cell line",
+            "well stirred",
+            "well-stirred",
+            "predicted",
+            "prediction",
+            "simulated",
+            "simulation",
+            "model",
+            "in vitro",
+            "intrinsic clearance",
+            "clint",
+        ]
+
+        if any(term in t for term in exclude_terms):
+            return "unknown"
+
+    # -----------------------------
+    # Species matching
+    # -----------------------------
+    found = []
+
+    for species, patterns in species_patterns.items():
+
+        for pattern in patterns:
+
+            if pattern in t:
+                found.append(species)
+                break
+
+    found = list(set(found))
+
+    if len(found) == 1:
+        return found[0]
+
     return "unknown"
 
 def classify_permeability_system(record):
@@ -208,3 +284,44 @@ def flatten_pivot_columns(df_pivot, assay_name):
     df_pivot.columns = new_cols
 
     return df_pivot
+
+def classify_bioavailability_record(record):
+
+    text = " ".join([
+        str(record.get("assay_description", "")),
+        str(record.get("standard_type", "")),
+        str(record.get("assay_type", "")),
+    ]).lower()
+
+    exclude_terms = [
+        "microsome",
+        "microsomal",
+        "hepatocyte",
+        "well stirred",
+        "well-stirred",
+        "predicted",
+        "prediction",
+        "simulated",
+        "calculated",
+        "model",
+        "in vitro",
+        "intrinsic clearance",
+        "clint",
+        "hepatic extraction",
+    ]
+
+    if any(t in text for t in exclude_terms):
+        return False
+
+    include_terms = [
+        "oral bioavailability",
+        "absolute bioavailability",
+        "bioavailability",
+        "f%",
+        "fraction absorbed",
+    ]
+
+    if not any(t in text for t in include_terms):
+        return False
+
+    return True
