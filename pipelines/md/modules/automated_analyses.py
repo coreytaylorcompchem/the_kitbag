@@ -56,7 +56,7 @@ import community as community_louvain
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 
 @register_task(
@@ -352,6 +352,24 @@ class RMSDAnalysisTask:
         if self.components is None:
             self.components = self.detector.detect()
             self.context["components"] = self.components
+        # Build default analysis components automatically
+        if not self.analysis_components:
+
+            receptor_chains = self.components.get("receptor_chains", [])
+
+            if receptor_chains:
+                self.analysis_components.append({
+                    "name": "Receptor",
+                    "chains": receptor_chains
+                })
+
+            partner_chains = self.components.get("partner_chains", [])
+
+            if partner_chains:
+                self.analysis_components.append({
+                    "name": "Partner",
+                    "chains": partner_chains
+                })
 
     def _component_selection(self, chains, backbone=False):
 
@@ -504,17 +522,15 @@ class RMSDAnalysisTask:
                 mininterval=1.0
             ):
 
-            time_ns = ts.time / 1000.0
+            dt_ns = self.u.trajectory.dt / 1000.0  # ps → ns
+            frame_index = len(times)
+            time_ns = frame_index * dt_ns * self.step
             times.append(time_ns)
 
             for component in self.analysis_components:
-
                 name = component["name"]
-
                 sel = component_selections[name]["selection"]
-
                 mob = self.u.select_atoms(sel)
-
                 ref_sel = ref_atoms[name]
 
                 val = rms.rmsd(
@@ -549,7 +565,7 @@ class RMSDAnalysisTask:
                 pd.DataFrame({
                     "Time (ns)": times,
                     "RMSD (Å)": values,
-                    "Component": component_name
+                    "Component": [component_name] * len(values)
                 })
             )
 
@@ -1066,9 +1082,13 @@ class InteractionFingerprintTask:
         times_ns = []
         offset_ns = 0.0
 
+        traj = self.u.trajectory[self.start:self.stop:self.step]
+
+        dt_ns = self.u.trajectory.dt / 1000.0
+
         times_ns = np.array([
-            ts.time / 1000.0  # ps → ns
-            for ts in self.u.trajectory[self.start:self.stop:self.step]
+            (self.start + i * self.step) * dt_ns
+            for i, _ in enumerate(traj)
         ])
 
         fp_transposed = fp_df.astype(np.uint8).T.apply(_bit_to_color_value, axis=1)

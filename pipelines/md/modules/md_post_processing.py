@@ -65,6 +65,50 @@ class MDPostProcessingWorkflow:
         post_cfg = self.config.get("post_processing", {})
 
         # --------------------------------------------------------------
+        # Validate required analysis component definitions
+        # --------------------------------------------------------------
+
+        analysis_components = post_cfg.get("analysis_components")
+
+        if not analysis_components:
+            raise ValueError(
+                "Missing required 'post_processing.analysis_components' "
+                "in YAML configuration.\n\n"
+                "Example:\n"
+                "post_processing:\n"
+                "  analysis_components:\n"
+                "    - name: \"GPCR\"\n"
+                "      chains: [\"A\", \"B\", \"C\"]"
+            )
+
+        if not isinstance(analysis_components, list):
+            raise TypeError(
+                "'post_processing.analysis_components' must be a list."
+            )
+
+        for i, comp in enumerate(analysis_components):
+
+            if not isinstance(comp, dict):
+                raise TypeError(
+                    f"analysis_components[{i}] must be a dictionary."
+                )
+
+            if "name" not in comp:
+                raise ValueError(
+                    f"analysis_components[{i}] missing required key 'name'."
+                )
+
+            if "chains" not in comp:
+                raise ValueError(
+                    f"analysis_components[{i}] missing required key 'chains'."
+                )
+
+            if not isinstance(comp["chains"], list) or len(comp["chains"]) == 0:
+                raise ValueError(
+                    f"analysis_components[{i}].chains must be a non-empty list."
+                )
+
+        # --------------------------------------------------------------
         # General / shared parameters
         # --------------------------------------------------------------
         output_dir = post_cfg.get("output_dir", "output_postproc")
