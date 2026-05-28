@@ -1,4 +1,5 @@
 import importlib
+import json
 
 import pandas as pd
 import numpy as np
@@ -206,7 +207,7 @@ def filter_druglike(config, context):
     hbd_upper = 6
     hba_upper = 12
     rot_upper = 12
-    qed_lower = 0.35
+    qed_lower = 0.2
 
     logger.debug("=== Drug-likeness filter configuration ===")
     logger.debug(f"MW:    {mw_lower} <= MW <= {mw_upper}")
@@ -364,7 +365,44 @@ def filter_druglike(config, context):
 def ic50_to_pic50(x):
     return -np.log10(x * 1e-9)  # assume values are in nM
 
-import json
+def ppb_to_logfu(ppb_percent):
+    """
+    Convert % plasma protein bound to log10(fraction unbound).
+
+    Example:
+        99% bound -> fu=0.01 -> log10(fu)=-2
+    """
+
+    fu = 1.0 - (ppb_percent / 100.0)
+
+    # numerical stability
+    fu = np.clip(fu, 1e-6, 1.0)
+
+    return np.log10(fu)
+
+
+def vd_to_log(vd):
+    """
+    Log-transform volume of distribution.
+    Assumes positive values.
+    """
+
+    vd = np.clip(vd, 1e-6, None)
+
+    return np.log(vd)
+
+
+def bioavailability_to_logit(f_percent):
+    """
+    Convert bioavailability % to logit space.
+    """
+
+    frac = f_percent / 100.0
+
+    # avoid infs
+    frac = np.clip(frac, 1e-4, 1 - 1e-4)
+
+    return np.log(frac / (1.0 - frac))
 
 @register_task("transform_labels", category="ADME")
 def transform_labels(config, context):
@@ -439,6 +477,75 @@ def transform_labels(config, context):
                 "upper_clip": upper
             }
 
+        elif col in ["PPB_Human", "PPB_Rat"]:
+
+            mask = df[col].notna()
+
+            # valid PPB percentages
+            invalid = (
+                mask &
+                (
+                    (df[col] <= 0) |
+                    (df[col] >= 100)
+                )
+            )
+
+            df.loc[invalid, col] = np.nan
+
+            mask = df[col].notna()
+
+            df.loc[mask, col] = df.loc[mask, col].apply(ppb_to_logfu)
+
+            transform_metadata[col] = {
+                "transform": "ppb_to_logfu"
+            }
+        
+        elif col in ["Vd_Human", "Vd_Rat"]:
+
+            mask = df[col].notna()
+
+            invalid = mask & (df[col] <= 0)
+
+            df.loc[invalid, col] = np.nan
+
+            mask = df[col].notna()
+
+            # optional upper clipping
+            upper = float(df[col].quantile(0.995))
+            df.loc[df[col] > upper, col] = upper
+
+            mask = df[col].notna()
+
+            df.loc[mask, col] = df.loc[mask, col].apply(vd_to_log)
+
+            transform_metadata[col] = {
+                "transform": "log_vd",
+                "upper_clip": upper
+            }
+        
+        elif col in ["F_Human", "F_Rat", "Bioavailability"]:
+
+            mask = df[col].notna()
+
+            invalid = (
+                mask &
+                (
+                    (df[col] <= 0) |
+                    (df[col] >= 100)
+                )
+            )
+
+            df.loc[invalid, col] = np.nan
+
+            mask = df[col].notna()
+
+            df.loc[mask, col] = df.loc[mask, col].apply(
+                bioavailability_to_logit
+            )
+
+            transform_metadata[col] = {
+                "transform": "logit_f"
+            }
 
         else:
 

@@ -220,8 +220,17 @@ def run_adme_inference(config, context):
                 values = np.expm1(values)
 
             elif transform_type == "ic50_to_pic50":
-                # invert pIC50 → IC50 (nM)
+                # pIC50 -> IC50 nM
                 values = 10 ** (-values) * 1e9
+
+            elif transform_type == "ppb_to_logfu":
+                values = logfu_to_ppb(values)
+
+            elif transform_type == "log_vd":
+                values = log_to_vd(values)
+
+            elif transform_type == "logit_f":
+                values = logit_to_bioavailability(values)
 
             elif transform_type == "identity":
                 pass
