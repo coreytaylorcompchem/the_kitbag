@@ -21,7 +21,7 @@ from sklearn.decomposition import PCA
 from pipeline.task_registry import register_task
 
 from modules.utils.plotting import plot_label_histograms
-from modules.utils..conversions import logfu_to_ppb, log_to_vd, logit_to_bioavailability
+from modules.utils.conversions import logfu_to_ppb, log_to_vd, logit_to_bioavailability
 from modules.utils.splits import scaffold_split
 
 from pipeline.logger import setup_logger
