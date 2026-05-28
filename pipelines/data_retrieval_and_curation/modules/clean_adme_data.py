@@ -31,12 +31,6 @@ from modules.utils.convert_adme import (
     convert_logp_logd,
     convert_cyp_activity,
     convert_vd,
-    extract_inhibition_concentration,
-    normalise_conc,
-    extract_cyp3a4_substrate,
-    train_cyp_classifier,
-    extract_cyp3a4_substrate_hybrid,
-    classify_metstab_record
 )
 from modules.utils.detect_adme import (
     detect_papp_direction, 
@@ -45,6 +39,14 @@ from modules.utils.detect_adme import (
     classify_permeability_system,
     classify_bioavailability_record,
     flatten_pivot_columns,
+    classify_bsep_record,
+    extract_inhibition_concentration,
+    normalise_conc,
+    extract_cyp3a4_substrate,
+    train_cyp_classifier,
+    extract_cyp3a4_substrate_hybrid,
+    classify_metstab_record,
+    convert_bsep_activity
 )
 
 from pipeline.logger import setup_logger
@@ -62,9 +64,10 @@ logd_assays = ["logd", "distribution coefficient"]
 cyp_assays = ["cyp1a2","cyp2c9","cyp2c19","cyp2d6","cyp3a4","cyp3a5","cyp2b6","cyp2e1", "cyp2c8"]
 bioavailability_assays = ["bioavailability", "f%", "fraction absorbed", "oral bioavailability"]
 vd_assays = ["vd", "vdss", "volume of distribution"]
-mate_assays = ["mate", "multidrug and toxin extrusion", "cmax", "auc"]
+mate_assays = ["mate", "multidrug and toxin extrusion"]
 oatp_assays = ["oatp", "slco", "organic anion transporting polypeptide"]
 oct_assays = ["oct", "slc22"]
+bsep_assays = ["bsep", "bile salt export pump", "abcd11"]
 
 @register_task(
     "harmonise_units",
@@ -316,6 +319,46 @@ def harmonise_units(config, enriched=None):
                 r["standard_value"], r["standard_units"] = val, unit
                 r["harmonised_endpoint"] = "Vd"
                 new_records.append(r)
+        
+        elif any(x in lname for x in bsep_assays):
+
+            for r in records:
+
+                endpoint = classify_bsep_record(r)
+
+                if endpoint is None:
+                    continue
+
+                val = r.get("standard_value")
+                unit = r.get("standard_units")
+
+                new_val, endpoint_type, new_unit = convert_bsep_activity(
+                    val,
+                    unit,
+                    endpoint
+                )
+
+                if new_val is None:
+                    continue
+
+                r["standard_value"] = new_val
+                r["standard_units"] = new_unit
+
+                r["bsep_endpoint"] = endpoint_type
+                r["species"] = extract_species(
+                    r.get("target_organism") or r.get("assay_description")
+                )
+
+                # Optional but strongly recommended
+                desc = str(r.get("assay_description", "")).lower()
+
+                if "taurocholate" in desc:
+                    r["bsep_substrate"] = "taurocholate"
+                else:
+                    r["bsep_substrate"] = "unknown"
+
+                new_records.append(r)
+
 
         elif any(x in lname for x in mate_assays):
             for r in records:
@@ -583,9 +626,14 @@ def build_multitask_dataset(config, cleaned=None):
             group_cols.append("papp_direction")
         if "cyp_endpoint" in df.columns:
             group_cols.append("cyp_endpoint")
+        if "bsep_endpoint" in df.columns:
+            group_cols.append("bsep_endpoint")
         if "cyp_substrate" in df.columns:
             if df["cyp_substrate"].nunique() > 1:
                 group_cols.append("cyp_substrate")
+        if "bsep_substrate" in df.columns:
+            if df["bsep_substrate"].nunique() > 1:
+                group_cols.append("bsep_substrate")
 
         if group_cols:
 
@@ -755,9 +803,15 @@ def generate_diagnostics(config, mtl_df=None):
     # Define endpoint groups using exhaustive YAML keywords
     
     # Helper to get columns containing any keyword (case-insensitive)
+    assigned_cols = set()
+
     def get_group_cols(mtl_df, keywords):
         cols = []
+
         for c in mtl_df.columns:
+
+            if c in assigned_cols:
+                continue
 
             if (
                 c.endswith("_std")
@@ -771,7 +825,9 @@ def generate_diagnostics(config, mtl_df=None):
             for kw in keywords:
                 if kw.lower() in c.lower():
                     cols.append(c)
+                    assigned_cols.add(c)
                     break
+
         return cols
     
     endpoint_groups = {
@@ -781,8 +837,16 @@ def generate_diagnostics(config, mtl_df=None):
             "blood brain barrier", "brain penetration", "logbb", "brain/plasma"
         ]),
         "Metabolism": get_group_cols(mtl_df, ["metstab", "microsomal", "hepatocyte", "cyp"]),
-        "Tox": get_group_cols(mtl_df, ["herg", "nav1.5", "cav1.2"]),
-        "Transporters": get_group_cols(mtl_df, ["oatp", "slco", "oct", "slc22", "mate"]),
+        "Tox": get_group_cols(mtl_df, ["herg", "nav1.5", "cav1.2", "5-ht1a", "5-ht1b", "5-ht2a", "5-ht2b", "5-ht2c", "pxr"]),
+        "Transporters": get_group_cols(mtl_df, [
+            "p-gp", "pgp",
+            "bcrp",
+            "mrp",
+            "bsep",
+            "oatp", "slco",
+            "oct", "slc22",
+            "mate"
+        ]),
         "PK": get_group_cols(mtl_df, ["vd", "bioavailability", "f%", "fraction_unbound", "ppb"])
     }
 
