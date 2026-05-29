@@ -1,16 +1,7 @@
-import re
-
-from collections import Counter
 import numpy as np
 
 from rdkit import Chem
 from rdkit.Chem import Descriptors
-
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-
-_CYP_MODEL = None
-_CYP_VECTORIZER = None
 
 def convert_cyp_activity(value, unit):
     """

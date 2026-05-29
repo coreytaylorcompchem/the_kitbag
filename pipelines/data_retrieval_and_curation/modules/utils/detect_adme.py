@@ -1,6 +1,17 @@
 import re
 import numpy as np
 
+from collections import Counter
+
+from rdkit import Chem
+from rdkit.Chem import Descriptors
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+
+_CYP_MODEL = None
+_CYP_VECTORIZER = None
+
 def build_dual_endpoint_dataset(df, assay_name, endpoint_col, value_cols):
     """
     Generic handler for assays with two endpoint types (e.g. IC50 and % inhibition).
