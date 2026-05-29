@@ -1126,3 +1126,105 @@ def classify_oatp_record(record):
         return "transport"
 
     return None
+
+def classify_pxr_record(record):
+
+    desc = normalise_text(record.get("assay_description"))
+    stype = normalise_text(record.get("standard_type"))
+    unit = normalise_text(record.get("standard_units"))
+
+    combined = f"{desc} {stype} {unit}"
+
+    # -------------------------
+    # Activation / induction
+    # -------------------------
+
+    activation_patterns = [
+        "activation",
+        "activator",
+        "agonist",
+        "induction",
+        "induce",
+        "reporter gene",
+        "transactivation",
+        "luciferase",
+        "fold induction",
+    ]
+
+    if (
+        "ec50" in stype
+        or any(p in combined for p in activation_patterns)
+    ):
+        return "activation"
+
+    # -------------------------
+    # Antagonism / inhibition
+    # -------------------------
+
+    inhibition_patterns = [
+        "antagonist",
+        "antagonism",
+        "inhibition",
+        "suppression",
+        "repression",
+    ]
+
+    if (
+        "ic50" in stype
+        or any(p in combined for p in inhibition_patterns)
+    ):
+        return "inhibition"
+
+    return None
+
+def convert_pxr_activity(value, unit, endpoint_class):
+
+    if value is None:
+        return None, None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None, None
+
+    u = (
+        str(unit)
+        .lower()
+        .replace(" ", "")
+        .replace("µ", "u")
+        if unit is not None
+        else ""
+    )
+
+    # -------------------------
+    # EC50 / IC50
+    # -------------------------
+
+    if endpoint_class in ["activation", "inhibition"]:
+
+        factor = None
+
+        if u in ["nm", "nanomolar"]:
+            factor = 1
+
+        elif "um" in u or "micromolar" in u:
+            factor = 1e3
+
+        elif u == "mm":
+            factor = 1e6
+
+        elif u == "m":
+            factor = 1e9
+
+        # concentration endpoint
+        if factor is not None:
+            return val * factor, endpoint_class + "_EC50", "nM"
+
+        # percent/fold induction endpoint
+        if "%" in u:
+            return val, endpoint_class, "%"
+
+        if "fold" in u:
+            return val, endpoint_class, "fold"
+
+    return None, None, None

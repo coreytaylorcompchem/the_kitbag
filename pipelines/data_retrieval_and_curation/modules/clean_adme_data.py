@@ -1,4 +1,5 @@
 import os
+import math
 
 import pandas as pd
 import numpy as np
@@ -49,6 +50,8 @@ from modules.utils.detect_adme import (
     convert_bsep_activity,
     classify_oatp_record,
     convert_oatp_activity,
+    classify_pxr_record,
+    convert_pxr_activity,
 )
 
 from pipeline.logger import setup_logger
@@ -460,6 +463,57 @@ def harmonise_units(config, enriched=None):
         # -----------------------------
         elif any(lname == t for t in tox_assays):
 
+            # -----------------------------
+            # PXR special handling
+            # -----------------------------
+
+            if lname == "pxr":
+
+                new_records = []
+
+                for r in records:
+
+                    endpoint = classify_pxr_record(r)
+
+                    if endpoint is None:
+                        continue
+
+                    val = r.get("standard_value")
+                    unit = r.get("standard_units")
+
+                    new_val, endpoint_type, new_unit = convert_pxr_activity(
+                        val,
+                        unit,
+                        endpoint
+                    )
+
+                    if new_val is None:
+                        continue
+
+                    r["standard_value"] = new_val
+                    r["standard_units"] = new_unit
+                    r["tox_type"] = endpoint_type
+
+                    # ---------------------------------
+                    # Parse concentration from assay text
+                    # ---------------------------------
+
+                    conc = extract_inhibition_concentration(
+                        r.get("assay_description")
+                    )
+
+                    if conc is not None:
+                        conc = normalise_conc(conc)
+                        r["inhibition_conc_uM"] = conc
+
+                    # activation assays are experimental
+                    r["is_estimated"] = False
+
+                    new_records.append(r)
+
+                cleaned[assay_name] = new_records
+                continue
+
             for r in records:
                 val = r.get("standard_value")
                 unit = r.get("standard_units")
@@ -667,6 +721,204 @@ def build_multitask_dataset(config, cleaned=None):
             continue
 
         # -----------------------------
+        # Type-B assays (tox endpoints: hERG, Nav, etc.)
+        # -----------------------------
+        if "tox_type" in df.columns:
+
+            logger.debug(f"Building pivot for tox assay: {assay_name}")
+
+            # --- SPLIT DATA ---
+
+            # percent inhibition style endpoints
+            df_inh = df[
+                df["tox_type"].isin([
+                    "inhibition",
+                    "inhibition_percent"
+                ])
+            ].copy()
+
+            # activation / induction style endpoints
+            df_act = df[
+                df["tox_type"].isin([
+                    "activation",
+                    "activation_percent",
+                    "activation_fold"
+                ])
+            ].copy()
+
+            # concentration potency endpoints
+            df_aff = df[
+                df["tox_type"].isin([
+                    "IC50",
+                    "EC50",
+                    "KI",
+                    "KD",
+                    "activation_EC50",
+                    "inhibition_EC50",
+                ])
+            ].copy()
+
+            pivots = []
+
+            # -----------------------------
+            # 1. Inhibition block
+            # -----------------------------
+            if not df_inh.empty:
+
+                if "inhibition_conc_uM" not in df_inh.columns:
+                    df_inh["inhibition_conc_uM"] = -1
+                else:
+                    df_inh["inhibition_conc_uM"] = (
+                        df_inh["inhibition_conc_uM"]
+                        .fillna(-1)
+                    )
+
+                if "is_estimated" not in df_inh.columns:
+                    df_inh["is_estimated"] = False
+
+                df_grouped_inh = (
+                    df_inh.groupby(
+                        ["smiles", "inhibition_conc_uM", "is_estimated"]
+                    )["standard_value"]
+                    .agg(["mean", "std", "count"])
+                    .reset_index()
+                )
+
+                def make_inh_label(row):
+
+                    label = (
+                        f"inhibition_{int(row['inhibition_conc_uM'])}uM"
+                        if row["inhibition_conc_uM"] > 0
+                        else "inhibition"
+                    )
+
+                    if row["is_estimated"]:
+                        label += "_est"
+                    else:
+                        label += "_exp"
+
+                    return label
+
+                df_grouped_inh["tox_label"] = (
+                    df_grouped_inh.apply(make_inh_label, axis=1)
+                )
+
+                df_pivot_inh = df_grouped_inh.pivot(
+                    index="smiles",
+                    columns="tox_label"
+                )
+
+                df_pivot_inh = flatten_pivot_columns(
+                    df_pivot_inh,
+                    assay_name
+                )
+
+                pivots.append(df_pivot_inh)
+
+            # -----------------------------
+            # 1b. Activation block
+            # -----------------------------
+            if not df_act.empty:
+
+                df_act["inhibition_conc_uM"] = (
+                    df_act["inhibition_conc_uM"]
+                    if "inhibition_conc_uM" in df_act.columns
+                    else -1
+                )
+
+                df_act["inhibition_conc_uM"] = (
+                    pd.to_numeric(
+                        df_act["inhibition_conc_uM"],
+                        errors="coerce"
+                    )
+                    .fillna(-1)
+                )
+
+                if "is_estimated" not in df_act.columns:
+                    df_act["is_estimated"] = False
+
+                df_grouped_act = (
+                    df_act.groupby(
+                        ["smiles", "inhibition_conc_uM", "is_estimated"]
+                    )["standard_value"]
+                    .agg(["mean", "std", "count"])
+                    .reset_index()
+                )
+
+                def make_act_label(row):
+
+                    label = (
+                        f"activation_{int(row['inhibition_conc_uM'])}uM"
+                        if row["inhibition_conc_uM"] > 0
+                        else "activation"
+                    )
+
+                    if row["is_estimated"]:
+                        label += "_est"
+                    else:
+                        label += "_exp"
+
+                    return label
+
+                df_grouped_act["tox_label"] = (
+                    df_grouped_act.apply(make_act_label, axis=1)
+                )
+
+                df_pivot_act = df_grouped_act.pivot(
+                    index="smiles",
+                    columns="tox_label"
+                )
+
+                df_pivot_act = flatten_pivot_columns(
+                    df_pivot_act,
+                    assay_name
+                )
+
+                pivots.append(df_pivot_act)
+
+            # -----------------------------
+            # 2. Affinity block
+            # -----------------------------
+            if not df_aff.empty:
+
+                df_grouped_aff = (
+                    df_aff.groupby(["smiles", "tox_type"])["standard_value"]
+                    .agg(["mean", "std", "count"])
+                    .reset_index()
+                )
+
+                df_pivot_aff = df_grouped_aff.pivot(
+                    index="smiles",
+                    columns="tox_type"
+                )
+
+                df_pivot_aff = flatten_pivot_columns(
+                    df_pivot_aff,
+                    assay_name
+                )
+
+                pivots.append(df_pivot_aff)
+
+            # -----------------------------
+            # 3. Merge all tox blocks
+            # -----------------------------
+            if pivots:
+
+                df_pivot = reduce(
+                    lambda l, r: pd.merge(
+                        l,
+                        r,
+                        on="smiles",
+                        how="outer"
+                    ),
+                    pivots
+                )
+
+                dfs.append(df_pivot.reset_index())
+
+            continue
+
+        # -----------------------------
         # Type-A assays (ADME, CYPs)
         # -----------------------------
         group_cols = []
@@ -748,86 +1000,6 @@ def build_multitask_dataset(config, cleaned=None):
                 "Non-null counts per CYP3A4 column:\n"
                 f"{df_pivot.notna().sum().sort_values(ascending=False)}"
             )
-            continue
-
-        # -----------------------------
-        # Type-B assays (tox endpoints: hERG, Nav, etc.)
-        # -----------------------------
-        if "tox_type" in df.columns:
-
-            logger.debug(f"Building pivot for tox assay: {assay_name}")
-
-            # --- SPLIT DATA ---
-            df_inh = df[df["tox_type"] == "inhibition"].copy()
-            df_aff = df[df["tox_type"].isin(["IC50", "EC50", "KI", "KD"])].copy()
-
-            pivots = []
-
-            # -----------------------------
-            # 1. Inhibition block (measured + estimated)
-            # -----------------------------
-            if not df_inh.empty:
-
-                df_inh["inhibition_conc_uM"] = df_inh.get("inhibition_conc_uM", -1).fillna(-1)
-
-                if "is_estimated" not in df_inh.columns:
-                    df_inh["is_estimated"] = False
-
-                df_grouped_inh = (
-                    df_inh.groupby(["smiles", "inhibition_conc_uM", "is_estimated"])["standard_value"]
-                    .agg(["mean", "std", "count"])
-                    .reset_index()
-                )
-
-                def make_inh_label(row):
-                    label = f"inhibition_{int(row['inhibition_conc_uM'])}uM" if row["inhibition_conc_uM"] > 0 else "inhibition"
-
-                    if row["is_estimated"]:
-                        label += "_est"
-                    else:
-                        label += "_exp"
-
-                    return label
-
-                df_grouped_inh["tox_label"] = df_grouped_inh.apply(make_inh_label, axis=1)
-
-                df_pivot_inh = df_grouped_inh.pivot(index="smiles", columns="tox_label")
-                # df_pivot_inh.columns = [
-                #     f"{assay_name}_{tox}_{stat}"
-                #     for stat, tox in df_pivot_inh.columns
-                # ]
-                df_pivot_inh = flatten_pivot_columns(df_pivot_inh, assay_name)
-
-                pivots.append(df_pivot_inh)
-
-            # -----------------------------
-            # 2. Affinity block (IC50, EC50, etc.)
-            # -----------------------------
-            if not df_aff.empty:
-
-                df_grouped_aff = (
-                    df_aff.groupby(["smiles", "tox_type"])["standard_value"]
-                    .agg(["mean", "std", "count"])
-                    .reset_index()
-                )
-
-                df_pivot_aff = df_grouped_aff.pivot(index="smiles", columns="tox_type")
-
-                # df_pivot_aff.columns = [
-                #     f"{assay_name}_{tox}_{stat}"
-                #     for stat, tox in df_pivot_aff.columns
-                # ]
-                df_pivot_aff = flatten_pivot_columns(df_pivot_aff, assay_name)
-
-                pivots.append(df_pivot_aff)
-
-            # -----------------------------
-            # 3. Merge both (if both exist)
-            # -----------------------------
-            if pivots:
-                df_pivot = reduce(lambda l, r: pd.merge(l, r, on="smiles", how="outer"), pivots)
-                dfs.append(df_pivot.reset_index())
-
             continue
 
         # -----------------------------
@@ -930,8 +1102,8 @@ def generate_diagnostics(config, mtl_df=None):
             not (c.endswith("_std") or c.endswith("_count"))
             and "inhibition_conc_uM" not in c
             and np.issubdtype(mtl_df[c].dtype, np.number)
-            and not pd.api.types.is_bool_dtype(mtl_df[c])   # ← ADD
-            and "is_estimated" not in c                     # ← ADD
+            and not pd.api.types.is_bool_dtype(mtl_df[c])
+            and "is_estimated" not in c
         )
     ]
     numeric_cols = task_cols.copy()
@@ -940,34 +1112,102 @@ def generate_diagnostics(config, mtl_df=None):
     # ------------------------
     # Number of data points per assay (panelled by endpoint group)
     # ------------------------
-    fig, axes = plt.subplots(3, 2, figsize=(18, 18))
-    axes = axes.flatten()
+    n_groups = len(endpoint_groups)
+
+    ncols = 2
+    nrows = math.ceil(n_groups / ncols)
+
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(24, 6 * nrows)
+    )
+
+    axes = np.array(axes).flatten()
 
     for idx, (group_name, cols) in enumerate(endpoint_groups.items()):
+
         ax = axes[idx]
 
         if not cols:
-            ax.text(0.5, 0.5, "No endpoints found", ha='center', va='center', fontsize=12)
-            ax.set_title(f"{group_name}")
+            ax.text(
+                0.5,
+                0.5,
+                "No endpoints found",
+                ha='center',
+                va='center',
+                fontsize=12
+            )
+            ax.set_title(group_name)
             ax.axis("off")
             continue
 
-        # Count non-NaN values per assay
-        counts = mtl_df[cols].notna().sum().sort_values(ascending=False)
+        counts = (
+            mtl_df[cols]
+            .notna()
+            .sum()
+            .sort_values(ascending=False)
+        )
+
+        labels = (
+            counts.index
+            .str.replace("_mean", "", regex=False)
+            .str.replace("_std", "", regex=False)
+            .str.replace("_count", "", regex=False)
+        )
 
         sns.barplot(
-            x=counts.index.str.replace("_mean","").str.replace("_std","").str.replace("_count",""),
+            x=labels,
             y=counts.values,
             ax=ax,
             palette="Blues_d",
             errorbar=None
         )
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=10)
+
+        # ---------------------------------
+        # Dynamic label/font scaling
+        # ---------------------------------
+
+        n_labels = len(labels)
+
+        if n_labels > 40:
+            fontsize = 5
+            rotation = 90
+
+        elif n_labels > 25:
+            fontsize = 6
+            rotation = 75
+
+        elif n_labels > 15:
+            fontsize = 7
+            rotation = 60
+
+        else:
+            fontsize = 9
+            rotation = 45
+
+        ax.set_xticklabels(
+            ax.get_xticklabels(),
+            rotation=rotation,
+            ha="right",
+            fontsize=fontsize
+        )
+
         ax.set_ylabel("Number of Data Points")
-        ax.set_title(f"{group_name}")
+        ax.set_title(f"{group_name} ({n_labels} assays)")
+
+    # hide unused panels
+    for j in range(idx + 1, len(axes)):
+        axes[j].axis("off")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, "assay_data_counts_grid.png"), dpi=300)
+
+    plt.savefig(
+        os.path.join(plots_dir, "assay_data_counts_grid.png"),
+        dpi=300,
+        bbox_inches="tight"
+    )
+
     plt.close()
 
     # ------------------------
