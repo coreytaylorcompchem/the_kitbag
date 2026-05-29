@@ -46,7 +46,9 @@ from modules.utils.detect_adme import (
     train_cyp_classifier,
     extract_cyp3a4_substrate_hybrid,
     classify_metstab_record,
-    convert_bsep_activity
+    convert_bsep_activity,
+    classify_oatp_record,
+    convert_oatp_activity,
 )
 
 from pipeline.logger import setup_logger
@@ -375,16 +377,70 @@ def harmonise_units(config, enriched=None):
                 new_records.append(r)
 
         elif any(x in lname for x in oatp_assays):
+
             for r in records:
+
+                endpoint = classify_oatp_record(r)
+
+                if endpoint is None:
+                    continue
+
                 val = r.get("standard_value")
                 unit = r.get("standard_units")
-                try:
-                    val = float(val)
-                except (TypeError, ValueError):
+
+                new_val, endpoint_type, new_unit = convert_oatp_activity(
+                    val,
+                    unit,
+                    endpoint
+                )
+
+                if new_val is None:
                     continue
-                r["standard_value"], r["standard_units"] = val, unit
-                r["harmonised_endpoint"] = "OATP_transport"
-                r["species"] = extract_species(r.get("target_organism") or r.get("assay_description"))
+
+                r["standard_value"] = new_val
+                r["standard_units"] = new_unit
+
+                r["oatp_endpoint"] = endpoint_type
+
+                # ---------------------------------
+                # Parse inhibition concentration
+                # ---------------------------------
+
+                if endpoint_type == "inhibition":
+
+                    conc = extract_inhibition_concentration(
+                        r.get("assay_description")
+                    )
+
+                    if conc is not None:
+                        conc = normalise_conc(conc)
+
+                    else:
+                        # transporter assays are often 10 uM
+                        # but we should only use that as a fallback
+                        conc = 10
+
+                    r["inhibition_conc_uM"] = conc
+
+                r["species"] = extract_species(
+                    r.get("target_organism") or r.get("assay_description")
+                )
+
+                # # Optional transporter subtype split
+                # desc = str(r.get("assay_description", "")).lower()
+
+                # if "oatp1b1" in desc or "slco1b1" in desc:
+                #     r["oatp_subtype"] = "1B1"
+
+                # elif "oatp1b3" in desc or "slco1b3" in desc:
+                #     r["oatp_subtype"] = "1B3"
+
+                # elif "oatp2b1" in desc or "slco2b1" in desc:
+                #     r["oatp_subtype"] = "2B1"
+
+                # else:
+                #     r["oatp_subtype"] = "unknown"
+
                 new_records.append(r)
 
         elif any(x in lname for x in oct_assays):
@@ -628,12 +684,22 @@ def build_multitask_dataset(config, cleaned=None):
             group_cols.append("cyp_endpoint")
         if "bsep_endpoint" in df.columns:
             group_cols.append("bsep_endpoint")
+        if "oatp_endpoint" in df.columns:
+            group_cols.append("oatp_endpoint")
+        if (
+            "inhibition_conc_uM" in df.columns
+            and df["inhibition_conc_uM"].notna().any()
+        ):
+            group_cols.append("inhibition_conc_uM")
         if "cyp_substrate" in df.columns:
             if df["cyp_substrate"].nunique() > 1:
                 group_cols.append("cyp_substrate")
         if "bsep_substrate" in df.columns:
             if df["bsep_substrate"].nunique() > 1:
                 group_cols.append("bsep_substrate")
+        # if "oatp_subtype" in df.columns:
+        #     if df["oatp_subtype"].nunique() > 1:
+        #         group_cols.append("oatp_subtype")
 
         if group_cols:
 
