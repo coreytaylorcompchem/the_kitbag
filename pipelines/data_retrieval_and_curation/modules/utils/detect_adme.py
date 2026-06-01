@@ -337,34 +337,78 @@ def classify_bioavailability_record(record):
 
     return True
 
+import re
+
+
 def extract_inhibition_concentration(description):
     """
-    Extract concentration from assay description.
-    Returns concentration in µM (float) or None.
+    Extract inhibitor test concentration from assay text.
+
+    Returns
+    -------
+    float
+        concentration in µM
     """
 
     if not description:
         return None
 
-    desc = description.lower().replace("μ", "u")
+    desc = str(description).lower()
 
-    # patterns like:
-    # "at 30 uM", "at 100uM", "at 1 um"
-    patterns = [
-        r'at\s+([\d\.]+)\s*u?m',
-        r'([\d\.]+)\s*u?m',
-        # r'([\d\.e-]+)\s*m',  # convert M → µM might add later
-    ]
+    # unicode normalization
+    desc = (
+        desc.replace("μ", "u")
+            .replace("µ", "u")
+    )
 
-    for pattern in patterns:
-        match = re.search(pattern, desc)
-        if match:
-            try:
-                return float(match.group(1))
-            except:
-                continue
+    # ----------------------------------------
+    # Supported forms:
+    #
+    # 10 uM
+    # 10uM
+    # 0.3 mM
+    # 100 nM
+    # 10 micromolar
+    # 10 umol/l
+    # at 30 uM
+    # tested at 1 mM
+    # ----------------------------------------
 
-    return None
+    pattern = re.compile(
+        r'([\d\.]+)\s*'
+        r'(nm|um|mm|micromolar|nanomolar|millimolar|umol/l|nmol/l|mmol/l)',
+        re.IGNORECASE
+    )
+
+    matches = pattern.findall(desc)
+
+    if not matches:
+        return None
+
+    # usually first concentration is the assay concentration
+    value, unit = matches[0]
+
+    try:
+        value = float(value)
+    except ValueError:
+        return None
+
+    unit = unit.lower()
+
+    # ----------------------------------------
+    # Convert everything -> µM
+    # ----------------------------------------
+
+    if unit in ["nm", "nanomolar", "nmol/l"]:
+        value = value / 1000.0
+
+    elif unit in ["um", "micromolar", "umol/l"]:
+        value = value
+
+    elif unit in ["mm", "millimolar", "mmol/l"]:
+        value = value * 1000.0
+
+    return value
 
 def normalise_conc(conc):
     allowed = [0.1, 1, 3, 10, 30, 100]
@@ -892,6 +936,83 @@ def convert_bsep_activity(value, unit, endpoint_class):
 
     return None, None, None
 
+def convert_oatp_activity(value, unit, endpoint_class):
+    """
+    Standardise OATP assay endpoints.
+
+    Returns:
+        (value, endpoint_type, canonical_unit)
+    """
+
+    if value is None:
+        return None, None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None, None
+
+    u = (
+        str(unit)
+        .lower()
+        .replace(" ", "")
+        .replace("µ", "u")
+        .strip()
+        if unit is not None
+        else ""
+    )
+
+    # ---------------------------------
+    # IC50/Ki concentration assays
+    # ---------------------------------
+
+    if endpoint_class == "IC50":
+
+        factor = None
+
+        if u in ["nm", "nanomolar"]:
+            factor = 1.0
+
+        elif "um" in u or "micromolar" in u:
+            factor = 1e3
+
+        elif "mm" in u:
+            factor = 1e6
+
+        elif u == "m":
+            factor = 1e9
+
+        if factor is None:
+            return None, None, None
+
+        val_nM = val * factor
+
+        if val_nM <= 0:
+            return None, None, None
+
+        return val_nM, "IC50", "nM"
+
+    # ---------------------------------
+    # Percent inhibition
+    # ---------------------------------
+
+    if endpoint_class == "inhibition":
+
+        return val, "inhibition", "%"
+
+    # ---------------------------------
+    # Transport / uptake
+    # ---------------------------------
+
+    if endpoint_class == "transport":
+
+        if "%" in u:
+            return val, "transport_percent", "%"
+
+        return val, "transport", u or "raw"
+
+    return None, None, None
+
 def classify_bsep_record(record):
 
     desc = normalise_text(record.get("assay_description"))
@@ -951,3 +1072,159 @@ def classify_bsep_record(record):
         return "transport"
 
     return None
+
+def classify_oatp_record(record):
+    """
+    Classify OATP assay endpoint type.
+
+    Returns:
+        - "IC50"
+        - "inhibition"
+        - "transport"
+        - None
+    """
+
+    desc = normalise_text(record.get("assay_description"))
+    stype = normalise_text(record.get("standard_type"))
+    unit = normalise_text(record.get("standard_units"))
+
+    combined = f"{desc} {stype} {unit}"
+
+    # ---------------------------------
+    # IC50 / Ki style inhibition assays
+    # ---------------------------------
+
+    if stype in ["ic50", "ki", "kd", "ec50"]:
+        return "IC50"
+
+    # ---------------------------------
+    # Percent inhibition assays
+    # ---------------------------------
+
+    if (
+        "%" in unit
+        or "inhibition" in stype
+    ):
+        return "inhibition"
+
+    # ---------------------------------
+    # Transport / uptake assays
+    # ---------------------------------
+
+    transport_patterns = [
+        "uptake",
+        "transport",
+        "substrate",
+        "efflux",
+        "estrone",
+        "estradiol",
+        "pitavastatin",
+        "taurocholate",
+    ]
+
+    if any(p in combined for p in transport_patterns):
+        return "transport"
+
+    return None
+
+def classify_pxr_record(record):
+
+    desc = normalise_text(record.get("assay_description"))
+    stype = normalise_text(record.get("standard_type"))
+    unit = normalise_text(record.get("standard_units"))
+
+    combined = f"{desc} {stype} {unit}"
+
+    # -------------------------
+    # Activation / induction
+    # -------------------------
+
+    activation_patterns = [
+        "activation",
+        "activator",
+        "agonist",
+        "induction",
+        "induce",
+        "reporter gene",
+        "transactivation",
+        "luciferase",
+        "fold induction",
+    ]
+
+    if (
+        "ec50" in stype
+        or any(p in combined for p in activation_patterns)
+    ):
+        return "activation"
+
+    # -------------------------
+    # Antagonism / inhibition
+    # -------------------------
+
+    inhibition_patterns = [
+        "antagonist",
+        "antagonism",
+        "inhibition",
+        "suppression",
+        "repression",
+    ]
+
+    if (
+        "ic50" in stype
+        or any(p in combined for p in inhibition_patterns)
+    ):
+        return "inhibition"
+
+    return None
+
+def convert_pxr_activity(value, unit, endpoint_class):
+
+    if value is None:
+        return None, None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None, None
+
+    u = (
+        str(unit)
+        .lower()
+        .replace(" ", "")
+        .replace("µ", "u")
+        if unit is not None
+        else ""
+    )
+
+    # -------------------------
+    # EC50 / IC50
+    # -------------------------
+
+    if endpoint_class in ["activation", "inhibition"]:
+
+        factor = None
+
+        if u in ["nm", "nanomolar"]:
+            factor = 1
+
+        elif "um" in u or "micromolar" in u:
+            factor = 1e3
+
+        elif u == "mm":
+            factor = 1e6
+
+        elif u == "m":
+            factor = 1e9
+
+        # concentration endpoint
+        if factor is not None:
+            return val * factor, endpoint_class + "_EC50", "nM"
+
+        # percent/fold induction endpoint
+        if "%" in u:
+            return val, endpoint_class, "%"
+
+        if "fold" in u:
+            return val, endpoint_class, "fold"
+
+    return None, None, None
