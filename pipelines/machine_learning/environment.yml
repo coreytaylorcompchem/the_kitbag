@@ -3,6 +3,7 @@ channels:
   - defaults
 dependencies:
   - python=3.11
+  - rdkit
   - pip
   - pip:
       # PyTorch + CUDA
@@ -38,3 +39,6 @@ dependencies:
       - urllib3
       - xxhash
       - yarl
+      - pyarrow
+      - fair-esm
+      - catboost
