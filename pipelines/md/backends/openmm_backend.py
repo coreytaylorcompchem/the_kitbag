@@ -426,20 +426,7 @@ class OpenMMBackend:
 
         # Cap all internal chain breaks
         modeller = self.cap_internal_chain_breaks(modeller)
-
-        # for residue in list(modeller.topology.residues())[:10]:
-        #     hs = [a.name for a in residue.atoms()
-        #         if a.element and a.element.symbol == "H"]
-
-        #     print(residue, len(hs), hs[:20])
-
         modeller.addHydrogens(pH=ph)
-
-        # for residue in list(modeller.topology.residues())[:10]:
-        #     hs = [a.name for a in residue.atoms()
-        #         if a.element and a.element.symbol == "H"]
-
-        #     print(residue, len(hs), hs[:20])
 
         # Check termini charges
         def check_chain_termini_charges(modeller):
@@ -913,46 +900,6 @@ class OpenMMBackend:
             atoms_to_keep = [a for r in residues_to_keep for a in r.atoms()]
             modeller.delete([a for a in modeller.topology.atoms() if a not in atoms_to_keep])
 
-            # # Ligand coordinates post-orientation
-            # # ligand_coords_post = np.array([
-            # #     pos.value_in_unit(unit.angstrom)
-            # #     for atom, pos in zip(modeller.topology.atoms(), modeller.positions)
-            # #     if has_ligand and atom.residue.name.upper() == ligand_resname.upper()
-            # # ])
-
-            # # R, t = None, None
-            # # if has_ligand:
-            # #     R, t = compute_rigid_transform(ligand_coords_pre, ligand_coords_post)
-            # #     logger.debug(f"Ligand atoms post-orientation: {ligand_coords_post.shape}")
-            # ligand_positions_oriented = None
-            # ligand_topology = None
-
-            # if has_ligand:
-
-            #     ligand_atoms_oriented = [
-            #         atom for atom in modeller.topology.atoms()
-            #         if atom.residue.name.upper() == ligand_resname.upper()
-            #     ]
-
-            #     ligand_indices = [a.index for a in ligand_atoms_oriented]
-
-            #     # ligand_positions_oriented = unit.Quantity(
-            #     #     [modeller.positions[i] for i in ligand_indices],
-            #     #     unit.nanometer
-            #     # )
-                
-            #     ligand_positions_oriented = [modeller.positions[i] for i in ligand_indices]
-
-            #     ligand_topology = self.extract_sub_topology(
-            #         modeller.topology,
-            #         ligand_indices
-            #     )
-
-            #     logger.debug(
-            #         f"Captured oriented ligand directly from oriented PDB "
-            #         f"({len(ligand_indices)} atoms)"
-            #     )
-
         # Step 7b: Parameterise ligand
         ligand_offmol = None
 
@@ -1093,59 +1040,6 @@ class OpenMMBackend:
         if cfg.get("membrane", False) and has_ligand and ligand_offmol is not None:
 
             ligand_topology = ligand_offmol.to_topology().to_openmm()
-
-            # logger.debug("=== LIGAND DEBUG ===")
-
-            # # --- topology atom inspection ---
-            # lig_top_atoms = list(ligand_topology.atoms())
-
-            # logger.debug(f"Topology atom count: {len(lig_top_atoms)}")
-            # logger.debug(f"Coordinate count: {len(ligand_positions_oriented)}")
-
-            # for i, atom in enumerate(lig_top_atoms):
-            #     logger.debug(
-            #         f"TOPO ATOM {i:4d} | "
-            #         f"name={atom.name:<4} "
-            #         f"element={atom.element.symbol:<2} "
-            #         f"res={atom.residue.name}"
-            #     )
-
-            # logger.debug("=== POSITION CHECK ===")
-
-            # for i, pos in enumerate(ligand_positions_oriented):
-            #     try:
-            #         xyz = pos.value_in_unit(unit.angstrom)
-            #         logger.debug(
-            #             f"POS {i:4d} | "
-            #             f"{xyz[0]:8.3f} "
-            #             f"{xyz[1]:8.3f} "
-            #             f"{xyz[2]:8.3f}"
-            #         )
-            #     except Exception as e:
-            #         logger.debug(f"POS {i:4d} | INVALID POSITION | {e}")
-
-            # # Explicit mismatch detection
-            # if len(lig_top_atoms) != len(ligand_positions_oriented):
-
-            #     logger.error(
-            #         "LIGAND TOPOLOGY/POSITION COUNT MISMATCH "
-            #         f"({len(lig_top_atoms)} vs {len(ligand_positions_oriented)})"
-            #     )
-
-            #     # dump missing atoms
-            #     if len(lig_top_atoms) > len(ligand_positions_oriented):
-
-            #         logger.error("Atoms without coordinates:")
-
-            #         for atom in lig_top_atoms[len(ligand_positions_oriented):]:
-            #             logger.error(
-            #                 f"Missing coord -> "
-            #                 f"name={atom.name} "
-            #                 f"element={atom.element.symbol} "
-            #                 f"res={atom.residue.name}"
-            #             )
-
-            #     raise RuntimeError("Ligand topology/coordinate mismatch")
             
             modeller.add(
                 ligand_topology,
@@ -1181,46 +1075,12 @@ class OpenMMBackend:
 
         logger.info(f"Creating final system ...")
 
-        # from collections import Counter
-
-        # bond_counts = Counter()
-
-        # for bond in modeller.topology.bonds():
-        #     a1, a2 = bond
-
-        #     r1 = a1.residue.name
-        #     r2 = a2.residue.name
-
-        #     bond_counts[(r1, r2)] += 1
-
-        # print("Total topology bonds:", sum(bond_counts.values()))
-
-        # for k, v in bond_counts.most_common(20):
-        #     print(k, v)
-
-        # print("Atoms:", sum(1 for _ in modeller.topology.atoms()))
-        # print("Residues:", sum(1 for _ in modeller.topology.residues()))
-        # print("Bonds:", sum(1 for _ in modeller.topology.bonds()))
-
-        # topology_bonds_pre = sum(1 for _ in modeller.topology.bonds())
-        # print("Topology bonds before createSystem:", topology_bonds_pre)
-
         # Step 9: Create OpenMM system
         system = forcefield.createSystem(
             modeller.topology,
             nonbondedMethod=PME,
             constraints=HBonds
         )
-
-        # topology_bonds_post = sum(1 for _ in modeller.topology.bonds())
-        # print("Topology bonds after createSystem:", topology_bonds_post)
-
-        # bond_force = next(
-        #     f for f in system.getForces()
-        #     if isinstance(f, HarmonicBondForce)
-        # )
-
-        # print("System bond terms:", bond_force.getNumBonds())
 
         # ------------------------------------------------------------
         # Validate ligand bonded terms
@@ -1308,16 +1168,6 @@ class OpenMMBackend:
         with open(topology_path, "w") as f:
             PDBFile.writeFile(self.topology, self.positions, f, keepIds=True)
 
-        # structure = pmd.openmm.load_topology(self.topology, self.system, self.positions)
-
-        # bond_force = next(
-        #     f for f in self.system.getForces()
-        #     if isinstance(f, HarmonicBondForce)
-        # )
-
-        # print("OpenMM bond terms:", bond_force.getNumBonds())
-        # print("Topology bonds:", sum(1 for _ in self.topology.bonds()))
-
         structure = pmd.openmm.load_topology(
             topology=self.topology,
             system=self.system,
@@ -1329,72 +1179,6 @@ class OpenMMBackend:
             nonbondedMethod=PME,
             constraints=None
         )
-
-        # constraint_bonds = 0
-        # constraint_atoms = set()
-
-        # for i in range(self.system.getNumConstraints()):
-        #     a1, a2, dist = self.system.getConstraintParameters(i)
-
-        #     constraint_atoms.add(tuple(sorted((int(a1), int(a2)))))
-        #     constraint_bonds += 1
-
-        # print("Constraints:", constraint_bonds)
-
-        # missing = 0
-
-        # for bond in structure.bonds:
-        #     pair = tuple(sorted((bond.atom1.idx, bond.atom2.idx)))
-
-        #     if bond.type is None:
-        #         missing += 1
-
-        #         if pair not in constraint_atoms:
-        #             print("Non-constrained missing bond:",
-        #                 bond.atom1.name,
-        #                 bond.atom2.name)
-
-        # print("Missing:", missing)
-        
-        # missing = []
-
-        # for bond in structure.bonds:
-        #     if bond.type is None:
-        #         missing.append(bond)
-
-        # print(f"Missing bond types: {len(missing)}")
-
-        # for b in missing[:20]:
-        #     print(
-        #         b.atom1.idx,
-        #         b.atom1.name,
-        #         b.atom2.idx,
-        #         b.atom2.name,
-        #         b.atom1.residue.name
-        #     )
-
-        # missing_constrained = 0
-        # missing_unconstrained = 0
-
-        # constraint_pairs = {
-        #     tuple(sorted((int(self.system.getConstraintParameters(i)[0]),
-        #                 int(self.system.getConstraintParameters(i)[1]))))
-        #     for i in range(self.system.getNumConstraints())
-        # }
-
-        # for bond in structure.bonds:
-
-        #     if bond.type is None:
-
-        #         pair = tuple(sorted((bond.atom1.idx, bond.atom2.idx)))
-
-        #         if pair in constraint_pairs:
-        #             missing_constrained += 1
-        #         else:
-        #             missing_unconstrained += 1
-
-        # print("Missing constrained:", missing_constrained)
-        # print("Missing unconstrained:", missing_unconstrained)
 
         psf_path = os.path.join(output_trajectory, "topology.psf")
         prmtop_path = os.path.join(output_trajectory, "system.prmtop")
