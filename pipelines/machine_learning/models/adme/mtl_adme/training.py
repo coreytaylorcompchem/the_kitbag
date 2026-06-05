@@ -575,8 +575,109 @@ def set_requires_grad(module, requires_grad):
 
 def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
 
+    strategy = curriculum_cfg.get(
+        "strategy",
+        "none"
+    )
+
+    # -------------------------
+    # Default: train everything
+    # -------------------------
+    if strategy == "none":
+
+        for p in model.parameters():
+            p.requires_grad = True
+
+        return
+
+    # -------------------------
+    # Freeze everything first
+    # -------------------------
     for p in model.parameters():
+        p.requires_grad = False
+
+    # -------------------------
+    # Identify modules
+    # -------------------------
+    backbone_blocks = [
+        model.input_proj,
+        model.convs,
+        model.norms,
+        model.shared,
+        model.fp_mlp,
+        model.global_proj,
+    ]
+
+    backbone_blocks = [
+        m for m in backbone_blocks
+        if m is not None
+    ]
+
+    # task heads = everything not in backbone
+    backbone_param_ids = {
+        id(p)
+        for block in backbone_blocks
+        for p in block.parameters()
+    }
+
+    head_params = [
+        p
+        for p in model.parameters()
+        if id(p) not in backbone_param_ids
+    ]
+
+    # -------------------------
+    # Always train heads
+    # -------------------------
+    for p in head_params:
         p.requires_grad = True
+
+    # -------------------------
+    # Progressive unfreezing
+    # -------------------------
+    if stage_idx >= 1:
+
+        for p in model.shared.parameters():
+            p.requires_grad = True
+
+        for p in model.fp_mlp.parameters():
+            p.requires_grad = True
+
+        for p in model.global_proj.parameters():
+            p.requires_grad = True
+
+    if stage_idx >= 2:
+
+        for p in model.convs.parameters():
+            p.requires_grad = True
+
+        for p in model.norms.parameters():
+            p.requires_grad = True
+
+    if stage_idx >= 3:
+
+        for p in model.input_proj.parameters():
+            p.requires_grad = True
+
+    # -------------------------
+    # Logging
+    # -------------------------
+    trainable = sum(
+        p.numel()
+        for p in model.parameters()
+        if p.requires_grad
+    )
+
+    total = sum(
+        p.numel()
+        for p in model.parameters()
+    )
+
+    logger.info(
+        f"Stage {stage_idx}: "
+        f"{trainable:,}/{total:,} params trainable "
+        f"({100*trainable/total:.1f}%)"
+    )
 
 def filter_dataset_for_tasks(data_list, task_indices):
     filtered = []
@@ -769,13 +870,17 @@ def train_curriculum(context, config, params):
 
             backbone_params = []
             for module in backbone_modules:
-                backbone_params.extend(list(module.parameters()))
+                backbone_params.extend(
+                [p for p in module.parameters()
+                if p.requires_grad]
+            )
 
             backbone_param_ids = set(id(p) for p in backbone_params)
 
             head_params = [
                 p for p in model.parameters()
                 if id(p) not in backbone_param_ids
+                and p.requires_grad
             ]
 
             stage_backbone_lr = lr * (0.5 ** stage_idx)
