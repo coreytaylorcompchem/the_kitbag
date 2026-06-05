@@ -695,7 +695,7 @@ class MDWorkflow:
 
         # Write raw coordinates
         raw_pdb = os.path.join(output_dir, "_temp_raw.pdb")
-        state = self.simulation.context.getState(getPositions=True, enforcePeriodicBox=True)
+        state = self.simulation.context.getState(getPositions=True, enforcePeriodicBox=False)
 
         with open(raw_pdb, "w") as f:
             PDBFile.writeFile(self.topology, state.getPositions(), f)

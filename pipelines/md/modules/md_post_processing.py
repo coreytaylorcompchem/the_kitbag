@@ -15,6 +15,7 @@ from modules.automated_analyses import (
     TemporalMotifPersistenceTask,     
     NetworkEmbeddingAnalysisTask,    
     ProteinProteinNetworkEmbeddingTask,
+    MMPBSATask,
 )
 from pipeline.logger import setup_logger
 
@@ -411,5 +412,90 @@ class MDPostProcessingWorkflow:
             results["solvent_hbonds"] = task.run()
         else:
             logger.info("Solvent analysis disabled - skipping.")
+        
+        # ==============================================================
+        # MM/PBSA analysis
+        # ==============================================================
+
+        mmpbsa_cfg = post_cfg.get("mmpbsa", {})
+
+        if mmpbsa_cfg.get("enabled", False):
+
+            logger.info("Next stage:: MM/PBSA analysis...")
+
+            mmpbsa_outdir = os.path.join(
+                output_dir,
+                "mmpbsa"
+            )
+
+            os.makedirs(
+                mmpbsa_outdir,
+                exist_ok=True
+            )
+
+            task = MMPBSATask(
+                topology=topology,
+
+                trajectory=wrapped_trajectories or trajectories,
+
+                ligand_resname=ligand_resname,
+
+                receptor_selection="protein",
+
+                method=mmpbsa_cfg.get(
+                    "method",
+                    "GB"
+                ),
+
+                igb=mmpbsa_cfg.get(
+                    "igb",
+                    8
+                ),
+
+                start=start,
+                stop=stop,
+
+                step=mmpbsa_cfg.get(
+                    "step",
+                    step
+                ),
+
+                frame_selection=mmpbsa_cfg.get(
+                    "frame_selection",
+                    {
+                        "mode": "uniform",
+                        "n_windows": 4,
+                    }
+                ),
+
+                decomposition=mmpbsa_cfg.get(
+                    "decomposition",
+                    False
+                ),
+
+                entropy=mmpbsa_cfg.get(
+                    "entropy",
+                    False
+                ),
+
+                bootstrap_samples=mmpbsa_cfg.get(
+                    "bootstrap_samples",
+                    1000
+                ),
+
+                n_threads=mmpbsa_cfg.get(
+                    "n_threads",
+                    4
+                ),
+
+                output_dir=mmpbsa_outdir,
+            )
+
+            results["mmpbsa"] = task.run()
+
+        else:
+            logger.info(
+                "MM/PBSA disabled - skipping."
+            )
 
         return results

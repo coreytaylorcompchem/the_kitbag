@@ -16,7 +16,8 @@ from openff.toolkit.topology import Topology as OFFTopology
 from openmmforcefields.generators import SMIRNOFFTemplateGenerator
 
 from openmm import *
-from openmm.unit import *
+from openmm import Platform, HarmonicBondForce
+# from openmm.unit import *
 from openmm import Vec3, unit
 from openmm import unit as unit 
 from openmm.app import Topology as Topology
@@ -26,7 +27,7 @@ from openmm import XmlSerializer
 from openmm.app import Topology, Modeller
 from openmm import CustomExternalForce, VerletIntegrator, Context, LocalEnergyMinimizer
 
-from simtk.openmm.app import PDBFile
+# from simtk.openmm.app import PDBFile
 import parmed as pmd
 
 from rdkit import Chem
@@ -200,7 +201,7 @@ class OpenMMBackend:
 
         return new_modeller
 
-    def _pre_minimise_termini(self, steps=200):
+    def _pre_minimise_termini(self, steps=20):
         """
         Pre-minimise terminal caps:
         - Only restrain canonical protein backbone/heavy atoms.
@@ -425,7 +426,20 @@ class OpenMMBackend:
 
         # Cap all internal chain breaks
         modeller = self.cap_internal_chain_breaks(modeller)
+
+        # for residue in list(modeller.topology.residues())[:10]:
+        #     hs = [a.name for a in residue.atoms()
+        #         if a.element and a.element.symbol == "H"]
+
+        #     print(residue, len(hs), hs[:20])
+
         modeller.addHydrogens(pH=ph)
+
+        # for residue in list(modeller.topology.residues())[:10]:
+        #     hs = [a.name for a in residue.atoms()
+        #         if a.element and a.element.symbol == "H"]
+
+        #     print(residue, len(hs), hs[:20])
 
         # Check termini charges
         def check_chain_termini_charges(modeller):
@@ -1167,12 +1181,46 @@ class OpenMMBackend:
 
         logger.info(f"Creating final system ...")
 
+        # from collections import Counter
+
+        # bond_counts = Counter()
+
+        # for bond in modeller.topology.bonds():
+        #     a1, a2 = bond
+
+        #     r1 = a1.residue.name
+        #     r2 = a2.residue.name
+
+        #     bond_counts[(r1, r2)] += 1
+
+        # print("Total topology bonds:", sum(bond_counts.values()))
+
+        # for k, v in bond_counts.most_common(20):
+        #     print(k, v)
+
+        # print("Atoms:", sum(1 for _ in modeller.topology.atoms()))
+        # print("Residues:", sum(1 for _ in modeller.topology.residues()))
+        # print("Bonds:", sum(1 for _ in modeller.topology.bonds()))
+
+        # topology_bonds_pre = sum(1 for _ in modeller.topology.bonds())
+        # print("Topology bonds before createSystem:", topology_bonds_pre)
+
         # Step 9: Create OpenMM system
         system = forcefield.createSystem(
             modeller.topology,
             nonbondedMethod=PME,
             constraints=HBonds
         )
+
+        # topology_bonds_post = sum(1 for _ in modeller.topology.bonds())
+        # print("Topology bonds after createSystem:", topology_bonds_post)
+
+        # bond_force = next(
+        #     f for f in system.getForces()
+        #     if isinstance(f, HarmonicBondForce)
+        # )
+
+        # print("System bond terms:", bond_force.getNumBonds())
 
         # ------------------------------------------------------------
         # Validate ligand bonded terms
@@ -1260,9 +1308,159 @@ class OpenMMBackend:
         with open(topology_path, "w") as f:
             PDBFile.writeFile(self.topology, self.positions, f, keepIds=True)
 
-        structure = pmd.openmm.load_topology(self.topology, self.system, self.positions)
+        # structure = pmd.openmm.load_topology(self.topology, self.system, self.positions)
+
+        # bond_force = next(
+        #     f for f in self.system.getForces()
+        #     if isinstance(f, HarmonicBondForce)
+        # )
+
+        # print("OpenMM bond terms:", bond_force.getNumBonds())
+        # print("Topology bonds:", sum(1 for _ in self.topology.bonds()))
+
+        structure = pmd.openmm.load_topology(
+            topology=self.topology,
+            system=self.system,
+            xyz=self.positions
+        )
+
+        export_system = forcefield.createSystem(
+            modeller.topology,
+            nonbondedMethod=PME,
+            constraints=None
+        )
+
+        # constraint_bonds = 0
+        # constraint_atoms = set()
+
+        # for i in range(self.system.getNumConstraints()):
+        #     a1, a2, dist = self.system.getConstraintParameters(i)
+
+        #     constraint_atoms.add(tuple(sorted((int(a1), int(a2)))))
+        #     constraint_bonds += 1
+
+        # print("Constraints:", constraint_bonds)
+
+        # missing = 0
+
+        # for bond in structure.bonds:
+        #     pair = tuple(sorted((bond.atom1.idx, bond.atom2.idx)))
+
+        #     if bond.type is None:
+        #         missing += 1
+
+        #         if pair not in constraint_atoms:
+        #             print("Non-constrained missing bond:",
+        #                 bond.atom1.name,
+        #                 bond.atom2.name)
+
+        # print("Missing:", missing)
+        
+        # missing = []
+
+        # for bond in structure.bonds:
+        #     if bond.type is None:
+        #         missing.append(bond)
+
+        # print(f"Missing bond types: {len(missing)}")
+
+        # for b in missing[:20]:
+        #     print(
+        #         b.atom1.idx,
+        #         b.atom1.name,
+        #         b.atom2.idx,
+        #         b.atom2.name,
+        #         b.atom1.residue.name
+        #     )
+
+        # missing_constrained = 0
+        # missing_unconstrained = 0
+
+        # constraint_pairs = {
+        #     tuple(sorted((int(self.system.getConstraintParameters(i)[0]),
+        #                 int(self.system.getConstraintParameters(i)[1]))))
+        #     for i in range(self.system.getNumConstraints())
+        # }
+
+        # for bond in structure.bonds:
+
+        #     if bond.type is None:
+
+        #         pair = tuple(sorted((bond.atom1.idx, bond.atom2.idx)))
+
+        #         if pair in constraint_pairs:
+        #             missing_constrained += 1
+        #         else:
+        #             missing_unconstrained += 1
+
+        # print("Missing constrained:", missing_constrained)
+        # print("Missing unconstrained:", missing_unconstrained)
+
         psf_path = os.path.join(output_trajectory, "topology.psf")
+        prmtop_path = os.path.join(output_trajectory, "system.prmtop")
+        inpcrd_path = os.path.join(output_trajectory, "system.inpcrd")
+
         structure.save(psf_path)
+
+        protein_resnames = {
+            'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY',
+            'HIS','ILE','LEU','LYS','MET','PHE','PRO',
+            'SER','THR','TRP','TYR','VAL'
+        }
+
+        water_resnames = {'HOH', 'WAT', 'SOL'}
+        lipid_resnames = {'POP', 'POPC'}
+
+        keep_residues = []
+
+        for res in modeller.topology.residues():
+
+            rname = res.name.upper()
+
+            if rname in protein_resnames:
+                keep_residues.append(res)
+
+            elif has_ligand and rname == ligand_resname.upper():
+                keep_residues.append(res)
+
+        atoms_to_keep = [
+            atom
+            for res in keep_residues
+            for atom in res.atoms()
+        ]
+
+        mmpbsa_modeller = Modeller(
+            modeller.topology,
+            modeller.positions
+        )
+
+        mmpbsa_modeller.delete([
+            atom
+            for atom in mmpbsa_modeller.topology.atoms()
+            if atom not in atoms_to_keep
+        ])
+
+        mmpbsa_system = forcefield.createSystem(
+            mmpbsa_modeller.topology,
+            nonbondedMethod=PME,
+            constraints=None
+        )
+
+        mmpbsa_structure = pmd.openmm.load_topology(
+            mmpbsa_modeller.topology,
+            mmpbsa_system,
+            xyz=mmpbsa_modeller.positions
+        )
+
+        mmpbsa_structure.save(
+            os.path.join(output_trajectory, "mmpbsa_complex.prmtop"),
+            overwrite=True
+        )
+
+        mmpbsa_structure.save(
+            os.path.join(output_trajectory, "mmpbsa_complex.inpcrd"),
+            overwrite=True
+        )
 
         logger.info(f"Saved prepared protein + ligand system topology (pdb/psf) to {topology_path}")
 

@@ -5,6 +5,11 @@ import itertools
 import h5py
 import re
 
+import glob
+import shutil
+import subprocess
+import parmed as pmd
+
 import networkx as nx
 
 from tqdm import tqdm
@@ -3138,3 +3143,337 @@ class ProteinProteinNetworkEmbeddingTask:
         df = df / n_frames
 
         return df
+
+@register_task(
+    "mmpbsa",
+    category="Post-proc; free energy",
+    description="Compute MM/GB(PB)SA binding free energies."
+)
+class MMPBSATask:
+
+    def __init__(
+        self,
+        topology: str,
+        trajectory,
+        ligand_resname: str = "UNK",
+        receptor_selection: str = "protein",
+        method: str = "GB",
+        igb: int = 8,
+        start: int = 0,
+        stop: int = -1,
+        step: int = 1,
+        frame_selection: dict = None,
+        decomposition: bool = False,
+        entropy: bool = False,
+        bootstrap_samples: int = 1000,
+        n_threads: int = 4,
+        output_dir: str = "output_mmpbsa",
+        context: Optional[Dict[str, Any]] = None,
+    ):
+
+        self.topology = topology
+        self.trajectory = trajectory
+        self.ligand_resname = ligand_resname
+        self.receptor_selection = receptor_selection
+
+        self.method = method.upper()
+        self.igb = igb
+
+        self.start = start
+        self.stop = stop
+        self.step = step
+
+        self.frame_selection = frame_selection or {}
+        self.decomposition = decomposition
+        self.entropy = entropy
+        self.bootstrap_samples = bootstrap_samples
+        self.n_threads = n_threads
+
+        self.output_dir = output_dir
+        self.context = context or {}
+
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        self.u = mda.Universe(self.topology, self.trajectory)
+
+    def _write_frames(self, selected_frames, out_xtc):
+
+        with mda.Writer(out_xtc, multiframe=True) as W:
+
+            for frame in tqdm(selected_frames, desc="Writing MMPBSA frames"):
+
+                self.u.trajectory[frame]
+                W.write(self.u.atoms)
+
+    def _select_frames_uniform(self):
+
+        traj = self.u.trajectory[self.start:self.stop:self.step]
+
+        total_frames = len(traj)
+
+        mode = self.frame_selection.get("mode", "uniform")
+
+        if mode != "uniform":
+            raise ValueError(f"Unsupported frame selection mode: {mode}")
+
+        n_windows = self.frame_selection.get("n_windows", 4)
+
+        indices = np.linspace(
+            0,
+            total_frames - 1,
+            n_windows,
+            dtype=int
+        )
+
+        selected_frames = [
+            self.start + idx * self.step
+            for idx in indices
+        ]
+
+        logger.info(
+            f"Selected {len(selected_frames)} frames "
+            f"for MM/PBSA calculation."
+        )
+
+        return selected_frames
+    
+    def _generate_receptor_ligand_topologies(
+        self,
+        complex_prmtop,
+        complex_inpcrd,
+    ):
+        structure = pmd.load_file(
+            complex_prmtop,
+            xyz=complex_inpcrd
+        )
+
+        ligand = structure[f":{self.ligand_resname}"]
+
+        if len(ligand.atoms) == 0:
+            raise RuntimeError(
+                f"Ligand {self.ligand_resname} not found"
+            )
+
+        receptor = structure[f"!(:{self.ligand_resname})"]
+
+        receptor_prmtop = os.path.join(
+            self.output_dir,
+            "receptor.prmtop"
+        )
+
+        ligand_prmtop = os.path.join(
+            self.output_dir,
+            "ligand.prmtop"
+        )
+
+        receptor.save(
+            receptor_prmtop,
+            overwrite=True
+        )
+
+        ligand.save(
+            ligand_prmtop,
+            overwrite=True
+        )
+
+        return receptor_prmtop, ligand_prmtop
+
+    def run(self):
+
+        logger.info("Starting MM/PBSA analysis...")
+
+        ligand_sel = f"resname {self.ligand_resname}"
+
+        ligand = self.u.select_atoms(ligand_sel)
+
+        if len(ligand) == 0:
+            raise ValueError(
+                f"No ligand found with selection '{ligand_sel}'"
+            )
+
+        receptor = self.u.select_atoms(
+            self.receptor_selection
+        )
+
+        if len(receptor) == 0:
+            raise ValueError("No receptor atoms found.")
+
+        selected_frames = self._select_frames_uniform()
+
+        traj_nc = os.path.join(
+            self.output_dir,
+            "mmpbsa.nc"
+        )
+
+        logger.info("Writing reduced trajectory for MM/PBSA...")
+
+        self._write_frames(
+            selected_frames,
+            traj_nc
+        )
+
+        # ============================================================
+        # Build gmx_MMPBSA input
+        # ============================================================
+
+        if self.method == "GB":
+
+            input_text = f"""
+&general
+  interval=1,
+  verbose=2,
+  keep_files=0,
+  entropy={1 if self.entropy else 0},
+/
+
+&gb
+  igb={self.igb},
+/
+"""
+
+        elif self.method == "PB":
+
+            input_text = """
+&general
+  interval=1,
+  verbose=2,
+  keep_files=0,
+/
+
+&pb
+/
+"""
+
+        else:
+            raise ValueError(
+                f"Unsupported MMPBSA method: {self.method}"
+            )
+
+        input_file = os.path.join(
+            self.output_dir,
+            "mmpbsa.in"
+        )
+
+        with open(input_file, "w") as f:
+            f.write(input_text)
+
+        # ============================================================
+        # Generate AMBER topologies
+        # ============================================================
+
+        (
+            complex_prmtop,
+            receptor_prmtop,
+            ligand_prmtop,
+        ) = self._generate_amber_topologies()
+
+        # ============================================================
+        # Run AmberTools MMPBSA.py
+        # ============================================================
+
+        logger.info("Running AmberTools MMPBSA.py...")
+
+        output_prefix = os.path.join(
+            self.output_dir,
+            "FINAL_RESULTS"
+        )
+
+        cmd = [
+            "MMPBSA.py",
+
+            "-O",
+
+            "-i",
+            input_file,
+
+            "-sp",
+            complex_prmtop,
+
+            "-cp",
+            complex_prmtop,
+
+            "-rp",
+            receptor_prmtop,
+
+            "-lp",
+            ligand_prmtop,
+
+            "-y",
+            traj_nc,
+
+            "-o",
+            output_prefix + ".dat",
+
+            "-eo",
+            output_prefix + ".csv",
+        ]
+
+        if self.decomposition:
+
+            cmd.extend([
+                "-do",
+                os.path.join(
+                    self.output_dir,
+                    "decomposition.dat"
+                )
+            ])
+
+        logger.debug("Executing command:")
+        logger.debug(" ".join(cmd))
+
+        subprocess.run(
+            cmd,
+            check=True
+        )
+
+        # ============================================================
+        # Parse results
+        # ============================================================
+
+        csv_file = output_prefix + ".csv"
+
+        if not os.path.exists(csv_file):
+            raise FileNotFoundError(
+                f"MMPBSA results not found: {csv_file}"
+            )
+
+        df = pd.read_csv(csv_file)
+
+        mean_dg = None
+
+        for col in df.columns:
+
+            if "TOTAL" in col.upper():
+
+                mean_dg = df[col].mean()
+                break
+
+        summary = {
+            "method": self.method,
+            "igb": self.igb,
+            "frames": len(selected_frames),
+            "mean_binding_energy_kcal_mol": (
+                float(mean_dg)
+                if mean_dg is not None
+                else None
+            ),
+        }
+
+        summary_json = os.path.join(
+            self.output_dir,
+            "summary.json"
+        )
+
+        with open(summary_json, "w") as f:
+            json.dump(summary, f, indent=2)
+
+        logger.info(
+            f"MM/PBSA complete. "
+            f"Mean ΔG = {summary['mean_binding_energy_kcal_mol']}"
+        )
+
+        return {
+            "summary": summary_json,
+            "results_csv": csv_file,
+            "results_dat": output_prefix + ".dat",
+        }
