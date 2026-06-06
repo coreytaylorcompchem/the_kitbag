@@ -1,0 +1,45 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     2:
+HEADER 0  - Pocket Score                      : 0.1772
+HEADER 1  - Drug Score                        : 0.0108
+HEADER 2  - Number of alpha spheres           :    23
+HEADER 3  - Mean alpha-sphere radius          : 4.1249
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5008
+HEADER 5  - Mean B-factor of pocket residues  : 0.8782
+HEADER 6  - Hydrophobicity Score              : 35.8889
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.7778
+HEADER 9  - Pocket volume (Monte Carlo)       : 458.4638
+HEADER 10  -Pocket volume (convex hull)       : 28.9001
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 13.0000
+HEADER 13 - Number of apolar alpha sphere     :    14
+HEADER 14 - Proportion of apolar alpha sphere : 0.6087
+ATOM     42  CG2 ILE A  23     -36.902 -40.140  -1.675  0.00  0.00           C 0
+ATOM   1944  NH1 ARG A 316     -42.576 -44.667  -6.412  0.58  7.66           N 0
+ATOM     43  CD1 ILE A  23     -35.568 -42.363  -3.182  0.00  0.00           C 0
+ATOM   1943   CZ ARG A 316     -42.787 -44.958  -5.136  0.00  0.00           C 0
+ATOM   1945  NH2 ARG A 316     -42.297 -46.080  -4.626  0.60  4.37           N 0
+ATOM   3008   OH TYR H 122     -36.704 -47.813  -2.532  0.00  0.00           O 0
+ATOM   1940   CG ARG A 316     -44.813 -42.133  -3.737  0.00  0.00           C 0
+ATOM   1939   CB ARG A 316     -45.378 -40.816  -4.248  0.00  0.00           C 0
+ATOM     70   CE MET A  27     -40.740 -35.771  -1.253  0.00  0.00           C 0
+ATOM   1938    O ARG A 316     -45.980 -37.706  -3.121  0.00  0.00           O 0
+ATOM   1971  CG2 VAL A 320     -44.061 -35.545  -4.332  0.00  0.00           C 0
+ATOM    473   OH TYR A  80     -39.870 -45.101  -0.525  0.00  0.00           O 0
+ATOM     48   CB PRO A  24     -38.230 -40.475   3.349  0.00  0.00           C 0
+ATOM     50   CD PRO A  24     -36.444 -41.466   2.140  0.00  0.00           C 0
+ATOM     68   CG MET A  27     -38.664 -36.783   0.280  0.00  0.00           C 0
+ATOM     45   CA PRO A  24     -37.459 -39.334   2.678  0.00  0.00           C 0
+ATOM   1942   NE ARG A 316     -43.488 -44.127  -4.371  0.00  0.00           N 0
+ATOM   1963   CB SER A 319     -45.536 -37.717   0.041  0.00  0.00           C 0
+ATOM   1936   CA ARG A 316     -46.296 -40.090  -3.262  0.00  0.00           C 0
+ATOM   1964   OG SER A 319     -46.380 -38.846  -0.060  0.00  0.00           O 0
+ATOM   1941   CD ARG A 316     -44.066 -42.870  -4.840  0.00  0.00           C 0
+ATOM    441  CG2 THR A  76     -41.818 -41.086   5.327  0.00  0.00           C 0
+ATOM    440  OG1 THR A  76     -41.834 -42.980   3.849  0.00  0.00           O 0
+TER
+END

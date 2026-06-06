@@ -410,7 +410,7 @@ def pairwise_similarity(args):
             data["smiles"],
             data["fps"],
             data[activity_col],
-            data["FORMATTED_ID"],
+            data["ID"],
             data["Chemical series"]
         )
     ):
@@ -489,7 +489,7 @@ def sar_cliff_analysis(config, data=None):
             i,
             row["smiles"],
             row["fps"],
-            row["FORMATTED_ID"],
+            row["ID"],
             row[activity_col],
             row["Chemical series"],
             df,
@@ -1348,7 +1348,9 @@ def physchem_property_drift(config, data=None):
         if len(agg) > 1:
             delta = agg.iloc[-1] - agg.iloc[-2]
             directional = {
-                col: direction(delta[col]) for col in numeric_cols
+                "overall": {
+                    col: direction(delta[col]) for col in numeric_cols
+                }
             }
     
     # 3g alerts
@@ -1392,12 +1394,14 @@ def physchem_property_drift(config, data=None):
             )
     else:
         latest = agg.iloc[-1]
-        alerts = generate_alerts(
-            latest,
-            slopes,
-            shift_pvals,
-            latest.get("multivariate_drift", None)
-        )
+        alerts = {
+            "overall": generate_alerts(
+                latest,
+                slopes,
+                shift_pvals,
+                latest.get("multivariate_drift", None)
+            )
+        }
     
     penalty_df.to_csv(summary_dir / "property_penalty.csv")
 

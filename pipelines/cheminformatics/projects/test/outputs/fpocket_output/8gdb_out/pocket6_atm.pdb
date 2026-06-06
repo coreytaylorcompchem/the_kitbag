@@ -1,0 +1,35 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     6:
+HEADER 0  - Pocket Score                      : 0.0425
+HEADER 1  - Drug Score                        : 0.0039
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 3.5722
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3740
+HEADER 5  - Mean B-factor of pocket residues  : 0.7080
+HEADER 6  - Hydrophobicity Score              : 75.2857
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 5.4286
+HEADER 9  - Pocket volume (Monte Carlo)       : 85.4195
+HEADER 10  -Pocket volume (convex hull)       : 0.4277
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 17.0000
+HEADER 13 - Number of apolar alpha sphere     :    18
+HEADER 14 - Proportion of apolar alpha sphere : 1.0000
+ATOM    755   CB TYR A 253     143.502 108.727 174.316  0.00  0.00           C 0
+ATOM   1323  CD1 ILE A 341     140.912 106.270 169.403  0.00  0.00           C 0
+ATOM   1102  CD1 ILE A 308     140.042 104.076 173.382  0.00  0.00           C 0
+ATOM   1100  CG1 ILE A 308     139.974 104.709 174.753  0.00  0.00           C 0
+ATOM    781  CD2 LEU A 266     141.965 110.417 170.959  0.00  0.00           C 0
+ATOM   1126  CE1 PHE A 312     139.765 110.862 174.599  0.00  0.00           C 0
+ATOM   1128   CZ PHE A 312     139.440 111.952 173.821  0.00  0.00           C 0
+ATOM   1321  CG1 ILE A 341     139.554 106.906 169.215  0.00  0.00           C 0
+ATOM   1314  CE2 PHE A 340     135.600 107.941 172.699  0.00  0.00           C 0
+ATOM   1127  CE2 PHE A 312     138.119 112.314 173.662  0.00  0.00           C 0
+ATOM   1312  CD2 PHE A 340     135.760 106.947 171.763  0.00  0.00           C 0
+ATOM   1124  CD1 PHE A 312     138.767 110.133 175.215  0.00  0.00           C 0
+ATOM   1348   CG GLU A 344     135.588 111.287 169.665  0.00  0.00           C 0
+TER
+END

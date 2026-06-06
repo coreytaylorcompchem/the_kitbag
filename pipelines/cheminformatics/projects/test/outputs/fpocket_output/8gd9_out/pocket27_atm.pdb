@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    27:
+HEADER 0  - Pocket Score                      : -0.0752
+HEADER 1  - Drug Score                        : 0.0011
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 3.9373
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5151
+HEADER 5  - Mean B-factor of pocket residues  : 0.6430
+HEADER 6  - Hydrophobicity Score              : -9.5000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.6250
+HEADER 9  - Pocket volume (Monte Carlo)       : 225.3410
+HEADER 10  -Pocket volume (convex hull)       : 4.9132
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 8.0000
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.4500
+ATOM   3774    O ARG B 304     131.398 112.863  83.811  0.65  8.57           O 0
+ATOM   1866    O GLY B  41     136.699 112.420  86.049  0.74  2.14           O 0
+ATOM   1864   CA GLY B  41     138.601 111.810  84.692  0.00  0.00           C 0
+ATOM   1863    N GLY B  41     138.759 113.209  84.369  0.00  0.00           N 0
+ATOM   1865    C GLY B  41     137.530 111.565  85.737  0.00  0.00           C 0
+ATOM   1853   CB PRO B  39     138.628 114.571  80.378  0.00  0.00           C 0
+ATOM   3769  OD1 ASP B 303     132.714 116.344  78.408  0.45  3.21           O 0
+ATOM   3755   CD LYS B 301     137.239 117.982  78.331  0.00  0.00           C 0
+ATOM   3757   NZ LYS B 301     138.222 116.980  76.282  0.00  0.00           N 1
+ATOM   3770  OD2 ASP B 303     132.016 114.289  78.098  0.00  0.00           O 1
+ATOM   1854   CG PRO B  39     139.376 113.440  79.651  0.00  0.00           C 0
+ATOM   3768   CG ASP B 303     132.271 115.263  78.839  0.00  0.00           C 0
+ATOM   3767   CB ASP B 303     132.031 115.123  80.325  0.00  0.00           C 0
+ATOM   3786   CB ALA B 305     133.795 114.283  86.198  0.00  0.00           C 0
+ATOM   1862  CG2 VAL B  40     137.301 116.136  85.290  0.00  0.00           C 0
+ATOM   3735  OD2 ASP B 298     136.319 118.042  82.007  0.85  1.07           O 1
+ATOM   3732   CB ASP B 298     134.175 118.457  82.939  0.00  0.00           C 0
+ATOM   3766    O ASP B 303     131.403 116.474  83.121  0.00  0.00           O 0
+TER
+END

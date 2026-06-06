@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    45:
+HEADER 0  - Pocket Score                      : -0.0897
+HEADER 1  - Drug Score                        : 0.0048
+HEADER 2  - Number of alpha spheres           :    19
+HEADER 3  - Mean alpha-sphere radius          : 3.9862
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5489
+HEADER 5  - Mean B-factor of pocket residues  : 0.5856
+HEADER 6  - Hydrophobicity Score              : 23.5000
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 3.8750
+HEADER 9  - Pocket volume (Monte Carlo)       : 300.8747
+HEADER 10  -Pocket volume (convex hull)       : 13.8865
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 10.8333
+HEADER 13 - Number of apolar alpha sphere     :    12
+HEADER 14 - Proportion of apolar alpha sphere : 0.6316
+ATOM   3821    O LEU B 261     153.554 187.874 118.784  0.51  5.36           O 0
+ATOM   2237    N SER B  31     153.144 191.778 121.629  0.66  1.09           N 0
+ATOM   2241   CB SER B  31     154.454 191.336 123.648  0.00  0.00           C 0
+ATOM   2229   CB THR B  29     156.646 193.021 119.581  0.00  0.00           C 0
+ATOM   2231  CG2 THR B  29     158.035 192.674 119.071  0.00  0.00           C 0
+ATOM   3834  CG2 THR B 263     157.719 184.561 123.048  0.00  0.00           C 0
+ATOM   3827   CB MET B 262     152.402 185.959 121.346  0.00  0.00           C 0
+ATOM   3831    O THR B 263     155.504 183.912 124.731  0.47  4.29           O 0
+ATOM   4107   CB ALA B 302     152.221 186.372 127.067  0.00  0.00           C 0
+ATOM   2242   OG SER B  31     155.551 192.229 123.575  0.00  0.00           O 0
+ATOM   3824   CA MET B 262     153.615 185.687 120.450  0.00  0.00           C 0
+ATOM   3816    O GLU B 260     155.431 186.470 116.202  0.51  9.64           O 0
+ATOM   3832   CB THR B 263     157.196 183.345 122.283  0.00  0.00           C 0
+ATOM   3756   CD ARG B 251     157.618 180.248 119.091  0.00  0.00           C 0
+ATOM   3817   CB GLU B 260     156.071 183.460 116.206  0.00  0.00           C 0
+ATOM   3757   NE ARG B 251     158.767 180.323 119.992  0.71  6.56           N 0
+ATOM   3825    C MET B 262     154.254 184.360 120.825  0.00  0.00           C 0
+ATOM   3828    N THR B 263     154.977 184.372 121.943  0.75  1.09           N 0
+TER
+END

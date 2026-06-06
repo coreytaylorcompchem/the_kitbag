@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     2:
+HEADER 0  - Pocket Score                      : 0.2001
+HEADER 1  - Drug Score                        : 0.0027
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 4.1633
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4359
+HEADER 5  - Mean B-factor of pocket residues  : 0.9134
+HEADER 6  - Hydrophobicity Score              : 27.3750
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.3750
+HEADER 9  - Pocket volume (Monte Carlo)       : 262.3683
+HEADER 10  -Pocket volume (convex hull)       : 4.6360
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 8.0000
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.5000
+ATOM   7437   CB SER R 319     161.451 140.006 159.315  0.00  0.00           C 0
+ATOM   5900  CG2 THR R  69     154.489 144.855 159.430  0.00  0.00           C 0
+ATOM   5899  OG1 THR R  69     156.615 145.914 159.094  0.58  1.07           O 0
+ATOM   5922  CG1 VAL R  72     155.952 140.945 154.013  0.00  0.00           C 0
+ATOM   7436    O SER R 319     161.420 141.852 161.272  0.55  1.07           O 0
+ATOM   5598    O MET R  27     155.499 142.409 163.858  0.00  0.00           O 0
+ATOM   5599   CB MET R  27     156.772 139.395 163.687  0.00  0.00           C 0
+ATOM   7438   OG SER R 319     161.068 139.018 160.236  0.78  2.14           O 0
+ATOM   5928   CB SER R  73     152.634 141.199 157.519  0.00  0.00           C 0
+ATOM   5948  OG1 THR R  76     153.236 137.353 155.617  0.81  1.07           O 0
+ATOM   5925   CA SER R  73     152.582 140.597 156.116  0.00  0.00           C 0
+ATOM   5602   CE MET R  27     157.855 136.375 162.618  0.00  0.00           C 0
+ATOM   5895   CA THR R  69     155.252 145.495 157.142  0.00  0.00           C 0
+ATOM   7468  CD1 ILE R 323     159.761 142.451 164.205  0.00  0.00           C 0
+ATOM   7466  CG1 ILE R 323     159.466 143.917 164.385  0.00  0.00           C 0
+ATOM   7458   CB PRO R 322     160.843 146.714 160.368  0.00  0.00           C 0
+TER
+END

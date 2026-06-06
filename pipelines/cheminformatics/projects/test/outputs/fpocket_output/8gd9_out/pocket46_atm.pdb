@@ -1,0 +1,44 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    46:
+HEADER 0  - Pocket Score                      : -0.2633
+HEADER 1  - Drug Score                        : 0.0012
+HEADER 2  - Number of alpha spheres           :    28
+HEADER 3  - Mean alpha-sphere radius          : 4.0665
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5266
+HEADER 5  - Mean B-factor of pocket residues  : 0.3585
+HEADER 6  - Hydrophobicity Score              : 30.0000
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.1818
+HEADER 9  - Pocket volume (Monte Carlo)       : 501.8961
+HEADER 10  -Pocket volume (convex hull)       : 50.7428
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.3929
+ATOM   6783  OE1 GLN R 269      97.536  96.854 102.285  0.35  5.36           O 0
+ATOM   6752    C GLY R 265      94.096  99.470 102.658  0.00  0.00           C 0
+ATOM   6750    N GLY R 265      93.591  99.173 100.250  0.06  6.56           N 0
+ATOM   6753    O GLY R 265      94.851  98.539 102.929  0.00  0.00           O 0
+ATOM   6713  CE2 PHE R 217      88.400 104.238 101.322  0.00  0.00           C 0
+ATOM   6754    N ALA R 266      94.160 100.655 103.264  0.44  6.56           N 0
+ATOM   1526  NH2 ARG A 385      92.246 105.464 105.498  0.64  3.28           N 0
+ATOM   6767  OE2 GLU R 267      91.836 101.945 105.471  0.57  2.14           O 1
+ATOM   6714   CZ PHE R 217      88.900 105.305 100.605  0.00  0.00           C 0
+ATOM   6755   CA ALA R 266      95.106 100.878 104.350  0.00  0.00           C 0
+ATOM   1279    O GLY A 355      98.102 106.759 100.757  0.00  0.00           O 0
+ATOM   6758   CB ALA R 266      95.207 102.369 104.660  0.00  0.00           C 0
+ATOM   6751   CA GLY R 265      93.037  99.326 101.582  0.00  0.00           C 0
+ATOM   6681  CD2 HIS R 214      87.388 100.250 104.546  0.00  0.00           C 0
+ATOM   6683  NE2 HIS R 214      86.611  99.797 103.508  0.00  0.00           N 0
+ATOM   6773  CG1 ILE R 268      89.311  97.153 104.171  0.00  0.00           C 0
+ATOM   6722   CE MET R 218      85.752 101.442 100.633  0.00  0.00           C 0
+ATOM   6774  CG2 ILE R 268      90.415  94.988 103.529  0.00  0.00           C 0
+ATOM   1303  CE1 TYR A 358      94.063 107.973 102.018  0.00  0.00           C 0
+ATOM   1306   OH TYR A 358      96.008 106.776 102.701  0.52  2.14           O 0
+ATOM   6772   CB ILE R 268      90.641  96.404 104.039  0.00  0.00           C 0
+ATOM   1277   CA GLY A 355      96.170 106.582  99.361  0.00  0.00           C 0
+TER
+END

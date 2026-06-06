@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     9:
+HEADER 0  - Pocket Score                      : -0.0201
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.7855
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4253
+HEADER 5  - Mean B-factor of pocket residues  : 0.3639
+HEADER 6  - Hydrophobicity Score              : 6.0000
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 5.1429
+HEADER 9  - Pocket volume (Monte Carlo)       : 229.3443
+HEADER 10  -Pocket volume (convex hull)       : 4.5385
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1250
+ATOM   4520  CE1 TYR L 102     -16.236 -81.810   2.230  0.00  0.00           C 0
+ATOM   4752   CB ARG L 130     -15.345 -87.936  -0.687  0.00  0.00           C 0
+ATOM   4742    O LYS L 129     -15.589 -85.074  -2.537  0.68  2.14           O 0
+ATOM   4523   OH TYR L 102     -14.177 -82.769   2.958  0.61  5.36           O 0
+ATOM   4522   CZ TYR L 102     -15.348 -82.106   3.243  0.00  0.00           C 0
+ATOM   5220    O LYS L 191     -18.894 -85.897   6.923  0.00  0.00           O 0
+ATOM   4521  CE2 TYR L 102     -15.627 -81.741   4.543  0.00  0.00           C 0
+ATOM   5239   OG SER L 193     -19.737 -85.727   2.207  0.84  3.21           O 0
+ATOM   4756   CZ ARG L 130     -14.921 -90.883   2.148  0.00  0.00           C 0
+ATOM   4757  NH1 ARG L 130     -15.611 -90.468   3.202  0.61  4.37           N 0
+ATOM   4737  CG2 ILE L 128     -18.326 -83.573  -1.091  0.00  0.00           C 0
+ATOM   5238   CB SER L 193     -19.517 -87.035   1.709  0.00  0.00           C 0
+ATOM   5229    O ASP L 192     -18.007 -89.003   3.589  0.73  1.07           O 0
+ATOM   5227   CA ASP L 192     -18.606 -88.425   5.823  0.00  0.00           C 0
+ATOM   5228    C ASP L 192     -18.878 -88.530   4.329  0.00  0.00           C 0
+TER
+END

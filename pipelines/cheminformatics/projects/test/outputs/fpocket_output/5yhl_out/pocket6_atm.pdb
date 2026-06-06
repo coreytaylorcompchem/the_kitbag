@@ -1,0 +1,48 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     6:
+HEADER 0  - Pocket Score                      : 0.0692
+HEADER 1  - Drug Score                        : 0.0008
+HEADER 2  - Number of alpha spheres           :    33
+HEADER 3  - Mean alpha-sphere radius          : 3.9474
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5369
+HEADER 5  - Mean B-factor of pocket residues  : 0.1237
+HEADER 6  - Hydrophobicity Score              : 4.7273
+HEADER 7  - Polarity Score                    :    10
+HEADER 8  - Amino Acid based volume Score     : 4.5455
+HEADER 9  - Pocket volume (Monte Carlo)       : 404.0113
+HEADER 10  -Pocket volume (convex hull)       : 24.6847
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 13.0000
+HEADER 13 - Number of apolar alpha sphere     :    14
+HEADER 14 - Proportion of apolar alpha sphere : 0.4242
+ATOM   5028  OD1 ASN L 167     -25.948-104.333  -8.977  0.00  0.00           O 0
+ATOM   5014    N ILE L 166     -24.103-100.464  -6.856  0.58  2.19           N 0
+ATOM   5010   CB ASP L 165     -23.733 -98.153  -9.355  0.00  0.00           C 0
+ATOM   5012  OD1 ASP L 165     -25.557 -97.017 -10.372  0.00  0.00           O 0
+ATOM   5017    O ILE L 166     -25.778-102.534  -6.463  0.32  3.21           O 0
+ATOM   5007   CA ASP L 165     -24.012 -98.255  -7.860  0.00  0.00           C 0
+ATOM   5192  OD1 ASP L 187     -31.776 -90.671  -1.211  0.00  0.00           O 0
+ATOM   4713   NZ LYS L 125     -29.940 -88.886  -7.971  0.65  3.28           N 0
+ATOM   4730  OE2 GLU L 127     -27.149 -88.592  -5.197  0.61  6.43           O 0
+ATOM   5005   NZ LYS L 164     -27.446 -91.496  -8.352  0.81  7.66           N 0
+ATOM   5253  CD1 TYR L 195     -25.408 -92.999  -2.227  0.00  0.00           C 0
+ATOM   5169   CB TRP L 185     -30.095 -97.437  -2.087  0.00  0.00           C 0
+ATOM   5001   CB LYS L 164     -24.649 -94.450  -5.436  0.00  0.00           C 0
+ATOM   5000    O LYS L 164     -24.625 -97.588  -5.284  0.66  5.36           O 0
+ATOM   5251   CB TYR L 195     -24.088 -94.836  -1.114  0.00  0.00           C 0
+ATOM   5173  NE1 TRP L 185     -28.874-100.401  -3.929  0.63  1.09           N 0
+ATOM   5176  CZ2 TRP L 185     -30.905-101.586  -4.793  0.00  0.00           C 0
+ATOM   5003   CD LYS L 164     -26.059 -92.970  -6.877  0.00  0.00           C 0
+ATOM   5255  CE1 TYR L 195     -25.507 -91.875  -3.029  0.00  0.00           C 0
+ATOM   5002   CG LYS L 164     -24.943 -94.005  -6.855  0.00  0.00           C 0
+ATOM   5182    O THR L 186     -28.674 -93.707  -0.546  0.00  0.00           O 0
+ATOM   5174  CE2 TRP L 185     -30.219-100.582  -4.114  0.00  0.00           C 0
+ATOM   5187   CA ASP L 187     -29.297 -91.074  -0.014  0.00  0.00           C 0
+ATOM   5171  CD1 TRP L 185     -28.678 -99.261  -3.188  0.00  0.00           C 0
+ATOM   5262    O SER L 196     -27.179 -97.690   0.776  0.00  0.00           O 0
+ATOM   5170   CG TRP L 185     -29.876 -98.692  -2.872  0.00  0.00           C 0
+TER
+END

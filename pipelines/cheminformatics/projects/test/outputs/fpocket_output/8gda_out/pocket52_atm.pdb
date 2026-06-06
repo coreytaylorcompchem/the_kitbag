@@ -1,0 +1,49 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    52:
+HEADER 0  - Pocket Score                      : -0.1794
+HEADER 1  - Drug Score                        : 0.0005
+HEADER 2  - Number of alpha spheres           :    38
+HEADER 3  - Mean alpha-sphere radius          : 4.0710
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5482
+HEADER 5  - Mean B-factor of pocket residues  : 0.3304
+HEADER 6  - Hydrophobicity Score              : 18.6667
+HEADER 7  - Polarity Score                    :     8
+HEADER 8  - Amino Acid based volume Score     : 4.4167
+HEADER 9  - Pocket volume (Monte Carlo)       : 517.4828
+HEADER 10  -Pocket volume (convex hull)       : 61.1013
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 8.0000
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.2368
+ATOM   2120   CA GLY B  53     163.755 184.814 154.580  0.00  0.00           C 0
+ATOM   2112   CB ARG B  52     160.282 182.382 155.811  0.00  0.00           C 0
+ATOM   2111    O ARG B  52     161.068 185.017 153.995  0.00  0.00           O 0
+ATOM    147  OE1 GLU A  27     162.129 182.470 147.882  0.00  0.00           O 0
+ATOM    148  OE2 GLU A  27     160.813 184.225 147.900  0.50  7.50           O 1
+ATOM    146   CD GLU A  27     161.948 183.704 147.897  0.00  0.00           C 0
+ATOM   2389    O THR B  87     155.581 186.569 150.601  0.00  0.00           O 0
+ATOM   2108    N ARG B  52     159.097 184.543 155.811  0.68  3.28           N 0
+ATOM   2101   CA LEU B  51     157.116 185.813 156.400  0.00  0.00           C 0
+ATOM   2096    O THR B  50     155.472 183.600 156.047  0.34  3.21           O 0
+ATOM   2117  NH1 ARG B  52     156.451 180.143 155.336  0.00  0.00           N 1
+ATOM   2407   NZ LYS B  89     161.500 186.487 151.337  0.68  6.56           N 1
+ATOM   2119    N GLY B  53     162.676 184.327 155.413  0.71  4.37           N 0
+ATOM   2126    O HIS B  54     166.155 183.889 158.325  0.32  8.57           O 0
+ATOM    209   NZ LYS A  34     169.348 178.507 154.736  0.00  0.00           N 1
+ATOM    145   CG GLU A  27     163.157 184.612 147.917  0.00  0.00           C 0
+ATOM    182  OE1 GLN A  31     168.506 179.989 149.434  0.00  0.00           O 0
+ATOM    143    O GLU A  27     167.131 183.642 146.898  0.58  1.07           O 0
+ATOM   2406   CE LYS B  89     162.467 187.112 150.406  0.00  0.00           C 0
+ATOM   2122    O GLY B  53     165.966 185.682 154.829  0.73  3.21           O 0
+ATOM   2140  CD2 LEU B  55     169.943 183.072 156.163  0.00  0.00           C 0
+ATOM   2110    C ARG B  52     161.408 184.468 155.045  0.00  0.00           C 0
+ATOM   2121    C GLY B  53     164.900 185.392 155.378  0.00  0.00           C 0
+ATOM    171   CB LEU A  30     168.213 185.676 150.122  0.00  0.00           C 0
+ATOM    170    O LEU A  30     170.427 183.671 150.587  0.67  5.36           O 0
+ATOM    173  CD1 LEU A  30     166.453 187.000 151.300  0.00  0.00           C 0
+ATOM    207   CD LYS A  34     170.680 179.816 153.108  0.00  0.00           C 0
+TER
+END

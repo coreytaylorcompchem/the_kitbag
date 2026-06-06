@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    41:
+HEADER 0  - Pocket Score                      : -0.1011
+HEADER 1  - Drug Score                        : 0.0046
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 4.0365
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5890
+HEADER 5  - Mean B-factor of pocket residues  : 0.6510
+HEADER 6  - Hydrophobicity Score              : -4.8571
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.7143
+HEADER 9  - Pocket volume (Monte Carlo)       : 287.7548
+HEADER 10  -Pocket volume (convex hull)       : 6.6746
+HEADER 11 - Charge Score                      :     4
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.7333
+ATOM    208    O ARG A  32     149.423 125.606 137.677  0.46  3.21           O 0
+ATOM    193    O LYS A  29     147.587 130.930 140.389  0.00  0.00           O 0
+ATOM    434  CD2 HIS A 195     154.707 126.875 139.966  0.00  0.00           C 0
+ATOM    210   CG ARG A  32     148.751 128.520 137.086  0.00  0.00           C 0
+ATOM    220   CB GLU A  33     148.554 124.221 140.880  0.00  0.00           C 0
+ATOM    431   CB HIS A 195     153.651 124.536 140.363  0.00  0.00           C 0
+ATOM    207    C ARG A  32     148.196 125.551 137.815  0.00  0.00           C 0
+ATOM    454   CD LYS A 197     148.135 121.876 144.953  0.00  0.00           C 0
+ATOM    199   CB ALA A  30     145.364 129.331 142.825  0.00  0.00           C 0
+ATOM    385  NE2 HIS A 188     151.202 123.433 146.754  0.00  0.00           N 0
+ATOM    196   CA ALA A  30     145.719 129.132 141.349  0.00  0.00           C 0
+ATOM    455   CE LYS A 197     146.675 122.085 144.588  0.00  0.00           C 0
+ATOM    198    O ALA A  30     144.938 126.884 141.502  0.00  0.00           O 0
+ATOM    456   NZ LYS A 197     146.496 122.337 143.131  0.34  3.28           N 1
+TER
+END

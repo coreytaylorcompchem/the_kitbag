@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    30:
+HEADER 0  - Pocket Score                      : -0.1716
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    26
+HEADER 3  - Mean alpha-sphere radius          : 4.3407
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4296
+HEADER 5  - Mean B-factor of pocket residues  : 0.3362
+HEADER 6  - Hydrophobicity Score              : 20.7143
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 385.4659
+HEADER 10  -Pocket volume (convex hull)       : 20.7831
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.3077
+ATOM   3396   CB GLU H 175     -44.519 -94.318   4.885  0.00  0.00           C 0
+ATOM   3397   CG GLU H 175     -43.341 -95.245   4.632  0.00  0.00           C 0
+ATOM   3116  CD2 LEU H 135     -45.374 -90.007   4.196  0.00  0.00           C 0
+ATOM   3399  OE1 GLU H 175     -41.681 -93.943   5.733  0.32  9.64           O 0
+ATOM   3129  OG1 THR H 137     -48.420 -92.378   2.002  0.47  4.29           O 0
+ATOM   3603   OH TYR H 202     -45.213 -96.543   0.803  0.00  0.00           O 0
+ATOM   2505  CE1 HIS H  60     -39.349 -91.177  -1.974  0.00  0.00           C 0
+ATOM   3600  CE1 TYR H 202     -43.435 -97.870   1.671  0.00  0.00           C 0
+ATOM   3115  CD1 LEU H 135     -45.726 -88.782   2.040  0.00  0.00           C 0
+ATOM   2506  NE2 HIS H  60     -38.935 -91.933  -2.975  0.00  0.00           N 0
+ATOM   2503  ND1 HIS H  60     -40.315 -90.392  -2.418  0.00  0.00           N 0
+ATOM   2504  CD2 HIS H  60     -39.661 -91.622  -4.099  0.00  0.00           C 0
+ATOM   3541    N ALA H 195     -37.712 -96.853   3.708  0.77  2.19           N 0
+ATOM   3538   CB PRO H 194     -35.439 -95.056   2.032  0.00  0.00           C 0
+ATOM   3535   CA PRO H 194     -35.613 -95.698   3.414  0.00  0.00           C 0
+ATOM   2502   CG HIS H  60     -40.535 -90.648  -3.755  0.00  0.00           C 0
+ATOM   3544    O ALA H 195     -38.843 -97.625   1.299  0.00  0.00           O 0
+ATOM   3545   CB ALA H 195     -39.936 -97.655   4.352  0.00  0.00           C 0
+TER
+END

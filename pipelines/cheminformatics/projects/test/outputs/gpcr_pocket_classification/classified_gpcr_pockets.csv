@@ -1,0 +1,390 @@
+pdb_id,pocket,region,confidence,n_residues,fpocket_drug_score,fpocket_volume,fpocket_hydrophobicity,fpocket_polarity,fpocket_inter_chain,raw_segment_counts,pocket_role,pocket_cluster_id,pocket_persistence,pocket_cluster_size
+5yhl,pocket10,Unknown,0.0,8,0.0001,224.5329,6.0,6,0,{},orphan,PC01,0.125,1
+5yhl,pocket11,Unknown,0.0,24,0.0007,677.9764,-1.9565,12,1,{},orphan,PC02,0.125,1
+5yhl,pocket12,Unknown,0.0,35,0.1909,1449.5859,11.2414,17,1,{},orphan,PC03,0.125,1
+5yhl,pocket13,Unknown,0.0,10,0.0001,333.8872,3.3333,6,0,{},orphan,PC04,0.125,1
+5yhl,pocket14,Unknown,0.0,9,0.0013,237.3379,48.5,4,0,{},orphan,PC05,0.125,1
+5yhl,pocket15,Unknown,0.0,11,0.0005,253.005,7.1,6,0,{},orphan,PC06,0.125,1
+5yhl,pocket16,7TM,1.0,8,0.0046,237.4394,64.0,2,0,"{'TM4': 3, 'TM2': 4, 'TM3': 1}",candidate_allosteric,PC07,0.125,1
+5yhl,pocket17,Unknown,0.0,8,0.0009,176.044,-13.5,2,0,{},orphan,PC08,0.125,1
+5yhl,pocket18,7TM,1.0,6,0.0191,269.3564,79.5,0,0,{'TM1': 6},candidate_allosteric,PC09,0.375,3
+5yhl,pocket19,Unknown,0.0,9,0.0033,225.1596,-2.4444,5,0,{},orphan,PC10,0.125,1
+5yhl,pocket1,7TM,0.825,41,0.9867,1566.2119,43.5263,16,1,"{'TM2': 9, 'TM7': 9, 'TM1': 5, 'TM3': 7, 'TM6': 3, 'ECL2': 4, 'ECL3': 1, 'ECL1': 2}",orthosteric,PC11,0.5,4
+5yhl,pocket20,Unknown,0.0,8,0.0025,215.3091,-4.1429,6,0,{},orphan,PC12,0.125,1
+5yhl,pocket21,Unknown,0.0,12,0.0019,487.4529,-9.9091,9,1,{},orphan,PC13,0.125,1
+5yhl,pocket22,Unknown,0.0,12,0.0002,429.556,24.0,8,1,{},orphan,PC14,0.125,1
+5yhl,pocket23,7TM,1.0,9,0.0301,372.4908,88.3333,2,0,"{'TM3': 5, 'TM4': 2, 'TM2': 2}",candidate_allosteric,PC15,0.375,3
+5yhl,pocket24,Unknown,0.0,6,0.0004,299.291,-2.0,4,0,{},orphan,PC16,0.125,1
+5yhl,pocket25,Unknown,0.0,7,0.0,204.7237,2.7143,5,1,{},orphan,PC17,0.125,1
+5yhl,pocket26,Unknown,0.0,8,0.0002,196.803,17.875,6,0,{},orphan,PC18,0.125,1
+5yhl,pocket27,Unknown,0.0,26,0.0091,866.6486,26.0455,13,1,{},orphan,PC19,0.125,1
+5yhl,pocket28,7TM,1.0,5,0.0028,140.3586,74.4,1,0,{'TM1': 4},candidate_allosteric,PC20,0.25,2
+5yhl,pocket29,Unknown,0.0,11,0.0,346.8566,31.0,6,1,{},orphan,PC21,0.125,1
+5yhl,pocket2,7TM,1.0,11,0.0073,137.4085,42.8182,5,0,"{'TM6': 2, 'TM2': 4, 'TM3': 3}",candidate_allosteric,PC22,0.5,4
+5yhl,pocket30,Loops,0.667,18,0.0001,769.2202,27.5294,11,1,"{'ECL1': 2, 'TM2': 1}",known_allosteric,PC23,0.25,2
+5yhl,pocket31,Loops,0.714,14,0.0004,457.8963,1.2143,11,1,"{'ECL3': 4, 'ECL2': 1, 'TM7': 1, 'TM1': 1}",known_allosteric,PC24,0.5,4
+5yhl,pocket32,Loops,1.0,9,0.0001,290.1925,-17.0,7,1,{'ECL3': 5},known_allosteric,PC24,0.5,4
+5yhl,pocket33,Unknown,0.0,7,0.0001,381.1902,20.7143,4,0,{},orphan,PC25,0.125,1
+5yhl,pocket34,Unknown,0.0,9,0.0001,338.8823,0.8889,7,0,{},orphan,PC26,0.125,1
+5yhl,pocket3,Loops,0.722,26,0.0143,987.2498,5.12,19,1,"{'ECL3': 5, 'TM7': 3, 'ECL2': 8, 'TM6': 2}",known_allosteric,PC27,0.25,2
+5yhl,pocket4,7TM,1.0,8,0.0064,362.2479,50.8333,2,0,"{'TM4': 6, 'TM5': 1, 'TM3': 1}",candidate_allosteric,PC28,0.375,3
+5yhl,pocket5,Unknown,0.0,10,0.0009,360.0731,5.5556,7,0,{},orphan,PC29,0.125,1
+5yhl,pocket6,Unknown,0.0,13,0.0008,404.0113,4.7273,10,0,{},orphan,PC30,0.125,1
+5yhl,pocket7,7TM,1.0,8,0.0538,413.0654,95.25,1,0,"{'TM1': 1, 'TM7': 2, 'TM6': 1}",candidate_allosteric,PC31,0.25,2
+5yhl,pocket8,Loops,0.6,10,0.0003,513.1008,9.1111,7,0,"{'ECL2': 4, 'ECL3': 2, 'TM6': 4}",known_allosteric,PC32,0.125,1
+5yhl,pocket9,Unknown,0.0,8,0.001,168.7771,5.2857,5,0,{},orphan,PC33,0.125,1
+5ywy,pocket10,Unknown,0.0,7,0.0003,337.9565,19.0,3,0,{},orphan,PC34,0.125,1
+5ywy,pocket11,Unknown,0.0,11,0.0007,254.0377,7.1,6,0,{},orphan,PC35,0.125,1
+5ywy,pocket12,Unknown,0.0,12,0.004,486.7412,-2.5455,8,1,{},orphan,PC36,0.125,1
+5ywy,pocket13,Unknown,0.0,11,0.0001,250.1436,24.2,6,1,{},orphan,PC37,0.125,1
+5ywy,pocket14,Unknown,0.0,10,0.0001,319.9027,3.3333,6,0,{},orphan,PC38,0.125,1
+5ywy,pocket15,Loops,0.6,9,0.0006,238.4328,28.125,5,1,"{'ECL2': 3, 'TM3': 2}",known_allosteric,PC39,0.125,1
+5ywy,pocket16,Unknown,0.0,9,0.0064,227.1064,-2.4444,5,0,{},orphan,PC40,0.125,1
+5ywy,pocket17,Unknown,0.0,8,0.0016,175.7937,-13.5,2,0,{},orphan,PC41,0.125,1
+5ywy,pocket18,Unknown,0.0,9,0.0017,238.7578,48.5,4,0,{},orphan,PC42,0.125,1
+5ywy,pocket19,Unknown,0.0,8,0.0006,206.9351,12.1429,5,1,{},orphan,PC43,0.125,1
+5ywy,pocket1,7TM,0.818,34,0.9901,1039.0966,39.8485,17,1,"{'TM2': 9, 'TM7': 7, 'TM3': 7, 'TM6': 3, 'ECL2': 4, 'ECL3': 1, 'ECL1': 1, 'TM1': 1}",orthosteric,PC11,0.5,4
+5ywy,pocket20,Unknown,0.0,10,0.0,394.9559,-4.9,8,1,{},orphan,PC44,0.125,1
+5ywy,pocket21,Unknown,0.0,12,0.0002,434.1578,24.0,8,1,{},orphan,PC45,0.125,1
+5ywy,pocket22,Unknown,0.0,26,0.0197,875.0524,27.0909,12,1,{},orphan,PC46,0.125,1
+5ywy,pocket23,7TM,0.667,6,0.0045,165.9269,20.3333,0,0,"{'TM2': 3, 'TM3': 1, 'ECL1': 2}",candidate_allosteric,PC47,0.125,1
+5ywy,pocket24,Unknown,0.0,8,0.005,212.6953,-4.1429,6,0,{},orphan,PC48,0.125,1
+5ywy,pocket25,Unknown,0.0,6,0.0005,374.8517,-2.0,4,0,{},orphan,PC49,0.125,1
+5ywy,pocket26,Unknown,0.0,8,0.0003,195.4947,17.875,6,0,{},orphan,PC50,0.125,1
+5ywy,pocket27,Loops,0.8,12,0.0008,380.6252,5.6667,10,1,"{'ECL3': 3, 'ECL2': 1, 'TM7': 1}",known_allosteric,PC24,0.5,4
+5ywy,pocket28,Loops,0.667,19,0.0002,925.7371,26.7059,12,1,"{'ECL1': 2, 'TM2': 1}",known_allosteric,PC23,0.25,2
+5ywy,pocket29,Loops,1.0,9,0.0001,266.287,-17.0,7,1,{'ECL3': 5},known_allosteric,PC24,0.5,4
+5ywy,pocket2,7TM,1.0,9,0.0108,458.4638,35.8889,5,1,"{'TM7': 3, 'TM1': 3, 'TM2': 2}",candidate_allosteric,PC51,0.125,1
+5ywy,pocket30,Unknown,0.0,7,0.0002,385.4659,20.7143,4,0,{},orphan,PC52,0.125,1
+5ywy,pocket31,Unknown,0.0,9,0.0001,312.7737,0.8889,7,0,{},orphan,PC53,0.125,1
+5ywy,pocket3,Unknown,0.0,10,0.003,342.6163,5.5556,7,0,{},orphan,PC54,0.125,1
+5ywy,pocket4,Unknown,0.0,35,0.1985,1432.1273,13.1034,16,1,{},orphan,PC55,0.125,1
+5ywy,pocket5,Unknown,0.0,13,0.0018,400.9535,4.7273,10,0,{},orphan,PC56,0.125,1
+5ywy,pocket6,Unknown,0.0,24,0.0015,605.3105,-1.9565,12,1,{},orphan,PC57,0.125,1
+5ywy,pocket7,Loops,0.667,35,0.0011,1390.5923,9.4242,26,1,"{'ECL3': 6, 'TM7': 3, 'ECL2': 10, 'TM6': 5}",known_allosteric,PC27,0.25,2
+5ywy,pocket8,Unknown,0.0,10,0.0008,209.0905,4.0,6,0,{},orphan,PC58,0.125,1
+5ywy,pocket9,Unknown,0.0,8,0.0001,229.3443,6.0,6,0,{},orphan,PC59,0.125,1
+7d7m,pocket10,7TM,0.692,13,0.0333,215.7018,20.8,4,1,"{'TM1': 4, 'TM3': 2, 'TM2': 3, 'ICL1': 3, 'ECL1': 1}",candidate_allosteric,PC60,0.125,1
+7d7m,pocket11,7TM,1.0,10,0.0007,140.2668,12.0,4,0,"{'TM2': 5, 'TM3': 5}",candidate_allosteric,PC61,0.25,2
+7d7m,pocket12,7TM,0.75,8,0.0008,201.2488,52.125,3,0,"{'TM2': 2, 'ECL1': 2, 'TM3': 4}",candidate_allosteric,PC62,0.125,1
+7d7m,pocket13,7TM,1.0,11,0.0004,125.2042,40.0,4,0,{'TM3': 11},candidate_allosteric,PC63,0.125,1
+7d7m,pocket14,7TM,0.75,19,0.0166,656.509,18.4444,13,1,"{'ICL1': 1, 'C-term': 3, 'TM2': 3, 'H8': 3, 'TM3': 7, 'TM1': 2}",candidate_allosteric,PC64,0.125,1
+7d7m,pocket15,7TM,1.0,9,0.0065,95.1225,58.5,1,0,"{'TM2': 3, 'TM1': 2, 'TM7': 1}",candidate_allosteric,PC65,0.125,1
+7d7m,pocket16,7TM,1.0,8,0.0103,90.2211,77.25,2,1,"{'TM2': 1, 'TM1': 2}",candidate_allosteric,PC66,0.125,1
+7d7m,pocket17,7TM,0.833,23,0.016,600.5274,3.7368,12,1,"{'TM6': 4, 'TM7': 1, 'C-term': 4, 'ICL3': 1}",candidate_allosteric,PC67,0.125,1
+7d7m,pocket18,7TM,1.0,11,0.0005,279.5923,16.9,5,0,"{'TM6': 4, 'TM1': 7}",candidate_allosteric,PC20,0.25,2
+7d7m,pocket19,Loops,0.6,18,0.0009,345.1204,14.5882,10,1,"{'TM5': 2, 'ICL3': 6, 'TM6': 2}",known_allosteric,PC68,0.125,1
+7d7m,pocket1,7TM,1.0,24,0.9343,614.0135,31.0435,10,0,"{'TM2': 6, 'TM5': 2, 'TM7': 7, 'TM3': 5, 'TM6': 4}",orthosteric,PC69,0.125,1
+7d7m,pocket20,Unknown,0.0,17,0.0217,573.1065,22.7647,11,1,{},orphan,PC70,0.125,1
+7d7m,pocket21,7TM,0.5,12,0.0176,398.1277,36.3636,4,1,"{'ECL1': 3, 'TM1': 3, 'ICL2': 3, 'TM3': 3}",candidate_allosteric,PC71,0.125,1
+7d7m,pocket22,7TM,0.778,14,0.4252,424.5408,15.9231,10,1,"{'ICL1': 2, 'TM1': 6, 'TM2': 1}",candidate_allosteric,PC72,0.25,2
+7d7m,pocket23,7TM,0.8,10,0.0029,517.4772,26.7,6,0,"{'TM1': 4, 'C-term': 5, 'H8': 1}",candidate_allosteric,PC73,0.125,1
+7d7m,pocket24,7TM,1.0,10,0.1496,360.689,79.1111,1,0,"{'TM5': 6, 'TM6': 4}",candidate_allosteric,PC74,0.25,2
+7d7m,pocket25,7TM,0.692,13,0.0375,207.7807,68.2727,1,1,"{'TM1': 6, 'TM6': 3, 'ICL3': 4}",candidate_allosteric,PC75,0.125,1
+7d7m,pocket26,7TM,1.0,5,0.0068,375.3622,32.0,2,0,{'TM4': 5},candidate_allosteric,PC76,0.125,1
+7d7m,pocket27,7TM,1.0,10,0.0009,139.1982,-6.0,6,0,"{'TM2': 4, 'C-term': 2}",candidate_allosteric,PC77,0.25,2
+7d7m,pocket28,Unknown,0.0,9,0.0016,231.0331,34.875,4,0,{},orphan,PC78,0.125,1
+7d7m,pocket29,7TM,0.75,16,0.0104,395.9678,10.9231,7,1,"{'TM2': 6, 'TM1': 5, 'ICL1': 3, 'TM7': 1, 'H8': 1}",candidate_allosteric,PC79,0.125,1
+7d7m,pocket2,7TM,0.857,23,0.0131,581.6531,33.6522,13,1,"{'ICL3': 3, 'TM5': 3, 'TM7': 5, 'TM6': 3, 'C-term': 2, 'TM2': 2, 'TM4': 3, 'TM3': 2}",candidate_allosteric,PC80,0.125,1
+7d7m,pocket30,7TM,0.833,12,0.1315,206.53,52.0,3,0,"{'TM4': 4, 'TM2': 2, 'TM3': 4, 'ICL2': 2}",candidate_allosteric,PC81,0.125,1
+7d7m,pocket31,7TM,0.625,10,0.0011,244.9462,7.75,7,1,"{'ECL3': 1, 'TM7': 3, 'ICL1': 2, 'C-term': 2, 'TM2': 1, 'TM1': 1}",candidate_allosteric,PC82,0.125,1
+7d7m,pocket32,7TM,1.0,12,0.0037,391.5971,11.75,8,1,"{'TM5': 6, 'TM3': 2}",candidate_allosteric,PC83,0.375,3
+7d7m,pocket33,Unknown,0.0,6,0.0024,314.9092,11.6667,4,0,{},orphan,PC84,0.125,1
+7d7m,pocket34,Unknown,0.0,11,0.0201,310.9389,10.0,8,0,{},orphan,PC85,0.125,1
+7d7m,pocket35,7TM,0.9,10,0.0039,203.1147,39.8889,3,1,"{'TM6': 2, 'TM1': 7, 'ICL1': 1}",candidate_allosteric,PC20,0.25,2
+7d7m,pocket36,7TM,1.0,7,0.0008,256.3175,11.8571,6,1,{'TM5': 4},candidate_allosteric,PC86,0.125,1
+7d7m,pocket37,Loops,0.75,7,0.0016,395.7619,-5.8571,6,1,"{'ICL1': 3, 'TM1': 1}",known_allosteric,PC87,0.375,3
+7d7m,pocket38,7TM,0.867,15,0.0013,370.4962,46.2667,6,0,"{'TM7': 4, 'TM2': 3, 'ICL3': 2, 'TM6': 3, 'TM5': 2, 'TM4': 1}",candidate_allosteric,PC88,0.125,1
+7d7m,pocket39,7TM,0.9,10,0.0018,266.2505,24.6667,4,1,"{'TM3': 2, 'TM2': 3, 'ICL1': 1, 'TM1': 4}",candidate_allosteric,PC89,0.125,1
+7d7m,pocket3,Unknown,0.0,13,0.0386,126.3292,63.3636,2,0,{},orphan,PC90,0.125,1
+7d7m,pocket40,7TM,1.0,24,0.4902,872.0014,20.6818,14,1,"{'TM6': 4, 'C-term': 4}",candidate_allosteric,PC91,0.375,3
+7d7m,pocket41,7TM,1.0,8,0.0022,151.2369,27.0,2,1,{'TM6': 5},candidate_allosteric,PC92,0.125,1
+7d7m,pocket42,7TM,0.667,11,0.0005,334.3831,17.2727,9,1,"{'ICL1': 1, 'TM1': 4, 'C-term': 2, 'ICL2': 1}",candidate_allosteric,PC72,0.25,2
+7d7m,pocket43,7TM,0.6,7,0.0004,175.9595,-3.1429,6,1,"{'TM5': 3, 'C-term': 1, 'ECL2': 2}",candidate_allosteric,PC93,0.25,2
+7d7m,pocket44,7TM,0.545,11,0.0056,160.8073,33.1111,5,1,"{'ICL3': 4, 'TM5': 4, 'TM1': 2, 'N-term': 1}",candidate_allosteric,PC94,0.125,1
+7d7m,pocket45,Loops,0.556,9,0.0048,300.8747,23.5,5,0,"{'TM1': 3, 'ICL3': 5, 'TM6': 1}",known_allosteric,PC95,0.125,1
+7d7m,pocket46,7TM,0.556,9,0.0017,247.8049,7.1111,4,0,"{'ICL3': 4, 'TM5': 5}",candidate_allosteric,PC96,0.125,1
+7d7m,pocket47,7TM,0.75,13,0.0021,370.271,4.2727,6,1,"{'TM3': 3, 'H8': 3, 'TM4': 6, 'C-term': 1}",candidate_allosteric,PC97,0.125,1
+7d7m,pocket48,Loops,0.75,5,0.0001,183.995,-8.4,4,1,"{'ICL3': 3, 'TM5': 1}",known_allosteric,PC68,0.125,1
+7d7m,pocket49,7TM,0.889,9,0.0087,370.1211,27.4444,5,0,"{'TM6': 8, 'ECL3': 1}",candidate_allosteric,PC92,0.125,1
+7d7m,pocket4,Unknown,0.0,11,0.0116,146.3944,72.2,2,0,{},orphan,PC98,0.125,1
+7d7m,pocket50,Loops,0.667,16,0.0001,815.9861,-3.5,14,1,"{'ICL1': 6, 'TM7': 3, 'TM2': 1, 'TM4': 1, 'ECL3': 1, 'ICL2': 3}",known_allosteric,PC99,0.375,3
+7d7m,pocket51,7TM,0.667,9,0.0032,290.953,29.75,4,1,"{'TM7': 2, 'ICL1': 3, 'TM1': 4}",candidate_allosteric,PC100,0.125,1
+7d7m,pocket52,Unknown,0.0,10,0.0045,226.9295,-2.7778,8,1,{},orphan,PC101,0.125,1
+7d7m,pocket53,Unknown,0.0,10,0.0001,165.603,24.5,8,1,{},orphan,PC102,0.125,1
+7d7m,pocket54,7TM,0.714,7,0.0101,422.7426,9.3333,4,1,"{'TM1': 5, 'ICL2': 1, 'ECL1': 1}",candidate_allosteric,PC09,0.375,3
+7d7m,pocket55,Unknown,0.0,6,0.0002,221.97,5.3333,5,0,{},orphan,PC103,0.125,1
+7d7m,pocket56,7TM,1.0,7,0.0197,259.708,63.5714,2,0,"{'TM5': 3, 'TM6': 4}",candidate_allosteric,PC104,0.25,2
+7d7m,pocket57,7TM,0.667,3,0.0023,127.5713,68.3333,1,0,"{'TM3': 2, 'ICL2': 1}",candidate_allosteric,PC105,0.125,1
+7d7m,pocket58,7TM,0.5,14,0.0259,352.6095,37.9231,7,1,"{'ICL3': 2, 'TM6': 2}",candidate_allosteric,PC106,0.125,1
+7d7m,pocket59,Unknown,0.0,9,0.0001,298.3256,0.5556,8,1,{},orphan,PC107,0.125,1
+7d7m,pocket5,7TM,1.0,11,0.0462,183.0472,53.6,5,1,"{'TM3': 1, 'TM6': 3, 'TM2': 1}",candidate_allosteric,PC108,0.125,1
+7d7m,pocket60,7TM,0.6,14,0.0006,314.5503,16.9286,7,0,"{'TM2': 3, 'C-term': 8, 'ICL1': 2}",candidate_allosteric,PC109,0.125,1
+7d7m,pocket61,Unknown,0.0,8,0.0082,269.6718,10.875,4,0,{},orphan,PC110,0.125,1
+7d7m,pocket62,Unknown,0.0,10,0.0022,250.2769,-14.5714,3,0,{},orphan,PC111,0.125,1
+7d7m,pocket63,7TM,1.0,8,0.0078,167.8816,63.875,3,0,{'TM1': 2},candidate_allosteric,PC112,0.125,1
+7d7m,pocket64,Loops,0.667,9,0.0035,426.7698,14.4444,5,1,"{'TM7': 2, 'ECL3': 4, 'ICL1': 2, 'TM6': 1}",known_allosteric,PC24,0.5,4
+7d7m,pocket65,7TM,0.545,11,0.0003,427.6343,10.2727,9,1,"{'ICL2': 5, 'TM1': 4, 'TM4': 2}",candidate_allosteric,PC113,0.375,3
+7d7m,pocket66,7TM,0.5,12,0.0001,536.7507,9.6364,5,1,"{'TM5': 2, 'ICL3': 2}",candidate_allosteric,PC106,0.125,1
+7d7m,pocket67,7TM,0.538,13,0.0032,564.2636,23.6154,7,1,"{'ECL2': 2, 'TM5': 5, 'N-term': 4, 'TM1': 2}",candidate_allosteric,PC114,0.25,2
+7d7m,pocket68,7TM,0.619,22,0.0108,917.0342,10.0,12,1,"{'TM5': 8, 'ICL3': 4, 'N-term': 4, 'TM1': 5}",candidate_allosteric,PC115,0.125,1
+7d7m,pocket6,Unknown,0.0,14,0.0065,332.738,25.3571,9,1,{'C-term': 1},orphan,PC116,0.125,1
+7d7m,pocket7,7TM,0.5,20,0.7179,477.2971,21.5294,8,1,"{'TM1': 10, 'ICL3': 10}",candidate_allosteric,PC117,0.125,1
+7d7m,pocket8,7TM,1.0,13,0.0168,261.9927,1.75,8,0,"{'TM2': 4, 'C-term': 1}",candidate_allosteric,PC118,0.25,2
+7d7m,pocket9,Unknown,0.0,16,0.019,455.8701,9.2857,11,1,{},orphan,PC119,0.125,1
+8gcm,pocket10,Loops,0.65,20,0.0101,597.3131,27.1765,9,0,"{'TM3': 2, 'TM1': 3, 'ICL1': 2, 'ECL2': 3, 'ECL3': 5, 'ICL3': 2, 'TM5': 1, 'ECL1': 1, 'TM4': 1}",known_allosteric,PC120,0.125,1
+8gcm,pocket11,7TM,0.5,6,0.0001,203.5152,1.2,3,1,"{'N-term': 2, 'TM1': 2}",candidate_allosteric,PC114,0.25,2
+8gcm,pocket12,7TM,0.5,28,0.1442,951.2585,37.5714,16,1,"{'ICL3': 4, 'TM5': 7, 'TM1': 3, 'ECL2': 3, 'TM6': 2, 'ECL3': 2, 'TM7': 1, 'ICL2': 3, 'ECL1': 2, 'TM4': 1}",candidate_allosteric,PC121,0.125,1
+8gcm,pocket13,ECD,1.0,9,0.0007,277.7832,28.4444,5,1,{'N-term': 4},orphan,PC122,0.375,3
+8gcm,pocket14,7TM,0.545,14,0.0059,491.8176,24.0833,7,1,"{'TM5': 4, 'ICL3': 4, 'TM1': 2, 'N-term': 1}",candidate_allosteric,PC123,0.375,3
+8gcm,pocket15,ECD,1.0,9,0.0007,194.369,25.0,7,1,{'N-term': 4},orphan,PC122,0.375,3
+8gcm,pocket16,7TM,0.667,6,0.0079,203.6552,23.3333,4,0,"{'ECL3': 2, 'TM7': 1, 'TM6': 3}",candidate_allosteric,PC124,0.125,1
+8gcm,pocket17,7TM,0.7,10,0.0007,285.6404,39.75,4,0,"{'TM1': 1, 'TM3': 2, 'TM4': 3, 'TM5': 1, 'ECL1': 1, 'ECL2': 2}",candidate_allosteric,PC125,0.125,1
+8gcm,pocket18,7TM,0.6,5,0.0001,85.5814,-0.2,4,1,"{'ICL2': 2, 'TM1': 3}",candidate_allosteric,PC126,0.25,2
+8gcm,pocket19,7TM,1.0,11,0.0219,440.7875,24.3636,8,1,"{'TM5': 5, 'TM2': 4, 'TM3': 2}",candidate_allosteric,PC127,0.25,2
+8gcm,pocket1,7TM,0.889,18,0.8523,419.5444,61.8824,6,0,"{'TM5': 4, 'TM6': 5, 'TM7': 4, 'TM3': 3, 'ECL2': 2}",orthosteric,PC128,0.25,2
+8gcm,pocket20,7TM,0.75,7,0.0026,235.2425,16.5714,5,1,"{'TM1': 3, 'N-term': 1}",candidate_allosteric,PC129,0.125,1
+8gcm,pocket21,7TM,1.0,9,0.0269,231.7019,57.625,2,0,"{'TM6': 5, 'TM5': 4}",candidate_allosteric,PC130,0.5,4
+8gcm,pocket22,7TM,0.812,16,0.0449,607.8406,38.8571,5,1,"{'TM5': 9, 'ICL3': 1, 'ECL2': 2, 'TM1': 4}",candidate_allosteric,PC131,0.125,1
+8gcm,pocket23,ECD,0.8,8,0.0119,334.8111,12.625,6,1,"{'N-term': 4, 'TM2': 1}",orphan,PC132,0.125,1
+8gcm,pocket24,Unknown,0.0,9,0.0127,247.7868,13.125,4,0,{},orphan,PC133,0.125,1
+8gcm,pocket25,7TM,0.833,6,0.0014,190.1659,45.1667,2,1,"{'TM3': 2, 'TM5': 3, 'H8': 1}",candidate_allosteric,PC134,0.5,4
+8gcm,pocket26,7TM,1.0,13,0.0105,459.6738,29.5,6,0,"{'TM3': 8, 'TM2': 5}",candidate_allosteric,PC135,0.375,3
+8gcm,pocket27,7TM,0.875,8,0.0015,260.6506,32.75,3,1,"{'TM1': 6, 'TM6': 1, 'ICL1': 1}",candidate_allosteric,PC136,0.125,1
+8gcm,pocket28,7TM,0.833,12,0.0255,295.9514,36.1,4,0,"{'TM1': 5, 'TM5': 5, 'ICL3': 1, 'ICL1': 1}",candidate_allosteric,PC137,0.25,2
+8gcm,pocket29,7TM,0.688,16,0.0043,691.6231,4.3333,11,0,"{'TM7': 5, 'H8': 5, 'TM6': 3, 'TM5': 3}",candidate_allosteric,PC138,0.25,2
+8gcm,pocket2,7TM,0.727,11,0.0369,512.8033,22.7,5,0,"{'TM2': 6, 'ECL2': 3, 'TM1': 2}",candidate_allosteric,PC139,0.125,1
+8gcm,pocket30,7TM,0.429,14,0.0007,326.8116,-0.7143,12,1,"{'TM2': 3, 'N-term': 3, 'ICL1': 1}",candidate_allosteric,PC140,0.125,1
+8gcm,pocket31,7TM,1.0,6,0.001,216.2197,37.2,2,1,"{'TM2': 3, 'TM1': 3}",candidate_allosteric,PC141,0.375,3
+8gcm,pocket32,7TM,0.636,14,0.02,504.5348,35.4286,8,1,"{'ICL1': 3, 'TM2': 3, 'TM3': 4, 'ECL1': 1}",candidate_allosteric,PC142,0.25,2
+8gcm,pocket33,Unknown,0.0,7,0.0007,167.6046,13.1429,4,0,{},orphan,PC143,0.125,1
+8gcm,pocket34,Unknown,0.0,5,0.0002,170.1548,6.0,4,0,{},orphan,PC144,0.125,1
+8gcm,pocket35,7TM,1.0,13,0.0019,455.2817,23.0769,7,1,{'TM3': 2},candidate_allosteric,PC145,0.125,1
+8gcm,pocket36,Unknown,0.0,5,0.0003,296.1766,-6.25,3,0,{},orphan,PC146,0.125,1
+8gcm,pocket37,Unknown,0.0,9,0.002,207.381,14.0,4,0,{},orphan,PC147,0.125,1
+8gcm,pocket38,7TM,0.5,10,0.0005,248.2058,23.6667,5,1,"{'ECL2': 4, 'TM5': 4, 'N-term': 1, 'TM1': 1}",candidate_allosteric,PC148,0.25,2
+8gcm,pocket39,7TM,0.5,8,0.0003,217.0092,-19.75,4,0,"{'ICL1': 4, 'TM2': 4}",candidate_allosteric,PC77,0.25,2
+8gcm,pocket3,7TM,0.625,16,0.0017,499.8553,-6.875,11,1,"{'TM5': 6, 'ECL2': 3, 'ICL2': 3, 'TM3': 1, 'TM4': 3}",candidate_allosteric,PC149,0.125,1
+8gcm,pocket40,7TM,1.0,15,0.0078,542.9249,21.3333,8,1,"{'TM2': 5, 'TM1': 8, 'TM5': 2}",candidate_allosteric,PC150,0.25,2
+8gcm,pocket41,7TM,1.0,8,0.0046,287.7548,-4.8571,6,0,"{'TM1': 5, 'TM5': 3}",candidate_allosteric,PC151,0.25,2
+8gcm,pocket42,7TM,0.667,6,0.0068,158.9987,42.6667,3,0,"{'TM5': 2, 'TM7': 2, 'H8': 2}",candidate_allosteric,PC152,0.25,2
+8gcm,pocket43,7TM,1.0,8,0.0008,285.0867,42.875,4,0,"{'TM5': 3, 'TM2': 3, 'TM7': 2}",candidate_allosteric,PC153,0.125,1
+8gcm,pocket44,Loops,0.75,12,0.0327,304.3683,18.4444,5,0,"{'TM1': 3, 'ICL3': 9}",known_allosteric,PC154,0.125,1
+8gcm,pocket45,Loops,1.0,8,0.1369,455.6275,63.0,3,0,"{'ICL3': 3, 'ECL3': 5}",known_allosteric,PC155,0.125,1
+8gcm,pocket46,7TM,0.583,12,0.002,272.9607,29.0,7,1,"{'TM1': 5, 'TM5': 2, 'ICL2': 3, 'H8': 2}",candidate_allosteric,PC126,0.25,2
+8gcm,pocket47,Unknown,0.0,11,0.0002,405.6845,9.2222,6,0,{},orphan,PC156,0.125,1
+8gcm,pocket48,7TM,0.875,10,0.0036,368.3995,23.0,4,1,"{'TM2': 3, 'TM3': 3, 'TM1': 1, 'N-term': 1}",candidate_allosteric,PC157,0.125,1
+8gcm,pocket49,7TM,1.0,13,0.0002,477.4628,20.6923,9,1,{'TM3': 3},candidate_allosteric,PC145,0.125,1
+8gcm,pocket4,7TM,0.375,10,0.0008,214.8995,16.4444,7,1,"{'TM2': 2, 'ICL2': 3, 'C-term': 2, 'TM4': 1, 'H8': 2}",candidate_allosteric,PC158,0.5,4
+8gcm,pocket50,7TM,0.923,13,0.0096,502.678,30.0,9,1,"{'TM5': 5, 'TM1': 3, 'TM2': 2, 'TM6': 1, 'TM7': 1, 'ICL3': 1}",candidate_allosteric,PC159,0.375,3
+8gcm,pocket51,7TM,0.667,8,0.0012,380.0995,-10.75,7,1,"{'ICL1': 1, 'TM2': 4, 'N-term': 1}",candidate_allosteric,PC140,0.125,1
+8gcm,pocket5,7TM,0.5,14,0.5962,290.2824,11.0,7,1,"{'TM1': 5, 'ICL3': 3, 'N-term': 3, 'TM5': 1}",candidate_allosteric,PC160,0.125,1
+8gcm,pocket6,ECD,1.0,11,0.0004,137.9287,26.3333,6,1,{'N-term': 2},orphan,PC161,0.25,2
+8gcm,pocket7,7TM,0.846,13,0.0009,364.7539,11.5455,5,1,"{'TM1': 5, 'ICL1': 2, 'TM2': 5, 'TM7': 1}",candidate_allosteric,PC162,0.125,1
+8gcm,pocket8,ECD,0.556,9,0.0113,226.1023,21.5,4,1,"{'N-term': 5, 'TM1': 1, 'ICL3': 3}",orphan,PC163,0.375,3
+8gcm,pocket9,Loops,0.636,11,0.0004,259.8597,38.5,2,0,"{'ECL2': 4, 'ICL3': 2, 'TM5': 4, 'ECL3': 1}",known_allosteric,PC164,0.125,1
+8gcp,pocket10,7TM,1.0,10,0.0263,359.3373,55.8,2,0,"{'TM6': 5, 'TM5': 5}",candidate_allosteric,PC130,0.5,4
+8gcp,pocket11,ECD,1.0,44,0.7816,1633.692,32.9286,26,1,{'N-term': 7},orphan,PC122,0.375,3
+8gcp,pocket12,7TM,0.556,9,0.0001,214.3682,-2.5714,6,0,"{'TM4': 4, 'ICL2': 2, 'TM3': 1, 'ECL2': 2}",candidate_allosteric,PC165,0.125,1
+8gcp,pocket13,7TM,1.0,8,0.0007,173.286,42.3333,2,0,"{'TM3': 4, 'TM2': 4}",candidate_allosteric,PC135,0.375,3
+8gcp,pocket14,7TM,0.667,9,0.0087,312.4961,31.625,4,0,"{'ICL1': 3, 'TM5': 5, 'TM1': 1}",candidate_allosteric,PC166,0.125,1
+8gcp,pocket15,7TM,0.429,7,0.0003,168.8246,22.5714,4,0,"{'TM5': 3, 'ICL3': 3, 'N-term': 1}",candidate_allosteric,PC123,0.375,3
+8gcp,pocket16,7TM,1.0,5,0.0004,177.8825,25.0,2,1,{'TM1': 5},candidate_allosteric,PC167,0.125,1
+8gcp,pocket17,7TM,0.5,12,0.0015,452.4943,19.6667,8,1,"{'ICL3': 6, 'TM6': 4, 'TM7': 1, 'TM5': 1}",candidate_allosteric,PC168,0.125,1
+8gcp,pocket18,7TM,0.5,10,0.0009,280.1989,-15.75,7,1,"{'TM2': 2, 'C-term': 2, 'TM4': 2, 'ICL1': 2, 'ICL2': 1, 'H8': 1}",candidate_allosteric,PC158,0.5,4
+8gcp,pocket19,Unknown,0.0,10,0.0002,266.1788,12.3333,6,0,{},orphan,PC169,0.125,1
+8gcp,pocket1,7TM,0.667,15,0.0116,141.2467,28.3,6,0,"{'TM4': 3, 'ECL2': 5, 'TM5': 7}",candidate_allosteric,PC170,0.125,1
+8gcp,pocket20,Unknown,0.0,15,0.0007,259.1077,29.9231,8,0,{},orphan,PC171,0.125,1
+8gcp,pocket21,7TM,1.0,9,0.0002,285.822,48.7778,2,0,"{'TM1': 4, 'TM6': 5}",candidate_allosteric,PC172,0.125,1
+8gcp,pocket22,7TM,0.9,10,0.0104,317.2919,52.0,3,0,"{'TM2': 2, 'TM4': 3, 'TM3': 4, 'ICL2': 1}",candidate_allosteric,PC173,0.5,4
+8gcp,pocket23,7TM,1.0,4,0.0001,103.4597,7.25,3,0,{'TM3': 4},candidate_allosteric,PC174,0.125,1
+8gcp,pocket24,Loops,0.556,9,0.0002,233.739,-7.7143,6,0,"{'ICL3': 5, 'TM7': 4}",known_allosteric,PC175,0.125,1
+8gcp,pocket25,Unknown,0.0,18,0.0054,593.1865,12.0,12,0,{},orphan,PC176,0.125,1
+8gcp,pocket26,7TM,0.667,9,0.0015,350.784,42.4444,4,1,"{'TM5': 4, 'ICL3': 2}",candidate_allosteric,PC177,0.125,1
+8gcp,pocket27,7TM,0.867,15,0.0004,480.1379,27.8462,6,0,"{'TM1': 4, 'TM5': 9, 'ICL3': 1, 'ICL1': 1}",candidate_allosteric,PC137,0.25,2
+8gcp,pocket28,7TM,1.0,13,0.0002,430.3072,18.7,7,1,"{'TM5': 5, 'TM2': 2, 'TM6': 1, 'TM7': 2, 'TM1': 3}",candidate_allosteric,PC159,0.375,3
+8gcp,pocket29,ECD,0.6,10,0.0009,226.7521,-4.0,4,1,"{'N-term': 6, 'TM6': 1, 'ECL3': 3}",orphan,PC163,0.375,3
+8gcp,pocket2,7TM,0.727,11,0.0047,143.3544,36.5455,6,1,"{'TM5': 6, 'TM3': 2, 'ICL2': 3}",candidate_allosteric,PC178,0.125,1
+8gcp,pocket30,7TM,0.8,10,0.0022,423.8421,16.4,4,1,"{'TM5': 5, 'ICL2': 2, 'TM3': 3}",candidate_allosteric,PC179,0.25,2
+8gcp,pocket31,7TM,0.6,10,0.0018,389.9799,23.8,6,1,"{'TM7': 3, 'TM5': 3, 'H8': 4}",candidate_allosteric,PC180,0.125,1
+8gcp,pocket32,7TM,0.667,6,0.0002,185.8301,-9.3333,5,1,"{'ICL2': 2, 'TM1': 3, 'TM4': 1}",candidate_allosteric,PC126,0.25,2
+8gcp,pocket33,7TM,0.889,13,0.0927,528.222,52.6923,4,1,"{'C-term': 4, 'TM5': 5, 'H8': 1, 'TM6': 3}",candidate_allosteric,PC104,0.25,2
+8gcp,pocket34,7TM,1.0,17,0.0027,404.728,9.6,10,1,"{'TM5': 6, 'TM2': 9, 'TM3': 2}",candidate_allosteric,PC127,0.25,2
+8gcp,pocket35,7TM,1.0,12,0.0002,467.8944,9.5455,6,1,"{'TM2': 4, 'TM1': 7, 'TM5': 1}",candidate_allosteric,PC150,0.25,2
+8gcp,pocket36,7TM,0.586,61,0.0012,2612.647,20.6852,32,1,"{'N-term': 6, 'TM3': 11, 'ICL1': 5, 'TM2': 6, 'ECL1': 1}",candidate_allosteric,PC142,0.25,2
+8gcp,pocket37,7TM,0.727,15,0.0553,537.6968,46.2857,6,1,"{'C-term': 4, 'H8': 2, 'ICL1': 1, 'TM2': 4, 'TM1': 3, 'TM7': 1}",candidate_allosteric,PC181,0.125,1
+8gcp,pocket38,Loops,0.55,40,0.0542,1594.6724,29.6842,22,1,"{'ICL3': 12, 'TM5': 10, 'TM1': 3, 'ECL2': 3, 'TM6': 3, 'ECL3': 2, 'ICL2': 3, 'TM7': 1, 'ECL1': 2, 'TM4': 1}",known_allosteric,PC182,0.25,2
+8gcp,pocket39,7TM,0.483,29,0.0001,1080.6213,38.0,12,1,"{'TM3': 2, 'TM5': 5, 'TM1': 3, 'ICL1': 2, 'ECL2': 3, 'ECL3': 5, 'ICL3': 3, 'TM6': 2, 'TM4': 2, 'N-term': 1, 'ECL1': 1}",candidate_allosteric,PC183,0.25,2
+8gcp,pocket3,7TM,0.875,26,0.1757,816.566,20.3182,12,1,"{'N-term': 2, 'TM1': 5, 'TM3': 3, 'TM2': 6}",orthosteric,PC141,0.375,3
+8gcp,pocket40,7TM,0.75,12,0.0003,283.1494,0.4545,9,1,"{'TM7': 5, 'TM5': 1, 'H8': 3, 'TM6': 3}",candidate_allosteric,PC138,0.25,2
+8gcp,pocket41,7TM,0.636,11,0.0008,277.9887,24.0,7,1,"{'TM1': 4, 'TM5': 3, 'ICL2': 2, 'H8': 2}",candidate_allosteric,PC126,0.25,2
+8gcp,pocket42,7TM,0.636,12,0.0003,714.3706,7.8333,8,0,"{'C-term': 1, 'H8': 4, 'TM1': 2, 'TM7': 1, 'TM6': 1, 'TM5': 3}",candidate_allosteric,PC138,0.25,2
+8gcp,pocket4,7TM,1.0,10,0.0014,93.1847,33.5556,6,0,"{'TM6': 3, 'TM3': 2, 'TM7': 1, 'TM5': 4}",candidate_allosteric,PC74,0.25,2
+8gcp,pocket5,7TM,0.375,8,0.0017,320.768,49.375,4,1,"{'TM3': 3, 'ICL2': 3, 'H8': 2}",candidate_allosteric,PC184,0.125,1
+8gcp,pocket6,7TM,1.0,7,0.0014,219.8141,25.0,5,0,"{'TM5': 6, 'TM1': 1}",candidate_allosteric,PC151,0.25,2
+8gcp,pocket7,7TM,1.0,9,0.0006,202.2171,25.3333,6,0,"{'TM3': 4, 'TM4': 5}",candidate_allosteric,PC185,0.125,1
+8gcp,pocket8,Unknown,0.0,15,0.0046,483.2115,25.5455,4,0,{},orphan,PC186,0.125,1
+8gcp,pocket9,7TM,1.0,12,0.0005,164.3501,24.9091,6,0,"{'TM3': 8, 'TM2': 4}",candidate_allosteric,PC135,0.375,3
+8gd9,pocket10,Unknown,0.0,27,0.023,1030.5392,16.3913,16,1,{},orphan,PC187,0.125,1
+8gd9,pocket11,7TM,0.929,14,0.1884,469.0744,52.6429,4,0,"{'TM2': 2, 'TM4': 4, 'TM3': 6, 'ICL2': 1, 'TM5': 1}",candidate_allosteric,PC173,0.5,4
+8gd9,pocket12,Loops,1.0,14,0.0008,296.3009,14.0,8,0,{'ICL3': 4},known_allosteric,PC188,0.25,2
+8gd9,pocket13,7TM,0.545,11,0.0012,113.3506,24.8889,6,1,"{'TM2': 2, 'ICL3': 5, 'TM1': 4}",candidate_allosteric,PC189,0.25,2
+8gd9,pocket14,7TM,0.444,9,0.0008,163.9481,12.875,5,0,"{'TM5': 4, 'ICL3': 4, 'N-term': 1}",candidate_allosteric,PC123,0.375,3
+8gd9,pocket15,7TM,1.0,7,0.0037,122.2121,67.7143,1,0,"{'TM2': 4, 'TM1': 3}",candidate_allosteric,PC190,0.125,1
+8gd9,pocket16,7TM,0.714,8,0.0023,89.5269,70.5714,2,1,"{'H8': 2, 'TM7': 2, 'TM2': 1, 'TM1': 2}",candidate_allosteric,PC152,0.25,2
+8gd9,pocket17,7TM,1.0,8,0.0037,113.9062,52.0,1,0,"{'TM1': 4, 'TM7': 4}",candidate_allosteric,PC191,0.125,1
+8gd9,pocket18,7TM,0.516,31,0.0007,1175.465,41.4643,12,1,"{'TM3': 2, 'TM5': 5, 'TM1': 3, 'TM2': 1, 'ECL2': 4, 'ECL3': 5, 'ICL3': 3, 'TM6': 2, 'TM7': 1, 'TM4': 2, 'N-term': 1, 'ECL1': 1, 'ICL1': 1}",candidate_allosteric,PC183,0.25,2
+8gd9,pocket19,7TM,1.0,7,0.0021,203.0124,28.3333,4,0,"{'TM1': 1, 'TM5': 6}",candidate_allosteric,PC192,0.125,1
+8gd9,pocket1,7TM,1.0,28,0.4452,590.9625,33.5833,11,0,"{'TM3': 7, 'TM6': 7, 'TM2': 5, 'TM5': 2, 'TM7': 7}",candidate_allosteric,PC193,0.25,2
+8gd9,pocket20,Unknown,0.0,11,0.0002,452.8239,26.4545,7,0,{},orphan,PC194,0.125,1
+8gd9,pocket21,7TM,0.714,11,0.0621,322.8881,70.6,2,0,"{'TM5': 3, 'TM1': 2, 'ICL3': 2}",candidate_allosteric,PC195,0.25,2
+8gd9,pocket22,7TM,0.923,13,0.0004,382.5419,24.0,8,1,"{'TM3': 2, 'TM5': 6, 'TM2': 4, 'ICL3': 1}",candidate_allosteric,PC196,0.25,2
+8gd9,pocket23,7TM,0.8,10,0.0008,358.128,19.9,7,0,"{'ECL2': 2, 'TM4': 4, 'TM5': 4}",candidate_allosteric,PC197,0.125,1
+8gd9,pocket24,7TM,0.571,9,0.0018,353.8017,32.3333,5,1,"{'TM3': 2, 'ICL2': 3, 'TM5': 2}",candidate_allosteric,PC179,0.25,2
+8gd9,pocket25,Loops,0.636,46,0.018,1521.1647,18.525,23,1,"{'TM6': 3, 'TM5': 4, 'TM1': 3, 'ECL2': 3, 'ECL3': 2, 'ICL3': 11, 'TM7': 1, 'ICL2': 3, 'ECL1': 2, 'TM4': 1}",known_allosteric,PC182,0.25,2
+8gd9,pocket26,Loops,0.667,7,0.0009,253.7484,17.0,5,1,"{'ICL1': 2, 'TM2': 1}",known_allosteric,PC99,0.375,3
+8gd9,pocket27,7TM,1.0,9,0.0011,225.341,-9.5,4,0,"{'TM6': 5, 'TM1': 4}",candidate_allosteric,PC198,0.125,1
+8gd9,pocket28,7TM,0.556,12,0.0029,416.5756,32.0,9,1,"{'ICL2': 3, 'TM1': 5, 'ICL3': 1}",candidate_allosteric,PC113,0.375,3
+8gd9,pocket29,Loops,0.625,15,0.0001,346.4788,8.4286,9,1,"{'TM5': 3, 'ICL3': 5}",known_allosteric,PC199,0.125,1
+8gd9,pocket2,Loops,0.833,16,0.0078,164.8687,8.3636,8,1,"{'ICL3': 5, 'TM5': 2, 'ECL2': 4, 'ICL2': 1}",known_allosteric,PC200,0.125,1
+8gd9,pocket30,7TM,1.0,9,0.0012,267.8762,59.1111,3,0,"{'TM4': 4, 'TM5': 3, 'TM3': 2}",candidate_allosteric,PC28,0.375,3
+8gd9,pocket31,7TM,0.5,10,0.0002,245.6196,24.7778,3,1,"{'N-term': 5, 'TM1': 4, 'TM7': 1}",candidate_allosteric,PC201,0.25,2
+8gd9,pocket32,7TM,1.0,14,0.0251,366.6841,29.8333,7,1,{'TM5': 3},candidate_allosteric,PC202,0.125,1
+8gd9,pocket33,7TM,1.0,9,0.0212,220.2623,71.6667,2,0,"{'TM3': 3, 'TM2': 5, 'TM4': 1}",candidate_allosteric,PC15,0.375,3
+8gd9,pocket34,7TM,0.8,10,0.0004,297.3265,10.4,8,1,"{'TM6': 1, 'TM1': 4, 'ICL3': 2, 'TM7': 3}",candidate_allosteric,PC159,0.375,3
+8gd9,pocket35,Unknown,0.0,9,0.0013,237.3054,13.1429,2,0,{},orphan,PC203,0.125,1
+8gd9,pocket36,7TM,1.0,8,0.0004,282.6951,-2.0,6,1,{'TM5': 4},candidate_allosteric,PC134,0.5,4
+8gd9,pocket37,7TM,1.0,9,0.0026,363.2188,11.2222,6,1,"{'TM1': 8, 'TM2': 1}",candidate_allosteric,PC204,0.125,1
+8gd9,pocket38,7TM,0.571,8,0.0001,205.3224,42.0,4,1,"{'ECL2': 3, 'TM5': 4}",candidate_allosteric,PC148,0.25,2
+8gd9,pocket39,Unknown,0.0,10,0.0002,396.1132,12.9,6,0,{},orphan,PC205,0.125,1
+8gd9,pocket3,7TM,1.0,10,0.0291,446.9413,-11.0,9,1,{'TM5': 5},candidate_allosteric,PC83,0.375,3
+8gd9,pocket40,7TM,0.6,9,0.0009,317.269,25.0,5,1,"{'ECL2': 2, 'TM5': 3}",candidate_allosteric,PC148,0.25,2
+8gd9,pocket41,7TM,1.0,10,0.0006,217.2895,25.4444,5,1,{'TM6': 3},candidate_allosteric,PC91,0.375,3
+8gd9,pocket42,7TM,0.5,6,0.0002,134.1744,1.5,2,0,"{'ECL2': 3, 'TM5': 3}",candidate_allosteric,PC206,0.125,1
+8gd9,pocket43,Unknown,0.0,12,0.0012,336.1827,9.6667,8,1,{},orphan,PC207,0.125,1
+8gd9,pocket44,7TM,0.909,11,0.0007,405.7198,-1.1818,8,1,"{'TM7': 4, 'TM6': 4, 'ICL1': 1, 'TM1': 2}",candidate_allosteric,PC208,0.125,1
+8gd9,pocket45,7TM,1.0,13,0.0011,600.9532,1.3077,10,1,"{'TM1': 7, 'TM5': 2, 'TM2': 4}",candidate_allosteric,PC09,0.375,3
+8gd9,pocket46,7TM,1.0,12,0.0012,501.8961,30.0,5,1,"{'TM5': 3, 'TM6': 5}",candidate_allosteric,PC91,0.375,3
+8gd9,pocket47,7TM,1.0,6,0.0001,252.4679,-1.4,5,1,{'TM5': 1},candidate_allosteric,PC209,0.125,1
+8gd9,pocket48,7TM,0.727,14,0.54,678.312,48.4615,5,1,"{'H8': 3, 'TM7': 2, 'TM6': 6}",orthosteric,PC210,0.375,3
+8gd9,pocket49,7TM,1.0,12,0.0002,592.1544,22.6364,5,1,"{'TM2': 4, 'TM3': 3, 'TM1': 5}",candidate_allosteric,PC141,0.375,3
+8gd9,pocket4,Loops,0.917,12,0.0012,441.4008,24.5833,6,0,"{'ICL3': 9, 'ICL1': 2, 'TM1': 1}",known_allosteric,PC87,0.375,3
+8gd9,pocket5,7TM,1.0,12,0.009,140.016,35.8,3,0,"{'TM7': 4, 'TM2': 4, 'TM3': 1, 'TM1': 3}",candidate_allosteric,PC22,0.5,4
+8gd9,pocket6,7TM,1.0,14,0.0127,253.4852,31.9286,7,0,"{'TM3': 9, 'TM2': 5}",candidate_allosteric,PC135,0.375,3
+8gd9,pocket7,Loops,1.0,35,0.0127,1454.3235,17.5,20,1,"{'ICL1': 1, 'ICL3': 5}",known_allosteric,PC87,0.375,3
+8gd9,pocket8,7TM,0.7,20,0.0016,718.0089,13.2353,12,1,"{'TM5': 7, 'ECL2': 2, 'N-term': 1}",candidate_allosteric,PC211,0.125,1
+8gd9,pocket9,7TM,1.0,9,0.0396,349.9397,62.0,2,0,"{'TM6': 5, 'TM5': 4}",candidate_allosteric,PC130,0.5,4
+8gda,pocket10,Loops,0.571,13,0.0009,277.5072,11.7692,10,0,"{'TM6': 3, 'ICL3': 4, 'C-term': 6}",known_allosteric,PC188,0.25,2
+8gda,pocket11,Loops,0.571,14,0.0025,162.6847,21.9,7,1,"{'TM2': 2, 'ICL3': 6, 'ECL1': 1, 'TM1': 3, 'TM3': 1, 'ICL1': 1}",known_allosteric,PC212,0.125,1
+8gda,pocket12,7TM,1.0,11,0.0024,360.2497,0.8182,5,0,"{'TM1': 5, 'TM6': 6}",candidate_allosteric,PC213,0.125,1
+8gda,pocket13,Unknown,0.0,7,0.0006,119.3653,15.0,5,0,{},orphan,PC214,0.125,1
+8gda,pocket14,ECD,0.667,9,0.0007,223.1199,-7.7778,6,1,"{'N-term': 6, 'TM6': 1, 'TM7': 2}",orphan,PC163,0.375,3
+8gda,pocket15,7TM,1.0,10,0.0001,231.2578,18.8333,4,0,"{'TM2': 4, 'TM3': 6}",candidate_allosteric,PC215,0.125,1
+8gda,pocket16,7TM,0.714,14,0.1148,427.3511,49.3571,6,0,"{'TM2': 2, 'ICL2': 4, 'TM4': 4, 'TM3': 4}",candidate_allosteric,PC173,0.5,4
+8gda,pocket17,7TM,0.481,39,0.0973,1505.2625,19.8387,20,1,"{'TM5': 13, 'ECL2': 6, 'ICL3': 4, 'N-term': 4}",candidate_allosteric,PC216,0.125,1
+8gda,pocket18,7TM,0.833,6,0.0089,279.5058,-22.8333,6,0,"{'TM1': 5, 'N-term': 1}",candidate_allosteric,PC217,0.125,1
+8gda,pocket19,Unknown,0.0,9,0.0003,253.5763,8.625,3,0,{},orphan,PC218,0.125,1
+8gda,pocket1,7TM,0.957,23,0.8935,638.4164,30.7727,9,0,"{'TM3': 6, 'TM6': 3, 'ECL2': 1, 'TM2': 5, 'TM5': 2, 'TM7': 6}",orthosteric,PC11,0.5,4
+8gda,pocket20,7TM,0.8,13,0.0048,365.7532,24.75,7,1,"{'C-term': 8, 'TM5': 3, 'TM6': 1, 'H8': 1}",candidate_allosteric,PC219,0.125,1
+8gda,pocket21,7TM,0.692,13,0.0788,327.6083,28.5385,7,0,"{'TM3': 9, 'ECL1': 3, 'ICL2': 1}",candidate_allosteric,PC220,0.125,1
+8gda,pocket22,7TM,0.8,8,0.0025,176.5666,39.625,4,1,"{'C-term': 3, 'TM6': 4, 'H8': 1}",candidate_allosteric,PC210,0.375,3
+8gda,pocket23,Loops,0.625,8,0.0026,105.1827,27.125,6,1,"{'ICL3': 3, 'ICL1': 2, 'TM2': 1, 'TM7': 1, 'TM3': 1}",known_allosteric,PC221,0.125,1
+8gda,pocket24,7TM,0.5,8,0.0003,161.9531,15.5714,2,0,"{'ICL3': 4, 'TM5': 4}",candidate_allosteric,PC222,0.125,1
+8gda,pocket25,7TM,1.0,5,0.0024,150.3972,83.6,0,0,"{'TM7': 1, 'TM6': 4}",candidate_allosteric,PC223,0.25,2
+8gda,pocket26,7TM,1.0,8,0.0005,163.6265,52.125,3,0,"{'TM2': 4, 'TM3': 4}",candidate_allosteric,PC224,0.125,1
+8gda,pocket27,7TM,0.636,11,0.0001,420.3149,21.2,8,1,"{'TM5': 5, 'ECL1': 3, 'TM1': 1, 'ICL3': 1, 'TM3': 1}",candidate_allosteric,PC225,0.125,1
+8gda,pocket28,7TM,0.889,9,0.0014,328.4365,17.3333,4,1,"{'TM1': 6, 'TM2': 2, 'ECL1': 1}",candidate_allosteric,PC226,0.25,2
+8gda,pocket29,Loops,0.571,7,0.0002,288.3542,28.8571,4,0,"{'ICL3': 4, 'TM6': 1, 'TM1': 2}",known_allosteric,PC227,0.125,1
+8gda,pocket2,7TM,1.0,11,0.0027,262.3683,27.375,4,0,"{'TM1': 4, 'TM2': 4, 'TM7': 3}",candidate_allosteric,PC228,0.125,1
+8gda,pocket30,7TM,0.556,9,0.0019,247.8691,43.6667,2,1,"{'N-term': 4, 'TM1': 3, 'TM6': 2}",candidate_allosteric,PC229,0.125,1
+8gda,pocket31,7TM,0.636,11,0.0001,290.0926,20.4,5,0,"{'TM6': 4, 'TM7': 3, 'ICL3': 4}",candidate_allosteric,PC230,0.125,1
+8gda,pocket32,7TM,0.5,8,0.0002,250.4415,4.1429,6,0,"{'ICL2': 2, 'TM4': 2, 'TM3': 2, 'ECL2': 2}",candidate_allosteric,PC231,0.125,1
+8gda,pocket33,7TM,0.6,10,0.0006,239.6443,-5.4444,7,1,"{'TM7': 4, 'ICL1': 1, 'TM1': 2, 'ECL3': 3}",candidate_allosteric,PC232,0.125,1
+8gda,pocket34,7TM,0.6,10,0.0003,287.5113,10.4,8,1,"{'ECL3': 1, 'TM1': 3, 'ICL3': 2, 'TM7': 3, 'ICL1': 1}",candidate_allosteric,PC233,0.125,1
+8gda,pocket35,7TM,0.5,8,0.003,249.7402,45.0,2,1,"{'TM6': 2, 'N-term': 4, 'TM1': 2}",candidate_allosteric,PC229,0.125,1
+8gda,pocket36,7TM,1.0,7,0.0016,216.9891,74.8333,2,0,"{'TM3': 3, 'TM2': 3, 'TM4': 1}",candidate_allosteric,PC15,0.375,3
+8gda,pocket37,H8,0.571,9,0.0017,436.1573,17.2222,7,1,"{'C-term': 2, 'H8': 4, 'TM7': 2, 'TM5': 1}",orphan,PC234,0.125,1
+8gda,pocket38,7TM,0.783,23,0.0021,705.7113,45.6667,8,0,"{'TM3': 3, 'TM5': 4, 'ICL1': 2, 'TM2': 4, 'TM7': 3, 'TM6': 2, 'ECL3': 2, 'TM4': 2, 'ICL3': 1}",candidate_allosteric,PC235,0.125,1
+8gda,pocket39,7TM,1.0,8,0.0184,308.5763,24.875,2,0,"{'TM6': 4, 'TM7': 4}",candidate_allosteric,PC236,0.125,1
+8gda,pocket3,Loops,0.538,14,0.0025,163.1984,5.6364,8,1,"{'ICL3': 6, 'TM5': 1, 'TM4': 5, 'ECL2': 1}",known_allosteric,PC237,0.125,1
+8gda,pocket40,7TM,1.0,10,0.0048,316.1857,40.6667,3,0,"{'TM4': 4, 'TM3': 4, 'TM5': 2}",candidate_allosteric,PC28,0.375,3
+8gda,pocket41,7TM,0.667,21,0.0001,458.8401,40.3333,9,0,"{'TM5': 5, 'ICL1': 3, 'ECL3': 3, 'TM6': 3, 'TM3': 3, 'ECL2': 1, 'TM4': 3}",candidate_allosteric,PC238,0.125,1
+8gda,pocket42,Unknown,0.0,7,0.0006,301.0812,8.0,6,0,{},orphan,PC239,0.125,1
+8gda,pocket43,7TM,0.5,14,0.0008,283.325,-4.4615,10,1,"{'ICL3': 4, 'TM6': 3, 'TM5': 1}",candidate_allosteric,PC240,0.25,2
+8gda,pocket44,7TM,0.556,9,0.0005,233.7438,24.7778,3,1,"{'N-term': 4, 'TM1': 4, 'TM7': 1}",candidate_allosteric,PC241,0.125,1
+8gda,pocket45,7TM,0.727,14,0.0007,483.2246,2.5455,7,1,"{'H8': 3, 'TM7': 4, 'TM5': 4, 'C-term': 3}",candidate_allosteric,PC242,0.25,2
+8gda,pocket46,Unknown,0.0,9,0.0001,390.4093,30.0,5,1,{},orphan,PC243,0.125,1
+8gda,pocket47,7TM,1.0,9,0.0006,252.135,14.6667,5,1,"{'C-term': 6, 'TM6': 3}",candidate_allosteric,PC244,0.25,2
+8gda,pocket48,7TM,0.571,18,0.0087,721.0353,25.6875,12,1,"{'TM1': 8, 'ICL2': 3, 'C-term': 4, 'ICL3': 3}",candidate_allosteric,PC113,0.375,3
+8gda,pocket49,7TM,1.0,5,0.0059,277.7772,69.6,0,0,"{'TM6': 4, 'TM7': 1}",candidate_allosteric,PC236,0.125,1
+8gda,pocket4,7TM,0.875,12,0.0056,174.1921,63.4545,3,0,"{'TM2': 3, 'C-term': 4, 'TM5': 3, 'ICL3': 1, 'TM6': 1}",candidate_allosteric,PC245,0.125,1
+8gda,pocket50,7TM,1.0,11,0.0027,503.4502,25.9091,5,1,"{'TM5': 3, 'C-term': 4, 'TM6': 4}",candidate_allosteric,PC91,0.375,3
+8gda,pocket51,Loops,0.75,8,0.0029,366.9553,13.125,6,1,"{'C-term': 4, 'ICL1': 3, 'TM2': 1}",known_allosteric,PC99,0.375,3
+8gda,pocket52,7TM,1.0,12,0.0005,517.4828,18.6667,8,1,"{'TM1': 10, 'TM2': 2}",candidate_allosteric,PC72,0.25,2
+8gda,pocket53,7TM,0.667,10,0.0001,304.9604,0.9,9,1,"{'TM2': 2, 'TM1': 2, 'ICL2': 2, 'C-term': 1, 'TM4': 2, 'ICL1': 1}",candidate_allosteric,PC158,0.5,4
+8gda,pocket54,7TM,0.7,11,0.0421,603.9543,42.2727,6,1,"{'H8': 3, 'TM7': 3, 'C-term': 1, 'TM6': 4}",candidate_allosteric,PC210,0.375,3
+8gda,pocket55,7TM,0.667,12,0.0001,454.3259,9.3636,7,1,"{'TM7': 3, 'TM6': 1, 'C-term': 1, 'H8': 2}",candidate_allosteric,PC246,0.25,2
+8gda,pocket56,Loops,0.667,9,0.0003,378.1737,-0.2222,6,1,"{'TM6': 3, 'ICL1': 3, 'ECL3': 3}",known_allosteric,PC247,0.125,1
+8gda,pocket57,7TM,1.0,14,0.0029,512.7268,-10.6429,13,1,"{'TM7': 2, 'TM6': 2}",candidate_allosteric,PC248,0.125,1
+8gda,pocket58,Loops,0.529,21,0.0096,810.1727,11.75,13,1,"{'TM6': 7, 'ECL3': 2, 'ICL3': 5, 'ECL2': 1, 'TM5': 1, 'ICL1': 1}",known_allosteric,PC249,0.125,1
+8gda,pocket59,7TM,1.0,16,0.0063,877.5198,-6.8,12,1,"{'TM3': 2, 'C-term': 8, 'TM5': 6}",candidate_allosteric,PC134,0.5,4
+8gda,pocket5,7TM,0.778,9,0.0052,266.6728,56.0,4,0,"{'TM2': 3, 'TM3': 2, 'TM7': 2, 'ECL2': 2}",candidate_allosteric,PC250,0.25,2
+8gda,pocket60,ECD,1.0,20,0.0002,873.2174,4.6154,9,1,{'N-term': 3},orphan,PC122,0.375,3
+8gda,pocket6,7TM,0.529,32,0.2827,942.7346,19.7333,19,1,"{'ICL3': 6, 'TM6': 9, 'ICL1': 2}",candidate_allosteric,PC251,0.125,1
+8gda,pocket7,7TM,0.7,10,0.0038,114.4009,59.7778,4,0,"{'TM6': 4, 'ECL2': 3, 'TM7': 3}",candidate_allosteric,PC128,0.25,2
+8gda,pocket8,7TM,1.0,9,0.0019,79.3067,27.5,3,0,"{'TM7': 4, 'TM2': 4, 'TM1': 1}",candidate_allosteric,PC22,0.5,4
+8gda,pocket9,7TM,1.0,10,0.0131,318.0301,60.3333,2,0,"{'TM4': 1, 'TM2': 6, 'TM1': 3}",candidate_allosteric,PC118,0.25,2
+8gdb,pocket10,7TM,0.889,12,0.005,152.1576,63.4545,3,0,"{'TM2': 3, 'C-term': 3, 'TM5': 3, 'TM1': 1, 'ICL3': 1, 'TM6': 1}",candidate_allosteric,PC195,0.25,2
+8gdb,pocket11,7TM,0.5,6,0.0003,214.3875,10.8,4,1,"{'TM5': 2, 'C-term': 2, 'H8': 2}",candidate_allosteric,PC252,0.125,1
+8gdb,pocket12,7TM,1.0,8,0.0573,358.385,77.8571,1,0,"{'TM7': 3, 'TM1': 5}",candidate_allosteric,PC31,0.25,2
+8gdb,pocket13,7TM,1.0,7,0.001,108.0552,28.8333,3,1,"{'C-term': 5, 'TM6': 2}",candidate_allosteric,PC244,0.25,2
+8gdb,pocket14,7TM,0.571,14,0.0062,222.6843,22.0,8,1,"{'TM2': 4, 'ICL3': 6, 'TM3': 2, 'TM1': 2}",candidate_allosteric,PC189,0.25,2
+8gdb,pocket15,ECD,0.75,8,0.0004,189.5322,-18.0,6,1,"{'N-term': 6, 'TM6': 1, 'TM7': 1}",orphan,PC161,0.25,2
+8gdb,pocket16,7TM,0.923,13,0.0018,461.1195,27.0833,9,1,"{'TM1': 2, 'TM5': 6, 'TM3': 4, 'ICL3': 1}",candidate_allosteric,PC196,0.25,2
+8gdb,pocket17,7TM,0.833,12,0.0581,319.0441,44.0,5,0,"{'TM2': 2, 'ICL2': 2, 'TM4': 4, 'TM3': 4}",candidate_allosteric,PC173,0.5,4
+8gdb,pocket18,7TM,1.0,11,0.0007,212.3171,20.9091,6,0,"{'C-term': 7, 'TM2': 4}",candidate_allosteric,PC253,0.125,1
+8gdb,pocket19,7TM,0.8,10,0.0003,321.0401,21.8,8,1,"{'TM6': 4, 'C-term': 2, 'H8': 1}",candidate_allosteric,PC254,0.125,1
+8gdb,pocket1,7TM,0.882,17,0.1153,541.8312,48.1875,8,0,"{'TM2': 6, 'TM7': 5, 'TM1': 3, 'ECL2': 2, 'TM3': 1}",candidate_allosteric,PC11,0.5,4
+8gdb,pocket20,7TM,1.0,7,0.0159,344.6526,22.8571,5,0,"{'TM1': 1, 'TM5': 6}",candidate_allosteric,PC83,0.375,3
+8gdb,pocket21,7TM,0.7,11,0.0065,434.7007,36.8,5,1,"{'H8': 3, 'TM7': 3, 'C-term': 1, 'TM6': 4}",candidate_allosteric,PC210,0.375,3
+8gdb,pocket22,Loops,0.556,9,0.0007,372.3423,11.2222,6,1,"{'TM1': 4, 'ICL1': 4, 'ECL1': 1}",known_allosteric,PC255,0.125,1
+8gdb,pocket23,7TM,0.769,13,0.0024,447.9036,20.6667,6,0,"{'ECL2': 3, 'TM4': 4, 'TM3': 5, 'TM5': 1}",candidate_allosteric,PC256,0.125,1
+8gdb,pocket24,7TM,0.947,19,0.0559,545.0136,27.5,8,1,"{'TM3': 14, 'TM5': 3, 'ICL2': 1, 'TM4': 1}",candidate_allosteric,PC257,0.125,1
+8gdb,pocket25,7TM,0.429,7,0.0002,267.2047,47.8333,3,0,"{'TM1': 3, 'H8': 1, 'ECL3': 3}",candidate_allosteric,PC258,0.125,1
+8gdb,pocket26,7TM,1.0,10,0.0007,236.736,29.2222,6,0,"{'TM2': 3, 'TM3': 3, 'TM7': 1, 'TM4': 2, 'TM5': 1}",candidate_allosteric,PC61,0.25,2
+8gdb,pocket27,7TM,0.9,37,0.0072,1842.0869,11.75,23,1,"{'TM5': 11, 'C-term': 17, 'TM3': 2, 'H8': 2, 'TM6': 5}",candidate_allosteric,PC134,0.5,4
+8gdb,pocket28,7TM,0.875,8,0.0,254.3662,6.5714,7,1,"{'TM6': 5, 'TM7': 2, 'ICL3': 1}",candidate_allosteric,PC223,0.25,2
+8gdb,pocket29,Loops,0.833,12,0.0003,260.8768,22.7273,5,0,"{'TM2': 1, 'ICL1': 4, 'ICL3': 6, 'TM1': 1}",known_allosteric,PC87,0.375,3
+8gdb,pocket2,7TM,0.947,19,0.9394,465.3184,39.8947,7,0,"{'TM1': 2, 'TM3': 4, 'ECL2': 1, 'TM2': 5, 'TM7': 5, 'TM5': 1, 'TM6': 1}",orthosteric,PC11,0.5,4
+8gdb,pocket30,7TM,0.875,8,0.0004,329.6906,12.75,6,1,"{'TM1': 5, 'TM2': 2, 'ICL1': 1}",candidate_allosteric,PC259,0.125,1
+8gdb,pocket31,7TM,0.833,12,0.0037,573.01,-0.3636,9,1,"{'TM5': 6, 'H8': 2, 'TM7': 4}",candidate_allosteric,PC242,0.25,2
+8gdb,pocket32,7TM,0.462,18,0.0044,664.7709,17.8571,9,1,"{'TM5': 5, 'ICL3': 4, 'N-term': 3, 'TM1': 1}",candidate_allosteric,PC260,0.125,1
+8gdb,pocket33,7TM,0.625,8,0.0003,262.5304,20.5,6,1,"{'TM7': 2, 'TM1': 1, 'ICL3': 2, 'ICL1': 1, 'TM2': 2}",candidate_allosteric,PC261,0.125,1
+8gdb,pocket34,7TM,0.571,7,0.0,364.8058,-19.7143,7,1,"{'TM2': 3, 'N-term': 3, 'TM1': 1}",candidate_allosteric,PC262,0.125,1
+8gdb,pocket35,7TM,1.0,10,0.0465,334.3717,63.4,2,0,"{'TM5': 5, 'TM6': 5}",candidate_allosteric,PC130,0.5,4
+8gdb,pocket36,7TM,0.8,10,0.0003,232.8554,35.7,5,0,"{'TM2': 3, 'ECL1': 2, 'TM3': 5}",candidate_allosteric,PC263,0.125,1
+8gdb,pocket37,7TM,0.455,11,0.0003,338.3206,28.3636,4,1,"{'N-term': 5, 'TM1': 5, 'H8': 1}",candidate_allosteric,PC201,0.25,2
+8gdb,pocket38,7TM,0.667,10,0.0043,267.3274,14.4444,5,0,"{'C-term': 1, 'TM6': 4, 'TM7': 2, 'H8': 3}",candidate_allosteric,PC264,0.125,1
+8gdb,pocket39,7TM,0.72,25,0.0093,778.4957,33.913,12,1,"{'ICL3': 7, 'TM2': 3, 'TM5': 2, 'TM7': 4, 'TM6': 3, 'TM4': 4, 'TM3': 2}",candidate_allosteric,PC265,0.125,1
+8gdb,pocket3,7TM,1.0,18,0.0259,324.1001,33.1111,7,0,"{'TM5': 2, 'TM6': 5, 'TM2': 2, 'TM3': 5, 'TM7': 4}",candidate_allosteric,PC193,0.25,2
+8gdb,pocket40,Loops,0.556,9,0.0002,322.206,32.2222,3,1,"{'ECL1': 2, 'ICL2': 3, 'TM1': 3, 'TM3': 1}",known_allosteric,PC266,0.125,1
+8gdb,pocket41,7TM,0.5,10,0.0056,368.7193,41.1,4,1,"{'C-term': 2, 'H8': 2, 'TM1': 4, 'ICL1': 2}",candidate_allosteric,PC267,0.125,1
+8gdb,pocket42,ECD,1.0,7,0.0,275.3925,-18.0,7,1,{'N-term': 4},orphan,PC161,0.25,2
+8gdb,pocket43,7TM,1.0,10,0.0011,498.2084,3.4,6,1,"{'TM1': 7, 'TM2': 1, 'TM3': 2}",candidate_allosteric,PC226,0.25,2
+8gdb,pocket44,7TM,0.636,18,0.0002,459.6762,15.3529,10,1,"{'ICL3': 4, 'TM6': 5, 'TM5': 2}",candidate_allosteric,PC268,0.125,1
+8gdb,pocket45,Loops,0.583,12,0.0047,479.6847,-9.8182,9,1,"{'TM7': 4, 'ICL1': 4, 'ECL3': 3, 'H8': 1}",known_allosteric,PC24,0.5,4
+8gdb,pocket46,Loops,0.545,49,0.1952,1682.485,15.5111,28,1,"{'ICL3': 7, 'TM6': 10, 'ICL1': 5}",known_allosteric,PC87,0.375,3
+8gdb,pocket47,7TM,0.714,12,0.0003,298.6709,10.8,6,1,"{'TM7': 4, 'TM6': 1, 'C-term': 1, 'H8': 2}",candidate_allosteric,PC246,0.25,2
+8gdb,pocket48,7TM,1.0,10,0.0001,351.0886,8.4,7,1,{'TM5': 7},candidate_allosteric,PC269,0.125,1
+8gdb,pocket49,7TM,0.636,13,0.0003,471.0591,1.0,11,1,"{'TM2': 2, 'TM1': 2, 'ICL2': 3, 'C-term': 2, 'TM4': 3, 'ICL1': 1}",candidate_allosteric,PC158,0.5,4
+8gdb,pocket4,7TM,0.889,12,0.0551,239.2326,42.3636,6,1,"{'TM3': 1, 'TM2': 1, 'TM7': 2, 'C-term': 3, 'TM6': 4, 'H8': 1}",candidate_allosteric,PC210,0.375,3
+8gdb,pocket50,7TM,0.857,11,0.001,449.1252,11.7778,6,1,"{'ECL2': 1, 'TM5': 6}",candidate_allosteric,PC93,0.25,2
+8gdb,pocket51,7TM,0.667,26,0.014,918.5991,-1.48,17,1,"{'TM6': 11, 'TM7': 1, 'ICL3': 6}",candidate_allosteric,PC240,0.25,2
+8gdb,pocket52,7TM,0.7,10,0.0011,451.7765,19.9,7,0,"{'ECL2': 3, 'TM4': 3, 'TM5': 4}",candidate_allosteric,PC270,0.125,1
+8gdb,pocket53,7TM,0.826,23,0.0008,883.1273,30.1905,8,0,"{'ICL3': 4, 'TM2': 6, 'TM7': 6, 'TM6': 5, 'TM5': 1, 'TM4': 1}",candidate_allosteric,PC271,0.125,1
+8gdb,pocket54,ECD,1.0,10,0.0,339.8186,6.5,7,1,{'N-term': 1},orphan,PC272,0.125,1
+8gdb,pocket5,7TM,1.0,9,0.0014,88.4684,21.3333,4,0,"{'TM7': 4, 'TM2': 4, 'TM1': 1}",candidate_allosteric,PC22,0.5,4
+8gdb,pocket6,H8,0.429,7,0.0039,85.4195,75.2857,2,0,"{'TM7': 1, 'H8': 3, 'ECL3': 1, 'ICL3': 1, 'TM6': 1}",orphan,PC273,0.125,1
+8gdb,pocket7,7TM,0.556,12,0.0012,119.3666,-3.7778,6,1,"{'ICL3': 4, 'TM5': 4, 'TM4': 1}",candidate_allosteric,PC274,0.125,1
+8gdb,pocket8,7TM,1.0,11,0.0003,97.9924,16.75,6,0,"{'TM6': 3, 'C-term': 8}",candidate_allosteric,PC275,0.125,1
+8gdb,pocket9,7TM,0.556,9,0.0017,104.9134,57.0,5,0,"{'TM2': 3, 'TM3': 2, 'ECL1': 1, 'ECL2': 3}",candidate_allosteric,PC250,0.25,2

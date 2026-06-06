@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    15:
+HEADER 0  - Pocket Score                      : -0.0383
+HEADER 1  - Drug Score                        : 0.0004
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.7078
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5603
+HEADER 5  - Mean B-factor of pocket residues  : 0.5322
+HEADER 6  - Hydrophobicity Score              : -18.0000
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 189.5322
+HEADER 10  -Pocket volume (convex hull)       : 1.3440
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.3529
+ATOM   4508    N ASP G  48     149.378 168.270 147.085  0.00  0.00           N 0
+ATOM   4501    O LYS G  46     148.805 171.451 146.114  0.00  0.00           O 0
+ATOM   4513    N PRO G  49     148.358 165.793 145.297  0.00  0.00           N 0
+ATOM   4510    C ASP G  48     147.879 166.559 146.282  0.00  0.00           C 0
+ATOM   4555  CG1 VAL G  54     147.129 167.751 140.730  0.00  0.00           C 0
+ATOM   4519   CD PRO G  49     149.757 165.404 145.072  0.00  0.00           C 0
+ATOM   3784   NZ LYS B 280     155.120 166.081 147.872  0.70  7.66           N 1
+ATOM   4098    O ASP B 323     153.668 163.478 144.544  0.46  9.64           O 0
+ATOM   4507   CB GLU G  47     152.514 170.254 147.245  0.00  0.00           C 0
+ATOM   4511    O ASP G  48     146.704 166.956 146.278  0.00  0.00           O 0
+ATOM   4542  CG2 THR G  52     144.516 169.979 145.158  0.00  0.00           C 0
+ATOM   4518   CG PRO G  49     149.812 165.240 143.590  0.00  0.00           C 0
+ATOM   4504   CA GLU G  47     151.014 170.054 147.060  0.00  0.00           C 0
+ATOM   4505    C GLU G  47     150.558 168.682 147.550  0.00  0.00           C 0
+ATOM   4506    O GLU G  47     151.238 168.006 148.320  0.00  0.00           O 0
+TER
+END

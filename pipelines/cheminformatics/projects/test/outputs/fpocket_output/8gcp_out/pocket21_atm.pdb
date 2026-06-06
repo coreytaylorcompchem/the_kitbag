@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    21:
+HEADER 0  - Pocket Score                      : -0.1008
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    26
+HEADER 3  - Mean alpha-sphere radius          : 3.7253
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4272
+HEADER 5  - Mean B-factor of pocket residues  : 0.2305
+HEADER 6  - Hydrophobicity Score              : 48.7778
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 4.1111
+HEADER 9  - Pocket volume (Monte Carlo)       : 285.8220
+HEADER 10  -Pocket volume (convex hull)       : 22.0084
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.1538
+ATOM   1813    N MET B  45     104.836  99.106  64.481  0.72  4.37           N 0
+ATOM   3777    O VAL B 307     104.208  92.401  66.363  0.00  0.00           O 0
+ATOM   1811  OE1 GLN B  44     109.641  96.692  65.461  0.77  5.36           O 0
+ATOM   1816    O MET B  45     103.700  98.845  66.986  0.16  9.64           O 0
+ATOM   1799    O ILE B  43     107.586  96.282  62.541  0.52  5.36           O 0
+ATOM   3774    N VAL B 307     104.998  91.836  63.560  0.00  0.00           N 0
+ATOM   1805   CA GLN B  44     107.135  98.794  63.741  0.00  0.00           C 0
+ATOM   3781    N LEU B 308     102.301  92.421  65.243  0.79  1.09           N 0
+ATOM   3776    C VAL B 307     103.560  92.041  65.434  0.00  0.00           C 0
+ATOM   3768    O ALA B 305     108.132  92.917  59.957  0.00  0.00           O 0
+ATOM   1795   CB ARG B  42     111.672  96.231  60.014  0.00  0.00           C 0
+ATOM   1802  CG2 ILE B  43     104.608  97.073  60.578  0.00  0.00           C 0
+ATOM   3696  CG2 VAL B 296     101.366  93.465  60.396  0.00  0.00           C 0
+ATOM   3778   CB VAL B 307     104.904  90.104  65.269  0.00  0.00           C 0
+ATOM   3771   CA GLY B 306     106.067  92.304  61.483  0.00  0.00           C 0
+ATOM   3785   CB LEU B 308     100.488  94.061  65.481  0.00  0.00           C 0
+ATOM   1817   CB MET B  45     102.412  99.404  64.122  0.00  0.00           C 0
+ATOM   1819   SD MET B  45     100.996  98.600  61.957  0.00  0.00           S 0
+ATOM   3782   CA LEU B 308     101.630  93.318  66.176  0.00  0.00           C 0
+TER
+END

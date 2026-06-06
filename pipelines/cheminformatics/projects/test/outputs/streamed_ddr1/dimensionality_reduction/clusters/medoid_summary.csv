@@ -1,0 +1,3 @@
+cluster,medoid_smiles,scaffold_smiles,cluster_size,mean_log_enrichment,medoid_image
+-1,CNC(=O)[C@H](CCC1CCCCC1)NC(=O)[C@H](CCC1CCCCC1)NC(=O)Cc1coc2ccccc12,O=C(Cc1coc2ccccc12)N[C@@H](CCC1CCCCC1)C(=O)NCCCC1CCCCC1,15,0.6837731480915752,outputs/streamed_ddr1/dimensionality_reduction/clusters/cluster_-1_medoid_vs_scaffold.png
+0,CNC(=O)[C@H](CCNC(=O)[C@H](CCC1CCCCC1)NC(=O)c1ccc(C(=O)O)cc1)NC(=O)CC1CCCC1,O=C(CC1CCCC1)NCCCNC(=O)[C@H](CCC1CCCCC1)NC(=O)c1ccccc1,985,0.5148878990852471,outputs/streamed_ddr1/dimensionality_reduction/clusters/cluster_0_medoid_vs_scaffold.png

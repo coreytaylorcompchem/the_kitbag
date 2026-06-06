@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    14:
+HEADER 0  - Pocket Score                      : -0.0399
+HEADER 1  - Drug Score                        : 0.0087
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.9410
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4878
+HEADER 5  - Mean B-factor of pocket residues  : 0.6702
+HEADER 6  - Hydrophobicity Score              : 31.6250
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 312.4961
+HEADER 10  -Pocket volume (convex hull)       : 20.1992
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 13.0000
+HEADER 13 - Number of apolar alpha sphere     :    14
+HEADER 14 - Proportion of apolar alpha sphere : 0.8750
+ATOM    351  CG2 VAL A 185      63.976  78.030  71.436  0.00  0.00           C 0
+ATOM    350  CG1 VAL A 185      63.436  78.515  73.799  0.00  0.00           C 0
+ATOM    474   CB ASP A 200      66.956  74.917  74.436  0.00  0.00           C 0
+ATOM    349   CB VAL A 185      64.538  78.218  72.818  0.00  0.00           C 0
+ATOM    297  CG1 VAL A  50      62.720  73.128  78.782  0.00  0.00           C 0
+ATOM    298  CG2 VAL A  50      60.465  72.458  77.970  0.00  0.00           C 0
+ATOM    363  CG2 THR A 187      62.883  78.616  78.408  0.00  0.00           C 0
+ATOM    296   CB VAL A  50      61.222  73.237  79.015  0.00  0.00           C 0
+ATOM    454    O MET A 198      67.714  78.696  78.066  0.00  0.00           O 0
+ATOM    348    O VAL A 185      67.084  78.843  74.634  0.00  0.00           O 0
+ATOM    266   CB LYS A  46      64.619  68.578  76.320  0.00  0.00           C 0
+ATOM    240  CD2 LEU A  38      66.588  72.832  78.363  0.00  0.00           C 0
+ATOM    268   CD LYS A  46      66.981  68.580  75.401  0.00  0.00           C 0
+ATOM    269   CE LYS A  46      66.722  68.618  73.913  0.00  0.00           C 0
+ATOM    265    O LYS A  46      62.346  69.688  77.834  0.00  0.00           O 0
+ATOM    458   CE MET A 198      65.602  75.757  80.686  0.00  0.00           C 0
+ATOM    264    C LYS A  46      62.298  68.580  77.289  0.00  0.00           C 0
+ATOM    276   OG SER A  47      59.365  67.821  74.796  0.00  0.00           O 0
+TER
+END

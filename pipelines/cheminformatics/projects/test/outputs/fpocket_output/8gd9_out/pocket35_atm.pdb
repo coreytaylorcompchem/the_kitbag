@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    35:
+HEADER 0  - Pocket Score                      : -0.1107
+HEADER 1  - Drug Score                        : 0.0013
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.8963
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5891
+HEADER 5  - Mean B-factor of pocket residues  : 0.4513
+HEADER 6  - Hydrophobicity Score              : 13.1429
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 2.8571
+HEADER 9  - Pocket volume (Monte Carlo)       : 237.3054
+HEADER 10  -Pocket volume (convex hull)       : 4.5920
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.6471
+ATOM   5048  CG2 VAL N  93      91.941 142.642  76.253  0.00  0.00           C 0
+ATOM   5276  OE1 GLN N 123      90.278 144.413  73.926  0.76  8.57           O 0
+ATOM   4686   CG PRO N  41      85.932 144.791  78.373  0.00  0.00           C 0
+ATOM   4682   CA PRO N  41      86.922 145.008  80.470  0.00  0.00           C 0
+ATOM   4688    N GLY N  42      87.358 145.725  82.689  0.52  9.84           N 0
+ATOM   4673   CD GLN N  39      92.687 142.165  82.375  0.00  0.00           C 0
+ATOM   4675  NE2 GLN N  39      92.617 142.732  83.571  0.65  5.47           N 0
+ATOM   4679    O ALA N  40      88.128 142.952  81.758  0.71  3.21           O 0
+ATOM   4672   CG GLN N  39      91.459 141.428  81.908  0.00  0.00           C 0
+ATOM   4674  OE1 GLN N  39      93.692 142.223  81.669  0.63  7.50           O 0
+ATOM   4685   CB PRO N  41      85.932 145.667  79.560  0.00  0.00           C 0
+ATOM   4681    N PRO N  41      86.751 143.608  80.114  0.00  0.00           N 0
+ATOM   5038   CA ALA N  92      87.823 140.222  76.004  0.00  0.00           C 0
+ATOM   4678    C ALA N  40      87.465 142.685  80.777  0.00  0.00           C 0
+ATOM   4670    O GLN N  39      89.654 140.711  78.932  0.44  2.14           O 0
+TER
+END

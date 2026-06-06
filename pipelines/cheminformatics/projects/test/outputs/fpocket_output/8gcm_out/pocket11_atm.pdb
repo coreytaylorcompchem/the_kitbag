@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    11:
+HEADER 0  - Pocket Score                      : 0.0103
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.8353
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3935
+HEADER 5  - Mean B-factor of pocket residues  : 0.4444
+HEADER 6  - Hydrophobicity Score              : 1.2000
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.6000
+HEADER 9  - Pocket volume (Monte Carlo)       : 203.5152
+HEADER 10  -Pocket volume (convex hull)       : 3.6863
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1176
+ATOM    131  NH1 ARG A  21     138.766 146.923 140.090  0.53  7.66           N 1
+ATOM    129   NE ARG A  21     140.145 145.501 141.257  0.67  2.19           N 0
+ATOM    130   CZ ARG A  21     139.673 145.957 140.099  0.00  0.00           C 0
+ATOM   4543    O GLY E  54     142.625 152.882 143.966  0.44  5.36           O 0
+ATOM     70  OE1 GLU A  14     135.748 151.618 144.314  0.46  5.36           O 0
+ATOM     97   NZ LYS A  17     133.358 149.849 141.271  0.57  8.75           N 1
+ATOM     96   CE LYS A  17     133.522 148.381 141.452  0.00  0.00           C 0
+ATOM     71  OE2 GLU A  14     137.633 150.887 145.164  0.41  6.43           O 1
+ATOM     98    N MET A  18     136.580 145.710 145.345  0.65  1.09           N 0
+ATOM     99   CA MET A  18     138.006 145.420 145.464  0.00  0.00           C 0
+ATOM     93   CB LYS A  17     134.043 146.518 143.557  0.00  0.00           C 0
+ATOM    102   CB MET A  18     138.678 146.463 146.351  0.00  0.00           C 0
+ATOM    104   SD MET A  18     141.018 147.801 146.911  0.00  0.00           S 0
+ATOM    105   CE MET A  18     142.636 147.475 146.222  0.00  0.00           C 0
+ATOM    103   CG MET A  18     140.168 146.267 146.508  0.00  0.00           C 0
+ATOM   4541   CA GLY E  54     142.412 151.536 145.905  0.00  0.00           C 0
+TER
+END

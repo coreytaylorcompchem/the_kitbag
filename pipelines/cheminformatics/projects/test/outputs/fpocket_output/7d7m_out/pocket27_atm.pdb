@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    27:
+HEADER 0  - Pocket Score                      : 0.0032
+HEADER 1  - Drug Score                        : 0.0009
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.6313
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3709
+HEADER 5  - Mean B-factor of pocket residues  : 0.4184
+HEADER 6  - Hydrophobicity Score              : -6.0000
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 3.2222
+HEADER 9  - Pocket volume (Monte Carlo)       : 139.1982
+HEADER 10  -Pocket volume (convex hull)       : 2.5049
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.2500
+ATOM   5462   CB ALA D 269     172.382 146.188 120.161  0.00  0.00           C 0
+ATOM   5383    N ASP D 249     171.543 140.472 118.886  0.88  1.09           N 0
+ATOM   5382  CG2 VAL D 248     172.215 142.680 120.976  0.00  0.00           C 0
+ATOM   4955   CB ALA D  48     168.645 144.654 116.860  0.00  0.00           C 0
+ATOM   5434    O ARG D 265     174.569 146.558 117.315  0.56  1.07           O 0
+ATOM   5435   CB ARG D 265     174.652 144.884 114.748  0.00  0.00           C 0
+ATOM   5387   CB ASP D 249     172.339 139.633 116.718  0.00  0.00           C 0
+ATOM   4959    O ASP D  49     168.876 142.954 112.836  0.46  7.50           O 0
+ATOM   4970   CB SER D  51     168.510 140.562 116.249  0.00  0.00           C 0
+ATOM   5386    O ASP D 249     174.461 140.785 118.369  0.00  0.00           O 0
+ATOM   4965   CB ASN D  50     169.134 140.993 110.558  0.00  0.00           C 0
+ATOM   4964    O ASN D  50     170.025 139.754 112.844  0.25  2.14           O 0
+ATOM   5409  OD1 ASP D 252     176.328 142.586 112.313  0.38  9.64           O 0
+ATOM   5389  OD1 ASP D 249     173.777 138.706 115.064  0.60  6.43           O 0
+ATOM   5407   CB ASP D 252     176.581 141.241 114.261  0.00  0.00           C 0
+TER
+END

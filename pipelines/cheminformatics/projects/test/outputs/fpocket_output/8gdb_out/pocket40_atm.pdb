@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    40:
+HEADER 0  - Pocket Score                      : -0.1716
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 4.0186
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5080
+HEADER 5  - Mean B-factor of pocket residues  : 0.4755
+HEADER 6  - Hydrophobicity Score              : 32.2222
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 3.4444
+HEADER 9  - Pocket volume (Monte Carlo)       : 322.2060
+HEADER 10  -Pocket volume (convex hull)       : 11.7147
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 4.0000
+HEADER 13 - Number of apolar alpha sphere     :     5
+HEADER 14 - Proportion of apolar alpha sphere : 0.3125
+ATOM    124  CD1 ILE A  26     161.333 138.686 131.391  0.00  0.00           C 0
+ATOM   2412  CD2 HIS B  91     165.179 142.474 135.000  0.00  0.00           C 0
+ATOM   2418    O ALA B  92     162.436 137.123 136.157  0.59  6.43           O 0
+ATOM   2705  CG2 VAL B 133     166.925 138.687 137.276  0.00  0.00           C 0
+ATOM   2697  OD1 ASN B 132     170.478 138.088 131.612  0.71  9.64           O 0
+ATOM   2699    N VAL B 133     169.574 139.284 136.160  0.65  1.09           N 0
+ATOM   2690    O GLY B 131     170.436 141.301 132.412  0.00  0.00           O 0
+ATOM   2692   CA ASN B 132     170.938 139.183 134.158  0.00  0.00           C 0
+ATOM    116   NZ LYS A  25     164.884 136.769 127.938  0.00  0.00           N 1
+ATOM     90   CB ALA A  22     162.274 143.624 127.525  0.00  0.00           C 0
+ATOM   2414  NE2 HIS B  91     166.069 143.458 134.649  0.46  7.66           N 0
+ATOM   2415    N ALA B  92     161.340 139.804 135.652  0.75  1.09           N 0
+ATOM     89    O ALA A  22     160.229 141.074 127.862  0.74  1.07           O 0
+ATOM    122  CG1 ILE A  26     160.413 139.684 130.737  0.00  0.00           C 0
+ATOM   2401    O VAL B  90     162.264 143.546 132.819  0.77  2.14           O 0
+ATOM     87   CA ALA A  22     161.520 142.663 126.608  0.00  0.00           C 0
+ATOM    114   CD LYS A  25     163.818 137.285 125.751  0.00  0.00           C 0
+ATOM    112   CB LYS A  25     161.482 138.144 125.890  0.00  0.00           C 0
+TER
+END

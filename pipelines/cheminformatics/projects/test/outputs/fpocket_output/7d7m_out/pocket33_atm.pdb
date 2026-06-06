@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    33:
+HEADER 0  - Pocket Score                      : -0.0346
+HEADER 1  - Drug Score                        : 0.0024
+HEADER 2  - Number of alpha spheres           :    22
+HEADER 3  - Mean alpha-sphere radius          : 3.9369
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5802
+HEADER 5  - Mean B-factor of pocket residues  : 0.2408
+HEADER 6  - Hydrophobicity Score              : 11.6667
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.1667
+HEADER 9  - Pocket volume (Monte Carlo)       : 314.9092
+HEADER 10  -Pocket volume (convex hull)       : 14.4905
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.5000
+ATOM   6078    N SER D 352     172.108 153.905 135.792  0.73  2.19           N 0
+ATOM   6077   CB ALA D 351     175.052 153.573 134.857  0.00  0.00           C 0
+ATOM   6076    O ALA D 351     173.326 154.672 137.519  0.67  5.36           O 0
+ATOM   6075    C ALA D 351     173.218 153.936 136.532  0.00  0.00           C 0
+ATOM   5542  ND2 ASN D 278     170.466 157.265 131.061  0.65  4.37           N 0
+ATOM   6082   CB SER D 352     169.913 154.701 135.059  0.00  0.00           C 0
+ATOM   6079   CA SER D 352     170.942 154.691 136.185  0.00  0.00           C 0
+ATOM   6055    O ILE D 348     172.651 151.349 132.564  0.45  2.14           O 0
+ATOM   5541  OD1 ASN D 278     169.596 155.230 130.705  0.69  1.07           O 0
+ATOM   6058  CG2 ILE D 348     173.244 151.595 129.399  0.00  0.00           C 0
+ATOM   5504   CD LYS D 274     173.755 155.398 127.096  0.00  0.00           C 0
+ATOM   5503   CG LYS D 274     172.321 154.847 127.246  0.00  0.00           C 0
+ATOM   6048   NE ARG D 347     179.499 150.741 130.896  0.70  6.56           N 0
+ATOM   5505   CE LYS D 274     174.863 154.338 127.077  0.00  0.00           C 0
+ATOM   6057  CG1 ILE D 348     175.394 150.444 128.909  0.00  0.00           C 0
+ATOM   6047   CD ARG D 347     178.896 150.846 132.225  0.00  0.00           C 0
+ATOM   5506   NZ LYS D 274     176.139 154.877 126.535  0.50  7.66           N 1
+ATOM   6053   CA ILE D 348     174.482 150.487 131.271  0.00  0.00           C 0
+ATOM   6044    O ARG D 347     175.949 150.397 133.589  0.00  0.00           O 0
+TER
+END

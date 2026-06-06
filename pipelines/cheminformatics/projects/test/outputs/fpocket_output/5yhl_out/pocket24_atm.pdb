@@ -1,0 +1,42 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    24:
+HEADER 0  - Pocket Score                      : -0.0889
+HEADER 1  - Drug Score                        : 0.0004
+HEADER 2  - Number of alpha spheres           :    21
+HEADER 3  - Mean alpha-sphere radius          : 3.7342
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5467
+HEADER 5  - Mean B-factor of pocket residues  : 0.3479
+HEADER 6  - Hydrophobicity Score              : -2.0000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.3333
+HEADER 9  - Pocket volume (Monte Carlo)       : 299.2910
+HEADER 10  -Pocket volume (convex hull)       : 19.4476
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.2857
+ATOM   3797    C SER H 230     -49.370 -97.786  18.582  0.00  0.00           C 0
+ATOM   3816   NZ LYS H 232     -46.471 -93.337  21.512  0.00  0.00           N 0
+ATOM   3799   CB SER H 230     -51.608 -96.603  18.669  0.00  0.00           C 0
+ATOM   3798    O SER H 230     -49.793 -98.570  19.434  0.00  0.00           O 0
+ATOM   3796   CA SER H 230     -50.253 -96.700  17.963  0.00  0.00           C 0
+ATOM   3800   OG SER H 230     -52.357 -95.499  18.193  0.64  8.57           O 0
+ATOM   3780    O PRO H 227     -50.485 -94.306  15.270  0.69  6.43           O 0
+ATOM   3778   CA PRO H 227     -48.197 -93.659  15.096  0.00  0.00           C 0
+ATOM   3777    N PRO H 227     -47.015 -94.400  14.629  0.00  0.00           N 0
+ATOM   3766   CB ALA H 225     -42.439 -94.440  17.578  0.00  0.00           C 0
+ATOM   3804    O THR H 231     -45.380 -97.233  18.354  0.00  0.00           O 0
+ATOM   3770    O HIS H 226     -47.640 -96.217  15.797  0.00  0.00           O 0
+ATOM   3769    C HIS H 226     -46.820 -95.653  15.051  0.00  0.00           C 0
+ATOM   3812   CB LYS H 232     -44.225 -97.067  21.739  0.00  0.00           C 0
+ATOM   3813   CG LYS H 232     -44.678 -95.722  21.208  0.00  0.00           C 0
+ATOM   3814   CD LYS H 232     -44.495 -94.641  22.258  0.00  0.00           C 0
+ATOM   3808    N LYS H 232     -45.362 -98.591  20.162  0.00  0.00           N 0
+ATOM   3815   CE LYS H 232     -45.006 -93.300  21.768  0.00  0.00           C 0
+ATOM   3782   CG PRO H 227     -46.455 -92.181  14.302  0.00  0.00           C 0
+ATOM   3781   CB PRO H 227     -47.920 -92.223  14.624  0.00  0.00           C 0
+TER
+END
