@@ -147,27 +147,6 @@ def openfe_create_network(self):
         )
     )
 
-    # supplier = Chem.SDMolSupplier(
-    #     ligand_sdf,
-    #     removeHs=False
-    # )
-
-    # ligands = []
-
-    # for i, mol in enumerate(supplier):
-
-    #     if mol is None:
-    #         logger.warning(
-    #             f"Failed to read molecule {i}"
-    #         )
-    #         continue
-
-    #     ligands.append(
-    #         SmallMoleculeComponent(
-    #             mol
-    #         )
-    #     )
-
     ligands = []
 
     for mol in Chem.SDMolSupplier(
@@ -270,13 +249,13 @@ def openfe_create_alchemical_network(self):
 
                 sysA_dict = {
                     "ligand": mapping.componentA,
-                    "solvent": solvent,
+                    # "solvent": solvent,
                     "protein": protein,
                 }
 
                 sysB_dict = {
                     "ligand": mapping.componentB,
-                    "solvent": solvent,
+                    # "solvent": solvent,
                     "protein": protein,
                 }
 
@@ -297,8 +276,21 @@ def openfe_create_alchemical_network(self):
 
             settings.protocol_repeats = 1
 
+            # setup will blindly apply barostat settings if we don't set it explicitly for the complex legs.
+
+            if leg == "complex":
+
+                settings.integrator_settings.barostat = (
+                    "MonteCarloMembraneBarostat"
+                )
+
             protocol = RelativeHybridTopologyProtocol(
                 settings=settings
+            )
+
+            logger.debug(
+                f"{leg}: "
+                f"{list(sysA_dict.keys())}"
             )
 
             transformation = Transformation(
@@ -392,6 +384,8 @@ def openfe_run_network(self):
         f"Found {total} transformations"
     )
 
+    failed = []
+
     for i, transform_json in enumerate(
         json_files,
         start=1
@@ -464,14 +458,49 @@ def openfe_run_network(self):
 
         if proc.returncode != 0:
 
-            raise RuntimeError(
-                f"OpenFE failed for {stem}"
+            logger.error(
+                f"[{i}/{total}] "
+                f"FAILED {stem}"
             )
+
+            failed.append(stem)
+
+            continue
 
         logger.info(
             f"[{i}/{total}] "
             f"Completed {stem}"
         )
+
+    logger.info(
+        f"Completed "
+        f"{total - len(failed)} / {total} "
+        f"transformations"
+    )
+
+    # deal with failed jobs
+
+    if failed:
+
+        logger.warning(
+            f"{len(failed)} transformations failed"
+        )
+
+        for name in failed:
+
+            logger.warning(
+                f"FAILED: {name}"
+            )
+
+    failed_file = os.path.join(
+        output_dir,
+        "failed_transformations.txt"
+    )
+
+    with open(failed_file, "w") as f:
+
+        for name in failed:
+            f.write(f"{name}\n")
 
     self.openfe_results_dir = output_dir
 
