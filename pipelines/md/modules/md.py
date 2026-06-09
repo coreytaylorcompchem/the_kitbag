@@ -697,6 +697,39 @@ class MDWorkflow:
         raw_pdb = os.path.join(output_dir, "_temp_raw.pdb")
         state = self.simulation.context.getState(getPositions=True, enforcePeriodicBox=False)
 
+        # save box vectors as json for later use 
+
+        box = state.getPeriodicBoxVectors()
+
+        box_data = {
+            "box_vectors": [
+                [
+                    box[0][0].value_in_unit(nanometer),
+                    box[0][1].value_in_unit(nanometer),
+                    box[0][2].value_in_unit(nanometer),
+                ],
+                [
+                    box[1][0].value_in_unit(nanometer),
+                    box[1][1].value_in_unit(nanometer),
+                    box[1][2].value_in_unit(nanometer),
+                ],
+                [
+                    box[2][0].value_in_unit(nanometer),
+                    box[2][1].value_in_unit(nanometer),
+                    box[2][2].value_in_unit(nanometer),
+                ],
+            ]
+        }
+
+        with open(
+            equilibrated_pdb_path.replace(
+                ".pdb",
+                "_box.json"
+            ),
+            "w"
+        ) as f:
+            json.dump(box_data, f, indent=2)
+
         with open(raw_pdb, "w") as f:
             PDBFile.writeFile(self.topology, state.getPositions(), f)
 
