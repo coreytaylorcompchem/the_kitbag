@@ -1,2 +1,0 @@
-cluster_id,n_members,mean_log_enrichment,centroid_smiles,centroid_image
-0,985,0.5148878990852471,CNC(=O)[C@H](CCNC(=O)[C@H](CCC1CCCCC1)NC(=O)c1ccc(C(=O)O)cc1)NC(=O)CC1CCCC1,outputs/streamed_ddr1/dimensionality_reduction/clusters/centroid_molecules/cluster_0_centroid.png
