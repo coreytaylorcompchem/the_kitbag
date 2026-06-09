@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    33:
+HEADER 0  - Pocket Score                      : -0.0735
+HEADER 1  - Drug Score                        : 0.0007
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 4.1893
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6870
+HEADER 5  - Mean B-factor of pocket residues  : 0.3244
+HEADER 6  - Hydrophobicity Score              : 13.1429
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.8571
+HEADER 9  - Pocket volume (Monte Carlo)       : 167.6046
+HEADER 10  -Pocket volume (convex hull)       : 0.5208
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.3500
+ATOM   5779   CB THR E 238     130.067 171.952 157.555  0.00  0.00           C 0
+ATOM   5040   CB ASP E 137     128.200 172.619 152.470  0.00  0.00           C 0
+ATOM   5043  OD2 ASP E 137     129.090 174.823 152.362  0.54  8.57           O 1
+ATOM   5775    N THR E 238     130.931 169.740 156.946  0.81  1.09           N 0
+ATOM   5764   CB PRO E 236     130.673 169.348 151.211  0.00  0.00           C 0
+ATOM   5770    O LEU E 237     133.112 169.224 156.918  0.00  0.00           O 0
+ATOM   5776   CA THR E 238     131.120 170.879 157.828  0.00  0.00           C 0
+ATOM   5762    C PRO E 236     130.939 168.184 153.452  0.00  0.00           C 0
+ATOM   4594   CA ALA E  61     137.220 170.567 150.012  0.00  0.00           C 0
+ATOM   4492  CE3 TRP E  47     135.629 167.854 153.094  0.00  0.00           C 0
+ATOM   4597   CB ALA E  61     137.973 171.069 151.242  0.00  0.00           C 0
+ATOM   4598    N ASP E  62     135.798 172.372 149.262  0.63  3.28           N 0
+ATOM   4485    O TRP E  47     137.725 169.907 154.599  0.57  5.36           O 0
+ATOM   5767    N LEU E 237     131.886 168.003 154.370  0.78  1.09           N 0
+ATOM   5761   CA PRO E 236     131.396 168.257 152.003  0.00  0.00           C 0
+ATOM   4494  CZ3 TRP E  47     135.414 167.698 151.740  0.00  0.00           C 0
+ATOM   5769    C LEU E 237     131.952 168.971 156.599  0.00  0.00           C 0
+TER
+END

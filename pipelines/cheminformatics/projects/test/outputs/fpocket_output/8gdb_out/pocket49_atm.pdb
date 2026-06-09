@@ -1,0 +1,45 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    49:
+HEADER 0  - Pocket Score                      : -0.2288
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    27
+HEADER 3  - Mean alpha-sphere radius          : 4.2374
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5821
+HEADER 5  - Mean B-factor of pocket residues  : 0.2842
+HEADER 6  - Hydrophobicity Score              : 1.0000
+HEADER 7  - Polarity Score                    :    11
+HEADER 8  - Amino Acid based volume Score     : 4.4167
+HEADER 9  - Pocket volume (Monte Carlo)       : 471.0591
+HEADER 10  -Pocket volume (convex hull)       : 23.9071
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 2.0000
+HEADER 13 - Number of apolar alpha sphere     :     3
+HEADER 14 - Proportion of apolar alpha sphere : 0.1111
+ATOM   6352   CA ASP R 132     141.599 126.326 129.517  0.00  0.00           C 0
+ATOM   5737    O GLU R  51     137.574 130.229 134.315  0.00  0.00           O 0
+ATOM   6347    O VAL R 131     142.038 124.168 131.270  0.45  6.43           O 0
+ATOM    232  NH1 ARG A  38     144.624 125.273 132.610  0.35  8.75           N 1
+ATOM   6355   CB ASP R 132     142.909 127.118 129.505  0.00  0.00           C 0
+ATOM    194   NZ LYS A  34     146.397 130.868 132.890  0.00  0.00           N 1
+ATOM   5738   CB GLU R  51     138.100 132.679 133.078  0.00  0.00           C 0
+ATOM   5752  CG2 THR R  53     137.681 126.154 129.851  0.00  0.00           C 0
+ATOM   6315   OH TYR R 127     136.492 122.773 132.436  0.88  1.07           O 0
+ATOM   5742    O THR R  52     135.075 126.235 132.744  0.68  1.07           O 0
+ATOM   5751  OG1 THR R  53     136.021 124.897 131.028  0.00  0.00           O 0
+ATOM   1715  OE1 GLN A 390     135.266 124.594 136.022  0.22  6.43           O 0
+ATOM   5740   CA THR R  52     135.619 128.414 133.509  0.00  0.00           C 0
+ATOM   1686  CD2 HIS A 387     137.843 120.853 137.536  0.00  0.00           C 0
+ATOM   6312  CE1 TYR R 127     138.081 121.545 133.694  0.00  0.00           C 0
+ATOM   1688  NE2 HIS A 387     139.063 120.351 137.160  0.00  0.00           N 0
+ATOM   6310  CD1 TYR R 127     138.879 120.440 133.841  0.00  0.00           C 0
+ATOM   6317   CA SER R 128     143.126 120.173 135.312  0.00  0.00           C 0
+ATOM   6356    N LYS R 133     140.252 128.199 128.757  0.69  5.47           N 0
+ATOM   6360   CB LYS R 133     138.841 130.195 128.612  0.00  0.00           C 0
+ATOM   6307    O TYR R 127     142.074 120.608 132.830  0.27  2.14           O 0
+ATOM   6319    O SER R 128     144.958 121.664 134.953  0.50  4.29           O 0
+ATOM   5741    C THR R  52     135.393 127.382 132.413  0.00  0.00           C 0
+TER
+END

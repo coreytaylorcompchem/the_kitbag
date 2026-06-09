@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    29:
+HEADER 0  - Pocket Score                      : -0.1460
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    23
+HEADER 3  - Mean alpha-sphere radius          : 4.1671
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4979
+HEADER 5  - Mean B-factor of pocket residues  : 0.7423
+HEADER 6  - Hydrophobicity Score              : -17.0000
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 4.8571
+HEADER 9  - Pocket volume (Monte Carlo)       : 266.2870
+HEADER 10  -Pocket volume (convex hull)       : 8.1176
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.1739
+ATOM   1839  OE2 GLU A 303     -46.760 -52.621 -13.880  0.00  0.00           O 0
+ATOM   1856   CG GLU A 305     -42.297 -52.433 -11.492  0.00  0.00           C 0
+ATOM   1855   CB GLU A 305     -43.558 -53.288 -11.492  0.00  0.00           C 0
+ATOM   1880   CE LYS A 308     -45.329 -49.627 -16.331  0.00  0.00           C 0
+ATOM   4122  OD1 ASN L  52     -40.943 -56.977 -16.881  0.43  9.64           O 0
+ATOM   1881   NZ LYS A 308     -45.830 -50.468 -17.457  0.00  0.00           N 0
+ATOM   1858  OE1 GLU A 305     -40.961 -54.384 -11.210  0.57  3.21           O 0
+ATOM   4143  CE1 TYR L  54     -42.311 -58.922 -12.186  0.00  0.00           C 0
+ATOM   1838  OE1 GLU A 303     -48.480 -53.938 -13.558  0.00  0.00           O 0
+ATOM   4626  OD1 ASP L 114     -44.087 -61.419 -14.778  0.54  9.64           O 0
+ATOM   1844   CB ARG A 304     -46.750 -57.100  -9.829  0.00  0.00           C 0
+ATOM   4123  ND2 ASN L  52     -42.021 -58.932 -17.125  0.15  7.66           N 0
+ATOM   4121   CG ASN L  52     -41.162 -58.130 -16.508  0.00  0.00           C 0
+ATOM   1846   CD ARG A 304     -47.330 -59.513 -10.235  0.00  0.00           C 0
+ATOM   1845   CG ARG A 304     -47.878 -58.120  -9.930  0.00  0.00           C 0
+ATOM   4146   OH TYR L  54     -42.760 -57.058 -10.770  0.88  2.14           O 0
+ATOM   1851    N GLU A 305     -45.326 -54.394 -10.205  0.68  1.09           N 0
+TER
+END

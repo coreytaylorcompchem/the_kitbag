@@ -1,0 +1,4 @@
+cluster,medoid_smiles,scaffold_smiles,cluster_size,mean_log_enrichment,medoid_image
+1,CNC(=O)[C@H](CCNC(=O)[C@H](CCC1CCCCC1)NC(=O)c1cccc(OC(F)(F)F)c1)NC(=O)[C@@H]1CCCO1,O=C(N[C@@H](CCC1CCCCC1)C(=O)NCCCNC(=O)[C@@H]1CCCO1)c1ccccc1,5,0.5658708144079881,outputs/streamed_ddr1/dimensionality_reduction/synthon_fp_a_medoids/cluster_1_medoid_vs_scaffold.png
+0,CCC(C)C(=O)N1CCOCC1C(=O)N[C@@H](CCc1ccccc1)C(=O)NC,O=C(NCCCc1ccccc1)C1COCCN1,948,0.5227337245740196,outputs/streamed_ddr1/dimensionality_reduction/synthon_fp_a_medoids/cluster_0_medoid_vs_scaffold.png
+-1,CNC(=O)[C@H](CCNC(=O)[C@@H](Cc1cccc(Cl)c1)NC(=O)C1CC(O)C1)NC(=O)C1CCCCC1,O=C(NCCCNC(=O)[C@@H](Cc1ccccc1)NC(=O)C1CCC1)C1CCCCC1,47,0.40511176281130684,outputs/streamed_ddr1/dimensionality_reduction/synthon_fp_a_medoids/cluster_-1_medoid_vs_scaffold.png

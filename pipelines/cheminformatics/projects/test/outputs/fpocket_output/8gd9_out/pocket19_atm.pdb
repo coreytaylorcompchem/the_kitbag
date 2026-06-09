@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    19:
+HEADER 0  - Pocket Score                      : -0.0349
+HEADER 1  - Drug Score                        : 0.0021
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 3.7420
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4261
+HEADER 5  - Mean B-factor of pocket residues  : 0.3484
+HEADER 6  - Hydrophobicity Score              : 28.3333
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 203.0124
+HEADER 10  -Pocket volume (convex hull)       : 6.6111
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 11.0000
+HEADER 13 - Number of apolar alpha sphere     :    12
+HEADER 14 - Proportion of apolar alpha sphere : 0.6667
+ATOM    322   CG LYS A 211      99.452 129.733 119.247  0.00  0.00           C 0
+ATOM    373   CB ASN A 218      98.766 123.109 121.399  0.00  0.00           C 0
+ATOM    325   NZ LYS A 211     102.327 128.918 119.030  0.60  5.47           N 1
+ATOM    323   CD LYS A 211     100.475 129.878 120.346  0.00  0.00           C 0
+ATOM    380    O PHE A 219      97.087 125.988 117.699  0.88  2.14           O 0
+ATOM    321   CB LYS A 211      98.060 129.568 119.806  0.00  0.00           C 0
+ATOM    375  OD1 ASN A 218      97.901 123.889 123.479  0.67  7.50           O 0
+ATOM    326    N PHE A 212      95.298 127.730 119.318  0.71  3.28           N 0
+ATOM    392   CB HIS A 220     100.425 126.503 115.919  0.00  0.00           C 0
+ATOM    379    C PHE A 219      97.492 125.064 116.981  0.00  0.00           C 0
+ATOM    216   CB THR A  40     102.757 122.412 118.237  0.00  0.00           C 0
+ATOM    218  CG2 THR A  40     103.168 122.919 119.602  0.00  0.00           C 0
+ATOM    374   CG ASN A 218      98.738 123.198 122.903  0.00  0.00           C 0
+ATOM    376  ND2 ASN A 218      99.652 122.494 123.553  0.56  8.75           N 0
+TER
+END

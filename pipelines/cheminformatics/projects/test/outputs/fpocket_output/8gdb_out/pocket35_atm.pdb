@@ -1,0 +1,47 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    35:
+HEADER 0  - Pocket Score                      : -0.1463
+HEADER 1  - Drug Score                        : 0.0465
+HEADER 2  - Number of alpha spheres           :    30
+HEADER 3  - Mean alpha-sphere radius          : 3.7537
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6338
+HEADER 5  - Mean B-factor of pocket residues  : 0.1866
+HEADER 6  - Hydrophobicity Score              : 63.4000
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 334.3717
+HEADER 10  -Pocket volume (convex hull)       : 45.5851
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 22.7500
+HEADER 13 - Number of apolar alpha sphere     :    24
+HEADER 14 - Proportion of apolar alpha sphere : 0.8000
+ATOM   6890   CB CYS R 207     124.584 109.461 134.591  0.00  0.00           C 0
+ATOM   7060  CG1 VAL R 271     121.666 111.234 137.900  0.00  0.00           C 0
+ATOM   7093  CD1 ILE R 275     118.435 110.446 135.322  0.00  0.00           C 0
+ATOM   6915  CD1 LEU R 211     123.777 106.152 138.872  0.00  0.00           C 0
+ATOM   7117   CG LEU R 279     114.479 112.045 129.079  0.00  0.00           C 0
+ATOM   7092  CG2 ILE R 275     116.586 112.060 133.412  0.00  0.00           C 0
+ATOM   7118  CD1 LEU R 279     113.295 111.954 130.022  0.00  0.00           C 0
+ATOM   7119  CD2 LEU R 279     114.443 110.916 128.060  0.00  0.00           C 0
+ATOM   6891   SG CYS R 207     123.567 110.916 134.299  0.00  0.00           S 0
+ATOM   7091  CG1 ILE R 275     118.793 111.050 133.988  0.00  0.00           C 0
+ATOM   6870  CG2 VAL R 204     123.500 107.217 128.979  0.00  0.00           C 0
+ATOM   7089    O ILE R 275     117.254 113.623 130.659  0.50  2.14           O 0
+ATOM   7087   CA ILE R 275     118.715 113.076 132.500  0.00  0.00           C 0
+ATOM   7110   CB SER R 278     119.760 112.633 128.049  0.00  0.00           C 0
+ATOM   7111   OG SER R 278     121.145 112.729 128.327  0.74  2.14           O 0
+ATOM   6858    C ASN R 203     125.654 110.598 130.300  0.00  0.00           C 0
+ATOM   6840  CG1 VAL R 200     121.978 108.873 125.041  0.00  0.00           C 0
+ATOM   7086    N ILE R 275     119.865 113.852 132.964  0.00  0.00           N 0
+ATOM   6865   CA VAL R 204     125.319 108.184 130.406  0.00  0.00           C 0
+ATOM   6869  CG1 VAL R 204     125.110 105.688 130.103  0.00  0.00           C 0
+ATOM   6864    N VAL R 204     125.474 109.436 129.662  0.00  0.00           N 0
+ATOM   6859    O ASN R 203     125.689 110.676 131.535  0.00  0.00           O 0
+ATOM   6867    O VAL R 204     126.524 107.470 132.374  0.56  2.14           O 0
+ATOM   7081    O LEU R 274     120.545 114.324 130.866  0.00  0.00           O 0
+ATOM   6860   CB ASN R 203     124.480 112.397 129.011  0.00  0.00           C 0
+TER
+END

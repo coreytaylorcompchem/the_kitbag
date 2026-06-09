@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    26:
+HEADER 0  - Pocket Score                      : -0.0900
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.9562
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5608
+HEADER 5  - Mean B-factor of pocket residues  : 0.1615
+HEADER 6  - Hydrophobicity Score              : 17.8750
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 5.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 195.4947
+HEADER 10  -Pocket volume (convex hull)       : 0.9755
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.4706
+ATOM   5140   CB VAL L 181     -33.060-110.127  -2.636  0.00  0.00           C 0
+ATOM   5141  CG1 VAL L 181     -31.977-109.131  -2.250  0.00  0.00           C 0
+ATOM   5118    O GLN L 178     -34.137-112.413  -5.310  0.00  0.00           O 0
+ATOM   5158  ND2 ASN L 183     -30.816-105.556  -3.576  0.00  0.00           N 0
+ATOM   5107    O ARG L 177     -30.308-114.505  -4.066  0.53  2.14           O 0
+ATOM   5033    O VAL L 168     -26.377-108.898  -4.896  0.00  0.00           O 0
+ATOM   5038   CA LYS L 169     -25.190-111.263  -3.981  0.00  0.00           C 0
+ATOM   5102  OE1 GLU L 176     -26.977-113.748  -8.114  0.26  5.36           O 0
+ATOM   5120   CG GLN L 178     -30.870-113.964  -7.931  0.00  0.00           C 0
+ATOM   5052  CD1 TRP L 170     -28.881-111.167  -0.628  0.00  0.00           C 0
+ATOM   5142  CG2 VAL L 181     -32.499-111.540  -2.647  0.00  0.00           C 0
+ATOM   5119   CB GLN L 178     -32.263-113.713  -7.379  0.00  0.00           C 0
+ATOM   5046    N TRP L 170     -26.461-112.821  -2.624  0.65  1.09           N 0
+ATOM   5116   CA GLN L 178     -32.370-113.905  -5.858  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    31:
+HEADER 0  - Pocket Score                      : -0.1035
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 4.1066
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4811
+HEADER 5  - Mean B-factor of pocket residues  : 0.6714
+HEADER 6  - Hydrophobicity Score              : 24.7778
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.4444
+HEADER 9  - Pocket volume (Monte Carlo)       : 245.6196
+HEADER 10  -Pocket volume (convex hull)       : 6.9180
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     1
+HEADER 14 - Proportion of apolar alpha sphere : 0.0556
+ATOM   4333    N PRO G  53     143.402 114.463  94.478  0.36  4.37           N 0
+ATOM   4337   CB PRO G  53     143.126 112.612  95.912  0.00  0.00           C 0
+ATOM   4313    O LEU G  50     138.775 116.985  93.152  0.00  0.00           O 0
+ATOM   4321    O LEU G  51     141.270 115.915  90.979  0.43  6.43           O 0
+ATOM   1870    O ARG B  42     138.104 110.881  89.003  0.00  0.00           O 0
+ATOM   4030    O ASN B 340     137.401 114.748  98.545  0.10  7.50           O 0
+ATOM   1883    O GLN B  44     136.223 110.480  95.376  0.22  7.50           O 0
+ATOM   4334   CA PRO G  53     143.381 114.124  95.907  0.00  0.00           C 0
+ATOM   1894   CG MET B  45     134.154 114.116  95.894  0.00  0.00           C 0
+ATOM   1880    N GLN B  44     135.670 110.683  92.574  0.00  0.00           N 0
+ATOM   4306    O PRO G  49     141.178 117.840  96.035  0.13  3.21           O 0
+ATOM   1878  CG2 ILE B  43     135.662 114.094  91.789  0.00  0.00           C 0
+ATOM   1873   CA ILE B  43     136.004 111.940  90.527  0.00  0.00           C 0
+ATOM   1877  CG1 ILE B  43     136.482 114.141  89.424  0.00  0.00           C 0
+TER
+END

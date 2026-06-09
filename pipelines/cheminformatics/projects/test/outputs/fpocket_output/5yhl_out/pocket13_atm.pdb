@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    13:
+HEADER 0  - Pocket Score                      : -0.0493
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 3.9063
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5254
+HEADER 5  - Mean B-factor of pocket residues  : 0.3366
+HEADER 6  - Hydrophobicity Score              : 3.3333
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.1111
+HEADER 9  - Pocket volume (Monte Carlo)       : 333.8872
+HEADER 10  -Pocket volume (convex hull)       : 9.1762
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.2000
+ATOM   3720    N SER H 219     -25.523-100.604  27.063  0.63  3.28           N 0
+ATOM   3724   CB SER H 219     -27.850-101.255  27.489  0.00  0.00           C 0
+ATOM   3708    O SER H 217     -21.810-101.658  29.173  0.00  0.00           O 0
+ATOM   3725   OG SER H 219     -28.144-100.001  28.080  0.00  0.00           O 0
+ATOM   3721   CA SER H 219     -26.735-101.137  26.453  0.00  0.00           C 0
+ATOM   3701    O PRO H 216     -22.340-104.447  27.192  0.00  0.00           O 0
+ATOM   3849   NZ LYS H 236     -29.593-105.460  28.562  0.00  0.00           N 0
+ATOM   3848   CE LYS H 236     -30.022-105.282  27.149  0.00  0.00           C 0
+ATOM   3692  NE1 TRP H 215     -25.145-104.302  22.517  0.00  0.00           N 0
+ATOM   3714    O GLN H 218     -24.207-101.229  25.340  0.00  0.00           O 0
+ATOM   3853    O ILE H 237     -27.922-105.818  23.320  0.66  4.29           O 0
+ATOM   3873   CD PRO H 239     -25.314-109.519  24.236  0.00  0.00           C 0
+ATOM   3863   CG GLU H 238     -29.903-108.456  24.872  0.00  0.00           C 0
+ATOM   3859   CA GLU H 238     -27.931-108.623  23.238  0.00  0.00           C 0
+ATOM   3865  OE1 GLU H 238     -30.586-110.361  26.133  0.00  0.00           O 0
+ATOM   3862   CB GLU H 238     -28.939-109.367  24.127  0.00  0.00           C 0
+ATOM   3702   CB PRO H 216     -22.360-106.187  24.986  0.00  0.00           C 0
+TER
+END

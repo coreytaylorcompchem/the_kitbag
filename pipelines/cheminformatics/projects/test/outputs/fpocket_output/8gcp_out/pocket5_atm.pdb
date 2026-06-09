@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     5:
+HEADER 0  - Pocket Score                      : 0.0288
+HEADER 1  - Drug Score                        : 0.0017
+HEADER 2  - Number of alpha spheres           :    23
+HEADER 3  - Mean alpha-sphere radius          : 4.1013
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5944
+HEADER 5  - Mean B-factor of pocket residues  : 0.4273
+HEADER 6  - Hydrophobicity Score              : 49.3750
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.3750
+HEADER 9  - Pocket volume (Monte Carlo)       : 320.7680
+HEADER 10  -Pocket volume (convex hull)       : 8.8696
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.4783
+ATOM   6717   CB ALA R 124      77.249  80.484  98.661  0.00  0.00           C 0
+ATOM   1446  OG1 THR A 340      74.782  77.224  97.026  0.00  0.00           O 0
+ATOM   6728   CZ TYR R 125      72.087  80.364  97.937  0.00  0.00           C 0
+ATOM   6726  CE1 TYR R 125      73.209  80.466  97.144  0.00  0.00           C 0
+ATOM   6729   OH TYR R 125      71.489  79.142  98.133  0.00  0.00           O 0
+ATOM   6727  CE2 TYR R 125      71.555  81.482  98.539  0.00  0.00           C 0
+ATOM   6698    O ASN R 122      76.958  81.122 104.730  0.00  0.00           O 0
+ATOM   6707   CB HIS R 123      77.373  84.426 103.388  0.00  0.00           C 0
+ATOM   6710  CD2 HIS R 123      75.755  85.001 105.335  0.00  0.00           C 0
+ATOM   6730    N PHE R 126      75.987  85.855  98.902  0.71  3.28           N 0
+ATOM   6725  CD2 TYR R 125      72.153  82.710  98.344  0.00  0.00           C 0
+ATOM   1478  CD1 ILE A 344      79.172  76.370  99.232  0.00  0.00           C 0
+ATOM   6690    O ILE R 121      79.711  78.456 102.834  0.47  4.29           O 0
+ATOM   6704   CA HIS R 123      77.423  83.024 102.765  0.00  0.00           C 0
+ATOM   6718    N TYR R 125      76.007  83.113  98.115  0.00  0.00           N 0
+ATOM   6705    C HIS R 123      77.781  83.070 101.279  0.00  0.00           C 0
+ATOM   6734   CB PHE R 126      76.457  87.162 100.920  0.00  0.00           C 0
+ATOM   6713    N ALA R 124      77.469  81.982 100.580  0.77  1.09           N 0
+TER
+END

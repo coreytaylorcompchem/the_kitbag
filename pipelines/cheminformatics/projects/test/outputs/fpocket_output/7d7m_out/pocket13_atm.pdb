@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    13:
+HEADER 0  - Pocket Score                      : 0.0660
+HEADER 1  - Drug Score                        : 0.0004
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 3.7555
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4214
+HEADER 5  - Mean B-factor of pocket residues  : 0.1623
+HEADER 6  - Hydrophobicity Score              : 40.0000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 125.2042
+HEADER 10  -Pocket volume (convex hull)       : 1.9966
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1000
+ATOM   2887   OG SER B 122     138.713 151.550 113.115  0.74  2.14           O 0
+ATOM   2875  CD1 ILE B 120     143.117 148.857 111.279  0.00  0.00           C 0
+ATOM   2712    N SER B  97     142.542 146.447 117.339  0.69  1.09           N 0
+ATOM   2711   CB ARG B  96     140.487 145.362 115.229  0.00  0.00           C 0
+ATOM   2717   OG SER B  97     144.809 148.523 116.687  0.39  4.29           O 0
+ATOM   2707    N ARG B  96     139.700 146.368 117.313  0.74  1.09           N 0
+ATOM   2907   OH TYR B 124     136.736 148.929 115.716  0.47  4.29           O 0
+ATOM   2836    O CYS B 114     140.896 154.484 114.329  0.00  0.00           O 0
+ATOM   2838   SG CYS B 114     139.729 153.618 116.729  0.00  0.00           S 0
+ATOM   2706  CD2 LEU B  95     138.322 150.374 117.747  0.00  0.00           C 0
+ATOM   2843    N GLY B 116     144.749 153.881 115.164  0.51  1.09           N 0
+ATOM   2715    O SER B  97     143.393 148.694 118.897  0.56  2.14           O 0
+ATOM   2873  CG1 ILE B 120     143.608 150.282 111.158  0.00  0.00           C 0
+ATOM   2871    O ILE B 120     143.611 153.373 111.698  0.00  0.00           O 0
+ATOM   2844   CA GLY B 116     145.634 153.185 116.071  0.00  0.00           C 0
+ATOM   2744  CG2 VAL B 100     142.756 152.500 120.362  0.00  0.00           C 0
+ATOM   2705  CD1 LEU B  95     139.818 151.377 119.648  0.00  0.00           C 0
+TER
+END

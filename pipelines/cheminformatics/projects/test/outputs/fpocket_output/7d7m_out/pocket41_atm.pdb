@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    41:
+HEADER 0  - Pocket Score                      : -0.0770
+HEADER 1  - Drug Score                        : 0.0022
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 3.7152
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4627
+HEADER 5  - Mean B-factor of pocket residues  : 0.6091
+HEADER 6  - Hydrophobicity Score              : 27.0000
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 3.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 151.2369
+HEADER 10  -Pocket volume (convex hull)       : 3.6236
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.6111
+ATOM   6094   CA GLY D 355     165.691 150.674 142.202  0.00  0.00           C 0
+ATOM   1515  CD1 ILE A 263     171.434 150.296 145.520  0.00  0.00           C 0
+ATOM   1529   CB ALA A 266     164.676 150.127 147.839  0.00  0.00           C 0
+ATOM   1513  CG1 ILE A 263     171.017 149.607 144.241  0.00  0.00           C 0
+ATOM   6093    N GLY D 355     166.574 151.693 141.667  0.89  1.09           N 0
+ATOM   6089   CA ASP D 354     167.300 153.984 141.208  0.00  0.00           C 0
+ATOM   6090    C ASP D 354     166.265 152.987 141.713  0.00  0.00           C 0
+ATOM   6091    O ASP D 354     165.184 153.388 142.151  0.00  0.00           O 0
+ATOM   6088    N ASP D 354     168.384 153.345 140.467  0.55  7.66           N 0
+ATOM   1525    N ALA A 266     166.568 149.142 149.037  0.61  5.47           N 0
+ATOM   1521    N GLY A 265     168.937 147.647 148.581  0.57  2.19           N 0
+ATOM   1511    O ILE A 263     169.453 146.974 144.241  0.00  0.00           O 0
+ATOM   6123   OH TYR D 358     166.695 146.980 142.671  0.68  8.57           O 0
+ATOM   1517   CA ALA A 264     168.612 146.052 146.747  0.00  0.00           C 0
+TER
+END

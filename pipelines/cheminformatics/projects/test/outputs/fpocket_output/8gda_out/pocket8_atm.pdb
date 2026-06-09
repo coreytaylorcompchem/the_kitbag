@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     8:
+HEADER 0  - Pocket Score                      : 0.0540
+HEADER 1  - Drug Score                        : 0.0019
+HEADER 2  - Number of alpha spheres           :    21
+HEADER 3  - Mean alpha-sphere radius          : 3.6587
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4824
+HEADER 5  - Mean B-factor of pocket residues  : 0.6921
+HEADER 6  - Hydrophobicity Score              : 27.5000
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 79.3067
+HEADER 10  -Pocket volume (convex hull)       : 0.5027
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 15.0000
+HEADER 13 - Number of apolar alpha sphere     :    16
+HEADER 14 - Proportion of apolar alpha sphere : 0.7619
+ATOM   5873  OD2 ASP R  65     162.094 150.900 160.183  0.00  0.00           O 1
+ATOM   5844   CG LEU R  61     164.872 153.926 160.002  0.00  0.00           C 0
+ATOM   5848   CA ALA R  62     160.329 155.088 160.619  0.00  0.00           C 0
+ATOM   7481   CB ASP R 325     164.452 150.546 163.090  0.00  0.00           C 0
+ATOM   5851   CB ALA R  62     159.913 156.140 161.644  0.00  0.00           C 0
+ATOM   5847    N ALA R  62     161.494 155.545 159.872  0.00  0.00           N 0
+ATOM   5846  CD2 LEU R  61     166.056 154.096 160.932  0.00  0.00           C 0
+ATOM   5825    O VAL R  58     162.746 157.978 160.857  0.55  1.07           O 0
+ATOM   5828  CG2 VAL R  58     164.697 158.576 163.427  0.00  0.00           C 0
+ATOM   7533  CD1 ILE R 330     161.906 158.030 165.813  0.00  0.00           C 0
+ATOM   7485    N PRO R 326     162.818 151.656 165.573  0.00  0.00           N 0
+ATOM   7479    C ASP R 325     164.137 151.479 165.417  0.00  0.00           C 0
+ATOM   7480    O ASP R 325     164.942 152.264 165.952  0.84  1.07           O 0
+ATOM   7486   CA PRO R 326     162.343 152.810 166.351  0.00  0.00           C 0
+ATOM   7518   CB TYR R 329     166.588 155.285 165.963  0.00  0.00           C 0
+TER
+END

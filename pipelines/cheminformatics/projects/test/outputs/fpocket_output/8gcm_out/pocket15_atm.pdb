@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    15:
+HEADER 0  - Pocket Score                      : -0.0101
+HEADER 1  - Drug Score                        : 0.0007
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.5962
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4059
+HEADER 5  - Mean B-factor of pocket residues  : 0.3244
+HEADER 6  - Hydrophobicity Score              : 25.0000
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 4.4444
+HEADER 9  - Pocket volume (Monte Carlo)       : 194.3690
+HEADER 10  -Pocket volume (convex hull)       : 4.3611
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 4.0000
+HEADER 13 - Number of apolar alpha sphere     :     5
+HEADER 14 - Proportion of apolar alpha sphere : 0.2941
+ATOM   4519   OH TYR E  50     136.199 156.277 151.160  0.66  2.14           O 0
+ATOM   5759   OH TYR E 235     132.543 158.359 151.325  0.68  1.07           O 0
+ATOM   4560  CG2 THR E  57     135.518 157.368 146.100  0.00  0.00           C 0
+ATOM     50   CB ALA A  11     132.845 154.099 151.296  0.00  0.00           C 0
+ATOM     39    C LYS A  10     130.557 153.304 148.494  0.00  0.00           C 0
+ATOM     46    N ALA A  11     131.073 153.758 149.644  0.61  2.19           N 0
+ATOM     40    O LYS A  10     131.197 152.573 147.726  0.00  0.00           O 0
+ATOM     41   CB LYS A  10     129.122 155.083 147.482  0.00  0.00           C 0
+ATOM   4580   OH TYR E  59     132.299 159.979 146.359  0.66  8.57           O 0
+ATOM     43   CD LYS A  10     127.917 156.795 146.121  0.00  0.00           C 0
+ATOM   5757  CE2 TYR E 235     131.628 160.087 149.980  0.00  0.00           C 0
+ATOM     47   CA ALA A  11     132.402 153.317 150.065  0.00  0.00           C 0
+ATOM     18    O ALA A   7     129.892 156.207 151.026  0.37  1.07           O 0
+ATOM     67   CB GLU A  14     134.431 151.475 146.764  0.00  0.00           C 0
+ATOM   4559  OG1 THR E  57     136.741 155.666 145.105  0.62  5.36           O 0
+ATOM     70  OE1 GLU A  14     135.748 151.618 144.314  0.46  5.36           O 0
+ATOM   4533   OG SER E  52     138.111 153.984 148.941  0.42  4.29           O 0
+TER
+END

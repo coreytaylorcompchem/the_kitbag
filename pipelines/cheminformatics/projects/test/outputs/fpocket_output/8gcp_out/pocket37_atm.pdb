@@ -1,0 +1,60 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    37:
+HEADER 0  - Pocket Score                      : -0.2317
+HEADER 1  - Drug Score                        : 0.0553
+HEADER 2  - Number of alpha spheres           :    54
+HEADER 3  - Mean alpha-sphere radius          : 3.8154
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4305
+HEADER 5  - Mean B-factor of pocket residues  : 0.8261
+HEADER 6  - Hydrophobicity Score              : 46.2857
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.5714
+HEADER 9  - Pocket volume (Monte Carlo)       : 537.6968
+HEADER 10  -Pocket volume (convex hull)       : 143.5319
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 19.0476
+HEADER 13 - Number of apolar alpha sphere     :    21
+HEADER 14 - Proportion of apolar alpha sphere : 0.3889
+ATOM   1516   CB LYS A 349      88.901  80.664  92.455  0.00  0.00           C 0
+ATOM   1515    O LYS A 349      90.507  83.034  93.966  0.57  1.07           O 0
+ATOM   1546    O PHE A 354      94.475  78.537  93.640  0.79  8.57           O 0
+ATOM   6176    N GLN R  49      93.834  84.819  88.969  0.00  0.00           N 0
+ATOM   6201  CG2 THR R  52      91.680  85.775  92.285  0.00  0.00           C 0
+ATOM   6220    N TYR R  55      94.816  88.701  95.831  0.48  1.09           N 0
+ATOM   6216  CD2 PHE R  54      95.592  84.981  98.062  0.00  0.00           C 0
+ATOM   6200  OG1 THR R  52      92.984  87.131  93.734  0.46  1.07           O 0
+ATOM   6179    O GLN R  49      95.250  87.004  91.329  0.57  1.07           O 0
+ATOM   6181   CG GLN R  49      97.013  84.220  91.012  0.00  0.00           C 0
+ATOM   1548  OXT PHE A 354      96.047  79.288  94.831  0.29  7.50           O 0
+ATOM   6180   CB GLN R  49      96.037  84.184  89.847  0.00  0.00           C 0
+ATOM   6183  OE1 GLN R  49      98.201  82.478  89.879  0.00  0.00           O 0
+ATOM   6224   CB TYR R  55      95.873  89.366  93.738  0.00  0.00           C 0
+ATOM   6226  CD1 TYR R  55      98.118  89.694  92.650  0.00  0.00           C 0
+ATOM   1532   CA GLY A 352      92.411  82.876  97.379  0.00  0.00           C 0
+ATOM   1534    O GLY A 352      94.097  81.996  98.789  0.33  2.14           O 0
+ATOM   6213   CB PHE R  54      93.554  86.328  97.556  0.00  0.00           C 0
+ATOM   1545    C PHE A 354      95.018  78.619  94.744  0.00  0.00           C 0
+ATOM   6177   CA GLN R  49      94.774  85.020  90.065  0.00  0.00           C 0
+ATOM   6221   CA TYR R  55      96.005  89.323  95.259  0.00  0.00           C 0
+ATOM   6212    O PHE R  54      95.632  88.724  97.932  0.00  0.00           O 0
+ATOM   6251   CB VAL R  58      98.722  88.671  99.288  0.00  0.00           C 0
+ATOM   7844  CG2 ILE R 330     100.738  85.356  99.008  0.00  0.00           C 0
+ATOM   7872  NH2 ARG R 333      98.221  81.179  97.876  0.70  8.75           N 0
+ATOM   6218  CE2 PHE R  54      96.472  84.392  98.949  0.00  0.00           C 0
+ATOM   6171   CA SER R  45     102.296  86.363  88.547  0.00  0.00           C 0
+ATOM   6184  NE2 GLN R  49      99.120  83.294  91.758  0.00  0.00           N 0
+ATOM   6174   CB SER R  45     101.393  86.404  89.781  0.00  0.00           C 0
+ATOM   7889  CG2 VAL R 336     103.975  80.210  93.640  0.00  0.00           C 0
+ATOM   6143    O VAL R  41     104.964  86.446  91.531  0.58  5.36           O 0
+ATOM   7842   CB ILE R 330     102.157  85.030  98.690  0.00  0.00           C 0
+ATOM   7869   NE ARG R 333      99.933  79.797  97.208  0.74  9.84           N 0
+ATOM   6145  CG1 VAL R  41     106.294  84.368  93.510  0.00  0.00           C 0
+ATOM   6182   CD GLN R  49      98.167  83.253  90.834  0.00  0.00           C 0
+ATOM   6153  CD1 LEU R  42     101.752  87.647  95.460  0.00  0.00           C 0
+ATOM   6175   OG SER R  45     100.867  87.702  89.981  0.00  0.00           O 0
+ATOM   7841    O ILE R 330     104.102  83.572  97.298  0.88  2.14           O 0
+TER
+END

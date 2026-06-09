@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    11:
+HEADER 0  - Pocket Score                      : -0.0299
+HEADER 1  - Drug Score                        : 0.0007
+HEADER 2  - Number of alpha spheres           :    24
+HEADER 3  - Mean alpha-sphere radius          : 4.1139
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5348
+HEADER 5  - Mean B-factor of pocket residues  : 0.5539
+HEADER 6  - Hydrophobicity Score              : 7.1000
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.8000
+HEADER 9  - Pocket volume (Monte Carlo)       : 254.0377
+HEADER 10  -Pocket volume (convex hull)       : 6.2206
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.2500
+ATOM   4269  CD2 LEU L  69     -30.360 -70.655  -0.127  0.00  0.00           C 0
+ATOM   4254   NZ LYS L  67     -31.051 -71.136   5.757  0.00  0.00           N 0
+ATOM   4366   CD PRO L  81     -25.941 -68.612   3.481  0.00  0.00           C 0
+ATOM   4359  CG2 VAL L  80     -30.259 -66.690   2.552  0.00  0.00           C 0
+ATOM   4211   CE LYS L  61     -28.488 -78.017   3.968  0.00  0.00           C 0
+ATOM   4528   CB GLU L 103     -23.225 -77.201   5.344  0.00  0.00           C 0
+ATOM   4530   CD GLU L 103     -22.636 -74.976   6.391  0.00  0.00           C 0
+ATOM   4531  OE1 GLU L 103     -22.643 -75.574   7.487  0.71  5.36           O 0
+ATOM   4539  OD1 ASP L 104     -23.939 -74.437   1.213  0.59  2.14           O 0
+ATOM   4392  CE1 PHE L  84     -25.036 -70.982  -0.101  0.00  0.00           C 0
+ATOM   4365   CG PRO L  81     -24.589 -69.196   3.775  0.00  0.00           C 0
+ATOM   4358  CG1 VAL L  80     -28.209 -67.086   1.176  0.00  0.00           C 0
+ATOM   4383  NH2 ARG L  83     -22.644 -72.615   2.749  0.00  0.00           N 0
+ATOM   4527    O GLU L 103     -25.095 -77.150   3.254  0.57  1.07           O 0
+ATOM   4532  OE2 GLU L 103     -22.595 -73.731   6.294  0.65  5.36           O 0
+ATOM   4193  OE1 GLN L  59     -28.578 -75.201   0.999  0.56  6.43           O 0
+ATOM   4194  NE2 GLN L  59     -30.603 -75.057   1.956  0.40  7.66           N 0
+ATOM   4529   CG GLU L 103     -22.681 -75.799   5.118  0.00  0.00           C 0
+TER
+END

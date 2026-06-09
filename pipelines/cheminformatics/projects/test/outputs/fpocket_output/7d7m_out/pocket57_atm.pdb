@@ -1,0 +1,35 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    57:
+HEADER 0  - Pocket Score                      : -0.1110
+HEADER 1  - Drug Score                        : 0.0023
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.9777
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.7227
+HEADER 5  - Mean B-factor of pocket residues  : 0.4248
+HEADER 6  - Hydrophobicity Score              : 68.3333
+HEADER 7  - Polarity Score                    :     1
+HEADER 8  - Amino Acid based volume Score     : 5.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 127.5713
+HEADER 10  -Pocket volume (convex hull)       : 0.3030
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 12.0000
+HEADER 13 - Number of apolar alpha sphere     :    13
+HEADER 14 - Proportion of apolar alpha sphere : 0.8667
+ATOM    794   CZ PHE A 126     143.535 133.715 144.249  0.00  0.00           C 0
+ATOM    793  CE2 PHE A 126     143.773 132.964 143.124  0.00  0.00           C 0
+ATOM    735  CD2 LEU A 119     146.871 134.752 147.192  0.00  0.00           C 0
+ATOM    765  CE1 HIS A 123     150.542 130.553 146.189  0.00  0.00           C 0
+ATOM    789   CG PHE A 126     145.954 133.929 142.932  0.00  0.00           C 0
+ATOM    763  ND1 HIS A 123     150.540 131.282 145.088  0.71  7.66           N 0
+ATOM    791  CD2 PHE A 126     144.977 133.070 142.471  0.00  0.00           C 0
+ATOM    788   CB PHE A 126     147.272 134.038 142.229  0.00  0.00           C 0
+ATOM    766  NE2 HIS A 123     150.361 131.357 147.221  0.00  0.00           N 0
+ATOM    762   CG HIS A 123     150.344 132.606 145.417  0.00  0.00           C 0
+ATOM    764  CD2 HIS A 123     150.237 132.646 146.766  0.00  0.00           C 0
+ATOM    790  CD1 PHE A 126     145.703 134.666 144.071  0.00  0.00           C 0
+ATOM    792  CE1 PHE A 126     144.500 134.568 144.721  0.00  0.00           C 0
+TER
+END

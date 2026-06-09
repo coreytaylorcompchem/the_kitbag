@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    31:
+HEADER 0  - Pocket Score                      : -0.1852
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    22
+HEADER 3  - Mean alpha-sphere radius          : 4.2160
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3938
+HEADER 5  - Mean B-factor of pocket residues  : 0.3165
+HEADER 6  - Hydrophobicity Score              : 0.8889
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 4.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 312.7737
+HEADER 10  -Pocket volume (convex hull)       : 6.8775
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.1818
+ATOM   2542  OE2 GLU H  65     -47.496 -81.479 -11.099  0.54  3.21           O 0
+ATOM   2481  CD1 ILE H  57     -49.645 -83.002  -5.695  0.00  0.00           C 0
+ATOM   2875    O GLU H 108     -50.670 -87.961  -7.740  0.33  4.29           O 0
+ATOM   2496   OG SER H  59     -45.626 -85.799  -7.383  0.24  6.43           O 0
+ATOM   2682   NZ LYS H  82     -49.631 -82.371 -13.779  0.00  0.00           N 0
+ATOM   2681   CE LYS H  82     -51.069 -82.244 -13.413  0.00  0.00           C 0
+ATOM   2879  OE1 GLU H 108     -50.173 -90.286 -11.243  0.69  6.43           O 0
+ATOM   2519   NZ LYS H  62     -44.297 -88.552 -10.965  0.65  9.84           N 0
+ATOM   2876   CB GLU H 108     -52.324 -89.506  -9.724  0.00  0.00           C 0
+ATOM   2887  OD1 ASP H 109     -53.918 -85.906  -6.858  0.87  1.07           O 0
+ATOM   2717   NZ LYS H  86     -56.976 -84.571  -8.648  0.32  7.66           N 0
+ATOM   2679   CG LYS H  82     -52.926 -80.661 -12.816  0.00  0.00           C 0
+ATOM   2693   CZ PHE H  83     -51.476 -80.559  -8.233  0.00  0.00           C 0
+ATOM   2691  CE1 PHE H  83     -52.526 -81.056  -7.487  0.00  0.00           C 0
+ATOM   2677    O LYS H  82     -55.778 -80.552 -11.268  0.38  5.36           O 0
+TER
+END

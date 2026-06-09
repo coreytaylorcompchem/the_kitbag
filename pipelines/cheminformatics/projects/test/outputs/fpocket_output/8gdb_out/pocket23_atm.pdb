@@ -1,0 +1,49 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    23:
+HEADER 0  - Pocket Score                      : -0.0950
+HEADER 1  - Drug Score                        : 0.0024
+HEADER 2  - Number of alpha spheres           :    35
+HEADER 3  - Mean alpha-sphere radius          : 3.7885
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4521
+HEADER 5  - Mean B-factor of pocket residues  : 0.7524
+HEADER 6  - Hydrophobicity Score              : 20.6667
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 3.4167
+HEADER 9  - Pocket volume (Monte Carlo)       : 447.9036
+HEADER 10  -Pocket volume (convex hull)       : 54.1219
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.2286
+ATOM   6489   CA ALA R 152     127.528 126.493 101.997  0.00  0.00           C 0
+ATOM   6492   CB ALA R 152     128.650 127.527 102.130  0.00  0.00           C 0
+ATOM   6507   CB ASN R 155     125.479 127.927  97.510  0.00  0.00           C 0
+ATOM   6068  CD1 PHE R  97     124.360 128.585 104.491  0.00  0.00           C 0
+ATOM   6502   CB PRO R 154     123.416 123.661  99.853  0.00  0.00           C 0
+ATOM   6062    N PHE R  97     119.833 127.797 104.090  0.75  1.09           N 0
+ATOM   6035    O GLU R  93     119.528 129.180 101.513  0.60  3.21           O 0
+ATOM   6061  CG2 THR R  96     118.311 124.739 102.626  0.00  0.00           C 0
+ATOM   6539   OG SER R 161     118.479 125.202  99.234  0.79  2.14           O 0
+ATOM   6486    O CYS R 151     125.057 125.734 102.960  0.00  0.00           O 0
+ATOM   6095  CD1 LEU R 100     121.065 122.790 104.659  0.00  0.00           C 0
+ATOM   6504   CA ASN R 155     125.285 126.534  96.908  0.00  0.00           C 0
+ATOM   6501    O PRO R 154     124.138 124.049  96.666  0.19  2.14           O 0
+ATOM   6528    O GLY R 159     121.166 122.613  95.454  0.08  7.50           O 0
+ATOM   6506    O ASN R 155     126.403 126.862  94.827  0.00  0.00           O 0
+ATOM   6500    C PRO R 154     124.636 124.354  97.756  0.00  0.00           C 0
+ATOM   6067   CG PHE R  97     123.242 129.386 104.620  0.00  0.00           C 0
+ATOM   6066   CB PHE R  97     121.953 129.009 103.950  0.00  0.00           C 0
+ATOM   6063   CA PHE R  97     121.150 127.946 104.699  0.00  0.00           C 0
+ATOM   6038   CA TYR R  94     119.051 131.832 102.164  0.00  0.00           C 0
+ATOM   6069  CD2 PHE R  97     123.342 130.553 105.360  0.00  0.00           C 0
+ATOM   6034    C GLU R  93     118.888 129.877 100.714  0.00  0.00           C 0
+ATOM   6036   CB GLU R  93     119.238 129.598  98.246  0.00  0.00           C 0
+ATOM   6037    N TYR R  94     118.643 131.173 100.927  0.88  2.19           N 0
+ATOM   6532    O SER R 160     117.105 124.143  95.507  0.48  7.50           O 0
+ATOM   6503    N ASN R 155     125.219 125.534  97.965  0.00  0.00           N 0
+ATOM   6538   CB SER R 161     117.325 125.366  98.429  0.00  0.00           C 0
+TER
+END

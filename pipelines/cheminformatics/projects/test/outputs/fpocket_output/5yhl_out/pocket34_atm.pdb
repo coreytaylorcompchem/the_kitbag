@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    34:
+HEADER 0  - Pocket Score                      : -0.2096
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    24
+HEADER 3  - Mean alpha-sphere radius          : 4.1725
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3931
+HEADER 5  - Mean B-factor of pocket residues  : 0.2158
+HEADER 6  - Hydrophobicity Score              : 0.8889
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 4.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 338.8823
+HEADER 10  -Pocket volume (convex hull)       : 11.3447
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.1667
+ATOM   2691  CE1 PHE H  83     -53.580 -81.810  -6.661  0.00  0.00           C 0
+ATOM   2887  OD1 ASP H 109     -54.907 -86.650  -5.916  0.90  1.07           O 0
+ATOM   2693   CZ PHE H  83     -52.578 -81.304  -7.468  0.00  0.00           C 0
+ATOM   2875    O GLU H 108     -51.735 -88.703  -6.935  0.43  8.57           O 0
+ATOM   2517   CD LYS H  62     -43.940 -87.614  -9.707  0.00  0.00           C 0
+ATOM   2542  OE2 GLU H  65     -48.757 -82.284 -10.516  0.00  0.00           O 0
+ATOM   2519   NZ LYS H  62     -45.533 -89.377 -10.441  0.00  0.00           N 0
+ATOM   2496   OG SER H  59     -46.660 -86.584  -6.870  0.37  9.64           O 0
+ATOM   2681   CE LYS H  82     -52.495 -83.149 -12.614  0.00  0.00           C 0
+ATOM   2876   CB GLU H 108     -53.491 -90.299  -8.758  0.00  0.00           C 0
+ATOM   2717   NZ LYS H  86     -58.114 -85.459  -7.461  0.64  7.66           N 0
+ATOM   2682   NZ LYS H  82     -51.079 -83.290 -13.054  0.00  0.00           N 0
+ATOM   2879  OE1 GLU H 108     -51.434 -91.082 -10.367  0.63  6.43           O 0
+ATOM   2481  CD1 ILE H  57     -50.620 -83.711  -4.941  0.00  0.00           C 0
+ATOM   2679   CG LYS H  82     -54.308 -81.544 -11.953  0.00  0.00           C 0
+ATOM   2677    O LYS H  82     -57.067 -81.419 -10.264  0.44  5.36           O 0
+TER
+END

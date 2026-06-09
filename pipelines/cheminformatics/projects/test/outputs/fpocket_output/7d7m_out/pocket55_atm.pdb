@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    55:
+HEADER 0  - Pocket Score                      : -0.1070
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.8209
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5306
+HEADER 5  - Mean B-factor of pocket residues  : 0.4766
+HEADER 6  - Hydrophobicity Score              : 5.3333
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 5.1667
+HEADER 9  - Pocket volume (Monte Carlo)       : 221.9700
+HEADER 10  -Pocket volume (convex hull)       : 8.4918
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1176
+ATOM   6045   CB ARG D 347     178.335 148.397 132.566  0.00  0.00           C 0
+ATOM   6011  OD1 ASP D 343     178.936 143.216 134.007  0.39  5.36           O 0
+ATOM   6012  OD2 ASP D 343     181.051 142.642 133.895  0.65  5.36           O 1
+ATOM   6046   CG ARG D 347     179.117 149.597 133.075  0.00  0.00           C 0
+ATOM   6050  NH1 ARG D 347     181.676 150.480 131.642  0.00  0.00           N 1
+ATOM   6021  OE2 GLU D 344     181.107 147.044 128.538  0.57  4.29           O 1
+ATOM   5836  CE2 TYR D 318     184.082 142.327 132.322  0.00  0.00           C 0
+ATOM   5834  CD2 TYR D 318     185.193 142.867 131.716  0.00  0.00           C 0
+ATOM   6010   CG ASP D 343     179.921 142.773 133.380  0.00  0.00           C 0
+ATOM   6009   CB ASP D 343     179.744 142.367 131.929  0.00  0.00           C 0
+ATOM   6008    O ASP D 343     178.147 145.135 131.460  0.00  0.00           O 0
+ATOM   5805   CB GLU D 314     186.618 147.956 127.702  0.00  0.00           C 0
+ATOM   6051  NH2 ARG D 347     181.217 150.464 129.400  0.55  6.56           N 0
+ATOM   6007    C ASP D 343     178.402 144.145 130.768  0.00  0.00           C 0
+ATOM   5981  CD1 PHE D 340     183.384 143.152 127.867  0.00  0.00           C 0
+ATOM   5983  CE1 PHE D 340     183.466 144.354 127.202  0.00  0.00           C 0
+TER
+END

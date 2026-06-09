@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     5:
+HEADER 0  - Pocket Score                      : 0.1182
+HEADER 1  - Drug Score                        : 0.0052
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 4.0109
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4591
+HEADER 5  - Mean B-factor of pocket residues  : 0.9089
+HEADER 6  - Hydrophobicity Score              : 56.0000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.1250
+HEADER 9  - Pocket volume (Monte Carlo)       : 266.6728
+HEADER 10  -Pocket volume (convex hull)       : 7.3377
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 11.0000
+HEADER 13 - Number of apolar alpha sphere     :    12
+HEADER 14 - Proportion of apolar alpha sphere : 0.6667
+ATOM   6082   OG SER R  95     156.413 137.938 149.081  0.55  8.57           O 0
+ATOM   6115  CD1 LEU R  99     160.124 138.266 150.730  0.00  0.00           C 0
+ATOM   5922  CG1 VAL R  72     155.952 140.945 154.013  0.00  0.00           C 0
+ATOM   6628   CB TRP R 169     157.513 133.436 152.469  0.00  0.00           C 0
+ATOM   5941  CG1 VAL R  75     151.300 136.693 150.454  0.00  0.00           C 0
+ATOM   5948  OG1 THR R  76     153.236 137.353 155.617  0.81  1.07           O 0
+ATOM   5920    O VAL R  72     153.079 140.043 153.513  0.47  2.14           O 0
+ATOM   7406  CG1 ILE R 315     162.595 136.252 155.404  0.00  0.00           C 0
+ATOM   5949  CG2 THR R  76     154.064 135.090 155.670  0.00  0.00           C 0
+ATOM   7438   OG SER R 319     161.068 139.018 160.236  0.78  2.14           O 0
+ATOM   5940   CB VAL R  75     151.105 137.942 151.289  0.00  0.00           C 0
+ATOM   6116  CD2 LEU R  99     159.758 140.125 152.329  0.00  0.00           C 0
+ATOM   7437   CB SER R 319     161.451 140.006 159.315  0.00  0.00           C 0
+ATOM   7408  CD1 ILE R 315     163.202 137.410 154.655  0.00  0.00           C 0
+ATOM   5943    N THR R  76     151.273 136.660 154.136  0.75  1.09           N 0
+ATOM   6634  CE3 TRP R 169     160.780 133.892 152.337  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,59 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    60:
+HEADER 0  - Pocket Score                      : -0.4831
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    46
+HEADER 3  - Mean alpha-sphere radius          : 4.2738
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5155
+HEADER 5  - Mean B-factor of pocket residues  : 0.6978
+HEADER 6  - Hydrophobicity Score              : 4.6154
+HEADER 7  - Polarity Score                    :     9
+HEADER 8  - Amino Acid based volume Score     : 4.4615
+HEADER 9  - Pocket volume (Monte Carlo)       : 873.2174
+HEADER 10  -Pocket volume (convex hull)       : 141.7764
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 7.3846
+HEADER 13 - Number of apolar alpha sphere     :    13
+HEADER 14 - Proportion of apolar alpha sphere : 0.2826
+ATOM   1840   NZ LYS B  15     164.839 212.495 193.944  0.00  0.00           N 1
+ATOM   1814   CB GLU B  12     164.345 215.754 199.890  0.00  0.00           C 0
+ATOM   4643   CG GLN N   3     163.631 207.433 197.476  0.00  0.00           C 0
+ATOM   4663  NE2 GLN N   5     167.408 209.714 202.332  0.70  9.84           N 0
+ATOM   4642   CB GLN N   3     164.170 206.171 198.128  0.00  0.00           C 0
+ATOM   4639   CA GLN N   3     164.873 205.190 197.178  0.00  0.00           C 0
+ATOM   4647    N LEU N   4     166.915 204.358 198.173  0.88  3.28           N 0
+ATOM   4650    O LEU N   4     169.359 205.241 199.519  0.47  3.21           O 0
+ATOM   5481   CA GLY N 119     171.637 205.054 197.181  0.00  0.00           C 0
+ATOM   5472    O ARG N 118     171.491 205.180 194.431  0.39  8.57           O 0
+ATOM   1838   CD LYS B  15     162.767 213.582 194.803  0.00  0.00           C 0
+ATOM   1836   CB LYS B  15     160.705 214.723 195.657  0.00  0.00           C 0
+ATOM   1847  OD1 ASN B  16     158.596 213.814 200.390  0.00  0.00           O 0
+ATOM   1875  NH1 ARG B  19     158.282 210.754 197.312  0.46  3.28           N 1
+ATOM   4661   CD GLN N   5     167.973 208.514 202.311  0.00  0.00           C 0
+ATOM   4660   CG GLN N   5     167.018 207.328 202.300  0.00  0.00           C 0
+ATOM   1811   CA GLU B  12     163.671 216.214 198.599  0.00  0.00           C 0
+ATOM   4644   CD GLN N   3     162.135 207.385 197.248  0.00  0.00           C 0
+ATOM   4645  OE1 GLN N   3     161.434 206.552 197.819  0.27  6.43           O 0
+ATOM   1813    O GLU B  12     161.280 216.306 198.784  0.45  1.07           O 0
+ATOM   4646  NE2 GLN N   3     161.635 208.293 196.419  0.64  2.19           N 0
+ATOM   5491  OE1 GLN N 120     172.576 211.879 198.400  0.61  7.50           O 0
+ATOM   1793    O ARG B   8     167.295 217.231 198.840  0.49  3.21           O 0
+ATOM   5489   CG GLN N 120     173.045 209.887 197.162  0.00  0.00           C 0
+ATOM   5488   CB GLN N 120     173.504 209.285 198.476  0.00  0.00           C 0
+ATOM   4662  OE1 GLN N   5     169.195 208.359 202.299  0.15  8.57           O 0
+ATOM   1794   CB ARG B   8     170.528 216.604 199.057  0.00  0.00           C 0
+ATOM   5492  NE2 GLN N 120     172.257 211.949 196.180  0.00  0.00           N 0
+ATOM   4634    O VAL N   2     164.564 205.686 194.444  0.57  6.43           O 0
+ATOM   4275   CB ALA G  12     172.870 219.329 193.248  0.00  0.00           C 0
+ATOM   4272   CA ALA G  12     172.275 219.282 191.843  0.00  0.00           C 0
+ATOM   4296  CD1 LEU G  15     168.448 215.429 190.444  0.00  0.00           C 0
+ATOM   4271    N ALA G  12     173.323 219.020 190.864  0.46  1.09           N 0
+ATOM   1809   CB ALA B  11     166.330 217.609 195.256  0.00  0.00           C 0
+ATOM   1791   CA ARG B   8     169.615 217.607 198.354  0.00  0.00           C 0
+ATOM   5484    N GLN N 120     172.781 206.994 198.025  0.49  1.09           N 0
+ATOM   5490   CD GLN N 120     172.606 211.329 197.300  0.00  0.00           C 0
+TER
+END

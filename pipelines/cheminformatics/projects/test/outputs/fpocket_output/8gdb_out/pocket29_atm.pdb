@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    29:
+HEADER 0  - Pocket Score                      : -0.1235
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    19
+HEADER 3  - Mean alpha-sphere radius          : 3.9337
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5298
+HEADER 5  - Mean B-factor of pocket residues  : 0.3688
+HEADER 6  - Hydrophobicity Score              : 22.7273
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.1818
+HEADER 9  - Pocket volume (Monte Carlo)       : 260.8768
+HEADER 10  -Pocket volume (convex hull)       : 12.7564
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.2105
+ATOM    302    O GLY A  47     150.703 118.200 163.866  0.66  4.29           O 0
+ATOM    535  CG2 VAL A 224     155.192 123.286 159.883  0.00  0.00           C 0
+ATOM    589  NH2 ARG A 231     151.248 122.494 166.331  0.00  0.00           N 0
+ATOM    335   NZ LYS A  53     155.099 118.008 161.006  0.69  8.75           N 1
+ATOM    304   CA ALA A  48     152.320 116.901 165.729  0.00  0.00           C 0
+ATOM    303    N ALA A  48     152.069 116.478 164.357  0.00  0.00           N 0
+ATOM    305    C ALA A  48     153.650 116.312 166.178  0.00  0.00           C 0
+ATOM    308    N GLY A  49     154.011 116.591 167.427  0.76  8.75           N 0
+ATOM    586   NE ARG A 231     150.554 124.011 164.754  0.67  5.47           N 0
+ATOM    296   CG LEU A  46     149.547 121.207 160.352  0.00  0.00           C 0
+ATOM    623  CH2 TRP A 234     152.568 125.770 160.930  0.00  0.00           C 0
+ATOM    292   CA LEU A  46     150.656 119.022 159.277  0.00  0.00           C 0
+ATOM    557    O ARG A 228     155.421 127.186 165.715  0.75  8.57           O 0
+ATOM    549   CB GLN A 227     157.517 127.369 162.241  0.00  0.00           C 0
+ATOM    539    O GLY A 225     159.867 123.855 162.190  0.11  5.36           O 0
+ATOM    548    O GLN A 227     158.982 126.617 165.265  0.00  0.00           O 0
+ATOM    621  CZ2 TRP A 234     153.022 126.616 161.902  0.00  0.00           C 0
+ATOM    299    N GLY A  47     151.304 117.556 161.097  0.00  0.00           N 0
+TER
+END
