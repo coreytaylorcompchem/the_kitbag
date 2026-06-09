@@ -3,6 +3,10 @@ import json
 import sys
 import platform
 import re
+import subprocess
+import glob
+import time
+import yaml
 
 from pathlib import Path
 import json
@@ -37,6 +41,38 @@ def _load_box_vectors_from_state_json(json_file):
         data = json.load(f)
 
     return np.asarray(data["box_vectors"])
+
+def _get_openfe_progress(workdir):
+
+    matches = glob.glob(
+        os.path.join(
+            workdir,
+            "**",
+            "simulation_real_time_analysis.yaml"
+        ),
+        recursive=True
+    )
+
+    if not matches:
+        return None
+
+    try:
+
+        with open(matches[0]) as f:
+            data = yaml.safe_load(f)
+
+        if not data:
+            return None
+
+        latest = data[-1]
+
+        return latest.get(
+            "percent_complete"
+        )
+
+    except Exception:
+
+        return None
 
 @register_task(
     "openfe_prepare_receptor",
@@ -111,26 +147,26 @@ def openfe_create_network(self):
         )
     )
 
-    supplier = Chem.SDMolSupplier(
-        ligand_sdf,
-        removeHs=False
-    )
+    # supplier = Chem.SDMolSupplier(
+    #     ligand_sdf,
+    #     removeHs=False
+    # )
 
-    ligands = []
+    # ligands = []
 
-    for i, mol in enumerate(supplier):
+    # for i, mol in enumerate(supplier):
 
-        if mol is None:
-            logger.warning(
-                f"Failed to read molecule {i}"
-            )
-            continue
+    #     if mol is None:
+    #         logger.warning(
+    #             f"Failed to read molecule {i}"
+    #         )
+    #         continue
 
-        ligands.append(
-            SmallMoleculeComponent(
-                mol
-            )
-        )
+    #     ligands.append(
+    #         SmallMoleculeComponent(
+    #             mol
+    #         )
+    #     )
 
     ligands = []
 
@@ -319,3 +355,165 @@ def openfe_create_alchemical_network(self):
         f"{len(alchemical_network.edges)} "
         f"transformations"
     )
+
+@register_task(
+    "openfe_run_network",
+    category="Free Energy",
+    description="Run all OpenFE transformations sequentially."
+)
+def openfe_run_network(self):
+
+    cfg = self.config["openfe_run_network"]
+
+    transforms_dir = cfg["transformations_dir"]
+
+    output_dir = cfg.get(
+        "output_dir",
+        "openfe_results"
+    )
+
+    os.makedirs(
+        output_dir,
+        exist_ok=True
+    )
+
+    json_files = sorted(
+        glob.glob(
+            os.path.join(
+                transforms_dir,
+                "*.json"
+            )
+        )
+    )
+
+    total = len(json_files)
+
+    logger.info(
+        f"Found {total} transformations"
+    )
+
+    for i, transform_json in enumerate(
+        json_files,
+        start=1
+    ):
+
+        stem = Path(transform_json).stem
+
+        result_json = os.path.join(
+            output_dir,
+            f"{stem}.json"
+        )
+
+        working_dir = os.path.join(
+            output_dir,
+            stem
+        )
+
+        #
+        # Skip completed calculations
+        #
+
+        if os.path.exists(result_json):
+
+            logger.info(
+                f"[{i}/{total}] "
+                f"Skipping completed {stem}"
+            )
+
+            continue
+
+        logger.info(
+            f"[{i}/{total}] "
+            f"Running {stem}"
+        )
+
+        cmd = [
+            "openfe",
+            "quickrun",
+            transform_json,
+            "-o",
+            result_json,
+            "-d",
+            working_dir,
+        ]
+
+        proc = subprocess.Popen(cmd)
+
+        last_report = -1
+
+        while proc.poll() is None:
+
+            progress = _get_openfe_progress(
+                working_dir
+            )
+
+            if (
+                progress is not None
+                and int(progress) != last_report
+            ):
+
+                logger.info(
+                    f"[{i}/{total}] "
+                    f"{stem}: "
+                    f"{progress:.1f}%"
+                )
+
+                last_report = int(progress)
+
+            time.sleep(300)
+
+        if proc.returncode != 0:
+
+            raise RuntimeError(
+                f"OpenFE failed for {stem}"
+            )
+
+        logger.info(
+            f"[{i}/{total}] "
+            f"Completed {stem}"
+        )
+
+    self.openfe_results_dir = output_dir
+
+@register_task(
+    "openfe_gather_results",
+    category="Free Energy",
+    description="Gather OpenFE results."
+)
+def openfe_gather_results(self):
+
+    cfg = self.config["openfe_gather_results"]
+
+    results_dir = cfg["results_dir"]
+
+    output_file = cfg.get(
+        "output_file",
+        "final_results.tsv"
+    )
+
+    report = cfg.get(
+        "report",
+        "dg"
+    )
+
+    cmd = [
+        "openfe",
+        "gather",
+        results_dir,
+        "--report",
+        report,
+        "-o",
+        output_file,
+    ]
+
+    subprocess.run(
+        cmd,
+        check=True
+    )
+
+    logger.info(
+        f"Wrote gathered results: "
+        f"{output_file}"
+    )
+
+    self.openfe_results_table = output_file
