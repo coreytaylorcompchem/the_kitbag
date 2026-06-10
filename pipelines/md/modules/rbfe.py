@@ -23,6 +23,8 @@ from openfe import (
 
 from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
 
+from openff.units import unit
+
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
@@ -163,6 +165,21 @@ def openfe_create_network(self):
             )
         )
 
+    # mapper = openfe.setup.KartografAtomMapper()
+
+    # scorer = (
+    #     openfe.lomap_scorers
+    #     .default_lomap_score
+    # )
+
+    # network = (
+    #     openfe.ligand_network_planning
+    #     .generate_lomap_network(
+    #         ligands=ligands,
+    #         mappers=[mapper],
+    #         scorer=scorer,
+    #     )
+    # )
     mapper = openfe.setup.KartografAtomMapper()
 
     scorer = (
@@ -170,14 +187,61 @@ def openfe_create_network(self):
         .default_lomap_score
     )
 
-    network = (
-        openfe.ligand_network_planning
-        .generate_lomap_network(
-            ligands=ligands,
-            mappers=[mapper],
-            scorer=scorer,
-        )
+    network_cfg = cfg.get(
+        "network",
+        {}
     )
+
+    network_method = network_cfg.get(
+        "method",
+        "lomap"
+    )
+
+    if network_method == "lomap":
+
+        network = (
+            openfe.ligand_network_planning
+            .generate_lomap_network(
+                ligands=ligands,
+                mappers=[mapper],
+                scorer=scorer,
+            )
+        )
+
+    elif network_method == "mst":
+
+        network = (
+            openfe.ligand_network_planning
+            .generate_minimal_spanning_network(
+                ligands=ligands,
+                mappers=[mapper],
+                scorer=scorer,
+            )
+        )
+
+    elif network_method == "star":
+
+        center_idx = network_cfg.get(
+            "central_ligand",
+            0
+        )
+
+        network = (
+            openfe.ligand_network_planning
+            .generate_radial_network(
+                ligands=ligands,
+                central_ligand=ligands[center_idx],
+                mappers=[mapper],
+                scorer=scorer,
+            )
+        )
+
+    else:
+
+        raise ValueError(
+            f"Unknown network method "
+            f"{network_method}"
+        )
 
     network_json = os.path.join(
         output_dir,
@@ -209,6 +273,10 @@ def openfe_create_network(self):
 def openfe_create_alchemical_network(self):
 
     cfg = self.config["openfe_create_alchemical_network"]
+    protocol_cfg = cfg.get(
+        "protocol",
+        {}
+    )
 
     receptor_pdb = cfg["receptor_pdb"]
 
@@ -274,7 +342,32 @@ def openfe_create_alchemical_network(self):
                 .default_settings()
             )
 
-            settings.protocol_repeats = 1
+            settings.protocol_repeats = (
+                protocol_cfg.get(
+                    "repeats",
+                    1
+                )
+            )
+
+            if "production_length_ns" in protocol_cfg:
+
+                settings.simulation_settings.production_length = (
+                    protocol_cfg["production_length_ns"]
+                    * unit.nanosecond
+                )
+
+            if "equilibration_length_ns" in protocol_cfg:
+
+                settings.simulation_settings.equilibration_length = (
+                    protocol_cfg["equilibration_length_ns"]
+                    * unit.nanosecond
+                )
+            
+            if "lambda_windows" in protocol_cfg:
+
+                n = protocol_cfg["lambda_windows"]
+
+                settings.lambda_settings.lambda_windows = n
 
             # setup will blindly apply barostat settings if we don't set it explicitly for the complex legs.
 
@@ -284,6 +377,16 @@ def openfe_create_alchemical_network(self):
                     "MonteCarloMembraneBarostat"
                 )
 
+            logger.debug(
+                f"Production length default: "
+                f"{settings.simulation_settings.production_length}"
+            )
+
+            logger.debug(
+                f"Equilibration length default: "
+                f"{settings.simulation_settings.equilibration_length}"
+            )
+
             protocol = RelativeHybridTopologyProtocol(
                 settings=settings
             )
@@ -291,6 +394,12 @@ def openfe_create_alchemical_network(self):
             logger.debug(
                 f"{leg}: "
                 f"{list(sysA_dict.keys())}"
+            )
+
+            logger.debug(
+                f"{leg}: "
+                f"repeats="
+                f"{settings.protocol_repeats}"
             )
 
             transformation = Transformation(
