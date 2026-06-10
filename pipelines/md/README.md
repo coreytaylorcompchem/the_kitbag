@@ -75,7 +75,7 @@ If you want to register new workflows, you'll also need to do so with metadata t
     * If you want to run a longer simulation from a completed job, increase `length_ns`, run the pipeline again and it will automatically detect the appropriate restart point.
 * Free energy 
     * Use the OpenFE env for running simulations they provide during installation. The code base is being revised fairly regularly so dependencies will change with newer versions.
-    * The ligands in the sdf file you provide ```must be aligned```.
+    * The ligands in the sdf file you provide ``must be aligned``.
 
 ## TODO
 
