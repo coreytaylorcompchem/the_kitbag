@@ -76,6 +76,112 @@ def _get_openfe_progress(workdir):
 
         return None
 
+def _build_protocol_settings(
+    protocol_cfg,
+    leg,
+):
+
+    settings = (
+        RelativeHybridTopologyProtocol
+        .default_settings()
+    )
+
+    #
+    # repeats
+    #
+
+    settings.protocol_repeats = (
+        protocol_cfg.get(
+            "repeats",
+            1
+        )
+    )
+
+    #
+    # simulation lengths
+    #
+
+    if "production_length_ns" in protocol_cfg:
+
+        settings.simulation_settings.production_length = (
+            protocol_cfg["production_length_ns"]
+            * unit.nanosecond
+        )
+
+    if "equilibration_length_ns" in protocol_cfg:
+
+        settings.simulation_settings.equilibration_length = (
+            protocol_cfg["equilibration_length_ns"]
+            * unit.nanosecond
+        )
+
+    #
+    # lambda schedule
+    #
+
+    if "lambda_windows" in protocol_cfg:
+
+        n = protocol_cfg["lambda_windows"]
+
+        settings.lambda_settings.lambda_windows = n
+        settings.simulation_settings.n_replicas = n
+
+    #
+    # replica exchange frequency
+    #
+
+    if "swap_frequency" in protocol_cfg:
+
+        settings.simulation_settings.n_replicas_exchange_attempts = (
+            protocol_cfg["swap_frequency"]
+        )
+
+    #
+    # output frequency
+    #
+
+    if "checkpoint_interval_ns" in protocol_cfg:
+
+        logger.debug(
+            settings.output_settings
+        )
+
+        settings.output_settings.checkpoint_interval = (
+            protocol_cfg["checkpoint_interval_ns"]
+            * unit.nanosecond
+        )
+
+    if "positions_write_frequency_ps" in protocol_cfg:
+
+        settings.output_settings.positions_write_frequency = (
+            protocol_cfg["positions_write_frequency_ps"]
+            * unit.picosecond
+        )
+
+    #
+    # platform
+    #
+
+    if "platform" in protocol_cfg:
+
+        settings.engine_settings.compute_platform = (
+            protocol_cfg["platform"]
+        )
+
+        logger.debug(settings.engine_settings)
+
+    #
+    # membrane systems only
+    #
+
+    if leg == "complex":
+
+        settings.integrator_settings.barostat = (
+            "MonteCarloMembraneBarostat"
+        )
+
+    return settings
+
 @register_task(
     "openfe_prepare_receptor",
     category="Free Energy",
@@ -192,6 +298,16 @@ def openfe_create_network(self):
         {}
     )
 
+    max_path_length = network_cfg.get(
+        "max_path_length",
+        6
+    )
+
+    radial = network_cfg.get(
+        "radial",
+        False
+    )
+
     network_method = network_cfg.get(
         "method",
         "lomap"
@@ -205,6 +321,7 @@ def openfe_create_network(self):
                 ligands=ligands,
                 mappers=[mapper],
                 scorer=scorer,
+                max_path_length=max_path_length,
             )
         )
 
@@ -337,45 +454,10 @@ def openfe_create_alchemical_network(self):
                 name=f"{mapping.componentB.name}_{leg}"
             )
 
-            settings = (
-                RelativeHybridTopologyProtocol
-                .default_settings()
+            settings = _build_protocol_settings(
+                protocol_cfg,
+                leg,
             )
-
-            settings.protocol_repeats = (
-                protocol_cfg.get(
-                    "repeats",
-                    1
-                )
-            )
-
-            if "production_length_ns" in protocol_cfg:
-
-                settings.simulation_settings.production_length = (
-                    protocol_cfg["production_length_ns"]
-                    * unit.nanosecond
-                )
-
-            if "equilibration_length_ns" in protocol_cfg:
-
-                settings.simulation_settings.equilibration_length = (
-                    protocol_cfg["equilibration_length_ns"]
-                    * unit.nanosecond
-                )
-            
-            if "lambda_windows" in protocol_cfg:
-
-                n = protocol_cfg["lambda_windows"]
-
-                settings.lambda_settings.lambda_windows = n
-
-            # setup will blindly apply barostat settings if we don't set it explicitly for the complex legs.
-
-            if leg == "complex":
-
-                settings.integrator_settings.barostat = (
-                    "MonteCarloMembraneBarostat"
-                )
 
             logger.debug(
                 f"Production length default: "
