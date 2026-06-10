@@ -298,7 +298,7 @@ class HydrogenBondAnalysisTask:
 @register_task(
     "rmsd_analysis",
     category="Post-proc; traj analyses",
-    description="Compute RMSD of protein bb and ligand."
+    description="Compute and plot RMSDs by component (protein, ligand, antibody, etc.)"
 )
 class RMSDAnalysisTask:
     """
@@ -597,7 +597,7 @@ class RMSDAnalysisTask:
 @register_task(
     "rmsf_analysis",
     category="Post-proc; traj analyses",
-    description="Compute per-residue RMSF for protein (all atoms and Cα only)."
+    description="Compute per-residue RMSF for protein (all atoms and Cα)."
 )
 class RMSFAnalysisTask:
     """
@@ -881,7 +881,7 @@ def _bit_to_color_value(series):
 @register_task(
     "interaction_fingerprint",
     category="Post-proc; traj analyses",
-    description="Compute IFP using ProLIF, generate barcode plot."
+    description="Compute and plot protein-ligand IFPs (Prolif)."
 )
 class InteractionFingerprintTask:
     """
@@ -1175,7 +1175,7 @@ class InteractionFingerprintTask:
 @register_task(
     "protein_protein_interaction_fingerprint",
     category="Post-proc; traj analyses",
-    description="Compute protein–protein interaction fingerprints using ProLIF."
+    description="Compute and plot protein-protein IFPs (Prolif)."
 )
 class ProteinProteinInteractionFingerprintTask:
 
@@ -1482,7 +1482,7 @@ class ProteinProteinInteractionFingerprintTask:
 @register_task(
     "cluster_analysis",
     category="Post-proc; traj analyses",
-    description="Cluster trajectory based on RMSD and output centroid structures."
+    description="Cluster trajectory (KNN) and output centroid structures."
 )
 class ClusterAnalysisTask:
     """
@@ -1639,7 +1639,7 @@ class ClusterAnalysisTask:
 @register_task(
     "free_energy_landscape",
     category="Post-proc; traj analyses",
-    description="Compute 2D free energy landscape using PCA projection."
+    description="Compute 2D free energy landscape (PCA)."
 )
 class FreeEnergyLandscapeTask:
     """
@@ -1883,7 +1883,7 @@ class FreeEnergyLandscapeTask:
 @register_task(
     "msm_analysis",
     category="Post-proc; kinetics",
-    description="Rigorous MSM using TICA + clustering + MLE."
+    description="MSM using TICA + clustering + MLE."
 )
 class MSMAnalysisTask:
 
@@ -2300,7 +2300,7 @@ class HydrationSiteEnergyTask:
 @register_task(
     "temporal_motif_persistence",
     category="Post-proc; graph analyses",
-    description="Quantify persistence of small recurring motifs (e.g., water-mediated interactions) in the solvent network."
+    description="Detect persistence of small recurring solvent-mediated motifs."
 )
 class TemporalMotifPersistenceTask:
     def __init__(self,
@@ -2501,7 +2501,7 @@ class TemporalMotifPersistenceTask:
 @register_task(
     "network_embedding_analysis",
     category="Post-proc; graph analyses",
-    description="Convert trajectory frames into residue–ligand contact graphs, then perform Node2Vec + t-SNE embedding to visualise network evolution."
+    description="Network-based visualisation of protein–ligand contact graphs."
 )
 class NetworkEmbeddingAnalysisTask:
     def __init__(self,
@@ -2820,7 +2820,7 @@ class NetworkEmbeddingAnalysisTask:
 @register_task(
     "protein_protein_network_embedding",
     category="Post-proc; graph analyses",
-    description="Convert trajectory frames into residue–residue contact graphs, then perform Node2Vec + t-SNE embedding to visualise protein-protein network evolution."
+    description="Network-based visualisation of protein–protein contact graphs."
 )
 class ProteinProteinNetworkEmbeddingTask:
     def __init__(self,
@@ -3147,7 +3147,7 @@ class ProteinProteinNetworkEmbeddingTask:
 @register_task(
     "mmpbsa",
     category="Post-proc; free energy",
-    description="Compute MM/GB(PB)SA binding free energies."
+    description="Compute MM/GB(PB)SA binding free energies at beginning and end of trajectory (WIP)."
 )
 class MMPBSATask:
 

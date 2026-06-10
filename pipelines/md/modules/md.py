@@ -138,10 +138,46 @@ class MDWorkflow:
         )
         self.simulation.context.setPositions(self.positions)
 
-    @register_task("minimize")
+    @register_task("minimize", category='Molecular dynamics',
+                   description="Configurable staged minimisation of protein systems.")
     def minimize(self):
 
         logger.info("Running staged minimisation")
+
+        min_cfg = self.config.get("minimize", {})
+
+        stages = min_cfg.get(
+            "stages",
+            [
+                {
+                    "description": "Default minimisation",
+                    "k_prot": 0,
+                    "k_prot": 0,
+                    "iter": 5000,
+                    "tolerance": 10,
+                }
+            ]
+        )
+
+        if not stages:
+            raise ValueError(
+                "No minimization stages defined in config['minimize']['stages']"
+            )
+
+        progress_update_interval = min_cfg.get(
+            "progress_update_interval",
+            5
+        )
+
+        diagnostic_interval = min_cfg.get(
+            "diagnostic_interval",
+            200
+        )
+
+        warning_force_threshold = min_cfg.get(
+            "warning_force_threshold",
+            50000
+        )
 
         atoms = list(self.topology.atoms())
 
@@ -197,12 +233,12 @@ class MDWorkflow:
         # -------------------------
         # Staged minimisation
         # -------------------------
-        stages = [
-            {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 2000, "tolerance": 100},
-            {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 5000, "tolerance": 10},
-            {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 2000, "tolerance": 5},
-            {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 1000, "tolerance": 1},
-        ]
+        # stages = [
+        #     {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 2000, "tolerance": 100},
+        #     {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 5000, "tolerance": 10},
+        #     {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 2000, "tolerance": 5},
+        #     {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 1000, "tolerance": 1},
+        # ]
 
         for i, stage in enumerate(stages, 1):
             logger.info(f"Stage {i}: {stage['desc']}")
@@ -213,7 +249,10 @@ class MDWorkflow:
             logger.debug(f"Applied restraints: protein={stage['k_prot']}, ligand={stage['k_lig']}")
 
             # Display minimisation loop with chunking
-            minim_chunk = 5 # how often to output updates
+            minim_chunk = min(
+                progress_update_interval,
+                total_iter
+            ) # how often to output updates
             total_iter = stage["iter"]
             tolerance = stage.get("tolerance", 10) * kilojoule/(mole*nanometer)
             with tqdm(total=total_iter, desc=f"Stage {i} minimisation", unit="iter") as pbar:
@@ -225,7 +264,10 @@ class MDWorkflow:
                     pbar.update(n)
 
                     # Periodic diagnostics
-                    if steps_done % 200 == 0 or steps_done == total_iter:
+                    if (
+                        steps_done % diagnostic_interval == 0
+                        or steps_done == total_iter
+                    ):
                         state = self.simulation.context.getState(getEnergy=True, getForces=True)
                         energy_val = state.getPotentialEnergy().value_in_unit(kilojoule/mole)
                         forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
@@ -255,7 +297,7 @@ class MDWorkflow:
             unrestrained_indices = np.setdiff1d(np.arange(len(forces)), restrained_atoms)
             if len(unrestrained_indices) > 0:
                 unres_forces = force_norms[unrestrained_indices]
-                if np.max(unres_forces) > 50000:
+                if np.max(unres_forces) > warning_force_threshold:
                     logger.warning(f"High forces on unrestrained atoms: max {np.max(unres_forces):.1f} kJ/mol/nm")
 
 
@@ -271,8 +313,10 @@ class MDWorkflow:
         forces = state.getForces(asNumpy=True) / (kilojoule/mole/nanometer)
         max_force = np.max(np.linalg.norm(forces, axis=1))
         logger.info(f"Final max force: {max_force:.2f} kJ/mol/nm")
-        if max_force > 50000:
-            logger.warning(f"Forces are too high - re-prepare your system.")
+        if max_force > warning_force_threshold:
+            logger.warning(
+                "Forces are too high - check your prepared system.."
+            )
 
         output_dir = self.config.get("heat_and_equilibrate", {}).get("output_dir", ".")
         os.makedirs(output_dir, exist_ok=True)
@@ -312,10 +356,10 @@ class MDWorkflow:
         return force, len(protein_atoms), len(membrane_atoms)
 
     @register_task("heat_and_equilibrate", category='Molecular dynamics',
-               description="Heating and equilibration.")
+               description="Configurable staged heating and NPT equilibration with diagnostic plots.")
     def heat_and_equilibrate(self):
 
-        ligand_resname = 'LIG'
+        ligand_resname = 'LIG' # TODO: should avoid hard-coding this here.
         atoms_list = list(self.topology.atoms())
 
         # -------------------------------
@@ -771,7 +815,7 @@ class MDWorkflow:
 
         logger.info(f"Saved wrapped trajectory: {output_path}")
 
-    @register_task("production", category='Molecular dynamics', description="Run production simulation.")
+    @register_task("production", category='Molecular dynamics', description="Run production NPT simulation.")
     def production(self):
 
         def find_latest_checkpoint(output_dir):
