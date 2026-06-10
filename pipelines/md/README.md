@@ -72,7 +72,7 @@ If you want to register new workflows, you'll also need to do so with metadata t
 
 * General MD
     * At the moment, the MD code outputs restarts every 10 ns, which is set in the yaml with `output_split_ns`. To restart a failed simulation, you just need to run the pipeline again with your yaml and it will automatically detect from the yaml parameter `length_ns` where to restart the simulation. 
-    * If you want to run a longer simulations from a completed simulation, increase `length_ns`, run the pipeline again and it will automatically detect the appropriate restart point.
+    * If you want to run a longer simulation from a completed job, increase `length_ns`, run the pipeline again and it will automatically detect the appropriate restart point.
 * Free energy 
     * Use the OpenFE env for running simulations they provide during installation. The code base is being revised fairly regularly so dependencies will change with newer versions.
 

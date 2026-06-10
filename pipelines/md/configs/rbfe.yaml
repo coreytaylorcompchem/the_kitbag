@@ -1,0 +1,32 @@
+task: workflow
+workflow_name: rbfe
+
+workflow:
+  - openfe_prepare_receptor
+  - openfe_create_network
+  - openfe_create_alchemical_network
+  - openfe_run_network
+  - openfe_gather_results
+
+openfe_prepare_receptor:
+  equilibrated_pdb: input/protein_equilibrated.pdb
+  ligand_resname: UNK # tell the system which ligand to remove for FEP, if it's there.
+  output_dir: output/openfe
+
+openfe_create_network:
+  receptor_pdb: output/openfe/receptor_membrane.pdb
+  ligand_sdf: input/ligs_fep.sdf
+  output_dir: output/openfe
+
+openfe_create_alchemical_network:
+  receptor_pdb: output/openfe/receptor_membrane.pdb
+  output_dir: output/openfe
+
+openfe_run_network:
+  transformations_dir: output/openfe/transformations
+  output_dir: output/openfe/results
+
+openfe_gather_results:
+  results_dir: output/openfe/results
+  output_file: output/openfe/final_results.tsv
+  report: dg
