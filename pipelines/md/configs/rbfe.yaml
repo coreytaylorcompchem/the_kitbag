@@ -16,11 +16,27 @@ openfe_prepare_receptor:
 openfe_create_network:
   receptor_pdb: output/openfe/receptor_membrane.pdb
   ligand_sdf: input/ligs_fep.sdf
+  network:
+    method: lomap # lomap | mst | star 
+    radial: false
+    mst: false # this can be set to true for lomap
+    max_path_length: 6
+    # alternatively, use the star representation where transforms are performed from a chosen reference ligand
+    # method: star 
+    # central_ligand: 0 # specify the central ligand from the sdf (only for star)
   output_dir: output/openfe
 
 openfe_create_alchemical_network:
   receptor_pdb: output/openfe/receptor_membrane.pdb
   output_dir: output/openfe
+  protocol:
+    platform: CUDA
+    repeats: 3
+    production_length_ns: 5.0
+    equilibration_length_ns: 0.5
+    lambda_windows: 11
+    checkpoint_interval_ns: 1
+    positions_write_frequency_ps: 100
 
 openfe_run_network:
   transformations_dir: output/openfe/transformations
