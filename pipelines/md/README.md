@@ -6,14 +6,17 @@ Perform different types of MD in automated, end-to-end fashion.
 
 ## Setup and dependencies
 
-* Mainly Python libs
-* [OpenMM](https://docs.openmm.org/latest/userguide/application/01_getting_started.html)
-* [OpenFE](https://github.com/OpenFreeEnergy/openfe)
-* [MDAnalysis](https://www.mdanalysis.org/pages/installation_quick_start/)
-* [Cuda](https://developer.nvidia.com/cuda-toolkit)
-* [Rdkit](https://www.rdkit.org/docs/Install.html)
-* [PDBFixer](https://github.com/openmm/pdbfixer)
-* [Biopython](https://biopython.org/) (may remove this)
+* Large packages
+  * [OpenMM](https://docs.openmm.org/latest/userguide/application/01_getting_started.html)
+  * [OpenFE](https://github.com/OpenFreeEnergy/openfe)
+  * [MDAnalysis](https://www.mdanalysis.org/pages/installation_quick_start/)
+  * [Cuda](https://developer.nvidia.com/cuda-toolkit)
+  * [Rdkit](https://www.rdkit.org/docs/Install.html)
+* Utils
+  * [Parmed](https://parmed.github.io/ParmEd/html/index.html)
+  * [PDBFixer](https://github.com/openmm/pdbfixer)
+  * [OpenBabel](https://openbabel.org/docs/UseTheLibrary/PythonInstall.html)
+  * [Biopython](https://biopython.org/) (may remove this)
 
 ## Running calculations
 

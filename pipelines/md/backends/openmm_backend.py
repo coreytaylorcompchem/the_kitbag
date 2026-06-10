@@ -1086,18 +1086,18 @@ class OpenMMBackend:
         # Validate ligand bonded terms
         # ------------------------------------------------------------
 
+        protein_resnames = {
+            'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY',
+            'HIS','ILE','LEU','LYS','MET','PHE','PRO',
+            'SER','THR','TRP','TYR','VAL'
+        }
+
         if has_ligand:
 
             logger.info("Validating ligand bonded terms")
 
             # Find ligand atoms by exclusion:
             # anything non-protein/non-water added late is ligand
-
-            protein_resnames = {
-                'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY',
-                'HIS','ILE','LEU','LYS','MET','PHE','PRO',
-                'SER','THR','TRP','TYR','VAL'
-            }
 
             water_resnames = {'HOH', 'WAT', 'SOL', 'POP', 'POPC'}
 
@@ -1185,12 +1185,6 @@ class OpenMMBackend:
         inpcrd_path = os.path.join(output_trajectory, "system.inpcrd")
 
         structure.save(psf_path)
-
-        protein_resnames = {
-            'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY',
-            'HIS','ILE','LEU','LYS','MET','PHE','PRO',
-            'SER','THR','TRP','TYR','VAL'
-        }
 
         water_resnames = {'HOH', 'WAT', 'SOL'}
         lipid_resnames = {'POP', 'POPC'}
