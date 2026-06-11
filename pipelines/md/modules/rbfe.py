@@ -17,16 +17,16 @@ from openmm.app import (
     Modeller,
 )
 
-import openfe
-from openfe import (
-    SmallMoleculeComponent,
-    ProteinMembraneComponent,
-    ChemicalSystem,
-    Transformation,
-    AlchemicalNetwork,
-)
+# import openfe
+# from openfe import (
+#     SmallMoleculeComponent,
+#     ProteinMembraneComponent,
+#     ChemicalSystem,
+#     Transformation,
+#     AlchemicalNetwork,
+# )
 
-from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
+# from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
 
 from openff.units import unit
 
@@ -47,6 +47,44 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+def require_openfe():
+    try:
+        import openfe
+
+        from openfe import (
+            SmallMoleculeComponent,
+            ProteinMembraneComponent,
+            ChemicalSystem,
+            Transformation,
+            AlchemicalNetwork,
+        )
+
+        from openfe.protocols.openmm_rfe import (
+            RelativeHybridTopologyProtocol
+        )
+
+        class OpenFEDependencies:
+            pass
+
+        deps = OpenFEDependencies()
+
+        deps.openfe = openfe
+        deps.SmallMoleculeComponent = SmallMoleculeComponent
+        deps.ProteinMembraneComponent = ProteinMembraneComponent
+        deps.ChemicalSystem = ChemicalSystem
+        deps.Transformation = Transformation
+        deps.AlchemicalNetwork = AlchemicalNetwork
+        deps.RelativeHybridTopologyProtocol = (
+            RelativeHybridTopologyProtocol
+        )
+
+        return deps
+
+    except ImportError:
+        raise RuntimeError(
+            "This task requires OpenFE. "
+            "Activate the OpenFE environment."
+        )
 def _prepare_openfe_receptor(pdb_in, pdb_out):
 
     pdb = PDBFile(pdb_in)
@@ -168,6 +206,12 @@ def _load_protein_membrane_component(
     pdb_file,
 ):
 
+    deps = require_openfe()
+
+    ProteinMembraneComponent = (
+        deps.ProteinMembraneComponent
+    )
+
     _check_protein_connectivity(
         pdb_file
     )
@@ -243,6 +287,12 @@ def _build_protocol_settings(
     protocol_cfg,
     leg,
 ):
+
+    deps = require_openfe()
+
+    RelativeHybridTopologyProtocol = (
+        deps.RelativeHybridTopologyProtocol
+    )
 
     settings = (
         RelativeHybridTopologyProtocol
@@ -451,6 +501,14 @@ def openfe_create_network(self):
 
     cfg = self.config["openfe_create_network"]
 
+    deps = require_openfe()
+
+    openfe = deps.openfe
+
+    SmallMoleculeComponent = (
+        deps.SmallMoleculeComponent
+    )
+
     receptor_pdb = getattr(
         self,
         "openfe_receptor_pdb",
@@ -485,21 +543,6 @@ def openfe_create_network(self):
             )
         )
 
-    # mapper = openfe.setup.KartografAtomMapper()
-
-    # scorer = (
-    #     openfe.lomap_scorers
-    #     .default_lomap_score
-    # )
-
-    # network = (
-    #     openfe.ligand_network_planning
-    #     .generate_lomap_network(
-    #         ligands=ligands,
-    #         mappers=[mapper],
-    #         scorer=scorer,
-    #     )
-    # )
     mapper = openfe.setup.KartografAtomMapper()
 
     scorer = (
@@ -602,6 +645,18 @@ def openfe_create_network(self):
     description="Create OpenFE RBFE alchemical network."
 )
 def openfe_create_alchemical_network(self):
+
+    deps = require_openfe()
+
+    openfe = deps.openfe
+
+    ChemicalSystem = deps.ChemicalSystem
+    Transformation = deps.Transformation
+    AlchemicalNetwork = deps.AlchemicalNetwork
+
+    RelativeHybridTopologyProtocol = (
+        deps.RelativeHybridTopologyProtocol
+    )
 
     cfg = self.config["openfe_create_alchemical_network"]
     protocol_cfg = cfg.get(

@@ -241,7 +241,7 @@ class MDWorkflow:
         # ]
 
         for i, stage in enumerate(stages, 1):
-            logger.info(f"Stage {i}: {stage['desc']}")
+            logger.info(f"Stage {i}: {stage['description']}")
 
             # Update restraint strengths via global parameters
             self.simulation.context.setParameter("k_prot", stage["k_prot"] * kilojoule/(mole*nanometer**2))
@@ -249,11 +249,13 @@ class MDWorkflow:
             logger.debug(f"Applied restraints: protein={stage['k_prot']}, ligand={stage['k_lig']}")
 
             # Display minimisation loop with chunking
+            total_iter = stage["iter"]
+            
             minim_chunk = min(
                 progress_update_interval,
                 total_iter
             ) # how often to output updates
-            total_iter = stage["iter"]
+
             tolerance = stage.get("tolerance", 10) * kilojoule/(mole*nanometer)
             with tqdm(total=total_iter, desc=f"Stage {i} minimisation", unit="iter") as pbar:
                 steps_done = 0
