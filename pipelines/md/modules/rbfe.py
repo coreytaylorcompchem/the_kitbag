@@ -50,6 +50,9 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 def _prepare_openfe_receptor(pdb_in, pdb_out):
 
     pdb = PDBFile(pdb_in)
+    
+    box = pdb.topology.getPeriodicBoxVectors()
+
     modeller = Modeller(
         pdb.topology,
         pdb.positions
@@ -57,6 +60,11 @@ def _prepare_openfe_receptor(pdb_in, pdb_out):
 
     backend = OpenMMBackend({})
     modeller = backend.cap_internal_chain_breaks(modeller)
+
+    # Need this after capping otherwise box vectors get lost.
+    
+    if box is not None:
+        modeller.topology.setPeriodicBoxVectors(box)
 
     with open(pdb_out, "w") as f:
         PDBFile.writeFile(
@@ -382,6 +390,9 @@ def openfe_prepare_receptor(self):
                 for x in universes
             ]
         )
+
+    u.dimensions = universes[0].dimensions.copy()
+
     ligand_resname = cfg.get("ligand_resname", "LIG")
 
     output_dir = cfg.get("output_dir", "openfe")
@@ -770,13 +781,22 @@ def openfe_run_network(self):
 
     env = os.environ.copy()
 
-    gpu_id = cfg.get("gpu_id")
+    gpu_id = (
+        self.config
+        .get("openfe_create_alchemical_network", {})
+        .get("protocol", {})
+        .get("gpu_id")
+    )
+
+    logger.debug(
+        f"gpu_id from config = {gpu_id!r}"
+    )
 
     if gpu_id is not None:
 
         env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
-        logger.info(
+        logger.debug(
             f"Using GPU {gpu_id}"
         )
 
@@ -841,6 +861,11 @@ def openfe_run_network(self):
             "-d",
             working_dir,
         ]
+
+        logger.info(
+            "CUDA_VISIBLE_DEVICES="
+            f"{env.get('CUDA_VISIBLE_DEVICES')}"
+        )
 
         proc = subprocess.Popen(
             cmd,
