@@ -12,6 +12,11 @@ from pathlib import Path
 import json
 import numpy as np
 
+from openmm.app import (
+    PDBFile,
+    Modeller,
+)
+
 import openfe
 from openfe import (
     SmallMoleculeComponent,
@@ -34,15 +39,165 @@ from pipeline.task_registry import register_task
 
 from tqdm import tqdm
 
+from backends.openmm_backend import (
+    OpenMMBackend,
+)
+
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def _load_box_vectors_from_state_json(json_file):
-    with open(json_file) as f:
-        data = json.load(f)
+def _prepare_openfe_receptor(pdb_in, pdb_out):
 
-    return np.asarray(data["box_vectors"])
+    pdb = PDBFile(pdb_in)
+    modeller = Modeller(
+        pdb.topology,
+        pdb.positions
+    )
+
+    backend = OpenMMBackend({})
+    modeller = backend.cap_internal_chain_breaks(modeller)
+
+    with open(pdb_out, "w") as f:
+        PDBFile.writeFile(
+            modeller.topology,
+            modeller.positions,
+            f,
+            keepIds=True,
+        )
+
+    return pdb_out
+
+def _check_protein_connectivity(pdb_file):
+
+    pdb = PDBFile(pdb_file)
+    topology = pdb.topology
+
+    logger.debug(
+        f"Topology contains "
+        f"{topology.getNumChains()} chains"
+    )
+
+    for chain in topology.chains():
+
+        residues = list(chain.residues())
+
+        logger.debug(
+            f"Chain {chain.id}: "
+            f"{len(residues)} residues"
+        )
+
+        for r1, r2 in zip(
+            residues[:-1],
+            residues[1:]
+        ):
+
+            c_atom = None
+            n_atom = None
+
+            for atom in r1.atoms():
+
+                if atom.name == "C":
+                    c_atom = atom
+                    break
+
+            for atom in r2.atoms():
+
+                if atom.name == "N":
+                    n_atom = atom
+                    break
+
+            if (
+                c_atom is None or
+                n_atom is None
+            ):
+                continue
+
+            pos1 = pdb.positions[
+                c_atom.index
+            ]
+
+            pos2 = pdb.positions[
+                n_atom.index
+            ]
+
+            dist = np.linalg.norm(
+                np.array(
+                    [
+                        pos1.x - pos2.x,
+                        pos1.y - pos2.y,
+                        pos1.z - pos2.z,
+                    ]
+                )
+            )
+
+            if dist > 0.25:
+
+                logger.warning(
+                    f"Large peptide gap: "
+                    f"chain={chain.id} "
+                    f"{r1.name}{r1.id} -> "
+                    f"{r2.name}{r2.id} "
+                    f"distance={dist:.3f} nm"
+                )
+
+def _has_valid_cryst1(pdb_file):
+
+    try:
+        pdb = PDBFile(pdb_file)
+        box = pdb.topology.getPeriodicBoxVectors()
+
+        if box is None:
+            return False
+
+        return True
+
+    except Exception:
+
+        return False
+
+def _load_protein_membrane_component(
+    pdb_file,
+):
+
+    _check_protein_connectivity(
+        pdb_file
+    )
+
+    has_box = _has_valid_cryst1(
+        pdb_file
+    )
+
+    logger.info(
+        f"Periodic box present: {has_box}"
+    )
+
+    if has_box:
+
+        logger.info(
+            "Using periodic box vectors "
+            "from PDB"
+        )
+
+        return (
+            ProteinMembraneComponent
+            .from_pdb_file(
+                pdb_file
+            )
+        )
+
+    logger.warning(
+        "No periodic box detected. "
+        "Inferring box vectors."
+    )
+
+    return (
+        ProteinMembraneComponent
+        .from_pdb_file(
+            pdb_file,
+            infer_box_vectors=True,
+        )
+    )
 
 def _get_openfe_progress(workdir):
 
@@ -191,13 +346,46 @@ def openfe_prepare_receptor(self):
 
     cfg = self.config["openfe_prepare_receptor"]
 
-    pdb_file = cfg["equilibrated_pdb"]
+    if "equilibrated_pdb" in cfg:
+
+        u = mda.Universe(
+            cfg["equilibrated_pdb"]
+        )
+
+    else:
+
+        universes = []
+
+        for key in [
+            "protein_pdb",
+            "membrane_pdb",
+            "water_pdb",
+        ]:
+
+            if key in cfg:
+
+                universes.append(
+                    mda.Universe(
+                        cfg[key]
+                    )
+                )
+
+        if not universes:
+
+            raise ValueError(
+                "No receptor input files provided"
+            )
+
+        u = mda.Merge(
+            *[
+                x.atoms
+                for x in universes
+            ]
+        )
     ligand_resname = cfg.get("ligand_resname", "LIG")
 
     output_dir = cfg.get("output_dir", "openfe")
     os.makedirs(output_dir, exist_ok=True)
-
-    u = mda.Universe(pdb_file)
 
     receptor = u.select_atoms(
         f"not resname {ligand_resname}"
@@ -210,8 +398,22 @@ def openfe_prepare_receptor(self):
 
     receptor.write(receptor_pdb)
 
+    fixed_receptor_pdb = os.path.join(
+        output_dir,
+        "receptor_membrane_fixed.pdb"
+    )
+
+    _prepare_openfe_receptor(
+        receptor_pdb,
+        fixed_receptor_pdb
+    )
+
+    self.openfe_receptor_pdb = (
+        fixed_receptor_pdb
+    )
+
     logger.info(
-        f"Wrote receptor file: {receptor_pdb}"
+        f"Wrote receptor file: {fixed_receptor_pdb}"
     )
 
     with open(receptor_pdb) as f:
@@ -224,10 +426,10 @@ def openfe_prepare_receptor(self):
 
     logger.info(
         f"Saved receptor membrane system "
-        f"to {receptor_pdb}"
+        f"to {fixed_receptor_pdb}"
     )
 
-    self.openfe_receptor_pdb = receptor_pdb
+    # self.openfe_receptor_pdb = receptor_pdb
 
 @register_task(
     "openfe_create_network",
@@ -238,7 +440,11 @@ def openfe_create_network(self):
 
     cfg = self.config["openfe_create_network"]
 
-    receptor_pdb = cfg["receptor_pdb"]
+    receptor_pdb = getattr(
+        self,
+        "openfe_receptor_pdb",
+        cfg["receptor_pdb"]
+    )
     ligand_sdf = cfg["ligand_sdf"]
 
     output_dir = cfg.get(
@@ -248,11 +454,8 @@ def openfe_create_network(self):
 
     os.makedirs(output_dir, exist_ok=True)
 
-    receptor = (
-        ProteinMembraneComponent
-        .from_pdb_file(
-            receptor_pdb
-        )
+    receptor = _load_protein_membrane_component(
+        receptor_pdb
     )
 
     ligands = []
@@ -395,7 +598,11 @@ def openfe_create_alchemical_network(self):
         {}
     )
 
-    receptor_pdb = cfg["receptor_pdb"]
+    receptor_pdb = getattr(
+        self,
+        "openfe_receptor_pdb",
+        cfg["receptor_pdb"]
+    )
 
     output_dir = cfg.get(
         "output_dir",
@@ -406,7 +613,7 @@ def openfe_create_alchemical_network(self):
 
     ligand_network = self.openfe_network
 
-    protein = openfe.ProteinMembraneComponent.from_pdb_file(
+    protein = _load_protein_membrane_component(
         receptor_pdb
     )
 
@@ -547,7 +754,6 @@ def openfe_create_alchemical_network(self):
 def openfe_run_network(self):
 
     cfg = self.config["openfe_run_network"]
-
     transforms_dir = cfg["transformations_dir"]
 
     output_dir = cfg.get(
@@ -559,6 +765,20 @@ def openfe_run_network(self):
         output_dir,
         exist_ok=True
     )
+
+    # set active GPU
+
+    env = os.environ.copy()
+
+    gpu_id = cfg.get("gpu_id")
+
+    if gpu_id is not None:
+
+        env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+
+        logger.info(
+            f"Using GPU {gpu_id}"
+        )
 
     json_files = sorted(
         glob.glob(
@@ -622,7 +842,10 @@ def openfe_run_network(self):
             working_dir,
         ]
 
-        proc = subprocess.Popen(cmd)
+        proc = subprocess.Popen(
+            cmd,
+            env=env
+        )
 
         last_report = -1
 
