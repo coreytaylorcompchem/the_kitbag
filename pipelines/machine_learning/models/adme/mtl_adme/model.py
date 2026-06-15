@@ -203,7 +203,7 @@ class GINRegressor(nn.Module):
             first = trunk[0]
             second = trunk[3]
 
-            logger.info(
+            logger.debug(
                 f"{group_name}: "
                 f"{first.in_features}->{first.out_features} "
                 f"-> "
