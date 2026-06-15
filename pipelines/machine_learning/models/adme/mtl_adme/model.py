@@ -12,7 +12,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 class GINRegressor(nn.Module):
     def __init__(self, input_dim, edge_dim, global_feat_dim, fp_dim, num_tasks,
                  hidden_dim=256, fp_hidden_dim=256, num_layers=5, dropout=0.1, task_groups=None, 
-                 loss_name="huber",huber_delta=1.0,):
+                 group_architecture=None, loss_name="huber",huber_delta=1.0,):
         super().__init__()
         self._debug_printed = False
         self.num_layers = num_layers
@@ -34,6 +34,9 @@ class GINRegressor(nn.Module):
         self.graph_norm = nn.LayerNorm(hidden_dim)
         self.fp_norm = nn.LayerNorm(fp_hidden_dim)
         self.global_norm = nn.LayerNorm(hidden_dim)
+        self.group_architecture = (
+            group_architecture or {}
+        ) # store stage-specific parameters
 
         # =========================
         # TASK GROUPING
@@ -158,20 +161,116 @@ class GINRegressor(nn.Module):
 
         self.group_trunks = nn.ModuleDict()
 
-        for group_name in self.task_groups.keys():
+        task_output_dims = {}
+
+        for group_name, task_indices in self.task_groups.items():
+
+            cfg = self.group_architecture.get(
+                group_name,
+                {}
+            )
+
+            hidden_dim_group = cfg.get(
+                "hidden_dim",
+                256
+            )
+
+            output_dim_group = cfg.get(
+                "output_dim",
+                256
+            )
+
             self.group_trunks[group_name] = nn.Sequential(
-                # nn.Linear(512, 256),
-                # nn.ReLU(),
-                # nn.Dropout(dropout)
-                nn.Linear(512, 512),
+
+                nn.Linear(
+                    512,
+                    hidden_dim_group
+                ),
                 nn.ReLU(),
-                # nn.LayerNorm(512),
                 nn.Dropout(dropout),
 
-                nn.Linear(512, 256),
+                nn.Linear(
+                    hidden_dim_group,
+                    output_dim_group
+                ),
                 nn.ReLU(),
                 nn.Dropout(dropout),
             )
+
+            for task_idx in task_indices:
+                task_output_dims[task_idx] = output_dim_group
+            
+        self.heads = nn.ModuleList()
+
+        for task_idx in range(num_tasks):
+
+            head_input_dim = task_output_dims[
+                task_idx
+            ]
+
+            self.heads.append(
+
+                nn.Sequential(
+
+                    nn.Linear(
+                        head_input_dim,
+                        64
+                    ),
+
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+
+                    nn.Linear(
+                        64,
+                        1
+                    )
+                )
+            )
+
+        logger.debug("Group architectures:")
+
+        for group_name, trunk in self.group_trunks.items():
+
+            first = trunk[0]
+            second = trunk[3]
+
+            logger.info(
+                f"{group_name}: "
+                f"{first.in_features}->{first.out_features} "
+                f"-> "
+                f"{second.out_features}"
+            )
+
+        # for group_name in self.task_groups.keys():
+
+        #     cfg = self.group_architecture.get(
+        #         group_name,
+        #         {}
+        #     )
+
+        #     hidden_dim_group = cfg.get(
+        #         "hidden_dim",
+        #         256
+        #     )
+
+        #     output_dim_group = cfg.get(
+        #         "output_dim",
+        #         256
+        #     )
+
+        # self.group_trunks[group_name] = nn.Sequential(
+
+        #     nn.Linear(512, hidden_dim_group),
+        #     nn.ReLU(),
+        #     nn.Dropout(dropout),
+
+        #     nn.Linear(
+        #         hidden_dim_group,
+        #         output_dim_group
+        #     ),
+        #     nn.ReLU(),
+        #     nn.Dropout(dropout),
+        # )
 
         # =========================
         # Task-specific heads
@@ -187,15 +286,15 @@ class GINRegressor(nn.Module):
         # ])
 
         # try a smaller model
-        self.heads = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(256, 64),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.Linear(64, 1)
-            )
-            for _ in range(num_tasks)
-        ])
+        # self.heads = nn.ModuleList([
+        #     nn.Sequential(
+        #         nn.Linear(256, 64),
+        #         nn.ReLU(),
+        #         nn.Dropout(dropout),
+        #         nn.Linear(64, 1)
+        #     )
+        #     for _ in range(num_tasks)
+        # ])
 
         # =========================
         # Uncertainty weights

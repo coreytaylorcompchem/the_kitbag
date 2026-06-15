@@ -589,6 +589,55 @@ def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
             p.requires_grad = True
 
         return
+    
+    elif strategy == "progressive_freezing_gradual":
+        for p in model.parameters():
+            p.requires_grad = True
+
+        if stage_idx == 0:
+            pass
+        
+        if stage_idx >= 1:
+
+            for p in model.input_proj.parameters():
+                p.requires_grad = False
+
+            for p in model.convs.parameters():
+                p.requires_grad = False
+
+            for p in model.norms.parameters():
+                p.requires_grad = False
+            
+        if stage_idx >= 2:
+
+            for p in model.shared.parameters():
+                p.requires_grad = False
+        
+        if stage_idx >= 3:
+
+            for p in model.group_trunks.parameters():
+                p.requires_grad = False
+    
+    elif strategy == "progressive_freezing_steep":
+
+    # start with everything trainable
+        for p in model.parameters():
+            p.requires_grad = True
+
+        if stage_idx >= 1:
+
+            frozen_modules = [
+                model.input_proj,
+                model.convs,
+                model.norms,
+                model.shared,
+                model.fp_mlp,
+                model.global_proj,
+            ]
+
+            for module in frozen_modules:
+                for p in module.parameters():
+                    p.requires_grad = False
 
     # -------------------------
     # Freeze everything first
@@ -732,7 +781,20 @@ def train_curriculum(context, config, params):
     val_list = context["val_list"]
 
    # Model init
+    
     sample = data_list[0]
+
+    group_architecture = {
+        stage["name"]: {
+            "hidden_dim": stage.get("hidden_dim", 256),
+            "output_dim": stage.get("output_dim", 256),
+        }
+        for stage in curriculum_cfg["stages"]
+    }
+
+    logger.info(
+        f"Group architecture: {group_architecture}"
+    )
 
     model = ModelClass(
         input_dim=sample.x.shape[1],
@@ -741,6 +803,7 @@ def train_curriculum(context, config, params):
         fp_dim=sample.fp.shape[-1],
         num_tasks=sample.y.shape[-1],
         task_groups=context.get("task_groups"),
+        group_architecture=group_architecture,
         **{k: v for k, v in params.items() if k != "lr"}
     ).to(device)
 
@@ -883,7 +946,14 @@ def train_curriculum(context, config, params):
                 and p.requires_grad
             ]
 
-            stage_backbone_lr = lr * (0.5 ** stage_idx)
+            backbone_lr_decay = curriculum_cfg.get(
+                "backbone_lr_decay",
+                0.5
+            )
+
+            stage_backbone_lr = lr * (
+                backbone_lr_decay ** stage_idx
+            )
 
             optimizer = torch.optim.Adam(
                 [
@@ -1127,7 +1197,11 @@ def train_curriculum(context, config, params):
             "params": params,
 
             "task_names": context["task_names"],
+
             "task_groups": context["task_groups"],
+
+            "group_architecture":
+                model.group_architecture,
 
             "label_scalers":
                 context["label_scalers"],
