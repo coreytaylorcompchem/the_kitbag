@@ -727,7 +727,7 @@ def train_curriculum(context, config, params):
         for stage in curriculum_cfg["stages"]
     }
 
-    logger.info(
+    logger.debug(
         f"Group architecture: {group_architecture}"
     )
 
