@@ -508,6 +508,28 @@ def set_requires_grad(module, requires_grad):
     for p in module.parameters():
         p.requires_grad = requires_grad
 
+def log_trainable_parameters(
+    model,
+    stage_idx
+):
+
+    trainable = sum(
+        p.numel()
+        for p in model.parameters()
+        if p.requires_grad
+    )
+
+    total = sum(
+        p.numel()
+        for p in model.parameters()
+    )
+
+    logger.info(
+        f"Stage {stage_idx}: "
+        f"{trainable:,}/{total:,} params trainable "
+        f"({100*trainable/total:.1f}%)"
+    )
+
 def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
 
     strategy = curriculum_cfg.get(
@@ -522,6 +544,11 @@ def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
 
         for p in model.parameters():
             p.requires_grad = True
+
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
 
         return
     
@@ -552,6 +579,12 @@ def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
 
             for p in model.group_trunks.parameters():
                 p.requires_grad = False
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
+
+        return
     
     elif strategy == "progressive_freezing_steep":
 
@@ -573,95 +606,183 @@ def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
             for module in frozen_modules:
                 for p in module.parameters():
                     p.requires_grad = False
+        
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
 
-    # -------------------------
-    # Freeze everything first
-    # -------------------------
-    for p in model.parameters():
-        p.requires_grad = False
+        return
+    
+    elif strategy == "representation_pretrain":
 
-    # -------------------------
-    # Identify modules
-    # -------------------------
-    backbone_blocks = [
-        model.input_proj,
-        model.convs,
-        model.norms,
-        model.shared,
-        model.fp_mlp,
-        model.global_proj,
-    ]
+        frozen_backbone = sum(
+            p.numel()
+            for module in [
+                model.input_proj,
+                model.convs,
+                model.norms,
+                model.shared,
+                model.fp_mlp,
+                model.global_proj,
+            ]
+            for p in module.parameters()
+            if not p.requires_grad
+        )
 
-    backbone_blocks = [
-        m for m in backbone_blocks
-        if m is not None
-    ]
+        logger.info(
+            f"Frozen backbone params: "
+            f"{frozen_backbone:,}"
+        )
 
-    # task heads = everything not in backbone
-    backbone_param_ids = {
-        id(p)
-        for block in backbone_blocks
-        for p in block.parameters()
-    }
+        rep_end_name = curriculum_cfg.get(
+            "representation_end_stage",
+            "permeability"
+        )
 
-    head_params = [
-        p
-        for p in model.parameters()
-        if id(p) not in backbone_param_ids
-    ]
+        stage_names = [
+            s["name"]
+            for s in curriculum_cfg["stages"]
+        ]
 
-    # -------------------------
-    # Always train heads
-    # -------------------------
-    for p in head_params:
-        p.requires_grad = True
+        rep_end_idx = stage_names.index(
+            rep_end_name
+        )
 
-    # -------------------------
-    # Progressive unfreezing
-    # -------------------------
-    if stage_idx >= 1:
+        # everything trainable initially
 
-        for p in model.shared.parameters():
+        for p in model.parameters():
             p.requires_grad = True
 
-        for p in model.fp_mlp.parameters():
+        # after permeability:
+        # freeze the learned representation
+
+        if stage_idx > rep_end_idx:
+
+            frozen_modules = [
+
+                model.input_proj,
+                model.convs,
+                model.norms,
+                model.shared,
+                model.fp_mlp,
+                model.global_proj,
+            ]
+
+            for module in frozen_modules:
+
+                for p in module.parameters():
+
+                    p.requires_grad = False
+
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
+
+        return
+    
+    elif strategy == "progressive_unfreeze":
+        # -------------------------
+        # Freeze everything first
+        # -------------------------
+        for p in model.parameters():
+            p.requires_grad = False
+
+        # -------------------------
+        # Identify modules
+        # -------------------------
+        backbone_blocks = [
+            model.input_proj,
+            model.convs,
+            model.norms,
+            model.shared,
+            model.fp_mlp,
+            model.global_proj,
+        ]
+
+        backbone_blocks = [
+            m for m in backbone_blocks
+            if m is not None
+        ]
+
+        # task heads = everything not in backbone
+        backbone_param_ids = {
+            id(p)
+            for block in backbone_blocks
+            for p in block.parameters()
+        }
+
+        head_params = [
+            p
+            for p in model.parameters()
+            if id(p) not in backbone_param_ids
+        ]
+
+        # -------------------------
+        # Always train heads
+        # -------------------------
+        for p in head_params:
             p.requires_grad = True
 
-        for p in model.global_proj.parameters():
-            p.requires_grad = True
+        # -------------------------
+        # Progressive unfreezing
+        # -------------------------
+        if stage_idx >= 1:
 
-    if stage_idx >= 2:
+            for p in model.shared.parameters():
+                p.requires_grad = True
 
-        for p in model.convs.parameters():
-            p.requires_grad = True
+            for p in model.fp_mlp.parameters():
+                p.requires_grad = True
 
-        for p in model.norms.parameters():
-            p.requires_grad = True
+            for p in model.global_proj.parameters():
+                p.requires_grad = True
 
-    if stage_idx >= 3:
+        if stage_idx >= 2:
 
-        for p in model.input_proj.parameters():
-            p.requires_grad = True
+            for p in model.convs.parameters():
+                p.requires_grad = True
 
-    # -------------------------
-    # Logging
-    # -------------------------
-    trainable = sum(
-        p.numel()
-        for p in model.parameters()
-        if p.requires_grad
-    )
+            for p in model.norms.parameters():
+                p.requires_grad = True
 
-    total = sum(
-        p.numel()
-        for p in model.parameters()
-    )
+        if stage_idx >= 3:
 
-    logger.info(
-        f"Stage {stage_idx}: "
-        f"{trainable:,}/{total:,} params trainable "
-        f"({100*trainable/total:.1f}%)"
-    )
+            for p in model.input_proj.parameters():
+                p.requires_grad = True
+
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
+
+        return
+    
+    else:
+        raise ValueError(
+            f"Unknown curriculum strategy: {strategy}"
+        )
+
+    # # -------------------------
+    # # Logging
+    # # -------------------------
+    # trainable = sum(
+    #     p.numel()
+    #     for p in model.parameters()
+    #     if p.requires_grad
+    # )
+
+    # total = sum(
+    #     p.numel()
+    #     for p in model.parameters()
+    # )
+
+    # logger.info(
+    #     f"Stage {stage_idx}: "
+    #     f"{trainable:,}/{total:,} params trainable "
+    #     f"({100*trainable/total:.1f}%)"
+    # )
 
 def filter_dataset_for_tasks(data_list, task_indices):
     filtered = []
@@ -881,14 +1002,21 @@ def train_curriculum(context, config, params):
                 and p.requires_grad
             ]
 
-            backbone_lr_decay = curriculum_cfg.get(
-                "backbone_lr_decay",
-                0.5
-            )
+            if strategy == "representation_pretrain":
 
-            stage_backbone_lr = lr * (
-                backbone_lr_decay ** stage_idx
-            )
+                stage_backbone_lr = lr
+
+            else:
+
+                backbone_lr_decay = curriculum_cfg.get(
+                    "backbone_lr_decay",
+                    0.5
+                )
+
+                stage_backbone_lr = (
+                    lr *
+                    (backbone_lr_decay ** stage_idx)
+                )
 
             optimizer = torch.optim.Adam(
                 [
