@@ -508,27 +508,47 @@ def set_requires_grad(module, requires_grad):
     for p in module.parameters():
         p.requires_grad = requires_grad
 
-def log_trainable_parameters(
-    model,
-    stage_idx
-):
+def log_trainable_parameters(model, stage_idx):
 
-    trainable = sum(
-        p.numel()
-        for p in model.parameters()
-        if p.requires_grad
-    )
+    total = 0
+    trainable = 0
 
-    total = sum(
-        p.numel()
-        for p in model.parameters()
-    )
+    for p in model.parameters():
+        total += p.numel()
+
+        if p.requires_grad:
+            trainable += p.numel()
 
     logger.info(
         f"Stage {stage_idx}: "
-        f"{trainable:,}/{total:,} params trainable "
+        f"{trainable:,}/{total:,} trainable "
         f"({100*trainable/total:.1f}%)"
     )
+
+    for module_name in [
+        "input_proj",
+        "convs",
+        "norms",
+        "fp_mlp",
+        "global_proj",
+        "shared",
+        "group_trunks",
+    ]:
+
+        module = getattr(model, module_name, None)
+
+        if module is None:
+            continue
+
+        frozen = all(
+            not p.requires_grad
+            for p in module.parameters()
+        )
+
+        logger.debug(
+            f"  {module_name}: "
+            f"{'FROZEN' if frozen else 'TRAINABLE'}"
+        )
 
 def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
 
@@ -559,26 +579,37 @@ def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
         if stage_idx == 0:
             pass
         
-        if stage_idx >= 1:
+        stage_name = curriculum_cfg["stages"][stage_idx]["name"]
 
-            for p in model.input_proj.parameters():
+        freeze_schedule = curriculum_cfg.get(
+            "freeze_schedule",
+            {}
+        )
+
+        if stage_name not in freeze_schedule:
+            logger.warning(
+                f"No freeze schedule found for stage {stage_name}"
+            )
+
+        modules_to_freeze = (
+            freeze_schedule
+            .get(stage_name, {})
+            .get("freeze", [])
+        )
+
+        for module_name in modules_to_freeze:
+
+            module = getattr(model, module_name, None)
+
+            if module is None:
+                logger.warning(
+                    f"Unknown module in freeze schedule: {module_name}"
+                )
+                continue
+
+            for p in module.parameters():
                 p.requires_grad = False
 
-            for p in model.convs.parameters():
-                p.requires_grad = False
-
-            for p in model.norms.parameters():
-                p.requires_grad = False
-            
-        if stage_idx >= 2:
-
-            for p in model.shared.parameters():
-                p.requires_grad = False
-        
-        if stage_idx >= 3:
-
-            for p in model.group_trunks.parameters():
-                p.requires_grad = False
         log_trainable_parameters(
             model,
             stage_idx
@@ -1029,6 +1060,18 @@ def train_curriculum(context, config, params):
                         "lr": lr,
                     }
                 ]
+            )
+
+            # log the optimiser parameter count so we can verify optimiser is being reset correctly
+ 
+            opt_params = sum(
+                p.numel()
+                for group in optimizer.param_groups
+                for p in group["params"]
+            )
+
+            logger.debug(
+                f"Optimizer contains {opt_params:,} parameters"
             )
 
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
