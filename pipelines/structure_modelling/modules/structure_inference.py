@@ -6,8 +6,13 @@ import subprocess
 import numpy as np
 
 from pathlib import Path
+from collections import defaultdict
 
 from scipy.cluster.hierarchy import linkage, fcluster
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+
 from Bio.PDB import PDBParser, PDBIO, Structure, Model, Chain, Residue, Atom
 from Bio.PDB import MMCIFParser
 
@@ -24,11 +29,11 @@ from backends.boltz import BoltzBackend
 
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
-from modules.utils.plotting import plot_metric, plot_score, scatter_plot
+from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 @register_task(
     "predict_structures",
@@ -56,7 +61,7 @@ def predict_structures(backend, config, **kwargs):
     # )
 
     
-    backend_instance = BoltzBackend()
+    backend_instance = BoltzBackend(config=config)
     all_results = []
 
     output_dir = Path(config["output_dir"])
@@ -68,10 +73,10 @@ def predict_structures(backend, config, **kwargs):
             output_dir=output_dir / entry["id"],
             sequences=entry["sequences"]
         )
-        logger.info(f"[DEBUG] Result: {result}")
+        logger.debug(f"Result: {result}")
         all_results.append(result)
 
-    logger.info(f"[DEBUG] All results: {all_results}")
+    logger.debug(f"All results: {all_results}")
 
 
     backend.cache["predictions"] = all_results
@@ -101,11 +106,12 @@ def rank_predictions(backend, config, **kwargs):
         for sample in run["results"]:
             predictions.append({
                 "tool": run["tool"],
-                "structure_path": sample["structure"],
+                "structure_path": sample["structure"],              
                 "metrics": {
                     "plddt": sample["plddt"],
                     "ptm": sample["ptm"],
                     "iptm": sample["iptm"],
+                    "iplddt": sample.get("iplddt"),
                 },
                 "run_id": run["run_id"],
                 "device": run["device"],
@@ -137,6 +143,68 @@ def rank_predictions(backend, config, **kwargs):
     # --- sort ---
     predictions.sort(key=lambda x: x["score"], reverse=True)
 
+    # --- clustering in metric space ---
+    # build feature matrix
+
+    # Check to make sure the metrics are full of data
+    
+    for p in predictions:
+        logger.debug(f"Metrics: {p['metrics']}")
+
+    X = []
+    valid_idx = []
+
+    for i, p in enumerate(predictions):
+        m = p["metrics"]
+        if None not in (m["plddt"], m["ptm"], m["iptm"]):           
+            X.append([
+                m["plddt"],
+                m["iptm"],
+                m["iplddt"] if m["iplddt"] is not None else 0.0
+            ])
+
+            valid_idx.append(i)
+
+    if X:
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        k = min(4, len(X_scaled))  # safe default
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init="auto")
+        labels = kmeans.fit_predict(X_scaled)
+
+        # attach cluster labels back
+        for idx, label in zip(valid_idx, labels):
+            predictions[idx]["cluster"] = int(label)
+
+        logger.debug(f"Assigned {k} clusters")
+    else:
+        logger.warning("No valid metric data for clustering")
+
+    input_groups = defaultdict(list)
+
+    for p in predictions:
+        input_groups[p["run_id"]].append(p)
+
+    input_summary = []
+
+    for run_id, group in input_groups.items():
+        iptms = [p["metrics"]["iptm"] for p in group if p["metrics"]["iptm"] is not None]
+        plddts = [p["metrics"]["plddt"] for p in group if p["metrics"]["plddt"] is not None]
+        ptms = [p["metrics"]["ptm"] for p in group if p["metrics"]["ptm"] is not None]
+
+        if not iptms:
+            continue
+
+        input_summary.append({
+            "run_id": run_id,
+            "n_samples": len(group),
+            "mean_iptm": float(np.mean(iptms)),
+            "std_iptm": float(np.std(iptms)),
+            "mean_plddt": float(np.mean(plddts)) if plddts else None,
+            "mean_ptm": float(np.mean(ptms)) if ptms else None,
+        })
+
     # --- write JSON ---
     json_path = ranking_dir / "ranking.json"
     with open(json_path, "w") as f:
@@ -166,29 +234,24 @@ def rank_predictions(backend, config, **kwargs):
                 p["structure_path"],
             ])
 
-    # plot_plddt(
-    #     predictions,
-    #     out_path=ranking_dir / "plddt_hist.png"
-    # )
-
     # --- plotting ---
     if ranking_cfg.get("plotting", {}).get("enabled", True):
 
         plot_metric(predictions, "plddt", ranking_dir / "plddt_hist.png")
         plot_metric(predictions, "ptm", ranking_dir / "ptm_hist.png")
-        plot_metric(predictions, "iptm", ranking_dir / "iptm_hist.png")
+        plot_metric(predictions, "iptm", ranking_dir / "iptm_hist.png")      
+        plot_metric(predictions, "iplddt", ranking_dir / "iplddt_hist.png")
+        
         plot_score(predictions, ranking_dir / "score_hist.png")
 
         scatter_plot(predictions, "plddt", "ptm", ranking_dir / "plddt_vs_ptm.png")
         scatter_plot(predictions, "plddt", "iptm", ranking_dir / "plddt_vs_iptm.png")
         scatter_plot(predictions, "ptm", "iptm", ranking_dir / "ptm_vs_iptm.png")
-
-        logger.info("Saved metric plots to ranking directory")
-
+        scatter_plot(predictions, "iptm", "iplddt", ranking_dir / "iptm_vs_iplddt.png")
+        
+        plot_clusters(predictions, ranking_dir / "clusters.png")
 
     logger.info("Saved metric plots to ranking directory")
-
-    logger.info(f"Ranking written to {ranking_dir}")
 
     # --- select best structures ---
     selected = {}
@@ -217,58 +280,6 @@ def rank_predictions(backend, config, **kwargs):
     }
 
     return backend.cache["ranking"]
-
-# @register_task(
-#     "rank_models",
-#     category="Structure modelling",
-#     description="Rank predicted structures from multiple backends/tools using confidence scores.",
-# )
-# def rank_models(backend_tools, config, **kwargs):
-#     """
-#     Rank models across multiple backends and seeds.
-
-#     backend_tools: list of backend instances (OpenFold, Boltz, Chai, etc.)
-#     config: configuration dict
-#     """
-#     all_runs = []
-
-#     # --- collect all predictions from each backend ---
-#     for backend in backend_tools:
-#         cache_ranking = backend.cache.get("runs", [])
-#         for run in cache_ranking:
-#             score = run.get("metrics", {}).get("plddt", 0)  # default ranking metric
-#             all_runs.append({
-#                 "tool": backend.name,
-#                 "run_id": run.get("run_id", 0),
-#                 "seed": run.get("seed", 0),
-#                 "structure_path": run["structure_path"],
-#                 "metrics": run.get("metrics", {}),
-#                 "score": score,
-#             })
-
-#     if not all_runs:
-#         raise ValueError("No predictions found for ranking.")
-
-#     # --- sort by score descending ---
-#     ranked = sorted(all_runs, key=lambda r: r["score"], reverse=True)
-
-#     # --- save ranking to backend cache ---
-#     ranking_dir = Path(config["output_dir"]) / "ranking"
-#     ranking_dir.mkdir(exist_ok=True)
-#     ranking_json = ranking_dir / "ranking.json"
-
-#     with open(ranking_json, "w") as f:
-#         json.dump(ranked, f, indent=2)
-
-#     # --- store in cache for downstream consensus ---
-#     for backend in backend_tools:
-#         backend.cache["ranking"] = {
-#             "ranking_json": str(ranking_json),
-#             "results": ranked
-#         }
-
-#     logger.info(f"Ranked {len(ranked)} models across {len(backend_tools)} backends.")
-#     return backend_tools[0].cache["ranking"]
 
 def compute_tmscore_matrix(pdb_files):
     """

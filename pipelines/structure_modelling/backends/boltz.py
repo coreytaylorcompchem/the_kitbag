@@ -8,7 +8,7 @@ from backends.base import BaseStructureTool
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def generate_boltz_yaml(sequences: dict, yaml_path: Path):
     """
@@ -36,8 +36,28 @@ def generate_boltz_yaml(sequences: dict, yaml_path: Path):
 
     yaml_path.write_text(yaml.dump(data))
 
+def log_parameters(params: dict, title="Parameters"):
+    if not params:
+        logger.info(f"[{title}] No parameters")
+        return
+
+    key_width = max(len(str(k)) for k in params.keys()) + 2
+
+    logger.info(f"[{title}]")
+    logger.info("─" * (key_width + 20))
+
+    for k, v in params.items():
+        logger.info(f"{k:<{key_width}} {v}")
+
+    logger.info("─" * (key_width + 20))
+
 class BoltzBackend(BaseStructureTool):
     name = "boltz"
+    
+    def __init__(self, config=None):
+            super().__init__()
+            self.config = config or {}
+
 
     def run(
         self,
@@ -55,23 +75,88 @@ class BoltzBackend(BaseStructureTool):
         yaml_file = run_dir / "input.yaml"
 
         generate_boltz_yaml(sequences, yaml_file)
-
+        
         out_dir = run_dir / "results"
-
+        
         cmd = [
             "boltz",
             "predict",
             str(yaml_file),
             "--out_dir", str(out_dir),
-            "--accelerator", "gpu",
-            "--use_msa_server",
-            "--diffusion_samples", "3",
-            "--sampling_steps", "150",
-            "--step_scale", "1.4",
-            "--no_kernels",
         ]
+        
+        # --- config extraction ---
+        sp_cfg = self.config.get("structure_prediction", {})
+        inf_cfg = sp_cfg.get("inference", {})
 
-        logger.info(f"[Boltz] run={run_id} gpu={device}")
+        # --- accelerator ---
+        accelerator = inf_cfg.get("accelerator", "gpu")
+
+        # Add yaml parameters to Boltz command.
+      
+        # --- accelerator ---
+        cmd += ["--accelerator", accelerator]
+
+        # --- optional flags ---
+        if inf_cfg.get("use_msa_server", True):
+            cmd.append("--use_msa_server")
+
+        if inf_cfg.get("no_kernels", True):
+            cmd.append("--no_kernels")
+        # --- numeric params ---
+        if "diffusion_samples" in inf_cfg:
+            cmd += ["--diffusion_samples", str(inf_cfg["diffusion_samples"])]
+
+        if "sampling_steps" in inf_cfg:
+            cmd += ["--sampling_steps", str(inf_cfg["sampling_steps"])]
+
+        if "step_scale" in inf_cfg:
+            cmd += ["--step_scale", str(inf_cfg["step_scale"])]
+
+        if "recycling_steps" in inf_cfg:
+            cmd += ["--recycling_steps", str(inf_cfg["recycling_steps"])]
+
+        if "sampling_steps_affinity" in inf_cfg:
+            cmd += ["--sampling_steps_affinity", str(inf_cfg["sampling_steps_affinity"])]
+
+        if "diffusion_samples_affinity" in inf_cfg:
+            cmd += ["--diffusion_samples_affinity", str(inf_cfg["diffusion_samples_affinity"])]
+
+        # --- clean run label ---
+        run_label = f"Boltz run={run_id} device={device}"
+
+        # --- runtime parameters ---
+        runtime_params = {
+            "accelerator": accelerator,
+            "use_msa_server": inf_cfg.get("use_msa_server", True),
+            "no_kernels": inf_cfg.get("no_kernels", True),
+        }
+
+        # --- sampling parameters ---
+        sampling_params = {
+            "diffusion_samples": inf_cfg.get("diffusion_samples"),
+            "sampling_steps": inf_cfg.get("sampling_steps"),
+            "step_scale": inf_cfg.get("step_scale"),
+            "recycling_steps": inf_cfg.get("recycling_steps"),
+        }
+
+        # --- affinity parameters ---
+        affinity_params = {
+            "diffusion_samples_affinity": inf_cfg.get("diffusion_samples_affinity"),
+            "sampling_steps_affinity": inf_cfg.get("sampling_steps_affinity"),
+        }
+
+        # --- remove None values ---
+        sampling_params = {k: v for k, v in sampling_params.items() if v is not None}
+        affinity_params = {k: v for k, v in affinity_params.items() if v is not None}
+
+        # --- log cleanly ---
+        log_parameters(runtime_params, f"{run_label} | Runtime")
+        log_parameters(sampling_params, f"{run_label} | Sampling")
+
+        if affinity_params:
+            log_parameters(affinity_params, f"{run_label} | Affinity")
+
         subprocess.run(cmd, check=True, env=env)
 
         results = self._parse_results(out_dir)
@@ -106,7 +191,7 @@ class BoltzBackend(BaseStructureTool):
             return []
 
         for json_file in json_files:
-            logger.info(f"[DEBUG] Found JSON: {json_file}")
+            logger.debug(f"Found JSON: {json_file}")
 
             data = json.loads(json_file.read_text())
 
@@ -126,9 +211,14 @@ class BoltzBackend(BaseStructureTool):
 
             samples.append({
                 "structure": str(structure_file),
-                "plddt": data.get("mean_plddt"),
-                "ptm": data.get("ptm"),
+                "plddt": (
+                    data.get("complex_plddt")
+                    or data.get("mean_plddt")
+                    or data.get("plddt")
+                ),
                 "iptm": data.get("iptm"),
+                "ptm": data.get("ptm"),
+                "iplddt": data.get("complex_iplddt"),
             })
 
         return samples
