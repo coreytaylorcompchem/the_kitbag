@@ -357,71 +357,6 @@ def train_epoch(
                     [p for p in module.parameters() if p.requires_grad]
                 )
 
-            # group_losses = [] # KEEP FOR NOW IN CASE WE REVERT TO GROUP LOSSES - GENERALLY HURTS PCGRAD
-
-            # task_groups = getattr(model, "task_groups", None)
-
-            # if task_groups is None:
-            #     raise ValueError("task_groups missing for PCGrad")
-
-            # for group_name, group_tasks in task_groups.items():
-
-            #     active_group_tasks = [
-            #         t for t in group_tasks
-            #         if active_tasks is None or t in active_tasks
-            #     ]
-
-            #     if len(active_group_tasks) == 0:
-            #         continue
-
-            #     group_task_losses = []
-
-            #     for task_idx in active_group_tasks:
-
-            #         mask = ~torch.isnan(target[:, task_idx])
-
-            #         if mask.sum() == 0:
-            #             continue
-
-            #         pred_i = out[mask, task_idx]
-            #         target_i = target[mask, task_idx]
-
-            #         loss_i = compute_base_loss(
-            #             pred_i,
-            #             target_i,
-            #             loss_name=model.loss_name,
-            #             huber_delta=model.huber_delta
-            #         )
-
-            #         if task_weights is not None:
-            #             loss_i = loss_i * task_weights[task_idx]
-
-            #         group_task_losses.append(loss_i)
-
-            #     if len(group_task_losses) > 0:
-            #         group_loss = torch.stack(group_task_losses).mean()
-            #         group_losses.append(group_loss)
-
-            # if len(group_losses) > 0:
-
-            #     pcgrad.pc_backward(group_losses, params)
-
-            #     torch.nn.utils.clip_grad_norm_(
-            #         model.parameters(),
-            #         max_norm=1.0
-            #     )
-
-            #     optimizer.step()
-
-            #     # logging loss
-            #     with torch.no_grad():
-            #         loss = torch.stack(
-            #             [g.detach() for g in group_losses]
-            #         ).mean()
-
-            # else:
-            #     loss = torch.tensor(0.0, device=device)
-
             task_losses_pcgrad = []
 
             for task_idx in task_indices:
@@ -573,6 +508,48 @@ def set_requires_grad(module, requires_grad):
     for p in module.parameters():
         p.requires_grad = requires_grad
 
+def log_trainable_parameters(model, stage_idx):
+
+    total = 0
+    trainable = 0
+
+    for p in model.parameters():
+        total += p.numel()
+
+        if p.requires_grad:
+            trainable += p.numel()
+
+    logger.info(
+        f"Stage {stage_idx}: "
+        f"{trainable:,}/{total:,} trainable "
+        f"({100*trainable/total:.1f}%)"
+    )
+
+    for module_name in [
+        "input_proj",
+        "convs",
+        "norms",
+        "fp_mlp",
+        "global_proj",
+        "shared",
+        "group_trunks",
+    ]:
+
+        module = getattr(model, module_name, None)
+
+        if module is None:
+            continue
+
+        frozen = all(
+            not p.requires_grad
+            for p in module.parameters()
+        )
+
+        logger.debug(
+            f"  {module_name}: "
+            f"{'FROZEN' if frozen else 'TRAINABLE'}"
+        )
+
 def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
 
     strategy = curriculum_cfg.get(
@@ -588,96 +565,255 @@ def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
         for p in model.parameters():
             p.requires_grad = True
 
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
+
         return
-
-    # -------------------------
-    # Freeze everything first
-    # -------------------------
-    for p in model.parameters():
-        p.requires_grad = False
-
-    # -------------------------
-    # Identify modules
-    # -------------------------
-    backbone_blocks = [
-        model.input_proj,
-        model.convs,
-        model.norms,
-        model.shared,
-        model.fp_mlp,
-        model.global_proj,
-    ]
-
-    backbone_blocks = [
-        m for m in backbone_blocks
-        if m is not None
-    ]
-
-    # task heads = everything not in backbone
-    backbone_param_ids = {
-        id(p)
-        for block in backbone_blocks
-        for p in block.parameters()
-    }
-
-    head_params = [
-        p
-        for p in model.parameters()
-        if id(p) not in backbone_param_ids
-    ]
-
-    # -------------------------
-    # Always train heads
-    # -------------------------
-    for p in head_params:
-        p.requires_grad = True
-
-    # -------------------------
-    # Progressive unfreezing
-    # -------------------------
-    if stage_idx >= 1:
-
-        for p in model.shared.parameters():
+    
+    elif strategy == "progressive_freezing_gradual":
+        for p in model.parameters():
             p.requires_grad = True
 
-        for p in model.fp_mlp.parameters():
+        if stage_idx == 0:
+            pass
+        
+        stage_name = curriculum_cfg["stages"][stage_idx]["name"]
+
+        freeze_schedule = curriculum_cfg.get(
+            "freeze_schedule",
+            {}
+        )
+
+        if stage_name not in freeze_schedule:
+            logger.warning(
+                f"No freeze schedule found for stage {stage_name}"
+            )
+
+        modules_to_freeze = (
+            freeze_schedule
+            .get(stage_name, {})
+            .get("freeze", [])
+        )
+
+        for module_name in modules_to_freeze:
+
+            module = getattr(model, module_name, None)
+
+            if module is None:
+                logger.warning(
+                    f"Unknown module in freeze schedule: {module_name}"
+                )
+                continue
+
+            for p in module.parameters():
+                p.requires_grad = False
+
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
+
+        return
+    
+    elif strategy == "progressive_freezing_steep":
+
+    # start with everything trainable
+        for p in model.parameters():
             p.requires_grad = True
 
-        for p in model.global_proj.parameters():
+        if stage_idx >= 1:
+
+            frozen_modules = [
+                model.input_proj,
+                model.convs,
+                model.norms,
+                model.shared,
+                model.fp_mlp,
+                model.global_proj,
+            ]
+
+            for module in frozen_modules:
+                for p in module.parameters():
+                    p.requires_grad = False
+        
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
+
+        return
+    
+    elif strategy == "representation_pretrain":
+
+        frozen_backbone = sum(
+            p.numel()
+            for module in [
+                model.input_proj,
+                model.convs,
+                model.norms,
+                model.shared,
+                model.fp_mlp,
+                model.global_proj,
+            ]
+            for p in module.parameters()
+            if not p.requires_grad
+        )
+
+        logger.info(
+            f"Frozen backbone params: "
+            f"{frozen_backbone:,}"
+        )
+
+        rep_end_name = curriculum_cfg.get(
+            "representation_end_stage",
+            "permeability"
+        )
+
+        stage_names = [
+            s["name"]
+            for s in curriculum_cfg["stages"]
+        ]
+
+        rep_end_idx = stage_names.index(
+            rep_end_name
+        )
+
+        # everything trainable initially
+
+        for p in model.parameters():
             p.requires_grad = True
 
-    if stage_idx >= 2:
+        # after permeability:
+        # freeze the learned representation
 
-        for p in model.convs.parameters():
+        if stage_idx > rep_end_idx:
+
+            frozen_modules = [
+
+                model.input_proj,
+                model.convs,
+                model.norms,
+                model.shared,
+                model.fp_mlp,
+                model.global_proj,
+            ]
+
+            for module in frozen_modules:
+
+                for p in module.parameters():
+
+                    p.requires_grad = False
+
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
+
+        return
+    
+    elif strategy == "progressive_unfreeze":
+        # -------------------------
+        # Freeze everything first
+        # -------------------------
+        for p in model.parameters():
+            p.requires_grad = False
+
+        # -------------------------
+        # Identify modules
+        # -------------------------
+        backbone_blocks = [
+            model.input_proj,
+            model.convs,
+            model.norms,
+            model.shared,
+            model.fp_mlp,
+            model.global_proj,
+        ]
+
+        backbone_blocks = [
+            m for m in backbone_blocks
+            if m is not None
+        ]
+
+        # task heads = everything not in backbone
+        backbone_param_ids = {
+            id(p)
+            for block in backbone_blocks
+            for p in block.parameters()
+        }
+
+        head_params = [
+            p
+            for p in model.parameters()
+            if id(p) not in backbone_param_ids
+        ]
+
+        # -------------------------
+        # Always train heads
+        # -------------------------
+        for p in head_params:
             p.requires_grad = True
 
-        for p in model.norms.parameters():
-            p.requires_grad = True
+        # -------------------------
+        # Progressive unfreezing
+        # -------------------------
+        if stage_idx >= 1:
 
-    if stage_idx >= 3:
+            for p in model.shared.parameters():
+                p.requires_grad = True
 
-        for p in model.input_proj.parameters():
-            p.requires_grad = True
+            for p in model.fp_mlp.parameters():
+                p.requires_grad = True
 
-    # -------------------------
-    # Logging
-    # -------------------------
-    trainable = sum(
-        p.numel()
-        for p in model.parameters()
-        if p.requires_grad
-    )
+            for p in model.global_proj.parameters():
+                p.requires_grad = True
 
-    total = sum(
-        p.numel()
-        for p in model.parameters()
-    )
+        if stage_idx >= 2:
 
-    logger.info(
-        f"Stage {stage_idx}: "
-        f"{trainable:,}/{total:,} params trainable "
-        f"({100*trainable/total:.1f}%)"
-    )
+            for p in model.convs.parameters():
+                p.requires_grad = True
+
+            for p in model.norms.parameters():
+                p.requires_grad = True
+
+        if stage_idx >= 3:
+
+            for p in model.input_proj.parameters():
+                p.requires_grad = True
+
+        log_trainable_parameters(
+            model,
+            stage_idx
+        )
+
+        return
+    
+    else:
+        raise ValueError(
+            f"Unknown curriculum strategy: {strategy}"
+        )
+
+    # # -------------------------
+    # # Logging
+    # # -------------------------
+    # trainable = sum(
+    #     p.numel()
+    #     for p in model.parameters()
+    #     if p.requires_grad
+    # )
+
+    # total = sum(
+    #     p.numel()
+    #     for p in model.parameters()
+    # )
+
+    # logger.info(
+    #     f"Stage {stage_idx}: "
+    #     f"{trainable:,}/{total:,} params trainable "
+    #     f"({100*trainable/total:.1f}%)"
+    # )
 
 def filter_dataset_for_tasks(data_list, task_indices):
     filtered = []
@@ -732,7 +868,20 @@ def train_curriculum(context, config, params):
     val_list = context["val_list"]
 
    # Model init
+    
     sample = data_list[0]
+
+    group_architecture = {
+        stage["name"]: {
+            "hidden_dim": stage.get("hidden_dim", 256),
+            "output_dim": stage.get("output_dim", 256),
+        }
+        for stage in curriculum_cfg["stages"]
+    }
+
+    logger.debug(
+        f"Group architecture: {group_architecture}"
+    )
 
     model = ModelClass(
         input_dim=sample.x.shape[1],
@@ -741,6 +890,7 @@ def train_curriculum(context, config, params):
         fp_dim=sample.fp.shape[-1],
         num_tasks=sample.y.shape[-1],
         task_groups=context.get("task_groups"),
+        group_architecture=group_architecture,
         **{k: v for k, v in params.items() if k != "lr"}
     ).to(device)
 
@@ -883,7 +1033,21 @@ def train_curriculum(context, config, params):
                 and p.requires_grad
             ]
 
-            stage_backbone_lr = lr * (0.5 ** stage_idx)
+            if strategy == "representation_pretrain":
+
+                stage_backbone_lr = lr
+
+            else:
+
+                backbone_lr_decay = curriculum_cfg.get(
+                    "backbone_lr_decay",
+                    0.5
+                )
+
+                stage_backbone_lr = (
+                    lr *
+                    (backbone_lr_decay ** stage_idx)
+                )
 
             optimizer = torch.optim.Adam(
                 [
@@ -896,6 +1060,18 @@ def train_curriculum(context, config, params):
                         "lr": lr,
                     }
                 ]
+            )
+
+            # log the optimiser parameter count so we can verify optimiser is being reset correctly
+ 
+            opt_params = sum(
+                p.numel()
+                for group in optimizer.param_groups
+                for p in group["params"]
+            )
+
+            logger.debug(
+                f"Optimizer contains {opt_params:,} parameters"
             )
 
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -1127,7 +1303,11 @@ def train_curriculum(context, config, params):
             "params": params,
 
             "task_names": context["task_names"],
+
             "task_groups": context["task_groups"],
+
+            "group_architecture":
+                model.group_architecture,
 
             "label_scalers":
                 context["label_scalers"],

@@ -10,6 +10,10 @@ workflow:
 
 openfe_prepare_receptor:
   equilibrated_pdb: input/protein_equilibrated.pdb
+  #### these are optional if you have separate PDBs for protein/water/membrane
+  # protein_pdb: input/gpr75_protein_ions_schrodi.pdb
+  # membrane_pdb: input/gpr75_membrane_schrodi.pdb
+  # water_pdb: input/gpr75_waterbox_schrodi.pdb
   ligand_resname: UNK # tell the system which ligand to remove for FEP, if it's there.
   output_dir: output/openfe
 
