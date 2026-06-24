@@ -9,15 +9,22 @@ from pathlib import Path
 
 from scipy.cluster.hierarchy import linkage, fcluster
 from Bio.PDB import PDBParser, PDBIO, Structure, Model, Chain, Residue, Atom
+from Bio.PDB import MMCIFParser
+
+from scipy.spatial.distance import squareform
+
+parser = MMCIFParser(QUIET=True)
 
 from pipeline.task_registry import register_task
 
-from backends.structure_inference import StructureInferenceBackend
-from backends.chai import ChaiBackend
+# from backends.structure_inference import StructureInferenceBackend
+# from backends.chai import ChaiBackend
 from backends.boltz import BoltzBackend
-from backends.openfold import OpenFoldBackend
+# from backends.openfold import OpenFoldBackend
 
 from modules.utils.ranking import compute_scores
+from modules.utils.csv_loader import load_sequences
+from modules.utils.plotting import plot_metric, plot_score, scatter_plot
 
 from pipeline.logger import setup_logger
 
@@ -29,25 +36,47 @@ logger = setup_logger(__name__, debug_mode=True, simple_format=True)
     description="Run structure prediction tools (Chai, Boltz, etc.) in parallel."
 )
 def predict_structures(backend, config, **kwargs):
-    sequence = config["protein"]["sequence"]
-    output_dir = config["output_dir"]
 
-    tools = {
-        "chai": ChaiBackend(sequence, output_dir, device=0),
-        "boltz": BoltzBackend(sequence, output_dir, device=1),
-        "openfold": OpenFoldBackend(sequence, output_dir, device=2),
-    }
+    csv_path = config["structure_prediction"]["input_csv"]
+    entries = load_sequences(csv_path)
 
-    inference = StructureInferenceBackend(
-        sequence=sequence,
-        tools=tools,
-        output_dir=output_dir,
-    )
+    if not entries:
+        raise ValueError("No sequences found in CSV")
 
-    results = inference.run_all()
+    # tools = {
+    #     "chai": ChaiBackend(sequence, output_dir, device=0),
+    #     "boltz": BoltzBackend(sequence, output_dir, device=1),
+    #     "openfold": OpenFoldBackend(sequence, output_dir, device=2),
+    # }
 
-    backend.cache = {"predictions": results}
+    # inference = StructureInferenceBackend(
+    #     sequence=sequence,
+    #     tools=tools,
+    #     output_dir=output_dir,
+    # )
+
+    
+    backend_instance = BoltzBackend()
+    all_results = []
+
+    output_dir = Path(config["output_dir"])
+
+    for i, entry in enumerate(entries):
+        result = backend_instance.run(
+            run_id=i,
+            device=0,
+            output_dir=output_dir / entry["id"],
+            sequences=entry["sequences"]
+        )
+        logger.info(f"[DEBUG] Result: {result}")
+        all_results.append(result)
+
+    logger.info(f"[DEBUG] All results: {all_results}")
+
+
+    backend.cache["predictions"] = all_results
     return backend.cache
+
 @register_task(
     "rank_predictions",
     category="Structure modelling",
@@ -64,9 +93,31 @@ def rank_predictions(backend, config, **kwargs):
     ranking_dir.mkdir(exist_ok=True)
 
     # --- load inference results ---
-    predictions = backend.cache.get("predictions")
+    runs = backend.cache.get("predictions", [])
+
+    predictions = []
+
+    for run in runs:
+        for sample in run["results"]:
+            predictions.append({
+                "tool": run["tool"],
+                "structure_path": sample["structure"],
+                "metrics": {
+                    "plddt": sample["plddt"],
+                    "ptm": sample["ptm"],
+                    "iptm": sample["iptm"],
+                },
+                "run_id": run["run_id"],
+                "device": run["device"],
+                "seed": None,
+            })
+    
+    if not runs:
+        raise ValueError("No runs found in backend cache — predict_structures failed")
+
     if not predictions:
-        raise ValueError("No predictions found in backend cache")
+        raise ValueError("Runs found but no samples parsed — parsing failed")
+
 
     metric_cfg = ranking_cfg["metrics"]
     aggregation = ranking_cfg.get("aggregation", "weighted_sum")
@@ -96,16 +147,8 @@ def rank_predictions(backend, config, **kwargs):
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "rank",
-            "tool",
-            "run_id",
-            "seed",
-            "device",
-            "score",
-            "plddt",
-            "ptm",
-            "iptm",
-            "structure_path",
+            "rank", "tool", "run_id", "seed", "device",
+            "score", "plddt", "ptm", "iptm", "structure_path",
         ])
 
         for i, p in enumerate(predictions, 1):
@@ -122,6 +165,28 @@ def rank_predictions(backend, config, **kwargs):
                 m.get("iptm"),
                 p["structure_path"],
             ])
+
+    # plot_plddt(
+    #     predictions,
+    #     out_path=ranking_dir / "plddt_hist.png"
+    # )
+
+    # --- plotting ---
+    if ranking_cfg.get("plotting", {}).get("enabled", True):
+
+        plot_metric(predictions, "plddt", ranking_dir / "plddt_hist.png")
+        plot_metric(predictions, "ptm", ranking_dir / "ptm_hist.png")
+        plot_metric(predictions, "iptm", ranking_dir / "iptm_hist.png")
+        plot_score(predictions, ranking_dir / "score_hist.png")
+
+        scatter_plot(predictions, "plddt", "ptm", ranking_dir / "plddt_vs_ptm.png")
+        scatter_plot(predictions, "plddt", "iptm", ranking_dir / "plddt_vs_iptm.png")
+        scatter_plot(predictions, "ptm", "iptm", ranking_dir / "ptm_vs_iptm.png")
+
+        logger.info("Saved metric plots to ranking directory")
+
+
+    logger.info("Saved metric plots to ranking directory")
 
     logger.info(f"Ranking written to {ranking_dir}")
 
@@ -153,57 +218,57 @@ def rank_predictions(backend, config, **kwargs):
 
     return backend.cache["ranking"]
 
-@register_task(
-    "rank_models",
-    category="Structure modelling",
-    description="Rank predicted structures from multiple backends/tools using confidence scores.",
-)
-def rank_models(backend_tools, config, **kwargs):
-    """
-    Rank models across multiple backends and seeds.
+# @register_task(
+#     "rank_models",
+#     category="Structure modelling",
+#     description="Rank predicted structures from multiple backends/tools using confidence scores.",
+# )
+# def rank_models(backend_tools, config, **kwargs):
+#     """
+#     Rank models across multiple backends and seeds.
 
-    backend_tools: list of backend instances (OpenFold, Boltz, Chai, etc.)
-    config: configuration dict
-    """
-    all_runs = []
+#     backend_tools: list of backend instances (OpenFold, Boltz, Chai, etc.)
+#     config: configuration dict
+#     """
+#     all_runs = []
 
-    # --- collect all predictions from each backend ---
-    for backend in backend_tools:
-        cache_ranking = backend.cache.get("runs", [])
-        for run in cache_ranking:
-            score = run.get("metrics", {}).get("plddt", 0)  # default ranking metric
-            all_runs.append({
-                "tool": backend.name,
-                "run_id": run.get("run_id", 0),
-                "seed": run.get("seed", 0),
-                "structure_path": run["structure_path"],
-                "metrics": run.get("metrics", {}),
-                "score": score,
-            })
+#     # --- collect all predictions from each backend ---
+#     for backend in backend_tools:
+#         cache_ranking = backend.cache.get("runs", [])
+#         for run in cache_ranking:
+#             score = run.get("metrics", {}).get("plddt", 0)  # default ranking metric
+#             all_runs.append({
+#                 "tool": backend.name,
+#                 "run_id": run.get("run_id", 0),
+#                 "seed": run.get("seed", 0),
+#                 "structure_path": run["structure_path"],
+#                 "metrics": run.get("metrics", {}),
+#                 "score": score,
+#             })
 
-    if not all_runs:
-        raise ValueError("No predictions found for ranking.")
+#     if not all_runs:
+#         raise ValueError("No predictions found for ranking.")
 
-    # --- sort by score descending ---
-    ranked = sorted(all_runs, key=lambda r: r["score"], reverse=True)
+#     # --- sort by score descending ---
+#     ranked = sorted(all_runs, key=lambda r: r["score"], reverse=True)
 
-    # --- save ranking to backend cache ---
-    ranking_dir = Path(config["output_dir"]) / "ranking"
-    ranking_dir.mkdir(exist_ok=True)
-    ranking_json = ranking_dir / "ranking.json"
+#     # --- save ranking to backend cache ---
+#     ranking_dir = Path(config["output_dir"]) / "ranking"
+#     ranking_dir.mkdir(exist_ok=True)
+#     ranking_json = ranking_dir / "ranking.json"
 
-    with open(ranking_json, "w") as f:
-        json.dump(ranked, f, indent=2)
+#     with open(ranking_json, "w") as f:
+#         json.dump(ranked, f, indent=2)
 
-    # --- store in cache for downstream consensus ---
-    for backend in backend_tools:
-        backend.cache["ranking"] = {
-            "ranking_json": str(ranking_json),
-            "results": ranked
-        }
+#     # --- store in cache for downstream consensus ---
+#     for backend in backend_tools:
+#         backend.cache["ranking"] = {
+#             "ranking_json": str(ranking_json),
+#             "results": ranked
+#         }
 
-    logger.info(f"Ranked {len(ranked)} models across {len(backend_tools)} backends.")
-    return backend_tools[0].cache["ranking"]
+#     logger.info(f"Ranked {len(ranked)} models across {len(backend_tools)} backends.")
+#     return backend_tools[0].cache["ranking"]
 
 def compute_tmscore_matrix(pdb_files):
     """
@@ -238,7 +303,7 @@ def cluster_structures(pdb_files, cutoff=0.3):
     """
     dist_matrix = compute_tmscore_matrix(pdb_files)
     # Condensed distance matrix for linkage
-    from scipy.spatial.distance import squareform
+
     condensed = squareform(dist_matrix)
     Z = linkage(condensed, method='average')
     labels = fcluster(Z, t=cutoff, criterion='distance')
@@ -269,7 +334,7 @@ def generate_consensus(backend_tools, config, **kwargs):
     """
     def average_structures(pdb_files, out_path):
         """Average atomic coordinates across a list of PDB files."""
-        parser = PDBParser(QUIET=True)
+        parser = MMCIFParser(QUIET=True)
         structures = [parser.get_structure(f"s{i}", pdb) for i, pdb in enumerate(pdb_files)]
 
         ref_structure = structures[0]
@@ -344,7 +409,9 @@ def generate_consensus(backend_tools, config, **kwargs):
         run_id = model.get("run_id", 0)
         seed = model.get("seed", 0)
         src = Path(model["structure_path"])
-        dst = ensemble_dir / f"{model['tool']}_run{run_id}_seed{seed}.pdb"
+        ext = Path(model["structure_path"]).suffix
+        dst = ensemble_dir / f"{model['tool']}_run{run_id}_seed{seed}{ext}"
+
         shutil.copy(src, dst)
         pdb_files.append(dst)
         model["ensemble_path"] = str(dst)

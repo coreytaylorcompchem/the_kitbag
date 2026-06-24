@@ -22,36 +22,41 @@ class BaseStructureTool:
 
     name: str = "base"
 
-    def __init__(self, sequence: str | dict):
-        """
-        Parameters
-        ----------
-        sequence : str or dict
-            Either a single-sequence string (legacy) or a dict of chain_id -> sequence.
-        """
-        if isinstance(sequence, str):
-            # Legacy single-sequence behavior
-            self.sequences = {"A": sequence}
-        elif isinstance(sequence, dict):
-            if not all(isinstance(k, str) and isinstance(v, str) for k, v in sequence.items()):
-                raise ValueError("Sequences dict must be chain_id -> sequence string")
-            self.sequences = sequence
-        else:
-            raise ValueError("sequence must be a string or a dict of chain_id -> sequence")
+    
+    def __init__(self):
+        self.sequences = None
+        self.cache = {}
 
-    def prepare_input(self, output_dir: Path) -> Path:
+        
         """
-        Write the sequences to a multi-chain FASTA file.
-        Returns the Path to the FASTA.
+        Base class for AI-based structure prediction tools.
+
+        Sequences are passed at runtime (run()), not stored at init.
         """
-        output_dir.mkdir(parents=True, exist_ok=True)
-        fasta_file = output_dir / "input.fasta"
-        lines = []
-        for chain_id, seq in self.sequences.items():
-            lines.append(f">{chain_id}")
-            lines.append(seq)
-        fasta_file.write_text("\n".join(lines))
-        return fasta_file
+
+        # if isinstance(sequence, str):
+        #     # Legacy single-sequence behavior
+        #     self.sequences = {"A": sequence}
+        # elif isinstance(sequence, dict):
+        #     if not all(isinstance(k, str) and isinstance(v, str) for k, v in sequence.items()):
+        #         raise ValueError("Sequences dict must be chain_id -> sequence string")
+        #     self.sequences = sequence
+        # else:
+        #     raise ValueError("sequence must be a string or a dict of chain_id -> sequence")
+
+    # def prepare_input(self, output_dir: Path) -> Path:
+    #     """
+    #     Write the sequences to a multi-chain FASTA file.
+    #     Returns the Path to the FASTA.
+    #     """
+    #     output_dir.mkdir(parents=True, exist_ok=True)
+    #     fasta_file = output_dir / "input.fasta"
+    #     lines = []
+    #     for chain_id, seq in self.sequences.items():
+    #         lines.append(f">{chain_id}")
+    #         lines.append(seq)
+    #     fasta_file.write_text("\n".join(lines))
+    #     return fasta_file
 
     def run(
         self,

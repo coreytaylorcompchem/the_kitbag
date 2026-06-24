@@ -1,6 +1,8 @@
 import os
+import yaml
 import subprocess
 import logging
+import json
 from pathlib import Path
 from backends.base import BaseStructureTool
 
@@ -8,100 +10,126 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
+def generate_boltz_yaml(sequences: dict, yaml_path: Path):
+    """
+    sequences = {"A": "SEQ1", "B": "SEQ2"}
+    """
+
+    data = {
+        "version": 1,
+        "sequences": [],
+        "targets": [
+            {
+                "name": "complex",
+                "sequences": list(sequences.keys())
+            }
+        ]
+    }
+
+    for chain_id, seq in sequences.items():
+        data["sequences"].append({
+            "protein": {
+                "id": chain_id,
+                "sequence": seq
+            }
+        })
+
+    yaml_path.write_text(yaml.dump(data))
+
 class BoltzBackend(BaseStructureTool):
     name = "boltz"
 
     def run(
         self,
         run_id: int,
-        seed: int,
         device: int,
         output_dir: Path,
-        refinement: dict | None = None
+        sequences: dict
     ):
-        """Run a single Boltz inference job with optional refinement."""
-        # --- environment isolation ---
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(device)
-        env["PYTHONHASHSEED"] = str(seed)
 
-        # --- per-run output dir ---
         run_dir = output_dir / f"run_{run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        # --- input FASTA ---
-        fasta = run_dir / "input.fasta"
-        fasta.write_text(f">query\n{self.sequence}\n")
+        yaml_file = run_dir / "input.yaml"
 
-        # --- results dir ---
+        generate_boltz_yaml(sequences, yaml_file)
+
         out_dir = run_dir / "results"
-        out_dir.mkdir(exist_ok=True)
 
-        # --- base Boltz command ---
         cmd = [
             "boltz",
             "predict",
-            str(fasta),
-            "--outdir", str(out_dir),
-            "--seed", str(seed),
+            str(yaml_file),
+            "--out_dir", str(out_dir),
+            "--accelerator", "gpu",
+            "--use_msa_server",
+            "--diffusion_samples", "3",
+            "--sampling_steps", "150",
+            "--step_scale", "1.4",
+            "--no_kernels",
         ]
 
-        # --- optional refinement ---
-        if refinement:
-            reference = refinement.get("reference_structure")
-            if reference:
-                cmd += [
-                    "--template", str(reference),
-                    "--template_weight", str(refinement.get("weight", 0.5)),
-                ]
-            if refinement.get("mode") == "region":
-                for region in refinement.get("regions", []):
-                    cmd += [
-                        "--template_region",
-                        f"{region['chain']}:{region['start']}-{region['end']}",
-                    ]
-
-        logger.info(f"[Boltz] run={run_id} seed={seed} gpu={device}")
+        logger.info(f"[Boltz] run={run_id} gpu={device}")
         subprocess.run(cmd, check=True, env=env)
 
-        structure = out_dir / "ranked_0.pdb"
-        metrics = self._parse_metrics(out_dir)
+        results = self._parse_results(out_dir)
+        
+        if not results:
+            logger.warning(f"[WARNING] No samples returned for run {run_id}")
+
 
         return {
             "run_id": run_id,
-            "seed": seed,
             "device": device,
-            "structure_path": str(structure),
-            "metrics": metrics,
+            "results": results,
             "tool": self.name,
         }
     
-    def run_multi(
-        self,
-        seeds: list[int],
-        device: int,
-        output_dir: Path,
-        refinement: dict | None = None
-    ):
-        all_results = []
-        for run_id, seed in enumerate(seeds):
-            result = self.run(run_id, seed, device, output_dir, refinement)
-            all_results.append(result)
+    def _parse_results(self, out_dir: Path):
 
-        self.cache = {"ranking": {"results": all_results}}
-        return all_results
+        # --- find boltz_results directory ---
+        boltz_dirs = list(out_dir.glob("boltz_results_*"))
 
-    def _parse_metrics(self, out_dir: Path):
-        import json
+        if not boltz_dirs:
+            logger.warning(f"No boltz_results directory found in {out_dir}")
+            return []
 
-        confidence_file = out_dir / "confidence.json"
-        if not confidence_file.exists():
-            logger.warning("[Boltz] confidence.json not found")
-            return {"plddt": None, "ptm": None, "iptm": None}
+        samples = []
 
-        metrics = json.loads(confidence_file.read_text())
-        return {
-            "plddt": metrics.get("mean_plddt"),
-            "ptm": metrics.get("ptm"),
-            "iptm": metrics.get("iptm"),
-        }
+        # --- recursively find JSON files ---
+        json_files = list(boltz_dirs[0].rglob("confidence*.json"))
+
+        if not json_files:
+            logger.warning(f"No confidence JSON files found under {boltz_dirs[0]}")
+            return []
+
+        for json_file in json_files:
+            logger.info(f"[DEBUG] Found JSON: {json_file}")
+
+            data = json.loads(json_file.read_text())
+
+            # --- find matching structure file in same dir ---
+            parent_dir = json_file.parent
+
+            structure_file = None
+            for ext in ["*.cif", "*.pdb"]:
+                files = list(parent_dir.glob(ext))
+                if files:
+                    structure_file = files[0]
+                    break
+
+            if structure_file is None:
+                logger.warning(f"No structure file found next to {json_file}")
+                continue
+
+            samples.append({
+                "structure": str(structure_file),
+                "plddt": data.get("mean_plddt"),
+                "ptm": data.get("ptm"),
+                "iptm": data.get("iptm"),
+            })
+
+        return samples
+
