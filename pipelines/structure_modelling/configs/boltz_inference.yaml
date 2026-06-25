@@ -1,0 +1,63 @@
+task: workflow
+workflow_name: structure_prediction
+
+workflow:
+  - predict_structures
+  - rank_predictions
+
+structure_prediction:
+  tools:
+    - boltz
+
+  input_csv: input/prediction_input.csv
+  
+  # pipeline supports multiple sequences (e.g. GPCR + VHH), ligand SMILES 
+  # and basically any combination of these. Just omit what you don't need.
+
+  # csv should look something like;
+
+  # id,chain_A,chain_B,ligand_SMILES
+  # protein1,SEQ,, # protein only
+  # protein2,SEQ,SEQ, # two proteins
+  # protein3,SEQ,,SMILES # protein + lig
+
+  inference:    
+    accelerator: gpu
+    diffusion_samples: 5 # number of output structures
+    sampling_steps: 150
+    step_scale: 1.4
+    recycling_steps: 3
+    use_msa_server: true
+    no_kernels: true
+    diffusion_samples_affinity: 2
+    sampling_steps_affinity: 200
+
+  ranking:
+    enabled: true        
+    select_structures:
+      enabled: true
+      mode: top_k        # or "threshold"
+      k: 10              # for top_k
+      iptm_threshold: 0.5  # for threshold mode
+
+    plotting:
+      enabled: true
+
+    metrics:
+      plddt:
+        weight: 0.5
+        higher_is_better: true
+      ptm:
+        weight: 0.3
+        higher_is_better: true
+      iptm:
+        weight: 0.2
+        higher_is_better: true
+
+    aggregation: weighted_sum
+    normalize: true
+
+backend:
+  name: structure_inference
+
+output_dir: outputs/structure_prediction
