@@ -35,6 +35,10 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+def is_interacting(p):
+    iptm = p["metrics"]["iptm"]
+    return iptm is not None and iptm > 0.0
+
 @register_task(
     "predict_structures",
     category="Structure modelling",
@@ -74,7 +78,9 @@ def predict_structures(backend, config, **kwargs):
             sequences=entry["sequences"]
         )
         logger.debug(f"Result: {result}")
-        all_results.append(result)
+
+        result["input_id"] = entry["id"]
+        all_results.append(result) 
 
     logger.debug(f"All results: {all_results}")
 
@@ -114,6 +120,7 @@ def rank_predictions(backend, config, **kwargs):
                     "iplddt": sample.get("iplddt"),
                 },
                 "run_id": run["run_id"],
+                "input_id": run.get("input_id"),
                 "device": run["device"],
                 "seed": None,
             })
@@ -271,6 +278,115 @@ def rank_predictions(backend, config, **kwargs):
             if tool not in best_per_tool:
                 best_per_tool[tool] = p
         selected["best_per_tool"] = best_per_tool
+
+    # --- select and copy structures ---
+    select_cfg = ranking_cfg.get("select_structures", {})
+
+    if select_cfg.get("enabled", True):
+
+        k = select_cfg.get("k", 10)
+
+        # --- split interacting vs non-interacting ---
+        interacting = [p for p in predictions if is_interacting(p)]
+        non_interacting = [p for p in predictions if not is_interacting(p)]
+
+        if not predictions:
+            logger.warning("No predictions available for selection")
+            return
+
+        # =========================
+        # GLOBAL TOP-K
+        # =========================
+        global_dir = output_dir / "top_structures_global"
+        global_dir.mkdir(exist_ok=True)
+
+        global_paths = []
+
+        if interacting:
+            global_sorted = sorted(
+                interacting,
+                key=lambda x: x["metrics"]["iptm"],
+                reverse=True
+            )
+            logger.info(f"[GLOBAL] Using iPTM ranking ({len(interacting)} structures)")
+        else:
+            global_sorted = sorted(
+                non_interacting,
+                key=lambda x: x["metrics"]["plddt"],
+                reverse=True
+            )
+            logger.info(f"[GLOBAL] No interactions → using pLDDT")
+
+        global_selected = global_sorted[:k]
+
+        for i, p in enumerate(global_selected):
+            src = Path(p["structure_path"])
+            iptm = p["metrics"]["iptm"]
+            plddt = p["metrics"]["plddt"]
+            input_id = p.get("input_id", f"run{p['run_id']}")
+            ext = src.suffix
+
+            tag = f"iptm{iptm:.3f}" if iptm and iptm > 0 else f"plddt{plddt:.3f}"
+
+            dst = global_dir / f"{input_id}_rank{i+1}_{tag}{ext}"
+            shutil.copy(src, dst)
+            global_paths.append(str(dst))
+
+        # =========================
+        # PER-INPUT TOP-K
+        # =========================
+        per_input_dir = output_dir / "top_structures_per_input"
+        per_input_dir.mkdir(exist_ok=True)
+
+        grouped = defaultdict(list)
+        for p in predictions:
+            grouped[p["input_id"]].append(p)
+
+        per_input_paths = []
+        total_selected = 0
+
+        for input_id, group in grouped.items():
+
+            group_interacting = [p for p in group if is_interacting(p)]
+
+            if group_interacting:
+                sorted_group = sorted(
+                    group_interacting,
+                    key=lambda x: x["metrics"]["iptm"],
+                    reverse=True
+                )
+                logger.info(f"[PER-INPUT] {input_id}: using iPTM")
+            else:
+                sorted_group = sorted(
+                    group,
+                    key=lambda x: x["metrics"]["plddt"],
+                    reverse=True
+                )
+                logger.info(f"[PER-INPUT] {input_id}: no interaction → using pLDDT")
+
+            top_group = sorted_group[:k]
+
+            for j, p in enumerate(top_group):
+                src = Path(p["structure_path"])
+                iptm = p["metrics"]["iptm"]
+                plddt = p["metrics"]["plddt"]
+                ext = src.suffix
+
+                tag = f"iptm{iptm:.3f}" if iptm and iptm > 0 else f"plddt{plddt:.3f}"
+
+                dst = per_input_dir / f"{input_id}_model{j+1}_{tag}{ext}"
+                shutil.copy(src, dst)
+
+                per_input_paths.append(str(dst))
+                total_selected += 1
+
+        logger.info(f"[PER-INPUT] Total selected structures: {total_selected}")
+
+        # --- cache ---
+        backend.cache["top_structures"] = {
+            "global": global_paths,
+            "per_input": per_input_paths,
+        }
 
     # --- cache results ---
     backend.cache["ranking"] = {
