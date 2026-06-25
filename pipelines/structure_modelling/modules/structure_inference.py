@@ -63,7 +63,6 @@ def predict_structures(backend, config, **kwargs):
     #     tools=tools,
     #     output_dir=output_dir,
     # )
-
     
     backend_instance = BoltzBackend(config=config)
     all_results = []
@@ -74,8 +73,10 @@ def predict_structures(backend, config, **kwargs):
         result = backend_instance.run(
             run_id=i,
             device=0,
-            output_dir=output_dir / entry["id"],
-            sequences=entry["sequences"]
+            output_dir=output_dir / entry["id"],            
+            sequences=entry.get("proteins", {}),
+            ligands=entry.get("ligands", [])
+
         )
         logger.debug(f"Result: {result}")
 
@@ -84,6 +85,10 @@ def predict_structures(backend, config, **kwargs):
 
     logger.debug(f"All results: {all_results}")
 
+    logger.info(
+        f"{entry['id']} | proteins={list(entry['proteins'].keys())} "
+        f"| ligands={len(entry['ligands'])}"
+    )
 
     backend.cache["predictions"] = all_results
     return backend.cache
@@ -103,7 +108,7 @@ def rank_predictions(backend, config, **kwargs):
     ranking_dir = output_dir / "ranking"
     ranking_dir.mkdir(exist_ok=True)
 
-    # --- load inference results ---
+    # load inference results
     runs = backend.cache.get("predictions", [])
 
     predictions = []
@@ -136,7 +141,7 @@ def rank_predictions(backend, config, **kwargs):
     aggregation = ranking_cfg.get("aggregation", "weighted_sum")
     normalize = ranking_cfg.get("normalize", True)
 
-    # --- compute scores ---
+    # compute scores
     scores = compute_scores(
         predictions,
         metric_cfg,
@@ -147,10 +152,10 @@ def rank_predictions(backend, config, **kwargs):
     for entry, score in zip(predictions, scores):
         entry["score"] = score
 
-    # --- sort ---
+    # sort
     predictions.sort(key=lambda x: x["score"], reverse=True)
 
-    # --- clustering in metric space ---
+    # clustering in metric space
     # build feature matrix
 
     # Check to make sure the metrics are full of data
@@ -212,12 +217,12 @@ def rank_predictions(backend, config, **kwargs):
             "mean_ptm": float(np.mean(ptms)) if ptms else None,
         })
 
-    # --- write JSON ---
+    # write JSON
     json_path = ranking_dir / "ranking.json"
     with open(json_path, "w") as f:
         json.dump(predictions, f, indent=2)
 
-    # --- write CSV ---
+    # write CSV
     csv_path = ranking_dir / "ranking.csv"
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
@@ -241,7 +246,7 @@ def rank_predictions(backend, config, **kwargs):
                 p["structure_path"],
             ])
 
-    # --- plotting ---
+    # plotting
     if ranking_cfg.get("plotting", {}).get("enabled", True):
 
         plot_metric(predictions, "plddt", ranking_dir / "plddt_hist.png")
@@ -260,7 +265,7 @@ def rank_predictions(backend, config, **kwargs):
 
     logger.info("Saved metric plots to ranking directory")
 
-    # --- select best structures ---
+    # select best structures
     selected = {}
 
     if ranking_cfg.get("select", {}).get("best_overall", True):
@@ -279,14 +284,14 @@ def rank_predictions(backend, config, **kwargs):
                 best_per_tool[tool] = p
         selected["best_per_tool"] = best_per_tool
 
-    # --- select and copy structures ---
+    # select and copy structures
     select_cfg = ranking_cfg.get("select_structures", {})
 
     if select_cfg.get("enabled", True):
 
         k = select_cfg.get("k", 10)
 
-        # --- split interacting vs non-interacting ---
+        # split interacting vs non-interacting
         interacting = [p for p in predictions if is_interacting(p)]
         non_interacting = [p for p in predictions if not is_interacting(p)]
 
@@ -382,13 +387,13 @@ def rank_predictions(backend, config, **kwargs):
 
         logger.info(f"[PER-INPUT] Total selected structures: {total_selected}")
 
-        # --- cache ---
+        # cache
         backend.cache["top_structures"] = {
             "global": global_paths,
             "per_input": per_input_paths,
         }
 
-    # --- cache results ---
+    # cache results
     backend.cache["ranking"] = {
         "ranking_json": str(json_path),
         "ranking_csv": str(csv_path),
@@ -496,7 +501,7 @@ def generate_consensus(backend_tools, config, **kwargs):
     consensus_dir.mkdir(exist_ok=True)
     ensemble_dir.mkdir(exist_ok=True)
 
-    # --- flatten all runs across backends ---
+    # flatten all runs across backends
     all_runs = []
     for backend in backend_tools:
         ranking = backend.cache.get("ranking", {}).get("results", [])
@@ -505,7 +510,7 @@ def generate_consensus(backend_tools, config, **kwargs):
     if not all_runs:
         raise ValueError("No predictions available for consensus.")
 
-    # --- select top models ---
+    # select top models
     selection_cfg = consensus_cfg.get("selection", {})
     mode = selection_cfg.get("mode", "top_k")
     selected = []
@@ -530,7 +535,7 @@ def generate_consensus(backend_tools, config, **kwargs):
 
     logger.info(f"Selected {len(selected)} models for consensus")
 
-    # --- copy PDBs into ensemble dir ---
+    # copy PDBs into ensemble dir
     pdb_files = []
     for model in selected:
         run_id = model.get("run_id", 0)
@@ -543,7 +548,7 @@ def generate_consensus(backend_tools, config, **kwargs):
         pdb_files.append(dst)
         model["ensemble_path"] = str(dst)
 
-    # --- optional structural clustering ---
+    # optional structural clustering
     clustering_enabled = consensus_cfg.get("clustering", {}).get("enabled", True)
     cluster_cutoff = consensus_cfg.get("clustering", {}).get("cutoff", 0.3)
     cluster_labels = None
@@ -554,7 +559,7 @@ def generate_consensus(backend_tools, config, **kwargs):
         cluster_centroids = [selected[i] for i in centroid_indices]
         logger.info(f"Identified {len(set(cluster_labels))} clusters")
 
-    # --- select representative ---
+    # select representative
     rep_cfg = consensus_cfg.get("representative", {})
     representative = None
     if rep_cfg.get("enabled", True):
@@ -574,7 +579,7 @@ def generate_consensus(backend_tools, config, **kwargs):
         shutil.copy(Path(representative["structure_path"]), rep_dst)
         logger.info(f"Representative model: {representative['tool']} run {representative['run_id']} seed {representative.get('seed',0)} (score={representative.get('score',0):.3f})")
 
-    # --- optional averaging of centroids ---
+    # optional averaging of centroids
     average_enabled = consensus_cfg.get("average_centroids", {}).get("enabled", True)
     average_structure = None
     if average_enabled and cluster_centroids and len(cluster_centroids) > 1:
@@ -584,7 +589,7 @@ def generate_consensus(backend_tools, config, **kwargs):
         logger.info(f"Averaged consensus structure written to: {avg_path}")
         average_structure = str(avg_path)
 
-    # --- save consensus metadata ---
+    # save consensus metadata
     consensus_data = {
         "n_models": len(selected),
         "mean_score": sum(m.get("score",0) for m in selected) / len(selected),

@@ -10,22 +10,13 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def generate_boltz_yaml(sequences: dict, yaml_path: Path):
-    """
-    sequences = {"A": "SEQ1", "B": "SEQ2"}
-    """
+def generate_boltz_yaml(sequences: dict, ligands: list, yaml_path: Path):
 
     data = {
-        "version": 1,
-        "sequences": [],
-        "targets": [
-            {
-                "name": "complex",
-                "sequences": list(sequences.keys())
-            }
-        ]
+        "sequences": []
     }
 
+    # proteins 
     for chain_id, seq in sequences.items():
         data["sequences"].append({
             "protein": {
@@ -34,7 +25,24 @@ def generate_boltz_yaml(sequences: dict, yaml_path: Path):
             }
         })
 
-    yaml_path.write_text(yaml.dump(data))
+    # ligands 
+    for i, smiles in enumerate(ligands):
+        lig_id = f"L{i+1}"
+
+        data["sequences"].append({
+            "ligand": {
+                "id": lig_id,
+                "smiles": smiles
+            }
+        })
+
+    # strict validation
+    if not data["sequences"]:
+        raise ValueError("No valid sequences or ligands provided for Boltz input")
+
+    yaml_str = yaml.dump(data, sort_keys=False)
+
+    yaml_path.write_text(yaml_str)
 
 def log_parameters(params: dict, title="Parameters"):
     if not params:
@@ -58,14 +66,16 @@ class BoltzBackend(BaseStructureTool):
             super().__init__()
             self.config = config or {}
 
-
+    
     def run(
         self,
         run_id: int,
         device: int,
         output_dir: Path,
-        sequences: dict
+        sequences: dict,
+        ligands: list = None
     ):
+
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(device)
 
@@ -74,7 +84,7 @@ class BoltzBackend(BaseStructureTool):
 
         yaml_file = run_dir / "input.yaml"
 
-        generate_boltz_yaml(sequences, yaml_file)
+        generate_boltz_yaml(sequences, ligands or [], yaml_file)
         
         out_dir = run_dir / "results"
         
@@ -85,25 +95,24 @@ class BoltzBackend(BaseStructureTool):
             "--out_dir", str(out_dir),
         ]
         
-        # --- config extraction ---
+        # config extraction
         sp_cfg = self.config.get("structure_prediction", {})
         inf_cfg = sp_cfg.get("inference", {})
 
-        # --- accelerator ---
+        # accelerator 
         accelerator = inf_cfg.get("accelerator", "gpu")
 
         # Add yaml parameters to Boltz command.
-      
-        # --- accelerator ---
+        # accelerator
         cmd += ["--accelerator", accelerator]
 
-        # --- optional flags ---
+        # optional flags
         if inf_cfg.get("use_msa_server", True):
             cmd.append("--use_msa_server")
 
         if inf_cfg.get("no_kernels", True):
             cmd.append("--no_kernels")
-        # --- numeric params ---
+        # numeric params
         if "diffusion_samples" in inf_cfg:
             cmd += ["--diffusion_samples", str(inf_cfg["diffusion_samples"])]
 
@@ -122,17 +131,17 @@ class BoltzBackend(BaseStructureTool):
         if "diffusion_samples_affinity" in inf_cfg:
             cmd += ["--diffusion_samples_affinity", str(inf_cfg["diffusion_samples_affinity"])]
 
-        # --- clean run label ---
+        # clean run label
         run_label = f"Boltz run={run_id} device={device}"
 
-        # --- runtime parameters ---
+        # runtime parameters
         runtime_params = {
             "accelerator": accelerator,
             "use_msa_server": inf_cfg.get("use_msa_server", True),
             "no_kernels": inf_cfg.get("no_kernels", True),
         }
 
-        # --- sampling parameters ---
+        # sampling parameters
         sampling_params = {
             "diffusion_samples": inf_cfg.get("diffusion_samples"),
             "sampling_steps": inf_cfg.get("sampling_steps"),
@@ -140,17 +149,17 @@ class BoltzBackend(BaseStructureTool):
             "recycling_steps": inf_cfg.get("recycling_steps"),
         }
 
-        # --- affinity parameters ---
+        # affinity parameters 
         affinity_params = {
             "diffusion_samples_affinity": inf_cfg.get("diffusion_samples_affinity"),
             "sampling_steps_affinity": inf_cfg.get("sampling_steps_affinity"),
         }
 
-        # --- remove None values ---
+        # remove None values
         sampling_params = {k: v for k, v in sampling_params.items() if v is not None}
         affinity_params = {k: v for k, v in affinity_params.items() if v is not None}
 
-        # --- log cleanly ---
+        # log cleanly
         log_parameters(runtime_params, f"{run_label} | Runtime")
         log_parameters(sampling_params, f"{run_label} | Sampling")
 
@@ -174,7 +183,7 @@ class BoltzBackend(BaseStructureTool):
     
     def _parse_results(self, out_dir: Path):
 
-        # --- find boltz_results directory ---
+        # find boltz_results directory
         boltz_dirs = list(out_dir.glob("boltz_results_*"))
 
         if not boltz_dirs:
@@ -183,7 +192,7 @@ class BoltzBackend(BaseStructureTool):
 
         samples = []
 
-        # --- recursively find JSON files ---
+        # recursively find JSON files
         json_files = list(boltz_dirs[0].rglob("confidence*.json"))
 
         if not json_files:
@@ -195,7 +204,7 @@ class BoltzBackend(BaseStructureTool):
 
             data = json.loads(json_file.read_text())
 
-            # --- find matching structure file in same dir ---
+            # find matching structure file in same dir
             parent_dir = json_file.parent
 
             structure_file = None
