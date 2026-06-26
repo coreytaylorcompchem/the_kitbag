@@ -15,7 +15,7 @@ openfe_prepare_receptor:
   # membrane_pdb: input/membrane.pdb
   # water_pdb: input/waterbox.pdb
   ligand_resname: UNK # tell the system which ligand to remove for FEP, if it's there.
-  output_dir: output/openfe # output: receptor_membrane.pdb and ligs_fep.sdf
+  output_dir: output/openfe # output: receptor_membrane.pdb
 
 openfe_create_network:
   receptor_pdb: output/openfe/receptor_membrane.pdb
