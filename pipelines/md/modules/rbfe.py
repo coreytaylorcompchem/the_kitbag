@@ -7,6 +7,7 @@ import subprocess
 import glob
 import time
 import yaml
+import copy
 
 from pathlib import Path
 import json
@@ -17,21 +18,28 @@ from openmm.app import (
     Modeller,
 )
 
-# import openfe
-# from openfe import (
-#     SmallMoleculeComponent,
-#     ProteinMembraneComponent,
-#     ChemicalSystem,
-#     Transformation,
-#     AlchemicalNetwork,
-# )
+import openfe
+from openfe import (
+    SmallMoleculeComponent,
+    ProteinMembraneComponent,
+    ChemicalSystem,
+    Transformation,
+    AlchemicalNetwork,
+)
 
-# from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
+from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
 
 from openff.units import unit
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
+
+import pandas as pd
+import matplotlib.pyplot as plt
+from cinnabar import FEMap
+from cinnabar import plotting as cinnabar_plotting
+
+from openff.units import unit
 
 import MDAnalysis as mda
 
@@ -47,44 +55,6 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def require_openfe():
-    try:
-        import openfe
-
-        from openfe import (
-            SmallMoleculeComponent,
-            ProteinMembraneComponent,
-            ChemicalSystem,
-            Transformation,
-            AlchemicalNetwork,
-        )
-
-        from openfe.protocols.openmm_rfe import (
-            RelativeHybridTopologyProtocol
-        )
-
-        class OpenFEDependencies:
-            pass
-
-        deps = OpenFEDependencies()
-
-        deps.openfe = openfe
-        deps.SmallMoleculeComponent = SmallMoleculeComponent
-        deps.ProteinMembraneComponent = ProteinMembraneComponent
-        deps.ChemicalSystem = ChemicalSystem
-        deps.Transformation = Transformation
-        deps.AlchemicalNetwork = AlchemicalNetwork
-        deps.RelativeHybridTopologyProtocol = (
-            RelativeHybridTopologyProtocol
-        )
-
-        return deps
-
-    except ImportError:
-        raise RuntimeError(
-            "This task requires OpenFE. "
-            "Activate the OpenFE environment."
-        )
 def _prepare_openfe_receptor(pdb_in, pdb_out):
 
     pdb = PDBFile(pdb_in)
@@ -206,12 +176,6 @@ def _load_protein_membrane_component(
     pdb_file,
 ):
 
-    deps = require_openfe()
-
-    ProteinMembraneComponent = (
-        deps.ProteinMembraneComponent
-    )
-
     _check_protein_connectivity(
         pdb_file
     )
@@ -287,12 +251,6 @@ def _build_protocol_settings(
     protocol_cfg,
     leg,
 ):
-
-    deps = require_openfe()
-
-    RelativeHybridTopologyProtocol = (
-        deps.RelativeHybridTopologyProtocol
-    )
 
     settings = (
         RelativeHybridTopologyProtocol
@@ -501,14 +459,6 @@ def openfe_create_network(self):
 
     cfg = self.config["openfe_create_network"]
 
-    deps = require_openfe()
-
-    openfe = deps.openfe
-
-    SmallMoleculeComponent = (
-        deps.SmallMoleculeComponent
-    )
-
     receptor_pdb = getattr(
         self,
         "openfe_receptor_pdb",
@@ -543,6 +493,21 @@ def openfe_create_network(self):
             )
         )
 
+    # mapper = openfe.setup.KartografAtomMapper()
+
+    # scorer = (
+    #     openfe.lomap_scorers
+    #     .default_lomap_score
+    # )
+
+    # network = (
+    #     openfe.ligand_network_planning
+    #     .generate_lomap_network(
+    #         ligands=ligands,
+    #         mappers=[mapper],
+    #         scorer=scorer,
+    #     )
+    # )
     mapper = openfe.setup.KartografAtomMapper()
 
     scorer = (
@@ -645,18 +610,6 @@ def openfe_create_network(self):
     description="Create OpenFE RBFE alchemical network."
 )
 def openfe_create_alchemical_network(self):
-
-    deps = require_openfe()
-
-    openfe = deps.openfe
-
-    ChemicalSystem = deps.ChemicalSystem
-    Transformation = deps.Transformation
-    AlchemicalNetwork = deps.AlchemicalNetwork
-
-    RelativeHybridTopologyProtocol = (
-        deps.RelativeHybridTopologyProtocol
-    )
 
     cfg = self.config["openfe_create_alchemical_network"]
     protocol_cfg = cfg.get(
@@ -1040,3 +993,203 @@ def openfe_gather_results(self):
     )
 
     self.openfe_results_table = output_file
+
+@register_task(
+    "openfe_compare_exp_predicted",
+    category="Free Energy",
+    description="Compare OpenFE RBFE predictions against experiment using Cinnabar."
+)
+def openfe_compare_exp_predicted(self):
+
+    cfg = self.config["openfe_compare_exp_predicted"]
+
+    #
+    # files
+    #
+
+    ddg_file = cfg["ddg_file"]
+    experimental_file = cfg["experimental_file"]
+
+    #
+    # column names
+    #
+
+    ligand_column = cfg.get(
+        "ligand_column",
+        "ligand"
+    )
+
+    experimental_column = cfg.get(
+        "experimental_column",
+        "DG"
+    )
+
+    experimental_uncertainty_column = cfg.get(
+        "experimental_uncertainty_column",
+        None
+    )
+
+    output_plot = cfg.get(
+        "output_plot",
+        "openfe_vs_experiment.png"
+    )
+
+    output_csv = cfg.get(
+        "output_csv",
+        "predicted_absolute_dg.csv"
+    )
+
+    #
+    # load data
+    #
+
+    ddg = pd.read_csv(
+        ddg_file,
+        sep="\t",
+    )
+
+    exp = pd.read_csv(
+        experimental_file
+    )
+
+    femap = FEMap()
+
+    #
+    # add experimental measurements
+    #
+
+    for _, row in exp.iterrows():
+
+        uncertainty = (
+            row[experimental_uncertainty_column]
+            if experimental_uncertainty_column
+            else 0.3
+        )
+
+        femap.add_experimental_measurement(
+            label=row[ligand_column],
+            value=row[experimental_column]
+                * unit.kilocalorie_per_mole,
+            uncertainty=uncertainty
+                * unit.kilocalorie_per_mole,
+            source="Experiment",
+        )
+
+    #
+    # add OpenFE RBFE edges
+    #
+
+    for _, row in ddg.iterrows():
+
+        femap.add_relative_calculation(
+            labelA=row["ligand_i"],
+            labelB=row["ligand_j"],
+            value=row["DDG(i->j) (kcal/mol)"]
+                * unit.kilocalorie_per_mole,
+            uncertainty=row["uncertainty (kcal/mol)"]
+                * unit.kilocalorie_per_mole,
+            source="OpenFE",
+        )
+
+    #
+    # convert to legacy graph
+    #
+
+    graph = femap.to_legacy_graph()
+
+    #
+    # save reconstructed absolute values
+    #
+
+    absolute = pd.DataFrame(
+        [
+            {
+                "ligand": ligand,
+                "DG (kcal/mol)": data["calc_DG"],
+                "uncertainty (kcal/mol)": data["calc_dDG"],
+            }
+            for ligand, data in graph.nodes(data=True)
+            if "calc_DG" in data
+        ]
+    )
+
+    absolute.to_csv(
+        output_csv,
+        index=False,
+    )
+
+    #
+    # make comparison plot
+    #
+
+    cinnabar_plotting.plot_DGs(
+        graph,
+        method_name="OpenFE",
+        target_name="Experiment",
+        title="Experimental vs OpenFE",
+        filename=output_plot,
+    )
+
+    schrodinger_column = cfg.get(
+        "schrodinger_column",
+        None,
+    )
+
+    if schrodinger_column:
+
+        graph_sch = copy.deepcopy(graph)
+
+        for ligand, data in graph_sch.nodes(data=True):
+
+            match = exp.loc[
+                exp[ligand_column] == ligand
+            ]
+
+            if match.empty:
+                continue
+
+            value = match.iloc[0][schrodinger_column]
+
+            if pd.isna(value):
+                continue
+
+            #
+            # Replace the OpenFE prediction
+            # with the Schrödinger prediction.
+            #
+
+            data["calc_DG"] = float(value)
+
+            #
+            # Use experimental uncertainty if you
+            # have one, otherwise zero.
+            #
+
+            data["calc_dDG"] = 0.0
+
+        output_plot_sch = cfg.get(
+            "output_plot_schrodinger",
+            "schrodinger_vs_experiment.png",
+        )
+
+        cinnabar_plotting.plot_DGs(
+            graph_sch,
+            method_name="Schrodinger FEP+",
+            target_name="Experiment",
+            title="Experimental vs Schrodinger",
+            filename=output_plot_sch,
+        )
+
+        logger.info(
+            f"Wrote {output_plot_sch}"
+        )
+
+    logger.info(
+        f"Wrote {output_plot}"
+    )
+
+    logger.info(
+        f"Wrote {output_csv}"
+    )
+
+    self.openfe_absolute_results = output_csv
