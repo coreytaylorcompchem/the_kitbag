@@ -1,17 +1,17 @@
 import os
-import json
-import sys
-import platform
-import re
 import subprocess
 import glob
 import time
 import yaml
 import copy
 
+import multiprocessing as mp
+from queue import Empty
 from pathlib import Path
-import json
+
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from openmm.app import (
     PDBFile,
@@ -26,7 +26,6 @@ from openfe import (
     Transformation,
     AlchemicalNetwork,
 )
-
 from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
 
 from openff.units import unit
@@ -34,14 +33,15 @@ from openff.units import unit
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-import pandas as pd
-import matplotlib.pyplot as plt
 from cinnabar import FEMap
 from cinnabar import plotting as cinnabar_plotting
 
 from openff.units import unit
 
 import MDAnalysis as mda
+
+from modules.utils.rbfe_setup import _prepare_openfe_receptor, _load_protein_membrane_component, _build_protocol_settings
+from modules.utils.rbfe_worker import _openfe_worker
 
 from pipeline.task_registry import register_task
 
@@ -54,304 +54,6 @@ from backends.openmm_backend import (
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
-
-def _prepare_openfe_receptor(pdb_in, pdb_out):
-
-    pdb = PDBFile(pdb_in)
-    
-    box = pdb.topology.getPeriodicBoxVectors()
-
-    modeller = Modeller(
-        pdb.topology,
-        pdb.positions
-    )
-
-    backend = OpenMMBackend({})
-    modeller = backend.cap_internal_chain_breaks(modeller)
-
-    # Need this after capping otherwise box vectors get lost.
-    
-    if box is not None:
-        modeller.topology.setPeriodicBoxVectors(box)
-
-    with open(pdb_out, "w") as f:
-        PDBFile.writeFile(
-            modeller.topology,
-            modeller.positions,
-            f,
-            keepIds=True,
-        )
-
-    return pdb_out
-
-def _check_protein_connectivity(pdb_file):
-
-    pdb = PDBFile(pdb_file)
-    topology = pdb.topology
-
-    logger.debug(
-        f"Topology contains "
-        f"{topology.getNumChains()} chains"
-    )
-
-    for chain in topology.chains():
-
-        residues = list(chain.residues())
-
-        logger.debug(
-            f"Chain {chain.id}: "
-            f"{len(residues)} residues"
-        )
-
-        for r1, r2 in zip(
-            residues[:-1],
-            residues[1:]
-        ):
-
-            c_atom = None
-            n_atom = None
-
-            for atom in r1.atoms():
-
-                if atom.name == "C":
-                    c_atom = atom
-                    break
-
-            for atom in r2.atoms():
-
-                if atom.name == "N":
-                    n_atom = atom
-                    break
-
-            if (
-                c_atom is None or
-                n_atom is None
-            ):
-                continue
-
-            pos1 = pdb.positions[
-                c_atom.index
-            ]
-
-            pos2 = pdb.positions[
-                n_atom.index
-            ]
-
-            dist = np.linalg.norm(
-                np.array(
-                    [
-                        pos1.x - pos2.x,
-                        pos1.y - pos2.y,
-                        pos1.z - pos2.z,
-                    ]
-                )
-            )
-
-            if dist > 0.25:
-
-                logger.warning(
-                    f"Large peptide gap: "
-                    f"chain={chain.id} "
-                    f"{r1.name}{r1.id} -> "
-                    f"{r2.name}{r2.id} "
-                    f"distance={dist:.3f} nm"
-                )
-
-def _has_valid_cryst1(pdb_file):
-
-    try:
-        pdb = PDBFile(pdb_file)
-        box = pdb.topology.getPeriodicBoxVectors()
-
-        if box is None:
-            return False
-
-        return True
-
-    except Exception:
-
-        return False
-
-def _load_protein_membrane_component(
-    pdb_file,
-):
-
-    _check_protein_connectivity(
-        pdb_file
-    )
-
-    has_box = _has_valid_cryst1(
-        pdb_file
-    )
-
-    logger.info(
-        f"Periodic box present: {has_box}"
-    )
-
-    if has_box:
-
-        logger.info(
-            "Using periodic box vectors "
-            "from PDB"
-        )
-
-        return (
-            ProteinMembraneComponent
-            .from_pdb_file(
-                pdb_file
-            )
-        )
-
-    logger.warning(
-        "No periodic box detected. "
-        "Inferring box vectors."
-    )
-
-    return (
-        ProteinMembraneComponent
-        .from_pdb_file(
-            pdb_file,
-            infer_box_vectors=True,
-        )
-    )
-
-def _get_openfe_progress(workdir):
-
-    matches = glob.glob(
-        os.path.join(
-            workdir,
-            "**",
-            "simulation_real_time_analysis.yaml"
-        ),
-        recursive=True
-    )
-
-    if not matches:
-        return None
-
-    try:
-
-        with open(matches[0]) as f:
-            data = yaml.safe_load(f)
-
-        if not data:
-            return None
-
-        latest = data[-1]
-
-        return latest.get(
-            "percent_complete"
-        )
-
-    except Exception:
-
-        return None
-
-def _build_protocol_settings(
-    protocol_cfg,
-    leg,
-):
-
-    settings = (
-        RelativeHybridTopologyProtocol
-        .default_settings()
-    )
-
-    #
-    # repeats
-    #
-
-    settings.protocol_repeats = (
-        protocol_cfg.get(
-            "repeats",
-            1
-        )
-    )
-
-    #
-    # simulation lengths
-    #
-
-    if "production_length_ns" in protocol_cfg:
-
-        settings.simulation_settings.production_length = (
-            protocol_cfg["production_length_ns"]
-            * unit.nanosecond
-        )
-
-    if "equilibration_length_ns" in protocol_cfg:
-
-        settings.simulation_settings.equilibration_length = (
-            protocol_cfg["equilibration_length_ns"]
-            * unit.nanosecond
-        )
-
-    #
-    # lambda schedule
-    #
-
-    if "lambda_windows" in protocol_cfg:
-
-        n = protocol_cfg["lambda_windows"]
-
-        settings.lambda_settings.lambda_windows = n
-        settings.simulation_settings.n_replicas = n
-
-    #
-    # replica exchange frequency
-    #
-
-    if "swap_frequency" in protocol_cfg:
-
-        settings.simulation_settings.n_replicas_exchange_attempts = (
-            protocol_cfg["swap_frequency"]
-        )
-
-    #
-    # output frequency
-    #
-
-    if "checkpoint_interval_ns" in protocol_cfg:
-
-        logger.debug(
-            settings.output_settings
-        )
-
-        settings.output_settings.checkpoint_interval = (
-            protocol_cfg["checkpoint_interval_ns"]
-            * unit.nanosecond
-        )
-
-    if "positions_write_frequency_ps" in protocol_cfg:
-
-        settings.output_settings.positions_write_frequency = (
-            protocol_cfg["positions_write_frequency_ps"]
-            * unit.picosecond
-        )
-
-    #
-    # platform
-    #
-
-    if "platform" in protocol_cfg:
-
-        settings.engine_settings.compute_platform = (
-            protocol_cfg["platform"]
-        )
-
-        logger.debug(settings.engine_settings)
-
-    #
-    # membrane systems only
-    #
-
-    if leg == "complex":
-
-        settings.integrator_settings.barostat = (
-            "MonteCarloMembraneBarostat"
-        )
-
-    return settings
 
 @register_task(
     "openfe_prepare_receptor",
@@ -448,8 +150,6 @@ def openfe_prepare_receptor(self):
         f"to {fixed_receptor_pdb}"
     )
 
-    # self.openfe_receptor_pdb = receptor_pdb
-
 @register_task(
     "openfe_create_network",
     category="Free Energy",
@@ -493,21 +193,6 @@ def openfe_create_network(self):
             )
         )
 
-    # mapper = openfe.setup.KartografAtomMapper()
-
-    # scorer = (
-    #     openfe.lomap_scorers
-    #     .default_lomap_score
-    # )
-
-    # network = (
-    #     openfe.ligand_network_planning
-    #     .generate_lomap_network(
-    #         ligands=ligands,
-    #         mappers=[mapper],
-    #         scorer=scorer,
-    #     )
-    # )
     mapper = openfe.setup.KartografAtomMapper()
 
     scorer = (
@@ -785,145 +470,213 @@ def openfe_run_network(self):
         exist_ok=True
     )
 
-    # set active GPU
+    # # set active GPU
 
-    env = os.environ.copy()
+    # env = os.environ.copy()
 
-    gpu_id = (
-        self.config
-        .get("openfe_create_alchemical_network", {})
-        .get("protocol", {})
-        .get("gpu_id")
+    # gpu_id = (
+    #     self.config
+    #     .get("openfe_create_alchemical_network", {})
+    #     .get("protocol", {})
+    #     .get("gpu_id")
+    # )
+
+    # logger.debug(
+    #     f"gpu_id from config = {gpu_id!r}"
+    # )
+
+    # if gpu_id is not None:
+
+    #     env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+
+    #     logger.debug(
+    #         f"Using GPU {gpu_id}"
+    #     )
+
+    # json_files = sorted(
+    #     glob.glob(
+    #         os.path.join(
+    #             transforms_dir,
+    #             "*.json"
+    #         )
+    #     )
+    # )
+
+    # total = len(json_files)
+
+    # logger.info(
+    #     f"Found {total} transformations"
+    # )
+
+    gpus = cfg.get(
+        "gpus",
+        [0],
     )
 
-    logger.debug(
-        f"gpu_id from config = {gpu_id!r}"
+    jobs_per_gpu = cfg.get(
+        "jobs_per_gpu",
+        1,
     )
-
-    if gpu_id is not None:
-
-        env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-
-        logger.debug(
-            f"Using GPU {gpu_id}"
-        )
 
     json_files = sorted(
         glob.glob(
             os.path.join(
                 transforms_dir,
-                "*.json"
+                "*.json",
             )
         )
     )
 
-    total = len(json_files)
-
     logger.info(
-        f"Found {total} transformations"
+        f"Found {len(json_files)} transformations"
     )
 
-    failed = []
+    mp.set_start_method("spawn", force=True)
 
-    for i, transform_json in enumerate(
-        json_files,
-        start=1
-    ):
+    manager = mp.Manager()
 
-        stem = Path(transform_json).stem
+    queue = manager.Queue()
 
-        result_json = os.path.join(
-            output_dir,
-            f"{stem}.json"
-        )
+    failed = manager.list()
 
-        working_dir = os.path.join(
-            output_dir,
-            stem
-        )
+    for job in json_files:
 
-        #
-        # Skip completed calculations
-        #
+        queue.put(job)
 
-        if os.path.exists(result_json):
+    workers = []
+
+    for gpu in gpus:
+
+        for _ in range(jobs_per_gpu):
+
+            p = mp.Process(
+                target=_openfe_worker,
+                args=(
+                    gpu,
+                    queue,
+                    failed,
+                    output_dir,
+                ),
+            )
+
+            p.start()
+
+            workers.append(p)
 
             logger.info(
-                f"[{i}/{total}] "
-                f"Skipping completed {stem}"
+                f"Started worker on GPU {gpu}"
             )
 
-            continue
+    for p in workers:
+        p.join()
 
-        logger.info(
-            f"[{i}/{total}] "
-            f"Running {stem}"
-        )
+    failed = list(failed)
 
-        cmd = [
-            "openfe",
-            "quickrun",
-            transform_json,
-            "-o",
-            result_json,
-            "-d",
-            working_dir,
-        ]
-
-        logger.info(
-            "CUDA_VISIBLE_DEVICES="
-            f"{env.get('CUDA_VISIBLE_DEVICES')}"
-        )
-
-        proc = subprocess.Popen(
-            cmd,
-            env=env
-        )
-
-        last_report = -1
-
-        while proc.poll() is None:
-
-            progress = _get_openfe_progress(
-                working_dir
-            )
-
-            if (
-                progress is not None
-                and int(progress) != last_report
-            ):
-
-                logger.info(
-                    f"[{i}/{total}] "
-                    f"{stem}: "
-                    f"{progress:.1f}%"
-                )
-
-                last_report = int(progress)
-
-            time.sleep(300)
-
-        if proc.returncode != 0:
-
-            logger.error(
-                f"[{i}/{total}] "
-                f"FAILED {stem}"
-            )
-
-            failed.append(stem)
-
-            continue
-
-        logger.info(
-            f"[{i}/{total}] "
-            f"Completed {stem}"
-        )
+    completed = len(json_files) - len(failed)
 
     logger.info(
-        f"Completed "
-        f"{total - len(failed)} / {total} "
-        f"transformations"
+        f"Completed {completed} / {len(json_files)} transformations"
     )
+
+    # for i, transform_json in enumerate(
+    #     json_files,
+    #     start=1
+    # ):
+
+    #     stem = Path(transform_json).stem
+
+    #     result_json = os.path.join(
+    #         output_dir,
+    #         f"{stem}.json"
+    #     )
+
+    #     working_dir = os.path.join(
+    #         output_dir,
+    #         stem
+    #     )
+
+    #     #
+    #     # Skip completed calculations
+    #     #
+
+    #     if os.path.exists(result_json):
+
+    #         logger.info(
+    #             f"[{i}/{total}] "
+    #             f"Skipping completed {stem}"
+    #         )
+
+    #         continue
+
+    #     logger.info(
+    #         f"[GPU {env['CUDA_VISIBLE_DEVICES']}] "
+    #         f"Running {stem}"
+    #     )
+
+    #     cmd = [
+    #         "openfe",
+    #         "quickrun",
+    #         transform_json,
+    #         "-o",
+    #         result_json,
+    #         "-d",
+    #         working_dir,
+    #     ]
+
+    #     logger.info(
+    #         "CUDA_VISIBLE_DEVICES="
+    #         f"{env.get('CUDA_VISIBLE_DEVICES')}"
+    #     )
+
+    #     proc = subprocess.Popen(
+    #         cmd,
+    #         env=env
+    #     )
+
+    #     last_report = -1
+
+    #     while proc.poll() is None:
+
+    #         progress = _get_openfe_progress(
+    #             working_dir
+    #         )
+
+    #         if (
+    #             progress is not None
+    #             and int(progress) != last_report
+    #         ):
+
+    #             logger.info(
+    #                 f"[{i}/{total}] "
+    #                 f"{stem}: "
+    #                 f"{progress:.1f}%"
+    #             )
+
+    #             last_report = int(progress)
+
+    #         time.sleep(300)
+
+    #     if proc.returncode != 0:
+
+    #         logger.error(
+    #             f"[{i}/{total}] "
+    #             f"FAILED {stem}"
+    #         )
+
+    #         failed.append(stem)
+
+    #         continue
+
+    #     logger.info(
+    #         f"[{i}/{total}] "
+    #         f"Completed {stem}"
+    #     )
+
+    # logger.info(
+    #     f"Completed "
+    #     f"{total - len(failed)} / {total} "
+    #     f"transformations"
+    # )
 
     # deal with failed jobs
 
