@@ -10,11 +10,33 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def generate_boltz_yaml(sequences: dict, ligands: list, yaml_path: Path):
+def generate_boltz_yaml(sequences: dict, ligands: list, templates: list, yaml_path: Path):
 
     data = {
         "sequences": []
     }
+
+    # templates structures, if present.
+    
+    if templates:
+        data["templates"] = []
+
+        for t in templates:
+            # detect extension
+            ext = Path(t).suffix.lower()
+
+            if ext == ".cif":
+                entry = {"cif": t}
+            elif ext == ".pdb":
+                entry = {"pdb": t}
+            else:
+                raise ValueError(f"Unsupported template format: {t}")
+
+            data["templates"].append(entry)
+               
+        logger.info(
+            f"Templates: {len(templates) if templates else 0}"
+        )
 
     # proteins 
     for chain_id, seq in sequences.items():
@@ -67,13 +89,15 @@ class BoltzBackend(BaseStructureTool):
             self.config = config or {}
 
     
+
     def run(
         self,
         run_id: int,
         device: int,
         output_dir: Path,
         sequences: dict,
-        ligands: list = None
+        ligands: list = None,
+        templates: list = None 
     ):
 
         env = os.environ.copy()
@@ -83,9 +107,14 @@ class BoltzBackend(BaseStructureTool):
         run_dir.mkdir(parents=True, exist_ok=True)
 
         yaml_file = run_dir / "input.yaml"
+     
+        generate_boltz_yaml(
+            sequences,
+            ligands or [],
+            templates or [],
+            yaml_file
+        )
 
-        generate_boltz_yaml(sequences, ligands or [], yaml_file)
-        
         out_dir = run_dir / "results"
         
         cmd = [

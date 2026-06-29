@@ -70,14 +70,16 @@ def predict_structures(backend, config, **kwargs):
     output_dir = Path(config["output_dir"])
 
     for i, entry in enumerate(entries):
+        
         result = backend_instance.run(
             run_id=i,
             device=0,
-            output_dir=output_dir / entry["id"],            
-            sequences=entry.get("proteins", {}),
-            ligands=entry.get("ligands", [])
-
+            output_dir=output_dir / entry["id"],
+            sequences=entry["proteins"],
+            ligands=entry["ligands"],
+            templates=entry.get("templates", [])
         )
+
         logger.debug(f"Result: {result}")
 
         result["input_id"] = entry["id"]
@@ -89,7 +91,6 @@ def predict_structures(backend, config, **kwargs):
         f"{entry['id']} | chains={list(entry['proteins'].keys())} "
         f"| ligands={len(entry['ligands'])}"
     )
-
 
     backend.cache["predictions"] = all_results
     return backend.cache
