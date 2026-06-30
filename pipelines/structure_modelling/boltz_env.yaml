@@ -1,28 +1,28 @@
-name: boltz2
+name: boltz_test2
+
 channels:
   - conda-forge
-  - pytorch
-  - nvidia
+
 dependencies:
   - python=3.12
   - pip
 
-  # scientific stack
-  - numpy=1.26
-  - pandas=2.2
-  - scipy=1.13
-  - scikit-learn=1.6
+  - numpy=1.26.4
+  - pandas=2.2.2
+  - scipy=1.13.1
+  - scikit-learn=1.6.1
   - matplotlib
 
-  # PyTorch
-  - pytorch=2.5
-  - torchvision=0.20
-  - torchaudio=2.5
-  - pytorch-cuda=12.1
-
-  # install remaining packages from PyPI
   - pip:
+      # CUDA 12.1 PyTorch stack
+      - --extra-index-url https://download.pytorch.org/whl/cu121
+
+      - torch==2.5.1+cu121
+      - torchvision==0.20.1+cu121
+      - torchaudio==2.5.1+cu121
+
+      # Boltz dependencies
       - boltz==2.2.1
       - biopython==1.84
-      - rdkit==2026.3.3
       - wandb==0.18.7
+      - rdkit==2026.3.3
