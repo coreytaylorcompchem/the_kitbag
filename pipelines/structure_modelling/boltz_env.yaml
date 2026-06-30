@@ -1,4 +1,4 @@
-name: boltz_test2
+name: boltz
 
 channels:
   - conda-forge
