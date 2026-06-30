@@ -188,8 +188,6 @@ def generate_alignment_sessions(backend, config, **kwargs):
 
         aligned_files = [reference]
 
-        # aligned_files.append(reference)
-
         for mobile_file in pdb_files[1:]:
 
             out_file = (
@@ -229,24 +227,24 @@ def generate_alignment_sessions(backend, config, **kwargs):
                 pml.write(
                     f'load "{relative_path.as_posix()}", {obj_name}\n'
                 )
-            
-            # relative_path = structure_file.relative_to(target_dir)
-
-            # pml.write(
-            #     f'load "{relative_path.as_posix()}", {obj_name}\n'
-            # )
-
-
 
             # visualisation defaults
-            pml.write("hide everything\n")
-            pml.write("show cartoon\n")
-            pml.write("spectrum count, rainbow\n")
 
             # orient on reference model
             ref_name = aligned_files[0].stem
-            pml.write(f"orient {ref_name}\n")
+            
+            pml.write("hide everything\n")
+            pml.write("show cartoon\n")
+
+            # colour by pLDDT stored in B-factors
+            pml.write("spectrum b, red_yellow_green_cyan_blue, minimum=50, maximum=100\n")
+
+            # optional thicker cartoon in confident regions
+            pml.write("set cartoon_putty, on\n")
+
+            pml.write("orient " + ref_name + "\n")
             pml.write("zoom\n")
+
 
         logger.info(
             f"[ALIGN] Saved PyMOL script: {pml_file}"
