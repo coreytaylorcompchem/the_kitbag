@@ -140,7 +140,10 @@ class BoltzBackend(BaseStructureTool):
             cmd.append("--use_msa_server")
 
         if inf_cfg.get("no_kernels", True):
-            cmd.append("--no_kernels")
+            cmd.append("--no_kernels")            
+        if inf_cfg.get("use_potentials", False):
+            cmd.append("--use_potentials")
+
         # numeric params
         if "diffusion_samples" in inf_cfg:
             cmd += ["--diffusion_samples", str(inf_cfg["diffusion_samples"])]
@@ -168,6 +171,7 @@ class BoltzBackend(BaseStructureTool):
             "accelerator": accelerator,
             "use_msa_server": inf_cfg.get("use_msa_server", True),
             "no_kernels": inf_cfg.get("no_kernels", True),
+            "use_potentials": inf_cfg.get("use_potentials", True),
         }
 
         # sampling parameters
