@@ -4,8 +4,13 @@ import requests
 from pathlib import Path
 from contextlib import contextmanager
 
-import modeller
-import modeller.automodel
+try:
+    import modeller
+    import modeller.automodel
+    MODELLER_AVAILABLE = True
+except ImportError:
+    MODELLER_AVAILABLE = False
+
 from Bio import pairwise2, SeqIO
 from Bio.PDB import PDBParser
 from Bio.SeqUtils import seq1

@@ -17,7 +17,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, rdMolAlign, rdMolTransforms
 from rdkit.Chem.rdForceFieldHelpers import MMFFGetMoleculeForceField, MMFFGetMoleculeProperties
 
-from modules.utils.utils import calc_rmsd, is_rotor_bond
+from modules.utils.useful_stuff import calc_rmsd, is_rotor_bond
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=True, simple_format=True)

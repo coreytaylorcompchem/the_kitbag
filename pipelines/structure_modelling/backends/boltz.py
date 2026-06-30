@@ -237,18 +237,32 @@ class BoltzBackend(BaseStructureTool):
 
             data = json.loads(json_file.read_text())
 
-            # find matching structure file in same dir
+            # find corresponding structure file
+
             parent_dir = json_file.parent
 
+            # confidence_input_model_3.json
+            # -> input_model_3
+
+            model_stem = json_file.stem.replace(
+                "confidence_",
+                ""
+            )
+
             structure_file = None
-            for ext in ["*.cif", "*.pdb"]:
-                files = list(parent_dir.glob(ext))
-                if files:
-                    structure_file = files[0]
+
+            for ext in [".cif", ".pdb"]:
+
+                candidate = parent_dir / f"{model_stem}{ext}"
+
+                if candidate.exists():
+                    structure_file = candidate
                     break
 
             if structure_file is None:
-                logger.warning(f"No structure file found next to {json_file}")
+                logger.warning(
+                    f"No structure file found for {json_file}"
+                )
                 continue
 
             samples.append({

@@ -5,7 +5,11 @@ from backends.modeller import ModellerBackend
 from pathlib import Path
 import requests
 
-import modeller
+try:
+    import modeller
+    MODELLER_AVAILABLE = True
+except ImportError:
+    MODELLER_AVAILABLE = False
 
 logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 

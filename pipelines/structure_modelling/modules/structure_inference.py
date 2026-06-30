@@ -22,10 +22,10 @@ parser = MMCIFParser(QUIET=True)
 
 from pipeline.task_registry import register_task
 
-# from backends.structure_inference import StructureInferenceBackend
-# from backends.chai import ChaiBackend
+# # from backends.structure_inference import StructureInferenceBackend
+# # from backends.chai import ChaiBackend
 from backends.boltz import BoltzBackend
-# from backends.openfold import OpenFoldBackend
+# # from backends.openfold import OpenFoldBackend
 
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
@@ -80,6 +80,12 @@ def predict_structures(backend, config, **kwargs):
             templates=entry.get("templates", [])
         )
 
+        for sample in result["results"]:
+            logger.debug(
+                f"sample: {sample['structure']} "
+                f"plddt={sample['plddt']}"
+            )
+
         logger.debug(f"Result: {result}")
 
         result["input_id"] = entry["id"]
@@ -113,6 +119,15 @@ def rank_predictions(backend, config, **kwargs):
     # load inference results
     runs = backend.cache.get("predictions", [])
 
+    #DEBUG
+    
+    for run in runs:
+        for sample in run["results"]:
+            logger.debug(
+                f"sample path={sample['structure']}"
+            )
+
+
     predictions = []
 
     for run in runs:
@@ -133,10 +148,10 @@ def rank_predictions(backend, config, **kwargs):
             })
     
     if not runs:
-        raise ValueError("No runs found in backend cache — predict_structures failed")
+        raise ValueError("No runs found in backend cache - predict_structures failed")
 
     if not predictions:
-        raise ValueError("Runs found but no samples parsed — parsing failed")
+        raise ValueError("Runs found but no samples parsed - parsing failed")
 
 
     metric_cfg = ranking_cfg["metrics"]
@@ -285,6 +300,16 @@ def rank_predictions(backend, config, **kwargs):
             if tool not in best_per_tool:
                 best_per_tool[tool] = p
         selected["best_per_tool"] = best_per_tool
+    
+    #DEBUG
+    logger.debug("===== RANKED STRUCTURES =====")
+
+    for i, p in enumerate(predictions):
+        logger.debug(
+            f"{i+1}: "
+            f"plddt={p['metrics']['plddt']:.3f} "
+            f"path={p['structure_path']}"
+        )
 
     # select and copy structures
     select_cfg = ranking_cfg.get("select_structures", {})
@@ -375,6 +400,13 @@ def rank_predictions(backend, config, **kwargs):
 
             for j, p in enumerate(top_group):
                 src = Path(p["structure_path"])
+                #DEBUG
+                
+                logger.debug(
+                        f"[COPY] rank={j+1} "
+                        f"src={src.name}"
+                    )
+
                 iptm = p["metrics"]["iptm"]
                 plddt = p["metrics"]["plddt"]
                 ext = src.suffix
