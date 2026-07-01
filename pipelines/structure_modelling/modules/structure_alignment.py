@@ -2,17 +2,11 @@ from pathlib import Path
 from collections import defaultdict
 import shutil
 
-# import MDAnalysis as mda
-# from MDAnalysis.analysis import align
-
 from Bio.PDB import MMCIFParser
-# from Bio.PDB import PDBParser
-# from Bio.PDB import PDBIO
 from Bio.PDB import Superimposer
 from Bio.PDB import MMCIFIO
 
 parser = MMCIFParser(QUIET=True)
-# pdb_parser = PDBParser(QUIET=True)
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
@@ -79,19 +73,6 @@ def align_structure(reference_file, mobile_file, output_file):
 
     return sup.rms
 
-# def cif_to_pdb(cif_file: Path, pdb_file: Path):
-
-#     structure = parser.get_structure(
-#         pdb_file.stem,
-#         str(cif_file)
-#     )
-
-#     io = PDBIO()
-#     io.set_structure(structure)
-#     io.save(str(pdb_file))
-
-#     return pdb_file
-
 def get_input_id(filename: str):
 
     # sstr5_model1_plddt0.88.cif
@@ -122,7 +103,7 @@ def generate_alignment_sessions(backend, config, **kwargs):
 
     for f in per_input_dir.iterdir():
 
-        if f.suffix.lower() not in [".cif", ".pdb"]:
+        if f.suffix.lower() not in [".cif"]:
             continue
 
         grouped[get_input_id(f.name)].append(f)
@@ -147,50 +128,6 @@ def generate_alignment_sessions(backend, config, **kwargs):
 
         aligned_dir = target_dir / "aligned"
         aligned_dir.mkdir(exist_ok=True)
-
-        cif_files = files
-
-        # pdb_files = []
-
-        # for f in files:
-
-        #     if f.suffix.lower() == ".cif":
-
-        #         pdb_file = (
-        #             aligned_dir /
-        #             f"{f.stem}.pdb"
-        #         )
-
-        #         cif_to_pdb(
-        #             f,
-        #             pdb_file
-        #         )
-
-        #         pdb_files.append(pdb_file)
-
-        #     else:
-
-        #         pdb_files.append(f)
-
-        # reference = pdb_files[0]
-
-        # aligned_files = []
-
-        # reference = pdb_files[0]
-
-        # reference_pdb = (
-        #     aligned_dir /
-        #     f"{reference.stem}_aligned.pdb"
-        # )
-
-        # shutil.copy(
-        #     reference,
-        #     reference_pdb
-        # )
-
-        # reference = reference_pdb
-
-        # aligned_files = [reference]
 
         reference = files[0]
 
@@ -257,7 +194,6 @@ def generate_alignment_sessions(backend, config, **kwargs):
             pml.write("show cartoon\n")
 
             # show the ligands            
-            pml.write("show sticks, organic\n")
             pml.write("show sticks, hetatm\n")
             pml.write("color atomic, hetatm\n")
             
