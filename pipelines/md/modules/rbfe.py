@@ -101,7 +101,7 @@ def openfe_prepare_receptor(self):
             ]
         )
 
-    u.dimensions = universes[0].dimensions.copy()
+        u.dimensions = universes[0].dimensions.copy()
 
     ligand_resname = cfg.get("ligand_resname", "LIG")
 
