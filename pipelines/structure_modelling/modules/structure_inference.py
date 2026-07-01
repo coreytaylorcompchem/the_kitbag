@@ -91,13 +91,6 @@ def predict_structures(backend, config, **kwargs):
         result["input_id"] = entry["id"]
         all_results.append(result) 
 
-    logger.debug(f"All results: {all_results}")
-
-    logger.info(
-        f"{entry['id']} | chains={list(entry['proteins'].keys())} "
-        f"| ligands={len(entry['ligands'])}"
-    )
-
     backend.cache["predictions"] = all_results
     return backend.cache
 

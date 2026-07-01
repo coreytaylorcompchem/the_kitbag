@@ -6,12 +6,13 @@ import shutil
 # from MDAnalysis.analysis import align
 
 from Bio.PDB import MMCIFParser
-from Bio.PDB import PDBParser
-from Bio.PDB import PDBIO
+# from Bio.PDB import PDBParser
+# from Bio.PDB import PDBIO
 from Bio.PDB import Superimposer
+from Bio.PDB import MMCIFIO
 
 parser = MMCIFParser(QUIET=True)
-pdb_parser = PDBParser(QUIET=True)
+# pdb_parser = PDBParser(QUIET=True)
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
@@ -20,15 +21,16 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def align_structure(reference_file, mobile_file, output_file):
 
-    ref_structure = pdb_parser.get_structure(
+    ref_structure = parser.get_structure(
         "ref",
         str(reference_file)
     )
 
-    mobile_structure = pdb_parser.get_structure(
+    mobile_structure = parser.get_structure(
         "mobile",
         str(mobile_file)
     )
+
 
     ref_atoms = []
     mobile_atoms = []
@@ -65,7 +67,7 @@ def align_structure(reference_file, mobile_file, output_file):
         mobile_structure.get_atoms()
     )
 
-    io = PDBIO()
+    io = MMCIFIO()
 
     io.set_structure(
         mobile_structure
@@ -77,18 +79,18 @@ def align_structure(reference_file, mobile_file, output_file):
 
     return sup.rms
 
-def cif_to_pdb(cif_file: Path, pdb_file: Path):
+# def cif_to_pdb(cif_file: Path, pdb_file: Path):
 
-    structure = parser.get_structure(
-        pdb_file.stem,
-        str(cif_file)
-    )
+#     structure = parser.get_structure(
+#         pdb_file.stem,
+#         str(cif_file)
+#     )
 
-    io = PDBIO()
-    io.set_structure(structure)
-    io.save(str(pdb_file))
+#     io = PDBIO()
+#     io.set_structure(structure)
+#     io.save(str(pdb_file))
 
-    return pdb_file
+#     return pdb_file
 
 def get_input_id(filename: str):
 
@@ -146,53 +148,71 @@ def generate_alignment_sessions(backend, config, **kwargs):
         aligned_dir = target_dir / "aligned"
         aligned_dir.mkdir(exist_ok=True)
 
-        pdb_files = []
+        cif_files = files
 
-        for f in files:
+        # pdb_files = []
 
-            if f.suffix.lower() == ".cif":
+        # for f in files:
 
-                pdb_file = (
-                    aligned_dir /
-                    f"{f.stem}.pdb"
-                )
+        #     if f.suffix.lower() == ".cif":
 
-                cif_to_pdb(
-                    f,
-                    pdb_file
-                )
+        #         pdb_file = (
+        #             aligned_dir /
+        #             f"{f.stem}.pdb"
+        #         )
 
-                pdb_files.append(pdb_file)
+        #         cif_to_pdb(
+        #             f,
+        #             pdb_file
+        #         )
 
-            else:
+        #         pdb_files.append(pdb_file)
 
-                pdb_files.append(f)
+        #     else:
 
-        reference = pdb_files[0]
+        #         pdb_files.append(f)
 
-        aligned_files = []
+        # reference = pdb_files[0]
 
-        reference = pdb_files[0]
+        # aligned_files = []
 
-        reference_pdb = (
+        # reference = pdb_files[0]
+
+        # reference_pdb = (
+        #     aligned_dir /
+        #     f"{reference.stem}_aligned.pdb"
+        # )
+
+        # shutil.copy(
+        #     reference,
+        #     reference_pdb
+        # )
+
+        # reference = reference_pdb
+
+        # aligned_files = [reference]
+
+        reference = files[0]
+
+        reference_cif = (
             aligned_dir /
-            f"{reference.stem}_aligned.pdb"
+            f"{reference.stem}_aligned.cif"
         )
 
         shutil.copy(
             reference,
-            reference_pdb
+            reference_cif
         )
 
-        reference = reference_pdb
+        reference = reference_cif
 
         aligned_files = [reference]
 
-        for mobile_file in pdb_files[1:]:
+        for mobile_file in files[1:]:
 
             out_file = (
                 aligned_dir /
-                f"{mobile_file.stem}_aligned.pdb"
+                f"{mobile_file.stem}_aligned.cif"
             )
 
             rms = align_structure(
@@ -236,11 +256,19 @@ def generate_alignment_sessions(backend, config, **kwargs):
             pml.write("hide everything\n")
             pml.write("show cartoon\n")
 
-            # colour by pLDDT stored in B-factors
-            pml.write("spectrum b, red_yellow_green_cyan_blue, minimum=50, maximum=100\n")
+            # show the ligands            
+            pml.write("show sticks, organic\n")
+            pml.write("show sticks, hetatm\n")
+            pml.write("color atomic, hetatm\n")
+            
+            # make ligands more visible
+            pml.write("set stick_radius, 0.25\n")
 
-            # optional thicker cartoon in confident regions
-            pml.write("set cartoon_putty, on\n")
+            # colour by pLDDT stored in B-factors
+            
+            pml.write(
+                "spectrum b, red_yellow_green_cyan_blue, polymer.protein, minimum=50, maximum=100\n"
+            )
 
             pml.write("orient " + ref_name + "\n")
             pml.write("zoom\n")
