@@ -25,11 +25,12 @@ from pipeline.task_registry import register_task
 # # from backends.structure_inference import StructureInferenceBackend
 # # from backends.chai import ChaiBackend
 from backends.boltz import BoltzBackend
+from backends.intellifold import IntelliFoldBackend
 # # from backends.openfold import OpenFoldBackend
 
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
-from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
+# from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
 
 from pipeline.logger import setup_logger
 
@@ -38,6 +39,17 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 def is_interacting(p):
     iptm = p["metrics"]["iptm"]
     return iptm is not None and iptm > 0.0
+
+def get_backend(tool_name: str, config):
+    tool_name = tool_name.lower()
+
+    if tool_name == "boltz":
+        return BoltzBackend(config=config)
+
+    if tool_name in {"intellifold", "intfold"}:
+        return IntelliFoldBackend(config=config)
+
+    raise ValueError(f"Unknown structure prediction tool: {tool_name}")
 
 @register_task(
     "predict_structures",
@@ -64,32 +76,53 @@ def predict_structures(backend, config, **kwargs):
     #     output_dir=output_dir,
     # )
     
-    backend_instance = BoltzBackend(config=config)
+    tools = config["structure_prediction"].get("tools", ["boltz"])
+    devices_cfg = config["structure_prediction"].get("devices", {})
+
     all_results = []
 
     output_dir = Path(config["output_dir"])
 
-    for i, entry in enumerate(entries):
-        
-        result = backend_instance.run(
-            run_id=i,
-            device=0,
-            output_dir=output_dir / entry["id"],
-            sequences=entry["proteins"],
-            ligands=entry["ligands"],
-            templates=entry.get("templates", [])
-        )
+    for tool_name in tools:
+        backend_instance = get_backend(tool_name, config)
 
-        for sample in result["results"]:
-            logger.debug(
-                f"sample: {sample['structure']} "
-                f"plddt={sample['plddt']}"
+        # default all tools to GPU 0 unless specified
+        device = devices_cfg.get(tool_name, 0)
+
+        logger.info(f"[Predict] Running tool={tool_name} on device={device}")
+
+        for i, entry in enumerate(entries):
+
+            tool_output_dir = (
+                output_dir /
+                entry["id"] /
+                tool_name
             )
 
-        logger.debug(f"Result: {result}")
+            result = backend_instance.run(
+                run_id=i,
+                device=device,
+                output_dir=tool_output_dir,
+                sequences=entry["proteins"],
+                ligands=entry["ligands"],
+                templates=entry.get("templates", []),
+            )
 
-        result["input_id"] = entry["id"]
-        all_results.append(result) 
+            for sample in result["results"]:
+                logger.debug(
+                    f"[{tool_name}] sample: {sample['structure']} "
+                    f"plddt={sample.get('plddt')}"
+                )
+
+            result["input_id"] = entry["id"]
+            all_results.append(result)
+
+    logger.debug(f"All results: {all_results}")
+
+    logger.info(
+        f"{entry['id']} | chains={list(entry['proteins'].keys())} "
+        f"| ligands={len(entry['ligands'])}"
+    )
 
     backend.cache["predictions"] = all_results
     return backend.cache
@@ -129,10 +162,11 @@ def rank_predictions(backend, config, **kwargs):
                 "tool": run["tool"],
                 "structure_path": sample["structure"],              
                 "metrics": {
-                    "plddt": sample["plddt"],
-                    "ptm": sample["ptm"],
-                    "iptm": sample["iptm"],
+                    "plddt": sample.get("plddt"),
+                    "ptm": sample.get("ptm"),
+                    "iptm": sample.get("iptm"),
                     "iplddt": sample.get("iplddt"),
+                    "ranking_score": sample.get("ranking_score"),
                 },
                 "run_id": run["run_id"],
                 "input_id": run.get("input_id"),
@@ -238,7 +272,8 @@ def rank_predictions(backend, config, **kwargs):
         writer = csv.writer(f)
         writer.writerow([
             "rank", "tool", "run_id", "seed", "device",
-            "score", "plddt", "ptm", "iptm", "structure_path",
+            "score", "plddt", "ptm", "iptm", "iplddt",
+            "ranking_score", "structure_path",
         ])
 
         for i, p in enumerate(predictions, 1):
@@ -253,24 +288,34 @@ def rank_predictions(backend, config, **kwargs):
                 m.get("plddt"),
                 m.get("ptm"),
                 m.get("iptm"),
+                m.get("iplddt"),
+                m.get("ranking_score"),
                 p["structure_path"],
             ])
 
     # plotting
+
     if ranking_cfg.get("plotting", {}).get("enabled", True):
+
+        from modules.utils.plotting import (
+            plot_metric,
+            plot_score,
+            scatter_plot,
+            plot_clusters,
+        )
 
         plot_metric(predictions, "plddt", ranking_dir / "plddt_hist.png")
         plot_metric(predictions, "ptm", ranking_dir / "ptm_hist.png")
-        plot_metric(predictions, "iptm", ranking_dir / "iptm_hist.png")      
+        plot_metric(predictions, "iptm", ranking_dir / "iptm_hist.png")
         plot_metric(predictions, "iplddt", ranking_dir / "iplddt_hist.png")
-        
+
         plot_score(predictions, ranking_dir / "score_hist.png")
 
         scatter_plot(predictions, "plddt", "ptm", ranking_dir / "plddt_vs_ptm.png")
         scatter_plot(predictions, "plddt", "iptm", ranking_dir / "plddt_vs_iptm.png")
         scatter_plot(predictions, "ptm", "iptm", ranking_dir / "ptm_vs_iptm.png")
         scatter_plot(predictions, "iptm", "iplddt", ranking_dir / "iptm_vs_iplddt.png")
-        
+
         plot_clusters(predictions, ranking_dir / "clusters.png")
 
     logger.info("Saved metric plots to ranking directory")

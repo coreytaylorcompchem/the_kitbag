@@ -1,0 +1,33 @@
+name: intellifold
+
+channels:
+  - conda-forge
+  - nodefaults
+
+dependencies:
+  - python=3.11
+  - pip
+
+    #  - numpy=1.26.4
+  - pandas=2.2.2
+  - scipy=1.13.1
+  - scikit-learn=1.6.1
+    #  - matplotlib
+  - pyyaml
+  - biopython=1.84
+  - tqdm
+  - requests
+
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu124
+
+      - torch==2.6.0
+      - torchvision==0.21.0
+      - torchaudio==2.6.0
+
+      - intellifold==2.0.2
+      - wandb==0.18.7
+
+      - numpy==1.24.0
+      - contourpy==1.2.1
+      - matplotlib==3.7.5
