@@ -38,18 +38,28 @@ def safe_value(val):
 # PRECOMPUTATION
 # =========================
 
-def prepare_features(df, smiles_col="smiles", label_col=None):
+def prepare_features(
+    df,
+    smiles_col="smiles",
+    label_col=None,
+    global_scaler=None,
+    fit_global_scaler=True,
+):
     """
     Runs once before featurisation loop.
-    Stores results in module-level globals.
+
+    If fit_global_scaler=True, fit a new StandardScaler on this dataframe.
+    If fit_global_scaler=False, transform descriptors using the supplied pretrained scaler.
+
+    Returns
+    -------
+    dict
+        Contains fitted/used preprocessing objects.
     """
     global GLOBAL_FEATURES, FP_FEATURES
 
     smiles_list = df[smiles_col].tolist()
 
-    # ---------------------------
-    # GLOBAL DESCRIPTORS
-    # ---------------------------
     def process_mol(smi):
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
@@ -57,11 +67,9 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
 
         return np.array([
             safe_value(Descriptors.MolWt(mol)),
-            # safe_value(Descriptors.MolLogP(mol)),
             safe_value(Descriptors.NumHDonors(mol)),
             safe_value(Descriptors.NumHAcceptors(mol)),
             safe_value(Descriptors.TPSA(mol)),
-            # safe_value(Descriptors.MolMR(mol)),
             safe_value(Descriptors.FractionCSP3(mol)),
             safe_value(Descriptors.HeavyAtomCount(mol)),
             safe_value(Descriptors.RingCount(mol)),
@@ -90,24 +98,18 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
     global_feats = [process_mol(s) for s in smiles_list]
     global_feats = np.array(global_feats, dtype=np.float32)
 
-    scaler = StandardScaler()
-    GLOBAL_FEATURES = scaler.fit_transform(global_feats)
+    if fit_global_scaler:
+        scaler = StandardScaler()
+        GLOBAL_FEATURES = scaler.fit_transform(global_feats)
+    else:
+        if global_scaler is None:
+            raise ValueError(
+                "fit_global_scaler=False but no global_scaler was supplied."
+            )
+        scaler = global_scaler
+        GLOBAL_FEATURES = scaler.transform(global_feats)
 
-    # ---------------------------
-    # FINGERPRINTS + PCA
-    # ---------------------------
-    # def process_fp(smi):
-    #     mol = Chem.MolFromSmiles(smi)
-    #     if mol is None:
-    #         return np.zeros(1024, dtype=np.float32)
-
-    #     fp_ecfp = compute_morgan_fp(mol, 512)
-    #     fp_torsion = np.array(
-    #         AllChem.GetHashedTopologicalTorsionFingerprintAsBitVect(mol, nBits=512)
-    #     )
-    #     return np.concatenate([fp_ecfp, fp_torsion])
     def process_fp(smi):
-
         mol = Chem.MolFromSmiles(smi)
 
         if mol is None:
@@ -118,9 +120,6 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
             DataStructs.ConvertToNumpyArray(fp, arr)
             return arr
 
-        # =========================
-        # ECFP (connectivity)
-        # =========================
         fp_ecfp = fp_to_numpy(
             AllChem.GetMorganFingerprintAsBitVect(
                 mol,
@@ -131,9 +130,6 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
             1024
         )
 
-        # =========================
-        # FCFP (feature-based)
-        # =========================
         fp_fcfp = fp_to_numpy(
             AllChem.GetMorganFingerprintAsBitVect(
                 mol,
@@ -144,9 +140,6 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
             1024
         )
 
-        # =========================
-        # Atom pair FP
-        # =========================
         fp_atompair = fp_to_numpy(
             AllChem.GetHashedAtomPairFingerprintAsBitVect(
                 mol,
@@ -155,9 +148,6 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
             512
         )
 
-        # =========================
-        # Topological torsion FP
-        # =========================
         fp_torsion = fp_to_numpy(
             AllChem.GetHashedTopologicalTorsionFingerprintAsBitVect(
                 mol,
@@ -176,12 +166,11 @@ def prepare_features(df, smiles_col="smiles", label_col=None):
     fps = [process_fp(s) for s in smiles_list]
     fps = np.array(fps, dtype=np.float32)
 
-    # Remove PCA of fps for now
-    
-    # pca = PCA(n_components=512)
-    # FP_FEATURES = normalize(pca.fit_transform(fps), axis=1)
-
     FP_FEATURES = normalize(fps, axis=1)
+
+    return {
+        "global_feature_scaler": scaler
+    }
 
 
 # =========================
