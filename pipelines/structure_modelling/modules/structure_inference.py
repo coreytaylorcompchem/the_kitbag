@@ -36,6 +36,27 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+def metric_or_default(p, metric_name, default=-1.0):
+    value = p["metrics"].get(metric_name)
+    return value if value is not None else default
+
+
+def make_selection_tag(p):
+    iptm = p["metrics"].get("iptm")
+    plddt = p["metrics"].get("plddt")
+    ranking_score = p["metrics"].get("ranking_score")
+
+    if iptm is not None and iptm > 0:
+        return f"iptm{iptm:.3f}"
+
+    if plddt is not None:
+        return f"plddt{plddt:.3f}"
+
+    if ranking_score is not None:
+        return f"rankscore{ranking_score:.3f}"
+
+    return "scoreNA"
+
 def is_interacting(p):
     iptm = p["metrics"]["iptm"]
     return iptm is not None and iptm > 0.0
@@ -212,13 +233,26 @@ def rank_predictions(backend, config, **kwargs):
 
     for i, p in enumerate(predictions):
         m = p["metrics"]
-        if None not in (m["plddt"], m["ptm"], m["iptm"]):           
-            X.append([
-                m["plddt"],
-                m["iptm"],
-                m["iplddt"] if m["iplddt"] is not None else 0.0
-            ])
 
+        plddt = m.get("plddt")
+        ptm = m.get("ptm")
+        iptm = m.get("iptm")
+        iplddt = m.get("iplddt")
+
+        plddt_str = f"{plddt:.3f}" if plddt is not None else "NA"
+
+        logger.debug(
+            f"{i+1}: "
+            f"plddt={plddt_str} "
+            f"path={p['structure_path']}"
+        )
+
+        if plddt is not None and ptm is not None and iptm is not None:
+            X.append([
+                plddt,
+                iptm,
+                iplddt if iplddt is not None else 0.0,
+            ])
             valid_idx.append(i)
 
     if X:
@@ -318,7 +352,10 @@ def rank_predictions(backend, config, **kwargs):
 
         plot_clusters(predictions, ranking_dir / "clusters.png")
 
-    logger.info("Saved metric plots to ranking directory")
+    if ranking_cfg.get("plotting", {}).get("enabled", True):
+        logger.info("Saved metric plots to ranking directory")
+    else:
+        logger.info("Plotting disabled; skipped metric plots")
 
     # select best structures
     selected = {}
@@ -343,9 +380,12 @@ def rank_predictions(backend, config, **kwargs):
     logger.debug("===== RANKED STRUCTURES =====")
 
     for i, p in enumerate(predictions):
+        plddt = p["metrics"].get("plddt")
+        plddt_str = f"{plddt:.3f}" if plddt is not None else "NA"
+
         logger.debug(
             f"{i+1}: "
-            f"plddt={p['metrics']['plddt']:.3f} "
+            f"plddt={plddt_str} "
             f"path={p['structure_path']}"
         )
 
@@ -382,7 +422,11 @@ def rank_predictions(backend, config, **kwargs):
         else:
             global_sorted = sorted(
                 non_interacting,
-                key=lambda x: x["metrics"]["plddt"],
+                key=lambda x: (
+                    metric_or_default(x, "plddt"),
+                    metric_or_default(x, "ranking_score"),
+                    x.get("score", -1.0),
+                ),
                 reverse=True
             )
             logger.info(f"[GLOBAL] No interactions → using pLDDT")
@@ -391,12 +435,12 @@ def rank_predictions(backend, config, **kwargs):
 
         for i, p in enumerate(global_selected):
             src = Path(p["structure_path"])
-            iptm = p["metrics"]["iptm"]
-            plddt = p["metrics"]["plddt"]
+            # iptm = p["metrics"]["iptm"]
+            # plddt = p["metrics"]["plddt"]
             input_id = p.get("input_id", f"run{p['run_id']}")
             ext = src.suffix
 
-            tag = f"iptm{iptm:.3f}" if iptm and iptm > 0 else f"plddt{plddt:.3f}"
+            tag = make_selection_tag(p)
 
             dst = global_dir / f"{input_id}_rank{i+1}_{tag}{ext}"
             shutil.copy(src, dst)
@@ -422,14 +466,22 @@ def rank_predictions(backend, config, **kwargs):
             if group_interacting:
                 sorted_group = sorted(
                     group_interacting,
-                    key=lambda x: x["metrics"]["iptm"],
+                    key=lambda x: (
+                        metric_or_default(x, "iptm"),
+                        metric_or_default(x, "ranking_score"),
+                        x.get("score", -1.0),
+                    ),
                     reverse=True
                 )
                 logger.info(f"[PER-INPUT] {input_id}: using iPTM")
             else:
                 sorted_group = sorted(
                     group,
-                    key=lambda x: x["metrics"]["plddt"],
+                    key=lambda x: (
+                        metric_or_default(x, "plddt"),
+                        metric_or_default(x, "ranking_score"),
+                        x.get("score", -1.0),
+                    ),
                     reverse=True
                 )
                 logger.info(f"[PER-INPUT] {input_id}: no interaction → using pLDDT")
@@ -445,11 +497,11 @@ def rank_predictions(backend, config, **kwargs):
                         f"src={src.name}"
                     )
 
-                iptm = p["metrics"]["iptm"]
-                plddt = p["metrics"]["plddt"]
+                # iptm = p["metrics"]["iptm"]
+                # plddt = p["metrics"]["plddt"]
                 ext = src.suffix
 
-                tag = f"iptm{iptm:.3f}" if iptm and iptm > 0 else f"plddt{plddt:.3f}"
+                tag = make_selection_tag(p)
 
                 dst = per_input_dir / f"{input_id}_model{j+1}_{tag}{ext}"
                 shutil.copy(src, dst)

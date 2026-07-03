@@ -1,0 +1,60 @@
+task: workflow
+workflow_name: structure_prediction
+
+workflow:
+  - predict_structures
+  - rank_predictions
+  - generate_alignment_sessions
+
+structure_prediction:
+  tools:
+    - intellifold
+
+  input_csv: input/prediction_input.csv
+
+  inference:
+      accelerator: gpu
+
+      diffusion_samples: 5
+      sampling_steps: 200
+      recycling_steps: 10
+
+      # IntelliFold-specific options
+      model: v2-flash
+      seed: "42"
+      precision: bf16
+      use_msa_server: true
+      msa_pairing_strategy: greedy
+      
+      # only use if you want to condition inference on a known structure
+      use_template: false # if true, it will download ~300Gb of cif data - set false for now.
+
+  ranking:
+    enabled: true        
+    select_structures:
+      enabled: true
+      mode: top_k        # or "threshold"
+      k: 10              # for top_k
+      iptm_threshold: 0.5  # for threshold mode
+
+    plotting:
+      enabled: false
+
+    metrics:
+      plddt:
+        weight: 0.5
+        higher_is_better: true
+      ptm:
+        weight: 0.3
+        higher_is_better: true
+      iptm:
+        weight: 0.2
+        higher_is_better: true
+
+    aggregation: weighted_sum
+    normalize: true
+
+backend:
+  name: structure_inference
+
+output_dir: outputs/structure_prediction

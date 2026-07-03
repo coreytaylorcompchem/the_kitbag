@@ -316,18 +316,149 @@ class IntelliFoldBackend(BaseStructureTool):
 
     def _parse_results(self, out_dir: Path):
         """
-        IntelliFold output may be AF3-like, with sample directories such as:
-          seed-42_sample-0/
-              model.cif
-              confidences.json
-              summary_confidences.json
+        Parse IntelliFold outputs.
 
-        Some versions also write a top-ranked model at the root.
-        This parser prefers per-sample directories so your ranking step can see
-        all samples, not only the top-ranked one.
+        Handles two possible layouts:
+
+        1. Boltz-like / IntelliFold observed layout:
+        results/input/predictions/input/
+            confidence_input_model_0.json
+            input_model_0.cif
+            confidence_input_model_1.json
+            input_model_1.cif
+
+        2. AF3-like layout:
+        seed-42_sample-0/
+            model.cif
+            confidences.json
+            summary_confidences.json
+
+        The parser prefers confidence JSONs because they allow us to associate
+        metrics with the correct structure.
         """
 
         samples = []
+
+        # ============================================================
+        # Case 1: IntelliFold observed layout
+        #
+        # results/input/predictions/input/
+        #   input_seed-42_sample-0.cif
+        #   input_seed-42_sample-0_confidences.json
+        #   input_seed-42_sample-0_summary_confidences.json
+        # ============================================================
+
+        confidence_jsons = sorted(
+            p for p in out_dir.rglob("*_confidences.json")
+            if "_summary_confidences" not in p.name
+        )
+
+        if confidence_jsons:
+            logger.info(
+                f"[IntelliFold] Found {len(confidence_jsons)} confidence JSON files"
+            )
+
+            for confidence_json in confidence_jsons:
+                parent_dir = confidence_json.parent
+
+                # input_seed-42_sample-0_confidences.json
+                # -> input_seed-42_sample-0
+                model_stem = confidence_json.stem.replace(
+                    "_confidences",
+                    ""
+                )
+
+                structure_file = None
+
+                for ext in [".cif", ".pdb"]:
+                    candidate = parent_dir / f"{model_stem}{ext}"
+                    if candidate.exists():
+                        structure_file = candidate
+                        break
+
+                if structure_file is None:
+                    logger.warning(
+                        f"[IntelliFold] No structure file found for {confidence_json}"
+                    )
+                    continue
+
+                summary_json = parent_dir / f"{model_stem}_summary_confidences.json"
+
+                confidence = {}
+                summary = {}
+
+                if confidence_json.exists():
+                    confidence = json.loads(confidence_json.read_text())
+
+                if summary_json.exists():
+                    summary = json.loads(summary_json.read_text())
+                else:
+                    logger.debug(
+                        f"[IntelliFold] No summary confidence JSON found for {model_stem}"
+                    )
+
+                plddt = _first_present(
+                    summary.get("plddt"),
+                    summary.get("mean_plddt"),
+                    summary.get("complex_plddt"),
+                    confidence.get("plddt"),
+                    confidence.get("mean_plddt"),
+                    confidence.get("complex_plddt"),
+                    _mean_if_list(confidence.get("atom_plddts")),
+                    _mean_if_list(confidence.get("token_plddts")),
+                )
+
+                ptm = _first_present(
+                    summary.get("ptm"),
+                    summary.get("pTM"),
+                    confidence.get("ptm"),
+                    confidence.get("pTM"),
+                )
+
+                iptm = _first_present(
+                    summary.get("iptm"),
+                    summary.get("ipTM"),
+                    confidence.get("iptm"),
+                    confidence.get("ipTM"),
+                )
+
+                iplddt = _first_present(
+                    summary.get("iplddt"),
+                    summary.get("complex_iplddt"),
+                    confidence.get("iplddt"),
+                    confidence.get("complex_iplddt"),
+                )
+
+                ranking_score = _first_present(
+                    summary.get("ranking_score"),
+                    summary.get("ranking_confidence"),
+                    summary.get("score"),
+                    confidence.get("ranking_score"),
+                    confidence.get("ranking_confidence"),
+                    confidence.get("score"),
+                )
+
+                samples.append({
+                    "structure": str(structure_file),
+                    "plddt": plddt,
+                    "ptm": ptm,
+                    "iptm": iptm,
+                    "iplddt": iplddt,
+                    "ranking_score": ranking_score,
+                })
+
+                logger.debug(
+                    f"[IntelliFold] Parsed {confidence_json.name} -> "
+                    f"{structure_file.name} "
+                    f"plddt={plddt} ptm={ptm} iptm={iptm} "
+                    f"ranking_score={ranking_score}"
+                )
+
+            return samples
+
+        # ============================================================
+        # Case 2: AF3-like sample directories
+        # ============================================================
 
         sample_dirs = sorted(
             [
@@ -336,112 +467,113 @@ class IntelliFoldBackend(BaseStructureTool):
             ]
         )
 
-        if not sample_dirs:
-            logger.warning(
-                f"No IntelliFold sample directories found under {out_dir}; "
-                "trying recursive CIF discovery."
+        if sample_dirs:
+            logger.info(
+                f"[IntelliFold] Found {len(sample_dirs)} sample directories"
             )
 
-            cif_files = sorted(out_dir.rglob("*.cif"))
+            for sample_dir in sample_dirs:
+                structure_file = None
 
-            for cif_file in cif_files:
+                for candidate in [
+                    sample_dir / "model.cif",
+                    *sorted(sample_dir.glob("*model*.cif")),
+                    *sorted(sample_dir.glob("*.cif")),
+                ]:
+                    if candidate.exists():
+                        structure_file = candidate
+                        break
+
+                if structure_file is None:
+                    logger.warning(f"No CIF structure found in {sample_dir}")
+                    continue
+
+                summary_json = None
+                confidence_json = None
+
+                for candidate in [
+                    sample_dir / "summary_confidences.json",
+                    *sorted(sample_dir.glob("*summary*confidence*.json")),
+                ]:
+                    if candidate.exists():
+                        summary_json = candidate
+                        break
+
+                for candidate in [
+                    sample_dir / "confidences.json",
+                    *sorted(sample_dir.glob("*confidence*.json")),
+                ]:
+                    if candidate.exists() and candidate != summary_json:
+                        confidence_json = candidate
+                        break
+
+                summary = {}
+                confidence = {}
+
+                if summary_json and summary_json.exists():
+                    summary = json.loads(summary_json.read_text())
+
+                if confidence_json and confidence_json.exists():
+                    confidence = json.loads(confidence_json.read_text())
+
+                plddt = _first_present(
+                    summary.get("plddt"),
+                    summary.get("mean_plddt"),
+                    summary.get("complex_plddt"),
+                    _mean_if_list(confidence.get("atom_plddts")),
+                    _mean_if_list(confidence.get("token_plddts")),
+                )
+
+                ptm = _first_present(
+                    summary.get("ptm"),
+                    summary.get("pTM"),
+                )
+
+                iptm = _first_present(
+                    summary.get("iptm"),
+                    summary.get("ipTM"),
+                )
+
+                iplddt = _first_present(
+                    summary.get("iplddt"),
+                    summary.get("complex_iplddt"),
+                )
+
+                ranking_score = _first_present(
+                    summary.get("ranking_score"),
+                    summary.get("ranking_confidence"),
+                )
+
                 samples.append({
-                    "structure": str(cif_file),
-                    "plddt": None,
-                    "ptm": None,
-                    "iptm": None,
-                    "iplddt": None,
+                    "structure": str(structure_file),
+                    "plddt": plddt,
+                    "ptm": ptm,
+                    "iptm": iptm,
+                    "iplddt": iplddt,
+                    "ranking_score": ranking_score,
                 })
 
             return samples
 
-        for sample_dir in sample_dirs:
-            structure_file = None
+        # ============================================================
+        # Last-resort fallback: structures only, no metrics
+        # ============================================================
 
-            # Prefer standard sample-level model.cif
-            for candidate in [
-                sample_dir / "model.cif",
-                *sorted(sample_dir.glob("*model*.cif")),
-                *sorted(sample_dir.glob("*.cif")),
-            ]:
-                if candidate.exists():
-                    structure_file = candidate
-                    break
+        logger.warning(
+            f"No IntelliFold confidence JSONs found under {out_dir}; "
+            "falling back to recursive CIF discovery with empty metrics."
+        )
 
-            if structure_file is None:
-                logger.warning(f"No CIF structure found in {sample_dir}")
-                continue
+        cif_files = sorted(out_dir.rglob("*.cif"))
 
-            summary_json = None
-            confidence_json = None
-
-            for candidate in [
-                sample_dir / "summary_confidences.json",
-                *sorted(sample_dir.glob("*summary*confidence*.json")),
-            ]:
-                if candidate.exists():
-                    summary_json = candidate
-                    break
-
-            for candidate in [
-                sample_dir / "confidences.json",
-                *sorted(sample_dir.glob("*confidence*.json")),
-            ]:
-                if candidate.exists() and candidate != summary_json:
-                    confidence_json = candidate
-                    break
-
-            summary = {}
-            confidence = {}
-
-            if summary_json and summary_json.exists():
-                summary = json.loads(summary_json.read_text())
-
-            if confidence_json and confidence_json.exists():
-                confidence = json.loads(confidence_json.read_text())
-
-            # Robust metric extraction. AF3-like outputs may store pLDDT-like
-            # values as token/atom lists, while summaries contain pTM/iPTM.
-            plddt = _first_present(
-                summary.get("plddt"),
-                summary.get("mean_plddt"),
-                summary.get("complex_plddt"),
-                _mean_if_list(confidence.get("atom_plddts")),
-                _mean_if_list(confidence.get("token_plddts")),
-            )
-
-            ptm = _first_present(
-                summary.get("ptm"),
-                summary.get("pTM"),
-            )
-
-            iptm = _first_present(
-                summary.get("iptm"),
-                summary.get("ipTM"),
-            )
-
-            iplddt = _first_present(
-                summary.get("iplddt"),
-                summary.get("complex_iplddt"),
-            )
-
-            ranking_score = _first_present(
-                summary.get("ranking_score"),
-                summary.get("ranking_confidence"),
-            )
-
+        for cif_file in cif_files:
             samples.append({
-                "structure": str(structure_file),
-                "plddt": plddt,
-                "ptm": ptm,
-                "iptm": iptm,
-                "iplddt": iplddt,
-                "ranking_score": ranking_score,
+                "structure": str(cif_file),
+                "plddt": None,
+                "ptm": None,
+                "iptm": None,
+                "iplddt": None,
+                "ranking_score": None,
             })
-
-            logger.debug(
-                f"[IntelliFold] Parsed {structure_file} "
-                f"plddt={plddt} ptm={ptm} iptm={iptm}"
-            )
 
         return samples
