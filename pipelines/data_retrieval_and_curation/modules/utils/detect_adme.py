@@ -727,8 +727,11 @@ def extract_cyp3a4_substrate_hybrid(text, threshold=0.5):
 
 def classify_metstab_record(record):
     """
-    Determine whether a record is genuinely a metabolic stability assay
-    rather than a CYP inhibition/metabolism assay performed in microsomes.
+    Determine whether a record is likely to be metabolic stability / clearance.
+
+    This is intentionally permissive for records retrieved under
+    Microsomal Stability / Hepatocyte Stability, because CHEMBL descriptions
+    are noisy and standard_type/unit often carry the useful signal.
     """
 
     desc = normalise_text(record.get("assay_description"))
@@ -738,70 +741,115 @@ def classify_metstab_record(record):
     combined = f"{desc} {stype} {unit}"
 
     # -------------------------
-    # Positive signals
+    # Strong unit-level positives
     # -------------------------
-    positive_patterns = [
+    clearance_unit_patterns = [
+        "ul/min/mg",
+        "ul min 1 mg 1",
+        "ul/min/10",
+        "ul min 1 10",
+        "microl/min/mg",
+        "microl min 1 mg 1",
+        "ml/min/g",
+        "ml min 1 g 1",
+        "ml/min/kg",
+        "ml min 1 kg 1",
+        "l/h/kg",
+        "l hr 1 kg 1",
+        "l/min/kg",
+        "l min 1 kg 1",
+    ]
 
-        # intrinsic clearance
-        "intrinsic clearance",
+    if any(p in combined for p in clearance_unit_patterns):
+        return True
+
+    # -------------------------
+    # Strong standard_type positives
+    # -------------------------
+    clearance_stypes = {
+        "cl",
         "clint",
+        "clh",
+        "intrinsic clearance",
+        "clearance",
+    }
 
-        # stability language
+    if stype in clearance_stypes:
+        return True
+
+    # -------------------------
+    # Stability / half-life records
+    # Keep them as met-stab candidates,
+    # but convert_met_stab may later reject t1/2 units.
+    # -------------------------
+    stability_patterns = [
         "metabolic stability",
         "microsomal stability",
         "hepatocyte stability",
         "substrate depletion",
-
-        # half-life
+        "percent remaining",
+        "% remaining",
         "half life",
         "t1/2",
-
-        # common units
-        "ul/min/mg",
-        "ml/min/g",
-        "ul/min/10^6",
-
-        # depletion style
-        "% remaining",
-        "percent remaining",
     ]
 
-    # -------------------------
-    # Negative signals
-    # -------------------------
-    negative_patterns = [
+    if any(p in combined for p in stability_patterns):
+        return True
 
-        # CYP inhibition
-        "inhibition",
+    # -------------------------
+    # Generic matrix + clearance language
+    # -------------------------
+    matrix_patterns = [
+        "microsome",
+        "microsomal",
+        "hepatocyte",
+        "hepatocytes",
+        "liver s9",
+        "s9 fraction",
+    ]
+
+    clearance_language = [
+        "clearance",
+        "intrinsic clearance",
+        "clint",
+        "depletion",
+        "stability",
+    ]
+
+    if (
+        any(m in combined for m in matrix_patterns)
+        and any(c in combined for c in clearance_language)
+    ):
+        return True
+
+    # -------------------------
+    # Exclude obvious concentration/inhibition-only records
+    # -------------------------
+    concentration_or_inhibition = [
         "ic50",
         "ec50",
         "ki",
         "kd",
-
-        # enzyme phenotyping
-        "metabolite formation",
-        "enzyme activity",
-        "probe substrate",
-
-        # common CYP wording
-        "cyp1a2",
-        "cyp2c9",
-        "cyp2c19",
-        "cyp2d6",
-        "cyp3a4",
-        "cyp3a5",
-
-        # classic probe substrates
-        "midazolam",
-        "testosterone",
-        "diclofenac",
-        "dextromethorphan",
+        "inhibition",
+        "inhibitor",
+        "tdi",
     ]
 
-    positive = any(p in combined for p in positive_patterns)
-    negative = any(n in combined for n in negative_patterns)
+    concentration_units = [
+        "nm",
+        "um",
+        "mm",
+        "ug/ml",
+    ]
 
-    return positive and not negative
+    if (
+        any(x in combined for x in concentration_or_inhibition)
+        or any(x in unit for x in concentration_units)
+        or "%" in unit
+    ):
+        return False
+
+    return False
 
 def convert_bsep_activity(value, unit, endpoint_class):
     """
