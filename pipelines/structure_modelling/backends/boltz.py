@@ -10,7 +10,31 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-def generate_boltz_yaml(sequences: dict, ligands: list, templates: list, yaml_path: Path):
+def validate_msa_policy(
+    sequences: dict,
+    msas: dict,
+    use_msa_server: bool,
+    tool_name: str,
+):
+    missing = [
+        chain_id
+        for chain_id in sequences
+        if not msas or chain_id not in msas
+    ]
+
+    if missing and not use_msa_server:
+        raise ValueError(
+            f"{tool_name}: use_msa_server=false, but no local MSA was provided "
+            f"for chains: {', '.join(missing)}"
+        )
+
+def generate_boltz_yaml(
+    sequences: dict,
+    ligands: list,
+    templates: list,
+    msas: dict,
+    yaml_path: Path,
+):
 
     data = {
         "sequences": []
@@ -40,11 +64,16 @@ def generate_boltz_yaml(sequences: dict, ligands: list, templates: list, yaml_pa
 
     # proteins 
     for chain_id, seq in sequences.items():
+        protein_entry = {
+            "id": chain_id,
+            "sequence": seq,
+        }
+
+        if msas and chain_id in msas:
+            protein_entry["msa"] = str(msas[chain_id])
+
         data["sequences"].append({
-            "protein": {
-                "id": chain_id,
-                "sequence": seq
-            }
+            "protein": protein_entry
         })
 
     # ligands 
@@ -87,9 +116,6 @@ class BoltzBackend(BaseStructureTool):
     def __init__(self, config=None):
             super().__init__()
             self.config = config or {}
-
-    
-
     def run(
         self,
         run_id: int,
@@ -97,8 +123,18 @@ class BoltzBackend(BaseStructureTool):
         output_dir: Path,
         sequences: dict,
         ligands: list = None,
-        templates: list = None 
+        templates: list = None,
+        msas: dict = None
     ):
+        
+        use_msa_server = bool(inf_cfg.get("use_msa_server", False))
+
+        validate_msa_policy(
+            sequences=sequences,
+            msas=msas or {},
+            use_msa_server=use_msa_server,
+            tool_name=self.name,
+        )
 
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(device)
@@ -112,6 +148,7 @@ class BoltzBackend(BaseStructureTool):
             sequences,
             ligands or [],
             templates or [],
+            msas or {},
             yaml_file
         )
 
@@ -248,7 +285,7 @@ class BoltzBackend(BaseStructureTool):
                 "confidence_",
                 ""
             )
-
+    
             structure_file = None
 
             for ext in [".cif", ".pdb"]:

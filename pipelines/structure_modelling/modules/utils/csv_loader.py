@@ -59,7 +59,8 @@ def load_sequences(csv_path):
                 "id": entry_id,
                 "proteins": proteins,
                 "ligands": ligands,
-                "templates": templates
+                "templates": templates,
+                 "msas": {}
             })
 
 

@@ -30,10 +30,127 @@ from backends.boltz import BoltzBackend
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
 from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
+from modules.utils.msas import generate_local_msa_for_sequence, sequence_hash
 
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+
+@register_task(
+    "generate_msas",
+    category="Structure modelling",
+    description="Generate local cached MSAs using MMseqs2/ColabFold search."
+)
+def generate_msas(backend, config, **kwargs):
+    sp_cfg = config["structure_prediction"]
+    msa_cfg = sp_cfg.get("msa", {})
+
+    if not msa_cfg.get("enabled", False):
+        logger.info("[MSA] MSA generation disabled; loading CSV entries unchanged.")
+
+        csv_path = sp_cfg["input_csv"]
+        entries = load_sequences(csv_path)
+
+        backend.cache["entries"] = entries
+        return {
+            "entries": entries,
+            "msa_cache": None,
+        }
+
+    method = msa_cfg.get("method", "colabfold_local")
+
+    if method != "colabfold_local":
+        raise ValueError(
+            f"Unsupported MSA method: {method}"
+        )
+
+    database_dir = Path(msa_cfg["database_dir"]).expanduser().resolve()
+    cache_dir = Path(msa_cfg.get("cache_dir", "outputs/msa_cache"))
+
+    if not cache_dir.is_absolute():
+        cache_dir = Path(config["output_dir"]).parent / cache_dir
+
+    cache_dir = cache_dir.resolve()
+
+    command = msa_cfg.get(
+        "command",
+        "colabfold_search",
+    )
+
+    extra_args = msa_cfg.get("extra_args", [])
+    reuse_existing = msa_cfg.get("reuse_existing", True)
+    overwrite = msa_cfg.get("overwrite", False)
+
+    if not database_dir.exists():
+        raise FileNotFoundError(
+            f"MSA database_dir does not exist: {database_dir}"
+        )
+
+    csv_path = sp_cfg["input_csv"]
+    entries = load_sequences(csv_path)
+
+    if not entries:
+        raise ValueError("No entries found in CSV for MSA generation")
+
+    manifest = {
+        "method": method,
+        "database_dir": str(database_dir),
+        "cache_dir": str(cache_dir),
+        "entries": {},
+    }
+
+    for entry in entries:
+        entry_id = entry["id"]
+        proteins = entry.get("proteins", {})
+
+        entry.setdefault("msas", {})
+
+        manifest["entries"][entry_id] = {}
+
+        if not proteins:
+            logger.info(
+                f"[MSA] {entry_id}: no protein chains; skipping."
+            )
+            continue
+
+        for chain_id, sequence in proteins.items():
+            sequence_id = f"{entry_id}_{chain_id}"
+
+            msa_path = generate_local_msa_for_sequence(
+                sequence_id=sequence_id,
+                sequence=sequence,
+                database_dir=database_dir,
+                cache_dir=cache_dir,
+                command=command,
+                extra_args=extra_args,
+                reuse_existing=reuse_existing,
+                overwrite=overwrite,
+            )
+
+            entry["msas"][chain_id] = str(msa_path)
+
+            manifest["entries"][entry_id][chain_id] = {
+                "sequence_hash": sequence_hash(sequence),
+                "msa": str(msa_path),
+            }
+
+    manifest_path = cache_dir / "msa_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    logger.info(
+        f"[MSA] Wrote MSA manifest: {manifest_path}"
+    )
+
+    backend.cache["entries"] = entries
+    backend.cache["msa_manifest"] = str(manifest_path)
+
+    return {
+        "entries": entries,
+        "msa_manifest": str(manifest_path),
+    }
 
 def is_interacting(p):
     iptm = p["metrics"]["iptm"]
@@ -46,8 +163,11 @@ def is_interacting(p):
 )
 def predict_structures(backend, config, **kwargs):
 
-    csv_path = config["structure_prediction"]["input_csv"]
-    entries = load_sequences(csv_path)
+    entries = backend.cache.get("entries")
+
+    if entries is None:
+        csv_path = config["structure_prediction"]["input_csv"]
+        entries = load_sequences(csv_path)
 
     if not entries:
         raise ValueError("No sequences found in CSV")
@@ -77,7 +197,8 @@ def predict_structures(backend, config, **kwargs):
             output_dir=output_dir / entry["id"],
             sequences=entry["proteins"],
             ligands=entry["ligands"],
-            templates=entry.get("templates", [])
+            templates=entry.get("templates", []),
+            msas=entry.get("msas", {}),
         )
 
         for sample in result["results"]:
@@ -90,6 +211,13 @@ def predict_structures(backend, config, **kwargs):
 
         result["input_id"] = entry["id"]
         all_results.append(result) 
+
+    logger.debug(f"All results: {all_results}")
+
+    logger.info(
+        f"{entry['id']} | chains={list(entry['proteins'].keys())} "
+        f"| ligands={len(entry['ligands'])}"
+    )
 
     backend.cache["predictions"] = all_results
     return backend.cache
