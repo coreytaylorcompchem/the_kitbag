@@ -1306,14 +1306,16 @@ def train_curriculum(context, config, params):
 
             "task_groups": context["task_groups"],
 
-            "group_architecture":
-                model.group_architecture,
+            "group_architecture": model.group_architecture,
 
-            "label_scalers":
-                context["label_scalers"],
+            "label_scalers": context["label_scalers"],
 
-            "label_transform_metadata":
-                context["label_transform_metadata"],
+            "label_transform_metadata": context["label_transform_metadata"],
+
+            "global_feature_scaler": context.get(
+                "feature_state",
+                {}
+            ).get("global_feature_scaler"),
         },
         model_path,
         )
@@ -1675,12 +1677,16 @@ def train(context, config):
                 "task_groups": context["task_groups"],
 
                 # -------------------------
-                # preprocessing (NEW)
+                # preprocessing
                 # -------------------------
                 "label_scalers": context["label_scalers"],
 
-                "label_transform_metadata":
-                    context["label_transform_metadata"],
+                "label_transform_metadata": context["label_transform_metadata"],
+
+                "global_feature_scaler": context.get(
+                    "feature_state",
+                    {}
+                ).get("global_feature_scaler"),
 
             },
             model_path,

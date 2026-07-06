@@ -725,10 +725,208 @@ def extract_cyp3a4_substrate_hybrid(text, threshold=0.5):
 
     return rule
 
+def infer_metstab_matrix_with_context(record, assay_name=None):
+    """
+    Infer microsome/hepatocyte/S9 matrix using record text plus assay bucket.
+    """
+    text = " ".join([
+        str(assay_name or ""),
+        str(record.get("assay_description", "") or ""),
+        str(record.get("standard_type", "") or ""),
+        str(record.get("standard_units", "") or ""),
+        str(record.get("target_organism", "") or ""),
+    ]).lower()
+
+    if any(x in text for x in [
+        "hepatocyte",
+        "hepatocytes",
+        "primary hepatocyte",
+    ]):
+        return "hepatocyte"
+
+    if any(x in text for x in [
+        "microsome",
+        "microsomes",
+        "microsomal",
+        "hlm",
+        "rlm",
+        "mlm",
+        "liver microsome",
+        "liver microsomes",
+    ]):
+        return "microsome"
+
+    if any(x in text for x in [
+        "s9",
+        "s9 fraction",
+        "liver s9",
+    ]):
+        return "s9"
+
+    # Assay-name fallback
+    lname = str(assay_name or "").lower()
+
+    if "microsomal" in lname or "microsome" in lname:
+        return "microsome"
+
+    if "hepatocyte" in lname or "hepato" in lname:
+        return "hepatocyte"
+
+    return None
+
+
+def extract_species_with_context(record):
+    """
+    Try target_organism first, then assay_description.
+    The old pattern used `target_organism or assay_description`, which can miss
+    species if target_organism is present but uninformative.
+    """
+    species = extract_species(record.get("target_organism"))
+
+    if species == "unknown":
+        species = extract_species(record.get("assay_description"))
+
+    return species
+
+
+def classify_metstab_endpoint_family(record, assay_name=None):
+    """
+    Classify metabolic stability-related records into endpoint families.
+
+    Families:
+      - clint
+      - t_half
+      - percent_remaining
+      - hepatic_clearance
+      - extraction_ratio
+      - free_clearance
+      - absolute_clearance
+      - other_clearance
+      - None
+    """
+    desc = normalise_text(record.get("assay_description"))
+    stype = normalise_text(record.get("standard_type"))
+    unit = normalise_text(record.get("standard_units"))
+    assay = normalise_text(assay_name)
+
+    combined = f"{assay} {desc} {stype} {unit}"
+
+    # -----------------------------
+    # Exclude obvious concentration/inhibition endpoints
+    # unless they are clearly also a stability endpoint.
+    # -----------------------------
+    inhibition_like = any(x in combined for x in [
+        "ic50",
+        "ec50",
+        "ki",
+        "kd",
+        "tdi",
+        "inhibition",
+        "inhibitor",
+        "inh",
+    ])
+
+    if inhibition_like and not any(x in combined for x in [
+        "stability",
+        "remaining",
+        "depletion",
+        "half life",
+        "t1/2",
+        "clearance",
+        "clint",
+    ]):
+        return None
+
+    # -----------------------------
+    # Half-life
+    # -----------------------------
+    if (
+        stype in {"t1/2", "half life", "half-life"}
+        or "t1/2" in combined
+        or "half life" in combined
+        or "half-life" in combined
+    ):
+        return "t_half"
+
+    # -----------------------------
+    # Extraction ratio
+    # -----------------------------
+    if (
+        stype in {"erh", "extraction ratio", "hepatic extraction ratio"}
+        or "extraction ratio" in combined
+        or "hepatic extraction" in combined
+    ):
+        return "extraction_ratio"
+
+    # -----------------------------
+    # Hepatic clearance
+    # -----------------------------
+    if stype in {"clh", "clh(app)", "qh"}:
+        return "hepatic_clearance"
+
+    # -----------------------------
+    # Free clearance
+    # -----------------------------
+    if stype in {"cl free", "clfree", "unbound clearance", "free clearance"}:
+        return "free_clearance"
+
+    # -----------------------------
+    # Intrinsic clearance / Clint
+    # -----------------------------
+    if (
+        stype in {"clint", "intrinsic clearance"}
+        or "clint" in combined
+        or "intrinsic clearance" in combined
+    ):
+        return "clint"
+
+    # Standard_type=CL can include several clearance types.
+    # We let the converter/unit decide whether it is scaled/liver-normalised/etc.
+    if stype in {"cl", "clearance"}:
+        return "clint"
+
+    # -----------------------------
+    # Percent remaining / stability
+    # -----------------------------
+    percent_like_unit = "%" in str(record.get("standard_units", ""))
+
+    stability_like = any(x in combined for x in [
+        "stability",
+        "stabilty",  # common typo seen in logs
+        "remaining",
+        "percent remaining",
+        "% remaining",
+        "depletion",
+        "substrate depletion",
+        "drug degradation",
+        "drug metabolism",
+    ])
+
+    if percent_like_unit and stability_like:
+        return "percent_remaining"
+
+    # -----------------------------
+    # Absolute clearance-like values
+    # -----------------------------
+    # These are useful but should not be mixed with L/h/kg.
+    if unit in {"ml/min", "l/min", "ul/min"}:
+        return "absolute_clearance"
+
+    # -----------------------------
+    # Generic clearance fallback
+    # -----------------------------
+    if "clearance" in combined:
+        return "other_clearance"
+
+    return None
+
 def classify_metstab_record(record):
     """
-    Determine whether a record is genuinely a metabolic stability assay
-    rather than a CYP inhibition/metabolism assay performed in microsomes.
+    Determine whether a record is likely to be metabolic stability / clearance.
+
+    This is intentionally permissive for records retrieved under
+    Microsomal Stability / Hepatocyte Stability, because CHEMBL descriptions
+    are noisy and standard_type/unit often carry the useful signal.
     """
 
     desc = normalise_text(record.get("assay_description"))
@@ -738,70 +936,115 @@ def classify_metstab_record(record):
     combined = f"{desc} {stype} {unit}"
 
     # -------------------------
-    # Positive signals
+    # Strong unit-level positives
     # -------------------------
-    positive_patterns = [
+    clearance_unit_patterns = [
+        "ul/min/mg",
+        "ul min 1 mg 1",
+        "ul/min/10",
+        "ul min 1 10",
+        "microl/min/mg",
+        "microl min 1 mg 1",
+        "ml/min/g",
+        "ml min 1 g 1",
+        "ml/min/kg",
+        "ml min 1 kg 1",
+        "l/h/kg",
+        "l hr 1 kg 1",
+        "l/min/kg",
+        "l min 1 kg 1",
+    ]
 
-        # intrinsic clearance
-        "intrinsic clearance",
+    if any(p in combined for p in clearance_unit_patterns):
+        return True
+
+    # -------------------------
+    # Strong standard_type positives
+    # -------------------------
+    clearance_stypes = {
+        "cl",
         "clint",
+        "clh",
+        "intrinsic clearance",
+        "clearance",
+    }
 
-        # stability language
+    if stype in clearance_stypes:
+        return True
+
+    # -------------------------
+    # Stability / half-life records
+    # Keep them as met-stab candidates,
+    # but convert_met_stab may later reject t1/2 units.
+    # -------------------------
+    stability_patterns = [
         "metabolic stability",
         "microsomal stability",
         "hepatocyte stability",
         "substrate depletion",
-
-        # half-life
+        "percent remaining",
+        "% remaining",
         "half life",
         "t1/2",
-
-        # common units
-        "ul/min/mg",
-        "ml/min/g",
-        "ul/min/10^6",
-
-        # depletion style
-        "% remaining",
-        "percent remaining",
     ]
 
-    # -------------------------
-    # Negative signals
-    # -------------------------
-    negative_patterns = [
+    if any(p in combined for p in stability_patterns):
+        return True
 
-        # CYP inhibition
-        "inhibition",
+    # -------------------------
+    # Generic matrix + clearance language
+    # -------------------------
+    matrix_patterns = [
+        "microsome",
+        "microsomal",
+        "hepatocyte",
+        "hepatocytes",
+        "liver s9",
+        "s9 fraction",
+    ]
+
+    clearance_language = [
+        "clearance",
+        "intrinsic clearance",
+        "clint",
+        "depletion",
+        "stability",
+    ]
+
+    if (
+        any(m in combined for m in matrix_patterns)
+        and any(c in combined for c in clearance_language)
+    ):
+        return True
+
+    # -------------------------
+    # Exclude obvious concentration/inhibition-only records
+    # -------------------------
+    concentration_or_inhibition = [
         "ic50",
         "ec50",
         "ki",
         "kd",
-
-        # enzyme phenotyping
-        "metabolite formation",
-        "enzyme activity",
-        "probe substrate",
-
-        # common CYP wording
-        "cyp1a2",
-        "cyp2c9",
-        "cyp2c19",
-        "cyp2d6",
-        "cyp3a4",
-        "cyp3a5",
-
-        # classic probe substrates
-        "midazolam",
-        "testosterone",
-        "diclofenac",
-        "dextromethorphan",
+        "inhibition",
+        "inhibitor",
+        "tdi",
     ]
 
-    positive = any(p in combined for p in positive_patterns)
-    negative = any(n in combined for n in negative_patterns)
+    concentration_units = [
+        "nm",
+        "um",
+        "mm",
+        "ug/ml",
+    ]
 
-    return positive and not negative
+    if (
+        any(x in combined for x in concentration_or_inhibition)
+        or any(x in unit for x in concentration_units)
+        or "%" in unit
+    ):
+        return False
+
+    return False
 
 def convert_bsep_activity(value, unit, endpoint_class):
     """

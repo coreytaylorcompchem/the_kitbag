@@ -213,48 +213,367 @@ def convert_solubility(value, unit, smiles):
 
     return np.log10(mol_l)
 
+def infer_metstab_matrix_with_context(record, assay_name=None):
+    """
+    Infer whether a metabolic stability record is microsomal or hepatocyte.
+
+    Returns:
+      - "microsome"
+      - "hepatocyte"
+      - None
+    """
+    text = " ".join([
+        str(assay_name or ""),
+        str(record.get("assay_description", "") or ""),
+        str(record.get("standard_type", "") or ""),
+        str(record.get("standard_units", "") or ""),
+        str(record.get("target_organism", "") or ""),
+    ]).lower()
+
+    if any(x in text for x in [
+        "hepatocyte",
+        "hepatocytes",
+        "primary hepatocyte",
+    ]):
+        return "hepatocyte"
+
+    if any(x in text for x in [
+        "microsome",
+        "microsomes",
+        "microsomal",
+        "hlm",
+        "rlm",
+        "mlm",
+        "liver microsome",
+        "liver microsomes",
+    ]):
+        return "microsome"
+
+    if any(x in text for x in [
+        "s9",
+        "s9 fraction",
+        "liver s9",
+    ]):
+        return "s9"
+
+    lname = str(assay_name or "").lower()
+
+    if "microsomal" in lname or "microsome" in lname:
+        return "microsome"
+
+    if "hepatocyte" in lname or "hepato" in lname:
+        return "hepatocyte"
+
+    return None
+
+def normalise_unit_string(unit):
+    if unit is None:
+        return ""
+
+    u = str(unit).lower().strip()
+
+    u = (
+        u
+        .replace("µ", "u")
+        .replace("μ", "u")
+        .replace("micro", "u")
+        .replace(" ", "")
+        .replace("*", "")
+        .replace("^", "-")
+        .replace("(", "")
+        .replace(")", "")
+    )
+
+    return u
+
+
 def convert_met_stab(value, unit):
-    """
-    Convert microsomal/hepatocyte clearance units to canonical mL/min/g liver or uL/min/10^6 cells.
-    Returns (float_value, canonical_unit) or (None, None) if unconvertible.
-    """
     if value is None or unit is None:
-        return None, None
-
-    u = str(unit).lower().replace(" ", "").replace("*","").replace("^","-").replace("(","").replace(")","").strip()
-
-    # Canonical units
-    if "cell" in u:
-        canonical = "uL/min/10^6 cells"
-    else:
-        canonical = "mL/min/g liver"
+        return None, None, None
 
     try:
         val = float(value)
-    except:
+    except (TypeError, ValueError):
+        return None, None, None
+
+    u = normalise_unit_string(unit)
+
+    if any(p in u for p in [
+        "l/h/kg",
+        "l/hr/kg",
+        "lh-1kg-1",
+        "lhr-1kg-1",
+        "l.kg-1.h-1",
+        "lkg-1h-1",
+    ]):
+        return val, "L/h/kg", "scaled"
+
+    if any(p in u for p in [
+        "l/min/kg",
+        "lmin-1kg-1",
+        "l.min-1.kg-1",
+        "lkg-1min-1",
+    ]):
+        return val * 60.0, "L/h/kg", "scaled"
+
+    if any(p in u for p in [
+        "ml/min/kg",
+        "mlmin-1kg-1",
+        "ml.min-1.kg-1",
+        "mlkg-1min-1",
+        "ml/min.kg",
+        "ml/min.kg-1",
+        "ml/min/kg",
+    ]):
+        return val * 60.0 / 1000.0, "L/h/kg", "scaled"
+
+    if any(p in u for p in [
+        "ul/min/kg",
+        "ulmin-1kg-1",
+        "ul.min-1.kg-1",
+        "ulkg-1min-1",
+    ]):
+        return val * 60.0 / 1_000_000.0, "L/h/kg", "scaled"
+
+    if any(p in u for p in [
+        "ml/min/g",
+        "ml/min/gliver",
+        "mlmin-1g-1",
+        "ml.min-1.g-1",
+        "ml/min.g",
+        "mlg-1min-1",
+        "ml/g/min",
+    ]):
+        return val, "mL/min/g liver", "liver_normalised"
+
+    if any(p in u for p in [
+        "ul/min/mg",
+        "ul/min/mgprotein",
+        "ul/min/mgmicrosomalprotein",
+        "ul/min/mgmicrosome",
+        "ulmin-1mg-1",
+        "ul.min-1.mg-1",
+        "ulmin-1mgprotein-1",
+        "ul/mg/min",
+        "ul/mgmin",
+        "ul/min.mg",
+        "ulmin-1mg-1protein",
+    ]):
+        return val, "uL/min/mg protein", "unscaled"
+
+    if "ul" in u and "min" in u and "mg" in u:
+        return val, "uL/min/mg protein", "unscaled"
+
+    if any(p in u for p in [
+        "ml/min/mg",
+        "mlmin-1mg-1",
+        "ml.min-1.mg-1",
+    ]):
+        return val * 1000.0, "uL/min/mg protein", "unscaled"
+
+    if any(p in u for p in [
+        "l/min/mg",
+        "lmin-1mg-1",
+        "l.min-1.mg-1",
+    ]):
+        return val * 1_000_000.0, "uL/min/mg protein", "unscaled"
+
+    if any(p in u for p in [
+        "ul/min/10-6cells",
+        "ul/min/106cells",
+        "ul/min/1e6cells",
+        "ul/min/10e6cells",
+        "ulmin-110-6cells-1",
+        "ul.min-1.10-6cells-1",
+        "ul.min-1.106cells-1",
+        "ul.min-1.1e6cells-1",
+        "ul/min/millioncells",
+        "ulmin-1millioncells-1",
+        "ul/106cells/min",
+        "ul/1e6cells/min",
+    ]):
+        return val, "uL/min/10^6 cells", "unscaled"
+
+    if "ul" in u and "min" in u and "cell" in u:
+        return val, "uL/min/10^6 cells", "unscaled"
+
+    if u in {"ml/min", "mlmin-1", "ml.min-1"}:
+        return val, "mL/min", "absolute"
+
+    if u in {"l/min", "lmin-1", "l.min-1"}:
+        return val * 1000.0, "mL/min", "absolute"
+
+    if u in {"ul/min", "ulmin-1", "ul.min-1"}:
+        return None, None, None
+
+    return None, None, None
+
+
+def scale_clint_to_l_h_kg(
+    value,
+    canonical_unit,
+    matrix,
+    species,
+    scaling_cfg,
+):
+    if value is None:
         return None, None
 
-    # Mapping known variants
-    direct_map = {
-        "ul/min": 1.0 if canonical=="uL/min/10^6 cells" else None,
-        "ul.min-1.(10^6cells)-1":1.0,
-        "uL/min/1e6cells":1.0,
-        "ml.min-1.kg-1": 1.0,   # assume mL/min/g conversion will be handled later
-        "ml.min-1.g-1": 1.0,
-        "hr": None,  # needs half-life conversion, skip for now
-        "min": 1.0,
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None
+
+    if canonical_unit == "L/h/kg":
+        return val, "L/h/kg"
+
+    if not scaling_cfg or not scaling_cfg.get("enabled", False):
+        return None, None
+
+    species_params = scaling_cfg.get("species_parameters", {})
+    default_species = scaling_cfg.get("default_species")
+
+    species_lookup = {
+        str(k).lower(): k
+        for k in species_params.keys()
     }
 
-    for k,v in direct_map.items():
-        if k in u and v is not None:
-            return val * v, canonical
+    use_species = species
 
-    # Reject obviously incompatible units
-    reject_patterns = ["%", "nmol", "nM", "ug", "mM", "pmol"]
-    if any(r in u for r in reject_patterns):
+    if use_species not in species_params:
+        species_key = species_lookup.get(str(use_species).lower())
+
+        if species_key is not None:
+            use_species = species_key
+
+        elif default_species is not None:
+            default_key = species_lookup.get(str(default_species).lower())
+
+            if default_key is not None:
+                use_species = default_key
+
+            else:
+                return None, None
+
+        else:
+            return None, None
+
+    params = species_params.get(use_species, {})
+    liver_weight = params.get("liver_weight_g_per_kg")
+
+    if liver_weight is None:
         return None, None
 
-    # return val, canonical
+    if canonical_unit == "uL/min/mg protein":
+        mppgl = params.get("mppgl_mg_per_g_liver")
+        if mppgl is None:
+            return None, None
+
+        scaled = val * mppgl * liver_weight * 60.0 / 1_000_000.0
+        return scaled, "L/h/kg"
+
+    if canonical_unit == "uL/min/10^6 cells":
+        hpgl = params.get("hpgl_million_cells_per_g_liver")
+        if hpgl is None:
+            return None, None
+
+        scaled = val * hpgl * liver_weight * 60.0 / 1_000_000.0
+        return scaled, "L/h/kg"
+
+    if canonical_unit == "mL/min/g liver":
+        scaled = val * liver_weight * 60.0 / 1000.0
+        return scaled, "L/h/kg"
+
+    return None, None
+
+
+def convert_metstab_half_life(value, unit):
+    if value is None or unit is None:
+        return None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None
+
+    if val <= 0:
+        return None, None
+
+    u = normalise_unit_string(unit)
+
+    if u in {"h", "hr", "hrs", "hour", "hours"}:
+        return val, "h"
+
+    if u in {"min", "mins", "minute", "minutes"}:
+        return val / 60.0, "h"
+
+    return None, None
+
+
+def convert_metstab_percent_remaining(value, unit):
+    if value is None or unit is None:
+        return None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None
+
+    u = normalise_unit_string(unit)
+
+    if "%" not in u:
+        return None, None
+
+    if val < -10 or val > 200:
+        return None, None
+
+    return val, "%"
+
+
+def convert_extraction_ratio(value, unit):
+    if value is None:
+        return None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None
+
+    u = normalise_unit_string(unit)
+
+    if "%" in u:
+        val = val / 100.0
+
+    elif unit is None or u in {"", "none", "no unit"}:
+        if val > 1.5 and val <= 100:
+            val = val / 100.0
+
+    if val < 0 or val > 1.5:
+        return None, None
+
+    return val, "fraction"
+
+
+def convert_absolute_clearance(value, unit):
+    if value is None or unit is None:
+        return None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None
+
+    u = normalise_unit_string(unit)
+
+    if u in {"ml/min", "mlmin-1", "ml.min-1"}:
+        return val, "mL/min"
+
+    if u in {"l/min", "lmin-1", "l.min-1"}:
+        return val * 1000.0, "mL/min"
+
+    if u in {"ul/min", "ulmin-1", "ul.min-1"}:
+        return val / 1000.0, "mL/min"
+
     return None, None
 
 def convert_ppb(value, unit):

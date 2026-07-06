@@ -25,136 +25,52 @@ from pipeline.task_registry import register_task
 # # from backends.structure_inference import StructureInferenceBackend
 # # from backends.chai import ChaiBackend
 from backends.boltz import BoltzBackend
+from backends.intellifold import IntelliFoldBackend
 # # from backends.openfold import OpenFoldBackend
 
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
-from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
-from modules.utils.msas import generate_local_msa_for_sequence, sequence_hash
+# from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
 
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_task(
-    "generate_msas",
-    category="Structure modelling",
-    description="Generate local cached MSAs using MMseqs2/ColabFold search."
-)
-def generate_msas(backend, config, **kwargs):
-    sp_cfg = config["structure_prediction"]
-    msa_cfg = sp_cfg.get("msa", {})
+def metric_or_default(p, metric_name, default=-1.0):
+    value = p["metrics"].get(metric_name)
+    return value if value is not None else default
 
-    if not msa_cfg.get("enabled", False):
-        logger.info("[MSA] MSA generation disabled; loading CSV entries unchanged.")
 
-        csv_path = sp_cfg["input_csv"]
-        entries = load_sequences(csv_path)
+def make_selection_tag(p):
+    iptm = p["metrics"].get("iptm")
+    plddt = p["metrics"].get("plddt")
+    ranking_score = p["metrics"].get("ranking_score")
 
-        backend.cache["entries"] = entries
-        return {
-            "entries": entries,
-            "msa_cache": None,
-        }
+    if iptm is not None and iptm > 0:
+        return f"iptm{iptm:.3f}"
 
-    method = msa_cfg.get("method", "colabfold_local")
+    if plddt is not None:
+        return f"plddt{plddt:.3f}"
 
-    if method != "colabfold_local":
-        raise ValueError(
-            f"Unsupported MSA method: {method}"
-        )
+    if ranking_score is not None:
+        return f"rankscore{ranking_score:.3f}"
 
-    database_dir = Path(msa_cfg["database_dir"]).expanduser().resolve()
-    cache_dir = Path(msa_cfg.get("cache_dir", "outputs/msa_cache"))
-
-    if not cache_dir.is_absolute():
-        cache_dir = Path(config["output_dir"]).parent / cache_dir
-
-    cache_dir = cache_dir.resolve()
-
-    command = msa_cfg.get(
-        "command",
-        "colabfold_search",
-    )
-
-    extra_args = msa_cfg.get("extra_args", [])
-    reuse_existing = msa_cfg.get("reuse_existing", True)
-    overwrite = msa_cfg.get("overwrite", False)
-
-    if not database_dir.exists():
-        raise FileNotFoundError(
-            f"MSA database_dir does not exist: {database_dir}"
-        )
-
-    csv_path = sp_cfg["input_csv"]
-    entries = load_sequences(csv_path)
-
-    if not entries:
-        raise ValueError("No entries found in CSV for MSA generation")
-
-    manifest = {
-        "method": method,
-        "database_dir": str(database_dir),
-        "cache_dir": str(cache_dir),
-        "entries": {},
-    }
-
-    for entry in entries:
-        entry_id = entry["id"]
-        proteins = entry.get("proteins", {})
-
-        entry.setdefault("msas", {})
-
-        manifest["entries"][entry_id] = {}
-
-        if not proteins:
-            logger.info(
-                f"[MSA] {entry_id}: no protein chains; skipping."
-            )
-            continue
-
-        for chain_id, sequence in proteins.items():
-            sequence_id = f"{entry_id}_{chain_id}"
-
-            msa_path = generate_local_msa_for_sequence(
-                sequence_id=sequence_id,
-                sequence=sequence,
-                database_dir=database_dir,
-                cache_dir=cache_dir,
-                command=command,
-                extra_args=extra_args,
-                reuse_existing=reuse_existing,
-                overwrite=overwrite,
-            )
-
-            entry["msas"][chain_id] = str(msa_path)
-
-            manifest["entries"][entry_id][chain_id] = {
-                "sequence_hash": sequence_hash(sequence),
-                "msa": str(msa_path),
-            }
-
-    manifest_path = cache_dir / "msa_manifest.json"
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2)
-
-    logger.info(
-        f"[MSA] Wrote MSA manifest: {manifest_path}"
-    )
-
-    backend.cache["entries"] = entries
-    backend.cache["msa_manifest"] = str(manifest_path)
-
-    return {
-        "entries": entries,
-        "msa_manifest": str(manifest_path),
-    }
+    return "scoreNA"
 
 def is_interacting(p):
     iptm = p["metrics"]["iptm"]
     return iptm is not None and iptm > 0.0
+
+def get_backend(tool_name: str, config):
+    tool_name = tool_name.lower()
+
+    if tool_name == "boltz":
+        return BoltzBackend(config=config)
+
+    if tool_name in {"intellifold", "intfold"}:
+        return IntelliFoldBackend(config=config)
+
+    raise ValueError(f"Unknown structure prediction tool: {tool_name}")
 
 @register_task(
     "predict_structures",
@@ -163,11 +79,8 @@ def is_interacting(p):
 )
 def predict_structures(backend, config, **kwargs):
 
-    entries = backend.cache.get("entries")
-
-    if entries is None:
-        csv_path = config["structure_prediction"]["input_csv"]
-        entries = load_sequences(csv_path)
+    csv_path = config["structure_prediction"]["input_csv"]
+    entries = load_sequences(csv_path)
 
     if not entries:
         raise ValueError("No sequences found in CSV")
@@ -184,33 +97,46 @@ def predict_structures(backend, config, **kwargs):
     #     output_dir=output_dir,
     # )
     
-    backend_instance = BoltzBackend(config=config)
+    tools = config["structure_prediction"].get("tools", ["boltz"])
+    devices_cfg = config["structure_prediction"].get("devices", {})
+
     all_results = []
 
     output_dir = Path(config["output_dir"])
 
-    for i, entry in enumerate(entries):
-        
-        result = backend_instance.run(
-            run_id=i,
-            device=0,
-            output_dir=output_dir / entry["id"],
-            sequences=entry["proteins"],
-            ligands=entry["ligands"],
-            templates=entry.get("templates", []),
-            msas=entry.get("msas", {}),
-        )
+    for tool_name in tools:
+        backend_instance = get_backend(tool_name, config)
 
-        for sample in result["results"]:
-            logger.debug(
-                f"sample: {sample['structure']} "
-                f"plddt={sample['plddt']}"
+        # default all tools to GPU 0 unless specified
+        device = devices_cfg.get(tool_name, 0)
+
+        logger.info(f"[Predict] Running tool={tool_name} on device={device}")
+
+        for i, entry in enumerate(entries):
+
+            tool_output_dir = (
+                output_dir /
+                entry["id"] /
+                tool_name
             )
 
-        logger.debug(f"Result: {result}")
+            result = backend_instance.run(
+                run_id=i,
+                device=device,
+                output_dir=tool_output_dir,
+                sequences=entry["proteins"],
+                ligands=entry["ligands"],
+                templates=entry.get("templates", []),
+            )
 
-        result["input_id"] = entry["id"]
-        all_results.append(result) 
+            for sample in result["results"]:
+                logger.debug(
+                    f"[{tool_name}] sample: {sample['structure']} "
+                    f"plddt={sample.get('plddt')}"
+                )
+
+            result["input_id"] = entry["id"]
+            all_results.append(result)
 
     logger.debug(f"All results: {all_results}")
 
@@ -257,10 +183,11 @@ def rank_predictions(backend, config, **kwargs):
                 "tool": run["tool"],
                 "structure_path": sample["structure"],              
                 "metrics": {
-                    "plddt": sample["plddt"],
-                    "ptm": sample["ptm"],
-                    "iptm": sample["iptm"],
+                    "plddt": sample.get("plddt"),
+                    "ptm": sample.get("ptm"),
+                    "iptm": sample.get("iptm"),
                     "iplddt": sample.get("iplddt"),
+                    "ranking_score": sample.get("ranking_score"),
                 },
                 "run_id": run["run_id"],
                 "input_id": run.get("input_id"),
@@ -306,13 +233,26 @@ def rank_predictions(backend, config, **kwargs):
 
     for i, p in enumerate(predictions):
         m = p["metrics"]
-        if None not in (m["plddt"], m["ptm"], m["iptm"]):           
-            X.append([
-                m["plddt"],
-                m["iptm"],
-                m["iplddt"] if m["iplddt"] is not None else 0.0
-            ])
 
+        plddt = m.get("plddt")
+        ptm = m.get("ptm")
+        iptm = m.get("iptm")
+        iplddt = m.get("iplddt")
+
+        plddt_str = f"{plddt:.3f}" if plddt is not None else "NA"
+
+        logger.debug(
+            f"{i+1}: "
+            f"plddt={plddt_str} "
+            f"path={p['structure_path']}"
+        )
+
+        if plddt is not None and ptm is not None and iptm is not None:
+            X.append([
+                plddt,
+                iptm,
+                iplddt if iplddt is not None else 0.0,
+            ])
             valid_idx.append(i)
 
     if X:
@@ -366,7 +306,8 @@ def rank_predictions(backend, config, **kwargs):
         writer = csv.writer(f)
         writer.writerow([
             "rank", "tool", "run_id", "seed", "device",
-            "score", "plddt", "ptm", "iptm", "structure_path",
+            "score", "plddt", "ptm", "iptm", "iplddt",
+            "ranking_score", "structure_path",
         ])
 
         for i, p in enumerate(predictions, 1):
@@ -381,27 +322,40 @@ def rank_predictions(backend, config, **kwargs):
                 m.get("plddt"),
                 m.get("ptm"),
                 m.get("iptm"),
+                m.get("iplddt"),
+                m.get("ranking_score"),
                 p["structure_path"],
             ])
 
     # plotting
+
     if ranking_cfg.get("plotting", {}).get("enabled", True):
+
+        from modules.utils.plotting import (
+            plot_metric,
+            plot_score,
+            scatter_plot,
+            plot_clusters,
+        )
 
         plot_metric(predictions, "plddt", ranking_dir / "plddt_hist.png")
         plot_metric(predictions, "ptm", ranking_dir / "ptm_hist.png")
-        plot_metric(predictions, "iptm", ranking_dir / "iptm_hist.png")      
+        plot_metric(predictions, "iptm", ranking_dir / "iptm_hist.png")
         plot_metric(predictions, "iplddt", ranking_dir / "iplddt_hist.png")
-        
+
         plot_score(predictions, ranking_dir / "score_hist.png")
 
         scatter_plot(predictions, "plddt", "ptm", ranking_dir / "plddt_vs_ptm.png")
         scatter_plot(predictions, "plddt", "iptm", ranking_dir / "plddt_vs_iptm.png")
         scatter_plot(predictions, "ptm", "iptm", ranking_dir / "ptm_vs_iptm.png")
         scatter_plot(predictions, "iptm", "iplddt", ranking_dir / "iptm_vs_iplddt.png")
-        
+
         plot_clusters(predictions, ranking_dir / "clusters.png")
 
-    logger.info("Saved metric plots to ranking directory")
+    if ranking_cfg.get("plotting", {}).get("enabled", True):
+        logger.info("Saved metric plots to ranking directory")
+    else:
+        logger.info("Plotting disabled; skipped metric plots")
 
     # select best structures
     selected = {}
@@ -426,9 +380,12 @@ def rank_predictions(backend, config, **kwargs):
     logger.debug("===== RANKED STRUCTURES =====")
 
     for i, p in enumerate(predictions):
+        plddt = p["metrics"].get("plddt")
+        plddt_str = f"{plddt:.3f}" if plddt is not None else "NA"
+
         logger.debug(
             f"{i+1}: "
-            f"plddt={p['metrics']['plddt']:.3f} "
+            f"plddt={plddt_str} "
             f"path={p['structure_path']}"
         )
 
@@ -465,7 +422,11 @@ def rank_predictions(backend, config, **kwargs):
         else:
             global_sorted = sorted(
                 non_interacting,
-                key=lambda x: x["metrics"]["plddt"],
+                key=lambda x: (
+                    metric_or_default(x, "plddt"),
+                    metric_or_default(x, "ranking_score"),
+                    x.get("score", -1.0),
+                ),
                 reverse=True
             )
             logger.info(f"[GLOBAL] No interactions → using pLDDT")
@@ -474,12 +435,12 @@ def rank_predictions(backend, config, **kwargs):
 
         for i, p in enumerate(global_selected):
             src = Path(p["structure_path"])
-            iptm = p["metrics"]["iptm"]
-            plddt = p["metrics"]["plddt"]
+            # iptm = p["metrics"]["iptm"]
+            # plddt = p["metrics"]["plddt"]
             input_id = p.get("input_id", f"run{p['run_id']}")
             ext = src.suffix
 
-            tag = f"iptm{iptm:.3f}" if iptm and iptm > 0 else f"plddt{plddt:.3f}"
+            tag = make_selection_tag(p)
 
             dst = global_dir / f"{input_id}_rank{i+1}_{tag}{ext}"
             shutil.copy(src, dst)
@@ -505,14 +466,22 @@ def rank_predictions(backend, config, **kwargs):
             if group_interacting:
                 sorted_group = sorted(
                     group_interacting,
-                    key=lambda x: x["metrics"]["iptm"],
+                    key=lambda x: (
+                        metric_or_default(x, "iptm"),
+                        metric_or_default(x, "ranking_score"),
+                        x.get("score", -1.0),
+                    ),
                     reverse=True
                 )
                 logger.info(f"[PER-INPUT] {input_id}: using iPTM")
             else:
                 sorted_group = sorted(
                     group,
-                    key=lambda x: x["metrics"]["plddt"],
+                    key=lambda x: (
+                        metric_or_default(x, "plddt"),
+                        metric_or_default(x, "ranking_score"),
+                        x.get("score", -1.0),
+                    ),
                     reverse=True
                 )
                 logger.info(f"[PER-INPUT] {input_id}: no interaction → using pLDDT")
@@ -528,11 +497,11 @@ def rank_predictions(backend, config, **kwargs):
                         f"src={src.name}"
                     )
 
-                iptm = p["metrics"]["iptm"]
-                plddt = p["metrics"]["plddt"]
+                # iptm = p["metrics"]["iptm"]
+                # plddt = p["metrics"]["plddt"]
                 ext = src.suffix
 
-                tag = f"iptm{iptm:.3f}" if iptm and iptm > 0 else f"plddt{plddt:.3f}"
+                tag = make_selection_tag(p)
 
                 dst = per_input_dir / f"{input_id}_model{j+1}_{tag}{ext}"
                 shutil.copy(src, dst)

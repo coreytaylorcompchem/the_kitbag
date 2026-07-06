@@ -612,7 +612,44 @@ def featurise_smiles(config, context):
     featuriser = getattr(module, feat_cfg["function"])
 
     if hasattr(module, "prepare_features"):
-        module.prepare_features(df, smiles_col=smiles_col)
+        use_pretrained_feature_scaler = config.get(
+            "use_pretrained_feature_scaler",
+            False
+        )
+
+        if use_pretrained_feature_scaler:
+            checkpoint = context.get("adme_checkpoint")
+
+            if checkpoint is None:
+                raise RuntimeError(
+                    "use_pretrained_feature_scaler=True but no checkpoint was loaded. "
+                    "Run load_adme_checkpoint before featurise_smiles."
+                )
+
+            global_feature_scaler = checkpoint.get("global_feature_scaler")
+
+            if global_feature_scaler is None:
+                raise RuntimeError(
+                    "Checkpoint does not contain global_feature_scaler. "
+                    "Retrain or resave the CHEMBL model after adding feature_state "
+                    "checkpoint support."
+                )
+
+            feature_state = module.prepare_features(
+                df,
+                smiles_col=smiles_col,
+                global_scaler=global_feature_scaler,
+                fit_global_scaler=False,
+            )
+
+        else:
+            feature_state = module.prepare_features(
+                df,
+                smiles_col=smiles_col,
+                fit_global_scaler=True,
+            )
+
+        context["feature_state"] = feature_state
 
     graphs = []
     valid_indices = []
