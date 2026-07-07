@@ -126,15 +126,6 @@ class BoltzBackend(BaseStructureTool):
         templates: list = None,
         msas: dict = None
     ):
-        
-        use_msa_server = bool(inf_cfg.get("use_msa_server", False))
-
-        validate_msa_policy(
-            sequences=sequences,
-            msas=msas or {},
-            use_msa_server=use_msa_server,
-            tool_name=self.name,
-        )
 
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(device)
@@ -164,6 +155,15 @@ class BoltzBackend(BaseStructureTool):
         # config extraction
         sp_cfg = self.config.get("structure_prediction", {})
         inf_cfg = sp_cfg.get("inference", {})
+
+        use_msa_server = bool(inf_cfg.get("use_msa_server", False))
+
+        validate_msa_policy(
+            sequences=sequences,
+            msas=msas or {},
+            use_msa_server=use_msa_server,
+            tool_name=self.name,
+        )
 
         # accelerator 
         accelerator = inf_cfg.get("accelerator", "gpu")

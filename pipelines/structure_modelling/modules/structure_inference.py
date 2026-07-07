@@ -8,6 +8,8 @@ import numpy as np
 from pathlib import Path
 from collections import defaultdict
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from scipy.cluster.hierarchy import linkage, fcluster
 
 from sklearn.preprocessing import StandardScaler
@@ -31,6 +33,7 @@ from backends.intellifold import IntelliFoldBackend
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
 # from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
+from modules.utils.msas import generate_local_msa_for_sequence, sequence_hash
 
 from pipeline.logger import setup_logger
 
@@ -73,14 +76,236 @@ def get_backend(tool_name: str, config):
     raise ValueError(f"Unknown structure prediction tool: {tool_name}")
 
 @register_task(
+    "generate_msas",
+    category="Structure modelling",
+    description="Generate local cached MSAs using MMseqs2/ColabFold search."
+)
+def generate_msas(backend, config, **kwargs):
+    sp_cfg = config["structure_prediction"]
+    msa_cfg = sp_cfg.get("msa", {})
+
+    csv_path = sp_cfg["input_csv"]
+    entries = load_sequences(csv_path)
+
+    if not entries:
+        raise ValueError("No entries found in CSV for MSA generation")
+
+    if not msa_cfg.get("enabled", False):
+        logger.info("[MSA] MSA generation disabled; loading CSV entries unchanged.")
+        backend.cache["entries"] = entries
+        return {
+            "entries": entries,
+            "msa_cache": None,
+        }
+
+    method = msa_cfg.get("method", "colabfold_local")
+
+    if method != "colabfold_local":
+        raise ValueError(
+            f"Unsupported MSA method: {method}"
+        )
+
+    database_dir = Path(msa_cfg["database_dir"]).expanduser().resolve()
+    cache_dir = Path(msa_cfg.get("cache_dir", "msa_cache"))
+
+    if not cache_dir.is_absolute():
+        cache_dir = Path(config["output_dir"]).parent / cache_dir
+
+    cache_dir = cache_dir.resolve()
+
+    command = msa_cfg.get(
+        "command",
+        "colabfold_search",
+    )
+
+    extra_args = msa_cfg.get("extra_args", [])
+    reuse_existing = msa_cfg.get("reuse_existing", True)
+    overwrite = msa_cfg.get("overwrite", False)
+    n_jobs = int(msa_cfg.get("n_jobs", 1))
+
+    if n_jobs < 1:
+        raise ValueError("msa.n_jobs must be >= 1")
+
+    if not database_dir.exists():
+        raise FileNotFoundError(
+            f"MSA database_dir does not exist: {database_dir}"
+        )
+
+    logger.info(
+        f"[MSA] Local MSA generation enabled | method={method} "
+        f"| database_dir={database_dir} "
+        f"| cache_dir={cache_dir} "
+        f"| n_jobs={n_jobs}"
+    )
+
+    manifest = {
+        "method": method,
+        "database_dir": str(database_dir),
+        "cache_dir": str(cache_dir),
+        "n_jobs": n_jobs,
+        "entries": {},
+    }
+
+    # ------------------------------------------------------------------
+    # Build unique sequence jobs.
+    #
+    # If the same sequence appears in multiple inputs, or same input with
+    # different ligands/templates, only generate/search it once.
+    # ------------------------------------------------------------------
+
+    unique_jobs = {}
+    assignments = []
+
+    for entry in entries:
+        entry_id = entry["id"]
+        proteins = entry.get("proteins", {})
+
+        entry.setdefault("msas", {})
+        manifest["entries"][entry_id] = {}
+
+        if not proteins:
+            logger.info(
+                f"[MSA] {entry_id}: no protein chains; skipping."
+            )
+            continue
+
+        for chain_id, sequence in proteins.items():
+            seq_hash = sequence_hash(sequence)
+            sequence_id = f"{entry_id}_{chain_id}"
+
+            assignments.append({
+                "entry_id": entry_id,
+                "chain_id": chain_id,
+                "sequence_hash": seq_hash,
+            })
+
+            if seq_hash not in unique_jobs:
+                unique_jobs[seq_hash] = {
+                    "sequence_id": sequence_id,
+                    "sequence": sequence,
+                    "database_dir": database_dir,
+                    "cache_dir": cache_dir,
+                    "command": command,
+                    "extra_args": extra_args,
+                    "reuse_existing": reuse_existing,
+                    "overwrite": overwrite,
+                }
+
+    logger.info(
+        f"[MSA] Total chain assignments: {len(assignments)}"
+    )
+
+    logger.info(
+        f"[MSA] Unique sequences requiring cache lookup/search: {len(unique_jobs)}"
+    )
+
+    # ------------------------------------------------------------------
+    # Run unique MSA jobs in parallel.
+    # ------------------------------------------------------------------
+
+    msa_paths_by_hash = {}
+
+    if n_jobs == 1:
+        logger.info("[MSA] Running MSA jobs serially")
+
+        for seq_hash, job in unique_jobs.items():
+            msa_path = generate_local_msa_for_sequence(**job)
+            msa_paths_by_hash[seq_hash] = str(msa_path)
+
+    else:
+        logger.info(
+            f"[MSA] Running MSA jobs in parallel with n_jobs={n_jobs}"
+        )
+
+        with ThreadPoolExecutor(max_workers=n_jobs) as executor:
+            future_to_hash = {}
+
+            for seq_hash, job in unique_jobs.items():
+                future = executor.submit(
+                    generate_local_msa_for_sequence,
+                    **job,
+                )
+                future_to_hash[future] = seq_hash
+
+            completed = 0
+            total = len(future_to_hash)
+
+            for future in as_completed(future_to_hash):
+                seq_hash = future_to_hash[future]
+
+                try:
+                    msa_path = future.result()
+                except Exception as e:
+                    logger.error(
+                        f"[MSA] Failed MSA generation for sequence hash {seq_hash}: {e}"
+                    )
+                    raise
+
+                msa_paths_by_hash[seq_hash] = str(msa_path)
+
+                completed += 1
+
+                logger.info(
+                    f"[MSA] Completed {completed}/{total} MSA jobs"
+                )
+
+    # ------------------------------------------------------------------
+    # Map MSA paths back onto entries.
+    # ------------------------------------------------------------------
+
+    for entry in entries:
+        entry_id = entry["id"]
+        proteins = entry.get("proteins", {})
+        entry.setdefault("msas", {})
+
+        for chain_id, sequence in proteins.items():
+            seq_hash = sequence_hash(sequence)
+
+            msa_path = msa_paths_by_hash.get(seq_hash)
+
+            if msa_path is None:
+                raise RuntimeError(
+                    f"No MSA path found for entry={entry_id}, chain={chain_id}, "
+                    f"sequence_hash={seq_hash}"
+                )
+
+            entry["msas"][chain_id] = msa_path
+
+            manifest["entries"][entry_id][chain_id] = {
+                "sequence_hash": seq_hash,
+                "msa": msa_path,
+            }
+
+    manifest_path = cache_dir / "msa_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    logger.info(
+        f"[MSA] Wrote MSA manifest: {manifest_path}"
+    )
+
+    backend.cache["entries"] = entries
+    backend.cache["msa_manifest"] = str(manifest_path)
+
+    return {
+        "entries": entries,
+        "msa_manifest": str(manifest_path),
+    }
+
+@register_task(
     "predict_structures",
     category="Structure modelling",
     description="Run structure prediction tools (Chai, Boltz, etc.) in parallel."
 )
 def predict_structures(backend, config, **kwargs):
 
-    csv_path = config["structure_prediction"]["input_csv"]
-    entries = load_sequences(csv_path)
+    entries = backend.cache.get("entries")
+
+    if entries is None:
+        csv_path = config["structure_prediction"]["input_csv"]
+        entries = load_sequences(csv_path)
 
     if not entries:
         raise ValueError("No sequences found in CSV")
@@ -120,6 +345,12 @@ def predict_structures(backend, config, **kwargs):
                 tool_name
             )
 
+            logger.info(
+                f"[Predict] {entry['id']} | tool={tool_name} "
+                f"| chains={list(entry['proteins'].keys())} "
+                f"| msas={list(entry.get('msas', {}).keys())}"
+            )
+
             result = backend_instance.run(
                 run_id=i,
                 device=device,
@@ -127,6 +358,7 @@ def predict_structures(backend, config, **kwargs):
                 sequences=entry["proteins"],
                 ligands=entry["ligands"],
                 templates=entry.get("templates", []),
+                msas=entry.get("msas", {}),
             )
 
             for sample in result["results"]:
