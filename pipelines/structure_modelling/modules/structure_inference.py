@@ -39,6 +39,12 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+def has_metric(predictions, metric):
+    return any(
+        p["metrics"].get(metric) is not None
+        for p in predictions
+    )
+
 def metric_or_default(p, metric_name, default=-1.0):
     value = p["metrics"].get(metric_name)
     return value if value is not None else default
@@ -47,10 +53,18 @@ def metric_or_default(p, metric_name, default=-1.0):
 def make_selection_tag(p):
     iptm = p["metrics"].get("iptm")
     plddt = p["metrics"].get("plddt")
+    affinity_probability = p["metrics"].get("affinity_probability_binary")
+    affinity_value = p["metrics"].get("affinity_pred_value")
     ranking_score = p["metrics"].get("ranking_score")
 
     if iptm is not None and iptm > 0:
         return f"iptm{iptm:.3f}"
+
+    if affinity_probability is not None:
+        return f"affprob{affinity_probability:.3f}"
+
+    if affinity_value is not None:
+        return f"affval{affinity_value:.3f}"
 
     if plddt is not None:
         return f"plddt{plddt:.3f}"
@@ -359,6 +373,7 @@ def predict_structures(backend, config, **kwargs):
                 ligands=entry["ligands"],
                 templates=entry.get("templates", []),
                 msas=entry.get("msas", {}),
+                row_constraints=entry.get("constraints", []),
             )
 
             for sample in result["results"]:
@@ -415,17 +430,38 @@ def rank_predictions(backend, config, **kwargs):
                 "tool": run["tool"],
                 "structure_path": sample["structure"],              
                 "metrics": {
+                    "confidence_score": sample.get("confidence_score"),
                     "plddt": sample.get("plddt"),
                     "ptm": sample.get("ptm"),
                     "iptm": sample.get("iptm"),
                     "iplddt": sample.get("iplddt"),
                     "ranking_score": sample.get("ranking_score"),
+                    "ligand_iptm": sample.get("ligand_iptm"),
+                    "protein_iptm": sample.get("protein_iptm"),
+                    "complex_pde": sample.get("complex_pde"),
+                    "complex_ipde":sample.get("complex_ipde"),
+                    "affinity_pred_value": sample.get("affinity_pred_value"),
+                    "affinity_probability_binary": sample.get("affinity_probability_binary"),
+                    "affinity_pred_value1": sample.get("affinity_pred_value1"),
+                    "affinity_probability_binary1": sample.get("affinity_probability_binary1"),
+                    "affinity_pred_value2": sample.get("affinity_pred_value2"),
+                    "affinity_probability_binary2": sample.get("affinity_probability_binary2"),
                 },
                 "run_id": run["run_id"],
                 "input_id": run.get("input_id"),
                 "device": run["device"],
                 "seed": None,
             })
+    all_metric_names = sorted({
+        metric
+        for p in predictions
+        for metric, value in p["metrics"].items()
+        if value is not None
+    })
+
+    logger.debug(
+        f"[Ranking] Metrics with at least one non-null value: {all_metric_names}"
+    )
     
     if not runs:
         raise ValueError("No runs found in backend cache - predict_structures failed")
@@ -538,8 +574,19 @@ def rank_predictions(backend, config, **kwargs):
         writer = csv.writer(f)
         writer.writerow([
             "rank", "tool", "run_id", "seed", "device",
-            "score", "plddt", "ptm", "iptm", "iplddt",
-            "ranking_score", "structure_path",
+            "score",
+            "confidence_score",
+            "plddt", "ptm", "iptm", "iplddt",
+            "ligand_iptm", "protein_iptm",
+            "complex_pde", "complex_ipde",
+            "affinity_pred_value",
+            "affinity_probability_binary",
+            "affinity_pred_value1",
+            "affinity_probability_binary1",
+            "affinity_pred_value2",
+            "affinity_probability_binary2",
+            "ranking_score",
+            "structure_path",
         ])
 
         for i, p in enumerate(predictions, 1):
@@ -551,10 +598,21 @@ def rank_predictions(backend, config, **kwargs):
                 p["seed"],
                 p["device"],
                 round(p["score"], 4),
+                m.get("confidence_score"),
                 m.get("plddt"),
                 m.get("ptm"),
                 m.get("iptm"),
                 m.get("iplddt"),
+                m.get("ligand_iptm"),
+                m.get("protein_iptm"),
+                m.get("complex_pde"),
+                m.get("complex_ipde"),
+                m.get("affinity_pred_value"),
+                m.get("affinity_probability_binary"),
+                m.get("affinity_pred_value1"),
+                m.get("affinity_probability_binary1"),
+                m.get("affinity_pred_value2"),
+                m.get("affinity_probability_binary2"),
                 m.get("ranking_score"),
                 p["structure_path"],
             ])
@@ -570,17 +628,58 @@ def rank_predictions(backend, config, **kwargs):
             plot_clusters,
         )
 
-        plot_metric(predictions, "plddt", ranking_dir / "plddt_hist.png")
-        plot_metric(predictions, "ptm", ranking_dir / "ptm_hist.png")
-        plot_metric(predictions, "iptm", ranking_dir / "iptm_hist.png")
-        plot_metric(predictions, "iplddt", ranking_dir / "iplddt_hist.png")
+        plot_metrics = [
+            "confidence_score",
+            "plddt",
+            "ptm",
+            "iptm",
+            "iplddt",
+            "ligand_iptm",
+            "protein_iptm",
+            "complex_pde",
+            "complex_ipde",
+            "affinity_pred_value",
+            "affinity_probability_binary",
+            "ranking_score",
+        ]
+
+        for metric in plot_metrics:
+            if has_metric(predictions, metric):
+                plot_metric(
+                    predictions,
+                    metric,
+                    ranking_dir / f"{metric}_hist.png",
+                )
 
         plot_score(predictions, ranking_dir / "score_hist.png")
 
-        scatter_plot(predictions, "plddt", "ptm", ranking_dir / "plddt_vs_ptm.png")
-        scatter_plot(predictions, "plddt", "iptm", ranking_dir / "plddt_vs_iptm.png")
-        scatter_plot(predictions, "ptm", "iptm", ranking_dir / "ptm_vs_iptm.png")
-        scatter_plot(predictions, "iptm", "iplddt", ranking_dir / "iptm_vs_iplddt.png")
+        if has_metric(predictions, "plddt") and has_metric(predictions, "ptm"):
+            scatter_plot(predictions, "plddt", "ptm", ranking_dir / "plddt_vs_ptm.png")
+
+        if has_metric(predictions, "plddt") and has_metric(predictions, "iptm"):
+            scatter_plot(predictions, "plddt", "iptm", ranking_dir / "plddt_vs_iptm.png")
+
+        if has_metric(predictions, "ptm") and has_metric(predictions, "iptm"):
+            scatter_plot(predictions, "ptm", "iptm", ranking_dir / "ptm_vs_iptm.png")
+
+        if has_metric(predictions, "iptm") and has_metric(predictions, "iplddt"):
+            scatter_plot(predictions, "iptm", "iplddt", ranking_dir / "iptm_vs_iplddt.png")
+
+        if has_metric(predictions, "affinity_probability_binary") and has_metric(predictions, "iptm"):
+            scatter_plot(
+                predictions,
+                "affinity_probability_binary",
+                "iptm",
+                ranking_dir / "affinity_probability_vs_iptm.png",
+            )
+
+        if has_metric(predictions, "affinity_pred_value") and has_metric(predictions, "affinity_probability_binary"):
+            scatter_plot(
+                predictions,
+                "affinity_pred_value",
+                "affinity_probability_binary",
+                ranking_dir / "affinity_value_vs_probability.png",
+            )
 
         plot_clusters(predictions, ranking_dir / "clusters.png")
 

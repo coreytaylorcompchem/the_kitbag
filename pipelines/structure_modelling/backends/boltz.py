@@ -10,6 +10,61 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+def resolve_affinity_config(
+    affinity_cfg,
+    ligands,
+):
+    enabled = affinity_cfg.get("enabled", False)
+
+    if not enabled:
+        return None
+
+    mode = affinity_cfg.get("mode", "auto")
+    binder = affinity_cfg.get("binder", "auto")
+
+    if mode == "never":
+        return None
+
+    if mode not in {"auto", "always"}:
+        raise ValueError(
+            f"Unsupported affinity.mode: {mode}. Use auto, always, or never."
+        )
+
+    has_ligand = len(ligands or []) > 0
+    ligand_chain_ids = [
+        f"L{i+1}"
+        for i, _ in enumerate(ligands or [])
+    ]
+
+    if not has_ligand:
+        if mode == "always":
+            raise ValueError(
+                "Affinity requested with mode=always, but no ligands are present"
+            )
+
+        logger.info("[Affinity] No ligands present; skipping affinity for this input")
+        return None
+
+    if binder == "auto":
+        binder = ligand_chain_ids[0]
+
+    if binder not in ligand_chain_ids:
+        msg = (
+            f"Affinity binder {binder} is not present. "
+            f"Available ligand chains: {ligand_chain_ids}"
+        )
+
+        if mode == "always":
+            raise ValueError(msg)
+
+        logger.warning(f"[Affinity] {msg}; skipping affinity for this input")
+        return None
+
+    return {
+        "enabled": True,
+        "binder": binder,
+    }
+
 def validate_msa_policy(
     sequences: dict,
     msas: dict,
@@ -27,12 +82,285 @@ def validate_msa_policy(
             f"{tool_name}: use_msa_server=false, but no local MSA was provided "
             f"for chains: {', '.join(missing)}"
         )
+    
+def normalize_boltz_token(token):
+    """
+    Accept either:
+      [chain, residue]
+      [chain, residue, atom]
+      [chain, atom_name] for ligand atom-style contacts
+
+    Return as a plain list for YAML serialization.
+    """
+    if not isinstance(token, (list, tuple)):
+        raise ValueError(
+            f"Constraint token must be a list/tuple, got: {token}"
+        )
+
+    if len(token) not in (2, 3):
+        raise ValueError(
+            f"Constraint token must have length 2 or 3, got: {token}"
+        )
+
+    return list(token)
+
+def get_available_chain_ids(sequences: dict, ligands: list):
+    chain_ids = set(sequences.keys())
+
+    for i, _ in enumerate(ligands or []):
+        chain_ids.add(f"L{i+1}")
+
+    return chain_ids
+
+
+def validate_protein_residue(chain_id, residue, sequences, context, mode):
+    if chain_id not in sequences:
+        return True
+
+    try:
+        residue = int(residue)
+    except Exception:
+        return True
+
+    seq_len = len(sequences[chain_id])
+
+    if residue < 1 or residue > seq_len:
+        msg = (
+            f"{context}: residue {residue} is outside chain {chain_id} "
+            f"length 1-{seq_len}"
+        )
+
+        if mode == "always":
+            raise ValueError(msg)
+
+        logger.warning(f"[Constraints] Skipping constraint: {msg}")
+        return False
+
+    return True
+
+
+def tokens_are_available(tokens, available_chains, sequences, mode, context):
+    for token in tokens:
+        if not isinstance(token, (list, tuple)) or len(token) < 2:
+            continue
+
+        chain_id = token[0]
+
+        if chain_id not in available_chains:
+            msg = (
+                f"{context}: chain {chain_id} not present in this input. "
+                f"Available chains: {sorted(available_chains)}"
+            )
+
+            if mode == "always":
+                raise ValueError(msg)
+
+            logger.info(f"[Constraints] Skipping constraint: {msg}")
+            return False
+
+        residue_or_atom = token[1]
+
+        if isinstance(residue_or_atom, int):
+            if not validate_protein_residue(
+                chain_id=chain_id,
+                residue=residue_or_atom,
+                sequences=sequences,
+                context=context,
+                mode=mode,
+            ):
+                return False
+
+    return True
+
+
+def build_boltz_constraints(
+    constraints_cfg: dict,
+    sequences: dict,    
+    ligands: list,
+    row_constraints: list = None
+):
+    """
+    Compile pipeline constraint config into native Boltz YAML constraints.
+
+    mode:
+      auto   -> skip constraints whose chains/residues are absent
+      always -> raise error if a requested constraint cannot be applied
+      never  -> disable constraints
+    """
+
+    if not constraints_cfg or not constraints_cfg.get("enabled", False):
+        return []
+
+    mode = constraints_cfg.get("mode", "auto")
+
+    if mode == "never":
+        return []
+
+    if mode not in {"auto", "always"}:
+        raise ValueError(
+            f"Unsupported constraints.mode: {mode}. Use auto, always, or never."
+        )
+
+    available_chains = get_available_chain_ids(
+        sequences=sequences,
+        ligands=ligands,
+    )
+
+    compiled = []
+    row_constraints = row_constraints or []
+
+    # ------------------------------------------------------------
+    # Native Boltz constraints
+    # ------------------------------------------------------------
+    for item in constraints_cfg.get("native", []):
+
+        if "contact" in item:
+            c = item["contact"]
+            tokens = [c.get("token1"), c.get("token2")]
+
+            if tokens_are_available(
+                tokens=tokens,
+                available_chains=available_chains,
+                sequences=sequences,
+                mode=mode,
+                context="native contact constraint",
+            ):
+                compiled.append(item)
+
+        elif "bond" in item:
+            c = item["bond"]
+            tokens = [c.get("atom1"), c.get("atom2")]
+
+            if tokens_are_available(
+                tokens=tokens,
+                available_chains=available_chains,
+                sequences=sequences,
+                mode=mode,
+                context="native bond constraint",
+            ):
+                compiled.append(item)
+
+        elif "pocket" in item:
+            c = item["pocket"]
+            binder = c.get("binder")
+            contacts = c.get("contacts", [])
+
+            tokens = [[binder, 1]] if binder else []
+            tokens.extend(contacts)
+
+            if tokens_are_available(
+                tokens=tokens,
+                available_chains=available_chains,
+                sequences=sequences,
+                mode=mode,
+                context="native pocket constraint",
+            ):
+                compiled.append(item)
+
+        else:
+            if mode == "always":
+                raise ValueError(f"Unsupported native constraint: {item}")
+
+            logger.warning(
+                f"[Constraints] Skipping unsupported native constraint: {item}"
+            )
+
+    # ------------------------------------------------------------
+    # CSV-derived constraints
+    # ------------------------------------------------------------
+    csv_cfg = constraints_cfg.get("csv", {})
+
+    if csv_cfg.get("enabled", False):
+
+        csv_type = csv_cfg.get("type", "chain_contact")
+        default_max_distance = csv_cfg.get("max_distance")
+        default_force = csv_cfg.get("force", False)
+
+        for item in row_constraints:
+
+            constraint_type = item.get("type", csv_type)
+
+            if constraint_type != "chain_contact":
+                msg = f"Unsupported CSV constraint type: {constraint_type}"
+
+                if mode == "always":
+                    raise ValueError(msg)
+
+                logger.warning(f"[Constraints] Skipping CSV constraint: {msg}")
+                continue
+
+            chain1 = item["chain1"]
+            chain2 = item["chain2"]
+
+            if chain1 not in available_chains or chain2 not in available_chains:
+                msg = (
+                    f"CSV chain_contact requires chains {chain1}/{chain2}, "
+                    f"but available chains are {sorted(available_chains)}"
+                )
+
+                if mode == "always":
+                    raise ValueError(msg)
+
+                logger.info(f"[Constraints] Skipping CSV constraint: {msg}")
+                continue
+
+            residues1 = item["residues1"]
+            residues2 = item["residues2"]
+
+            max_distance = item.get(
+                "max_distance",
+                default_max_distance,
+            )
+
+            if max_distance is None:
+                raise ValueError(
+                    "CSV constraint requires max_distance either in CSV constraint "
+                    "or structure_prediction.constraints.csv.max_distance"
+                )
+
+            force = item.get(
+                "force",
+                default_force,
+            )
+
+            for res1 in residues1:
+                if not validate_protein_residue(
+                    chain_id=chain1,
+                    residue=res1,
+                    sequences=sequences,
+                    context="CSV chain_contact",
+                    mode=mode,
+                ):
+                    continue
+
+                for res2 in residues2:
+                    if not validate_protein_residue(
+                        chain_id=chain2,
+                        residue=res2,
+                        sequences=sequences,
+                        context="CSV chain_contact",
+                        mode=mode,
+                    ):
+                        continue
+
+                    compiled.append({
+                        "contact": {
+                            "token1": [chain1, int(res1)],
+                            "token2": [chain2, int(res2)],
+                            "max_distance": float(max_distance),
+                            "force": bool(force),
+                        }
+                    })
+
+    return compiled
 
 def generate_boltz_yaml(
     sequences: dict,
     ligands: list,
     templates: list,
     msas: dict,
+    constraints: list,
+    affinity: dict,
     yaml_path: Path,
 ):
 
@@ -86,6 +414,34 @@ def generate_boltz_yaml(
                 "smiles": smiles
             }
         })
+    
+    # constraints
+    if constraints:
+        data["constraints"] = constraints
+        logger.info(
+            f"Boltz constraints: {len(constraints)}"
+        )
+
+    # affinity property
+    if affinity and affinity.get("enabled", False):
+        binder = affinity.get("binder")
+
+        if not binder:
+            raise ValueError(
+                "structure_prediction.affinity.enabled=true, but no binder was provided"
+            )
+
+        data["properties"] = [
+            {
+                "affinity": {
+                    "binder": binder
+                }
+            }
+        ]
+
+        logger.info(
+            f"Boltz affinity enabled for binder chain: {binder}"
+        )
 
     # strict validation
     if not data["sequences"]:
@@ -111,6 +467,49 @@ def log_parameters(params: dict, title="Parameters"):
     logger.info("─" * (key_width + 20))
 
 class BoltzBackend(BaseStructureTool):
+    def _parse_affinity(self, boltz_dir: Path):
+        affinity_files = sorted(boltz_dir.rglob("*affinity*.json"))
+
+        if not affinity_files:
+            logger.info(f"[Affinity] No affinity JSON found under {boltz_dir}")
+            return {}
+
+        if len(affinity_files) > 1:
+            logger.warning(
+                f"[Affinity] Found multiple affinity JSON files under {boltz_dir}; "
+                f"using first: {affinity_files[0]}"
+            )
+
+        affinity_file = affinity_files[0]
+
+        logger.info(f"[Affinity] Parsing affinity JSON: {affinity_file}")
+
+        try:
+            data = json.loads(affinity_file.read_text())
+        except Exception as e:
+            logger.warning(
+                f"Failed to parse affinity JSON {affinity_file}: {e}"
+            )
+            return {}
+
+        parsed = {
+            "affinity_json": str(affinity_file),
+            "affinity_pred_value": data.get("affinity_pred_value"),
+            "affinity_probability_binary": data.get("affinity_probability_binary"),
+            "affinity_pred_value1": data.get("affinity_pred_value1"),
+            "affinity_probability_binary1": data.get("affinity_probability_binary1"),
+            "affinity_pred_value2": data.get("affinity_pred_value2"),
+            "affinity_probability_binary2": data.get("affinity_probability_binary2"),
+        }
+
+        logger.info(
+            "[Affinity] Parsed metrics: "
+            f"affinity_pred_value={parsed['affinity_pred_value']} "
+            f"affinity_probability_binary={parsed['affinity_probability_binary']}"
+        )
+
+        return parsed
+    
     name = "boltz"
     
     def __init__(self, config=None):
@@ -124,7 +523,8 @@ class BoltzBackend(BaseStructureTool):
         sequences: dict,
         ligands: list = None,
         templates: list = None,
-        msas: dict = None
+        msas: dict = None,
+        row_constraints: list = None,
     ):
 
         env = os.environ.copy()
@@ -134,27 +534,42 @@ class BoltzBackend(BaseStructureTool):
         run_dir.mkdir(parents=True, exist_ok=True)
 
         yaml_file = run_dir / "input.yaml"
-     
+        out_dir = run_dir / "results"
+
+        # config extraction
+        sp_cfg = self.config.get("structure_prediction", {})
+        inf_cfg = sp_cfg.get("inference", {})
+        constraints_cfg = sp_cfg.get("constraints", {})
+        affinity_cfg = sp_cfg.get("affinity", {})
+      
+        affinity_runtime = resolve_affinity_config(
+            affinity_cfg,
+            ligands or [],
+        )
+
+        boltz_constraints = build_boltz_constraints(
+            constraints_cfg=constraints_cfg,
+            sequences=sequences,
+            ligands=ligands or [],
+            row_constraints=row_constraints or [],
+        )
+
         generate_boltz_yaml(
             sequences,
             ligands or [],
             templates or [],
             msas or {},
+            boltz_constraints,
+            affinity_runtime,
             yaml_file
         )
 
-        out_dir = run_dir / "results"
-        
         cmd = [
             "boltz",
             "predict",
             str(yaml_file),
             "--out_dir", str(out_dir),
         ]
-        
-        # config extraction
-        sp_cfg = self.config.get("structure_prediction", {})
-        inf_cfg = sp_cfg.get("inference", {})
 
         use_msa_server = bool(inf_cfg.get("use_msa_server", False))
 
@@ -199,6 +614,17 @@ class BoltzBackend(BaseStructureTool):
 
         if "diffusion_samples_affinity" in inf_cfg:
             cmd += ["--diffusion_samples_affinity", str(inf_cfg["diffusion_samples_affinity"])]
+        
+        if affinity_runtime:
+
+            if affinity_cfg.get("mw_correction", False):
+                cmd.append("--affinity_mw_correction")
+
+            if "affinity_checkpoint" in affinity_cfg:
+                cmd += [
+                    "--affinity_checkpoint",
+                    str(affinity_cfg["affinity_checkpoint"]),
+                ]
 
         # clean run label
         run_label = f"Boltz run={run_id} device={device}"
@@ -221,8 +647,23 @@ class BoltzBackend(BaseStructureTool):
 
         # affinity parameters 
         affinity_params = {
+            "affinity_requested": affinity_cfg.get("enabled", False),
+            "affinity_runtime_enabled": bool(affinity_runtime),
+            "affinity_mode": affinity_cfg.get("mode", "auto"),
+            "affinity_binder": affinity_runtime.get("binder") if affinity_runtime else None,
+            "affinity_mw_correction": affinity_cfg.get("mw_correction", False),
+            "affinity_checkpoint": affinity_cfg.get("affinity_checkpoint"),
             "diffusion_samples_affinity": inf_cfg.get("diffusion_samples_affinity"),
             "sampling_steps_affinity": inf_cfg.get("sampling_steps_affinity"),
+        }
+
+        constraints_params = {
+            "constraints_enabled": constraints_cfg.get("enabled", False),
+            "constraints_mode": constraints_cfg.get("mode", "auto"),
+            "native_constraints": len(constraints_cfg.get("native", [])),
+            "smart_constraints": len(constraints_cfg.get("smart", [])),
+            "csv_constraints": len(row_constraints or []),
+            "compiled_constraints": len(boltz_constraints),
         }
 
         # remove None values
@@ -232,6 +673,7 @@ class BoltzBackend(BaseStructureTool):
         # log cleanly
         log_parameters(runtime_params, f"{run_label} | Runtime")
         log_parameters(sampling_params, f"{run_label} | Sampling")
+        log_parameters(constraints_params, f"{run_label} | Constraints")
 
         if affinity_params:
             log_parameters(affinity_params, f"{run_label} | Affinity")
@@ -261,6 +703,7 @@ class BoltzBackend(BaseStructureTool):
             return []
 
         samples = []
+        affinity_data = self._parse_affinity(boltz_dirs[0])
 
         # recursively find JSON files
         json_files = list(boltz_dirs[0].rglob("confidence*.json"))
@@ -304,6 +747,9 @@ class BoltzBackend(BaseStructureTool):
 
             samples.append({
                 "structure": str(structure_file),
+
+                # core confidence metrics
+                "confidence_score": data.get("confidence_score"),
                 "plddt": (
                     data.get("complex_plddt")
                     or data.get("mean_plddt")
@@ -312,6 +758,17 @@ class BoltzBackend(BaseStructureTool):
                 "iptm": data.get("iptm"),
                 "ptm": data.get("ptm"),
                 "iplddt": data.get("complex_iplddt"),
+
+                # additional Boltz metrics
+                "ligand_iptm": data.get("ligand_iptm"),
+                "protein_iptm": data.get("protein_iptm"),
+                "complex_pde": data.get("complex_pde"),
+                "complex_ipde": data.get("complex_ipde"),
+                "chains_ptm": data.get("chains_ptm"),
+                "pair_chains_iptm": data.get("pair_chains_iptm"),
+
+                # affinity metrics, same per input rather than per model
+                **affinity_data,
             })
 
         return samples

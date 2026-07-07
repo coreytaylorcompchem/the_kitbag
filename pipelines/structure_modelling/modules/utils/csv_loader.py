@@ -1,5 +1,46 @@
 import csv
 
+def parse_residue_list(value):
+    if value is None:
+        return []
+
+    value = str(value).strip()
+
+    if not value:
+        return []
+
+    residues = []
+
+    for part in value.replace(",", ";").split(";"):
+        part = part.strip()
+
+        if not part:
+            continue
+
+        residues.append(int(part))
+
+    return residues
+
+
+def parse_csv_constraints(row):
+    chain1 = row.get("constraint_chain1")
+    chain2 = row.get("constraint_chain2")
+    residues1 = parse_residue_list(row.get("constraint_residues1"))
+    residues2 = parse_residue_list(row.get("constraint_residues2"))
+
+    if not chain1 or not chain2 or not residues1 or not residues2:
+        return []
+
+    return [
+        {
+            "type": "chain_contact",
+            "chain1": str(chain1).strip(),
+            "residues1": residues1,
+            "chain2": str(chain2).strip(),
+            "residues2": residues2,
+        }
+    ]
+
 def load_sequences(csv_path):
     entries = []
 
@@ -54,13 +95,20 @@ def load_sequences(csv_path):
                     f"Entry '{entry_id}' has no proteins or ligands"
                 )
 
-            
+            constraints = parse_csv_constraints(row)
+
+            if constraints:
+                print(
+                    f"[CSV] {entry_id}: loaded {len(constraints)} constraint(s)"
+                )
+
             entries.append({
                 "id": entry_id,
                 "proteins": proteins,
                 "ligands": ligands,
                 "templates": templates,
-                 "msas": {}
+                "constraints": constraints,
+                "msas": {}
             })
 
 
