@@ -239,10 +239,10 @@ def blend_adme_datasets(config, context):
 
     logger.info("Preparing base dataframe for ADME dataset blending")
     logger.info(f"Base dataframe size before blending: {len(df)}")
-    logger.info(f"Base SMILES column: {base_smiles_col}")
-    logger.info(f"Merge mode: {how}")
-    logger.info(f"Canonicalise SMILES: {canonicalise_smiles}")
-    logger.info(f"Duplicate aggregation: {duplicate_agg}")
+    logger.debug(f"Base SMILES column: {base_smiles_col}")
+    logger.debug(f"Merge mode: {how}")
+    logger.debug(f"Canonicalise SMILES: {canonicalise_smiles}")
+    logger.debug(f"Duplicate aggregation: {duplicate_agg}")
 
     if canonicalise_smiles:
         df[merge_key] = df[base_smiles_col].apply(_canonical_smiles_or_none)
