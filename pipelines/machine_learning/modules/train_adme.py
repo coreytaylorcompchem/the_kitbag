@@ -159,6 +159,321 @@ def load_smiles_dataset(config, context):
 
     return {"dataframe": df}
 
+def _canonical_smiles_or_none(smi):
+    if pd.isna(smi):
+        return None
+
+    smi = str(smi).strip()
+
+    if not smi:
+        return None
+
+    mol = Chem.MolFromSmiles(smi)
+
+    if mol is None:
+        return None
+
+    return Chem.MolToSmiles(mol, canonical=True)
+
+
+def _aggregate_duplicate_smiles(df, smiles_key, value_cols, duplicate_agg="mean"):
+    if duplicate_agg not in {"mean", "first"}:
+        raise ValueError(
+            f"Unsupported duplicate_agg='{duplicate_agg}'. "
+            "Supported values are: mean, first."
+        )
+
+    df = df.copy()
+
+    if duplicate_agg == "first":
+        return (
+            df.sort_values(smiles_key)
+              .drop_duplicates(subset=[smiles_key], keep="first")
+              .reset_index(drop=True)
+        )
+
+    for col in value_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    agg_spec = {col: "mean" for col in value_cols}
+
+    return (
+        df.groupby(smiles_key, as_index=False)
+          .agg(agg_spec)
+          .reset_index(drop=True)
+    )
+
+@register_task(
+    "blend_adme_datasets",
+    category="ADME",
+    description="Blend additional ADME CSVs into the main multitask dataframe."
+)
+def blend_adme_datasets(config, context):
+    df = context["dataframe"].copy()
+
+    base_smiles_col = config.get("smiles_col", "smiles")
+    how = config.get("how", "outer")
+    canonicalise_smiles = config.get("canonicalise_smiles", True)
+    duplicate_agg = config.get("duplicate_agg", "mean")
+    datasets = config.get("datasets", [])
+
+    if not datasets:
+        logger.info("No additional ADME datasets configured; skipping blending.")
+        context["dataframe"] = df
+        return {"dataframe": df}
+
+    if base_smiles_col not in df.columns:
+        raise KeyError(
+            f"Base dataframe does not contain smiles_col='{base_smiles_col}'. "
+            f"Available columns: {list(df.columns)}"
+        )
+
+    if how not in {"left", "outer", "inner", "right"}:
+        raise ValueError(
+            f"Unsupported merge how='{how}'. "
+            "Supported values are: left, outer, inner, right."
+        )
+
+    merge_key = "__canonical_smiles__"
+    incoming_suffix = "__incoming"
+
+    logger.info("Preparing base dataframe for ADME dataset blending")
+    logger.info(f"Base dataframe size before blending: {len(df)}")
+    logger.info(f"Base SMILES column: {base_smiles_col}")
+    logger.info(f"Merge mode: {how}")
+    logger.info(f"Canonicalise SMILES: {canonicalise_smiles}")
+    logger.info(f"Duplicate aggregation: {duplicate_agg}")
+
+    if canonicalise_smiles:
+        df[merge_key] = df[base_smiles_col].apply(_canonical_smiles_or_none)
+    else:
+        df[merge_key] = df[base_smiles_col].astype(str).str.strip()
+
+    invalid_base = df[merge_key].isna().sum()
+
+    if invalid_base > 0:
+        logger.info(
+            f"Dropping {invalid_base} base rows with invalid or missing SMILES "
+            "before dataset blending."
+        )
+        df = df[df[merge_key].notna()].reset_index(drop=True)
+
+    duplicated_base = df[merge_key].duplicated().sum()
+
+    if duplicated_base > 0:
+        raise ValueError(
+            f"Base dataframe contains {duplicated_base} duplicated canonical SMILES. "
+            "The current blend implementation expects one row per canonical SMILES "
+            "in the base dataframe. Deduplicate or aggregate the base dataset first."
+        )
+
+    created_label_cols = []
+    blended_existing_label_cols = []
+    all_affected_label_cols = []
+
+    for dataset_cfg in datasets:
+        dataset_name = dataset_cfg.get("name", "unnamed_dataset")
+        csv_path = dataset_cfg["csv_path"]
+        extra_smiles_col = dataset_cfg.get("smiles_col", base_smiles_col)
+        columns_map = dataset_cfg.get("columns")
+
+        if not columns_map:
+            raise ValueError(
+                f"Dataset '{dataset_name}' must define a non-empty 'columns' mapping."
+            )
+
+        logger.info("=" * 80)
+        logger.info(f"Blending additional ADME dataset: {dataset_name}")
+        logger.info(f"CSV path: {csv_path}")
+
+        extra_df = pd.read_csv(csv_path)
+
+        logger.debug(f"Raw extra dataset size: {len(extra_df)}")
+
+        if extra_smiles_col not in extra_df.columns:
+            raise KeyError(
+                f"Dataset '{dataset_name}' does not contain smiles_col="
+                f"'{extra_smiles_col}'. Available columns: {list(extra_df.columns)}"
+            )
+
+        missing_source_cols = [
+            source_col
+            for source_col in columns_map.keys()
+            if source_col not in extra_df.columns
+        ]
+
+        if missing_source_cols:
+            raise KeyError(
+                f"Dataset '{dataset_name}' is missing required source columns: "
+                f"{missing_source_cols}. Available columns: {list(extra_df.columns)}"
+            )
+
+        selected_cols = [extra_smiles_col] + list(columns_map.keys())
+
+        extra_df = extra_df[selected_cols].copy()
+        extra_df = extra_df.rename(columns=columns_map)
+
+        target_cols = list(columns_map.values())
+
+        if canonicalise_smiles:
+            extra_df[merge_key] = extra_df[extra_smiles_col].apply(_canonical_smiles_or_none)
+        else:
+            extra_df[merge_key] = extra_df[extra_smiles_col].astype(str).str.strip()
+
+        invalid_extra = extra_df[merge_key].isna().sum()
+
+        if invalid_extra > 0:
+            logger.info(
+                f"Dropping {invalid_extra} rows from '{dataset_name}' with invalid "
+                "or missing SMILES."
+            )
+            extra_df = extra_df[extra_df[merge_key].notna()].reset_index(drop=True)
+
+        before_non_null = {
+            col: int(extra_df[col].notna().sum())
+            for col in target_cols
+        }
+
+        extra_df = extra_df[[merge_key] + target_cols].copy()
+
+        extra_df = _aggregate_duplicate_smiles(
+            extra_df,
+            smiles_key=merge_key,
+            value_cols=target_cols,
+            duplicate_agg=duplicate_agg,
+        )
+
+        logger.debug(f"Extra dataset size after duplicate aggregation: {len(extra_df)}")
+
+        for col in target_cols:
+            logger.debug(
+                f"Incoming column '{col}': "
+                f"{before_non_null[col]} non-null raw values"
+            )
+
+        existing_target_cols = [
+            col for col in target_cols
+            if col in df.columns
+        ]
+
+        new_target_cols = [
+            col for col in target_cols
+            if col not in df.columns
+        ]
+
+        if existing_target_cols:
+            logger.debug(
+                f"Dataset '{dataset_name}' will blend into existing task columns: "
+                f"{existing_target_cols}"
+            )
+
+        if new_target_cols:
+            logger.debug(
+                f"Dataset '{dataset_name}' will create new task columns: "
+                f"{new_target_cols}"
+            )
+
+        size_before_merge = len(df)
+
+        df = df.merge(
+            extra_df,
+            on=merge_key,
+            how=how,
+            validate="one_to_one",
+            suffixes=("", incoming_suffix)
+        )
+
+        if base_smiles_col not in df.columns:
+            df[base_smiles_col] = df[merge_key]
+
+        df[base_smiles_col] = df[base_smiles_col].fillna(df[merge_key])
+
+        logger.info(
+            f"Dataset size after merging '{dataset_name}': "
+            f"{size_before_merge} -> {len(df)}"
+        )
+
+        for col in existing_target_cols:
+            incoming_col = f"{col}{incoming_suffix}"
+
+            if incoming_col not in df.columns:
+                raise RuntimeError(
+                    f"Expected incoming blend column '{incoming_col}' was not created "
+                    f"for existing target column '{col}'."
+                )
+
+            existing_non_null = int(df[col].notna().sum())
+            incoming_non_null = int(df[incoming_col].notna().sum())
+
+            overlap_mask = df[col].notna() & df[incoming_col].notna()
+            overlap_count = int(overlap_mask.sum())
+
+            df[col] = df[[col, incoming_col]].mean(
+                axis=1,
+                skipna=True
+            )
+
+            final_non_null = int(df[col].notna().sum())
+
+            df = df.drop(columns=[incoming_col])
+
+            logger.debug(
+                f"Blended existing task '{col}' | "
+                f"existing non-null: {existing_non_null}; "
+                f"incoming non-null: {incoming_non_null}; "
+                f"overlap averaged: {overlap_count}; "
+                f"final non-null: {final_non_null}"
+            )
+
+            if col not in blended_existing_label_cols:
+                blended_existing_label_cols.append(col)
+
+            if col not in all_affected_label_cols:
+                all_affected_label_cols.append(col)
+
+        for col in new_target_cols:
+            n_non_null = int(df[col].notna().sum())
+
+            logger.debug(
+                f"Created new task column '{col}': "
+                f"{n_non_null} non-null values"
+            )
+
+            if col not in created_label_cols:
+                created_label_cols.append(col)
+
+            if col not in all_affected_label_cols:
+                all_affected_label_cols.append(col)
+
+    df = df.drop(columns=[merge_key])
+
+    context["dataframe"] = df
+    context["created_label_cols"] = created_label_cols
+    context["blended_existing_label_cols"] = blended_existing_label_cols
+    context["affected_label_cols"] = all_affected_label_cols
+
+    logger.info("=" * 80)
+    logger.info(f"Final blended dataframe size: {len(df)}")
+    logger.info(f"Created new task columns: {created_label_cols}")
+    logger.info(f"Blended existing task columns: {blended_existing_label_cols}")
+    logger.info(f"All affected label columns: {all_affected_label_cols}")
+
+    for col in all_affected_label_cols:
+        n_non_null = int(df[col].notna().sum())
+        pct_non_null = 100.0 * n_non_null / len(df) if len(df) else 0.0
+
+        logger.debug(
+            f"Post-blend task sparsity | {col}: "
+            f"{n_non_null}/{len(df)} non-null ({pct_non_null:.2f}%)"
+        )
+
+    return {
+        "dataframe": df,
+        "created_label_cols": created_label_cols,
+        "blended_existing_label_cols": blended_existing_label_cols,
+        "affected_label_cols": all_affected_label_cols,
+    }
+
 @register_task("filter_druglike", category="ADME", description="Filter non drug-like molecules.")
 def filter_druglike(config, context):
     df = context["dataframe"]
@@ -369,6 +684,18 @@ def transform_labels(config, context):
     label_cols = config["label_cols"]
 
     df = context["dataframe"]
+
+    missing_label_cols = [
+        col for col in label_cols
+        if col not in df.columns
+    ]
+
+    if missing_label_cols:
+        raise KeyError(
+            "The following label columns were requested in transform_labels "
+            f"but are missing from the dataframe: {missing_label_cols}. "
+            f"Available columns: {list(df.columns)}"
+        )
 
     scalers = {}
     transform_metadata = {}
