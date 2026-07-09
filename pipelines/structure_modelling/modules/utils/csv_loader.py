@@ -44,14 +44,37 @@ def parse_csv_constraints(row):
 def load_sequences(csv_path):
     entries = []
 
-    with open(csv_path, newline="") as f:
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
 
-        for row in reader:
+        if not reader.fieldnames:
+            raise ValueError(f"CSV has no header: {csv_path}")
+
+        fieldnames = [
+            field.strip()
+            for field in reader.fieldnames
+        ]
+
+        reader.fieldnames = fieldnames
+
+        if "id" not in reader.fieldnames:
+            raise ValueError(
+                f"CSV missing required 'id' column. "
+                f"Detected columns: {reader.fieldnames}"
+            )
+
+        for row_idx, row in enumerate(reader, start=2):
             entry_id = row.get("id")
 
+            if entry_id:
+                entry_id = entry_id.strip()
+
             if not entry_id:
-                raise ValueError("CSV row missing 'id'")
+                raise ValueError(
+                    f"CSV row {row_idx} missing 'id'. "
+                    f"Detected row keys: {list(row.keys())}. "
+                    f"Row contents: {row}"
+                )
 
             proteins = {}
             ligands = []
@@ -65,10 +88,19 @@ def load_sequences(csv_path):
             #     proteins["B"] = row["chain_B"].strip()
 
             for key, value in row.items():
-                if key.startswith("chain_") and value.strip():
-                    # Extract chain ID dynamically
-                    chain_id = key.replace("chain_", "")
-                    proteins[chain_id] = value.strip()
+                if not key.startswith("chain_"):
+                    continue
+
+                if value is None:
+                    continue
+
+                value = value.strip()
+
+                if not value:
+                    continue
+
+                chain_id = key.replace("chain_", "")
+                proteins[chain_id] = value
 
             # --- ligands ---
             smiles_field = row.get("ligand_SMILES")
