@@ -191,7 +191,7 @@ def transform_labels_finetune(config, context):
     return context
 
 @register_task(
-    "load_adme_checkpoint",
+    "load_adme_checkpoint_ft",
     category="ADME",
     description="Load pretrained ADME model checkpoint and preprocessing artifacts."
 )
