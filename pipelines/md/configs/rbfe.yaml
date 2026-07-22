@@ -3,6 +3,7 @@ workflow_name: rbfe
 
 workflow:
   - openfe_prepare_receptor
+  - openfe_sanitise_ligand_sdf # deletes SDF props, as some can cause parsing issues.
   - openfe_create_network
   - openfe_create_alchemical_network
   - openfe_run_network
@@ -17,9 +18,13 @@ openfe_prepare_receptor:
   ligand_resname: UNK # tell the system which ligand to remove for FEP, if it's there.
   output_dir: output/openfe # output: receptor_membrane.pdb
 
+openfe_sanitise_ligand_sdf:
+  input_sdf: input/FEP_ligands.sdf
+  output_sdf: output/openfe/FEP_ligands_sanitised.sdf
+
 openfe_create_network:
   receptor_pdb: output/openfe/receptor_membrane.pdb
-  ligand_sdf: input/ligs_fep.sdf
+  ligand_sdf: output/openfe/FEP_ligands_sanitised.sdf
   network:
     method: lomap # lomap | mst | star 
     radial: false
@@ -43,6 +48,8 @@ openfe_create_alchemical_network:
     positions_write_frequency_ps: 100
 
 openfe_run_network:
+  gpus: [0] # specific which GPUs to run calcs on. If you have 3, this will be [0,1,2] if you want to use all
+  jobs_per_gpu: 1 # option to run multiple legs on each GPU, arguable if this actually helps.
   transformations_dir: output/openfe/transformations
   output_dir: output/openfe/results
 

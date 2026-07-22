@@ -151,6 +151,82 @@ def openfe_prepare_receptor(self):
     )
 
 @register_task(
+    "openfe_sanitise_ligand_sdf",
+    category="Free Energy",
+    description="Sanitise ligand SDF by removing all SD properties."
+)
+def openfe_sanitise_ligand_sdf(self):
+    """
+    Remove all SD property blocks from an input SDF.
+
+    This keeps the molecule block intact:
+
+        title
+        program/comment lines
+        counts line
+        atom block
+        bond block
+        M  END
+        $$$$
+
+    and removes everything between M  END and $$$$.
+
+    This is intentionally implemented as text processing rather than
+    via RDKit so that malformed SD properties cannot interfere with
+    molecule parsing.
+    """
+
+    cfg = self.config["openfe_sanitise_ligand_sdf"]
+
+    input_sdf = cfg["input_sdf"]
+    output_sdf = cfg.get(
+        "output_sdf",
+        os.path.splitext(input_sdf)[0] + "_sanitised.sdf"
+    )
+
+    output_dir = os.path.dirname(output_sdf)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    n_molecules = 0
+    n_property_lines_removed = 0
+    in_property_block = False
+
+    with open(input_sdf, "r") as fin, open(output_sdf, "w") as fout:
+        for line in fin:
+            if line.startswith("M  END"):
+                fout.write(line)
+                in_property_block = True
+                continue
+
+            if line.startswith("$$$$"):
+                fout.write(line)
+                n_molecules += 1
+                in_property_block = False
+                continue
+
+            if in_property_block:
+                n_property_lines_removed += 1
+                continue
+
+            fout.write(line)
+
+    if n_molecules == 0:
+        raise ValueError(
+            f"No SDF records found while sanitising {input_sdf}"
+        )
+
+    self.openfe_ligand_sdf = output_sdf
+
+    logger.info(
+        f"Sanitised ligand SDF: {input_sdf} -> {output_sdf}"
+    )
+    logger.debug(
+        f"Removed {n_property_lines_removed} SD property/data lines "
+        f"from {n_molecules} molecules"
+    )
+
+@register_task(
     "openfe_create_network",
     category="Free Energy",
     description="Create OpenFE ligand network for membrane RBFE."
