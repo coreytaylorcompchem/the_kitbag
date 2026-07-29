@@ -83,6 +83,41 @@ rgroup_sar_tree:
   output_dir: outputs/mmp/rgroup_sar_tree
   core_method: murcko  # or bemis-murcko, scaffold-tree
   min_variants: 10
+  
+  # R-group combos
+
+  combo_min_count: 3 # controls how many r-group combinations are needed to generate combos df
+  combo_heatmap_max_levels: 25
+  combo_top_n: 20
+  combo_min_count_for_summary: 2
+  combo_rank_metric: residual_activity
+  combo_score_with_count: true
+  combo_plot_top: true
+
+  make_non_hydrogen_combo_plot: true
+  non_hydrogen_combo_min_count: 1
+  treat_dummy_only_rgroup_as_hydrogen: true
+
+  # plotting controls
+  radial_max_nodes: 12
+  grid_max_items: 30
+  top_n_per_rgroup: 10
+  bottom_n_per_rgroup: 10
+  page_size: 24
+  min_count_for_plot: 1
+
+  # activity display
+  activity_sort: descending   # descending for pIC50/pKi/pEC50
+  show_std: true
+  show_count: true
+
+  # image controls
+  mol_img_size: 160
+  core_img_size: 260
+  dpi: 300
+
+  color_by_activity: true
+  show_colorbar: true
 
 mmp_report:
   min_count: 10
