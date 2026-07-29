@@ -1,3 +1,4 @@
+import re
 import csv
 import logging
 import subprocess
@@ -13,6 +14,7 @@ import seaborn as sns
 import networkx as nx
 import pandas as pd
 from collections import Counter
+from itertools import combinations
 
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, QED, rdRGroupDecomposition, Scaffolds
@@ -36,9 +38,25 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.cm as cm
 
+from PIL import Image, ImageDraw
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
+from modules.utils.sar_analysis_utils import (
+    compute_pairwise_rgroup_residuals,
+    draw_core_with_rgroup_labels,
+    dump_combo_structure_images,
+    filter_non_hydrogen_pairwise_combos,
+    get_rgroup_columns,
+    iter_pages,
+    make_top_bottom_panel,
+    plot_pairwise_combo_structure_heatmap, 
+    plot_ranked_rgroup_grid, 
+    plot_top_pairwise_combinations,
+    safe_name,
+    summarise_top_pairwise_combinations,
+)
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
@@ -926,8 +944,6 @@ def scaffold_enrichment_trends(config, data=None):
     plt.figure(figsize=(width, 6))
     
     ax = plt.gca()
-
-    from PIL import Image, ImageDraw
 
     def make_placeholder_image(text="NA", size=(100, 100)):
         img = Image.new("RGB", size, color="white")
@@ -1964,39 +1980,7 @@ def rgroup_frequency_tracking(config, data=None):
     logger.info(f"[RGroup Tracking] Saved summary: {summary_csv}")
     return {"summary_csv": str(summary_csv)}
 
-def draw_core_with_large_atom_numbers(mol, size=(300, 300), font_size=40):
-    """
-    Draw the core molecule with large atom numbers for attachment points.
-    Returns a PIL Image.
-    """
-    if mol is None:
-        return None
 
-    # Create 2D coords if not present
-    if not mol.GetNumConformers():
-        rdMolDraw2D.PrepareMolForDrawing(mol)
-
-    drawer = rdMolDraw2D.MolDraw2DCairo(size[0], size[1])
-    opts = drawer.drawOptions()
-    opts.baseFontSize = font_size / 100
-
-    # Label dummy atoms (atomic number == 0) or atoms with R-group-like mapping
-    atom_labels = {}
-    for atom in mol.GetAtoms():
-        if atom.GetAtomicNum() == 0:
-            # try atom map numbers, else index+1
-            amap = atom.GetAtomMapNum()
-            label = f"R{amap}" if amap else str(atom.GetIdx() + 1)
-            atom_labels[atom.GetIdx()] = label
-
-    for idx, label in atom_labels.items():
-        opts.atomLabels[idx] = label
-
-    rdMolDraw2D.PrepareAndDrawMolecule(drawer, mol)
-    drawer.FinishDrawing()
-
-    png_data = drawer.GetDrawingText()
-    return Image.open(io.BytesIO(png_data))
 
 @register_task("rgroup_sar_tree",
                category="Project-based analyses",
@@ -2053,25 +2037,98 @@ def rgroup_sar_tree(config, data=None):
     df["core"] = [Chem.MolToSmiles(c) if c else None for c in cores]
 
     # Group by core and build decomp
+
     all_records = []
+    wide_records = []
+    labelled_core_records = []
+    all_combo_summaries = []
+
     for core_smiles, subset in df.groupby("core"):
         if not core_smiles or len(subset) < min_variants:
             continue
+
         core = Chem.MolFromSmiles(core_smiles)
-        match_indices = subset.index.tolist()
         match_mols = [Chem.MolFromSmiles(s) for s in subset["smiles"]]
 
-        groups, _ = rdRGroupDecomposition.RGroupDecompose([core], match_mols)
+        groups, _ = rdRGroupDecomposition.RGroupDecompose(
+            [core],
+            match_mols,
+            asRows=True
+        )
+
+        if not groups:
+            continue
+
         for row, (_, subrow) in zip(groups, subset.iterrows()):
+            compound_id = subrow.get("ID", subrow.name)
+            series = subrow.get("Chemical series", "Unknown")
+
+            labelled_core = row.get("Core")
+            labelled_core_smiles = (
+                Chem.MolToSmiles(labelled_core)
+                if labelled_core is not None
+                else core_smiles
+            )
+
+            labelled_core_records.append({
+                "series": series,
+                "core": core_smiles,
+                "labelled_core": labelled_core_smiles,
+            })
+
+            wide_record = {
+                "compound_id": compound_id,
+                "series": series,
+                "core": core_smiles,
+                "labelled_core": labelled_core_smiles,
+                activity_col: subrow[activity_col],
+            }
+
             for label, frag in row.items():
-                if frag:
+                if label == "Core":
+                    continue
+
+                frag_smiles = Chem.MolToSmiles(frag) if frag is not None else None
+                wide_record[label] = frag_smiles
+
+                if frag is not None:
                     all_records.append({
                         "core": core_smiles,
-                        "series": subrow["Chemical series"],
+                        "labelled_core": labelled_core_smiles,
+                        "series": series,
+                        "compound_id": compound_id,
                         "rgroup_label": label,
-                        "rgroup_smiles": Chem.MolToSmiles(frag),
+                        "rgroup_smiles": frag_smiles,
                         activity_col: subrow[activity_col],
                     })
+
+            wide_records.append(wide_record)
+
+    rg_df = pd.DataFrame(all_records)
+    wide_df = pd.DataFrame(wide_records)
+    labelled_core_df = pd.DataFrame(labelled_core_records).drop_duplicates()
+
+    if rg_df.empty:
+        logger.warning("[RGroup SAR Tree] No decompositions generated.")
+        return None
+
+    matrix_csv = output_dir / "rgroup_matrix.csv"
+    wide_df.to_csv(matrix_csv, index=False)
+
+    labelled_core_csv = output_dir / "labelled_cores.csv"
+    labelled_core_df.to_csv(labelled_core_csv, index=False)
+
+    logger.info(f"[RGroup SAR Tree] R-group matrix saved: {matrix_csv}")
+    logger.info(f"[RGroup SAR Tree] Labelled cores saved: {labelled_core_csv}")
+
+    labelled_core_df = pd.DataFrame(labelled_core_records).drop_duplicates()
+
+    labelled_core_lookup = (
+        labelled_core_df
+        .groupby(["series", "core"])["labelled_core"]
+        .first()
+        .to_dict()
+    )
 
     rg_df = pd.DataFrame(all_records)
     if rg_df.empty:
@@ -2102,151 +2159,318 @@ def rgroup_sar_tree(config, data=None):
     json_path = output_dir / "rgroup_sar_tree.json"
     with open(json_path, "w") as fout:
         json.dump(tree_json, fout, indent=2)
+
+    logger.debug("[RGroup SAR Tree] Generating adaptive SAR visualizations...")
+
+    radial_max_nodes = cfg.get("radial_max_nodes", 12)
+    grid_max_items = cfg.get("grid_max_items", 30)
+    top_n_per_rgroup = cfg.get("top_n_per_rgroup", 10)
+    bottom_n_per_rgroup = cfg.get("bottom_n_per_rgroup", 10)
+    page_size = cfg.get("page_size", 24)
+    min_count_for_plot = cfg.get("min_count_for_plot", 1)
+    mol_img_size = cfg.get("mol_img_size", 160)
+    core_img_size = cfg.get("core_img_size", 260)
+    dpi = cfg.get("dpi", 300)
+
+    activity_sort = cfg.get("activity_sort", "descending")
+    descending = activity_sort.lower() != "ascending"
+
+    plot_df = sar_summary.copy()
+    plot_df = plot_df[plot_df["count"] >= min_count_for_plot]
+
+    for (series, core), core_df in plot_df.groupby(["series", "core"]):
+        safe_series = safe_name(series)
+        core_hash = hashlib.sha1(str(core).encode()).hexdigest()[:8]
+
+        core_dir = output_dir / safe_series / f"core_{core_hash}"
+        core_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save per-core table
+        core_csv = core_dir / "summary.csv"
+        core_df.to_csv(core_csv, index=False)
+
+        # Save core image
+        labelled_core_smiles = labelled_core_lookup.get((series, core), core)
+        core_mol = Chem.MolFromSmiles(labelled_core_smiles)
+
+        if core_mol is not None:
+            core_img = draw_core_with_rgroup_labels(
+                core_mol,
+                size=(core_img_size, core_img_size),
+                font_size=50
+            )
+            if core_img is not None:
+                core_img.save(core_dir / "core.png")
+
+        # Split by attachment point
+        for rgroup_label, label_df in core_df.groupby("rgroup_label"):
+            if str(rgroup_label).lower() == "core":
+                continue
+
+            label_df = label_df.sort_values(
+                "mean_pActivity",
+                ascending=not descending
+            ).reset_index(drop=True)
+
+            safe_label = safe_name(rgroup_label)
+            n_items = len(label_df)
+
+            # Case 1: manageable full grid
+            if n_items <= grid_max_items:
+                plot_ranked_rgroup_grid(
+                    label_df,
+                    output_path=core_dir / f"{safe_label}_ranked_grid.png",
+                    activity_col="mean_pActivity",
+                    rgroup_label=str(rgroup_label),
+                    title=f"{series} | {rgroup_label} SAR | core {core_hash}",
+                    img_size=mol_img_size,
+                    n_cols=4,
+                    dpi=dpi,
+                    descending=descending,
+                    show_std=cfg.get("show_std", True),
+                    show_count=cfg.get("show_count", True),
+                )
+
+            # Case 2: too many, generate top/bottom plus pages
+            else:
+                tb_df = make_top_bottom_panel(
+                    label_df,
+                    top_n=top_n_per_rgroup,
+                    bottom_n=bottom_n_per_rgroup,
+                    activity_col="mean_pActivity",
+                    descending=descending
+                )
+
+                plot_ranked_rgroup_grid(
+                    tb_df,
+                    output_path=core_dir / f"{safe_label}_top_bottom.png",
+                    activity_col="mean_pActivity",
+                    rgroup_label=str(rgroup_label),
+                    title=(
+                        f"{series} | {rgroup_label} SAR | "
+                        f"top {top_n_per_rgroup} / bottom {bottom_n_per_rgroup} | core {core_hash}"
+                    ),
+                    img_size=mol_img_size,
+                    n_cols=4,
+                    dpi=dpi,
+                    descending=descending,
+                    show_std=cfg.get("show_std", True),
+                    show_count=cfg.get("show_count", True),
+                )
+
+                for page_num, page_df in iter_pages(label_df, page_size=page_size):
+                    plot_ranked_rgroup_grid(
+                        page_df,
+                        output_path=core_dir / f"{safe_label}_page_{page_num:03d}.png",
+                        activity_col="mean_pActivity",
+                        rgroup_label=str(rgroup_label),
+                        title=(
+                            f"{series} | {rgroup_label} SAR | "
+                            f"page {page_num} | core {core_hash}"
+                        ),
+                        img_size=mol_img_size,
+                        n_cols=4,
+                        dpi=dpi,
+                        descending=descending,
+                        show_std=cfg.get("show_std", True),
+                        show_count=cfg.get("show_count", True),
+                    )
+
+    # combinations
     
-    # Begin per-core entered SAR viz
-    logger.debug("[RGroup SAR Tree] Generating centered per-core SAR visualizations (per-core, with true core fragments)...")
-    try:
+    combo_min_count = cfg.get("combo_min_count", 2)
+    combo_heatmap_max_levels = cfg.get("combo_heatmap_max_levels", 20)
+    combo_plot_dir = output_dir / "combination_heatmaps"
+    combo_plot_dir.mkdir(parents=True, exist_ok=True)
 
-        cmap = cm.get_cmap("viridis")
+    n_heatmaps = 0
 
-        for series, cores in tree_json.items():
+    for (series, core), core_wide_df in wide_df.groupby(["series", "core"]):
+        r_cols = get_rgroup_columns(core_wide_df)
 
-            # create per-series directory
-            safe_series = str(series).replace(" ", "_").replace("/", "_")
-            series_dir = output_dir / safe_series
-            series_dir.mkdir(exist_ok=True)
+        if len(r_cols) < 2:
+            logger.info(
+                f"[RGroup SAR Tree] Skipping combination heatmaps for series={series}, "
+                f"core={core[:40]}... Only {len(r_cols)} R-group column(s)."
+            )
+            continue
 
-            for core, rgroups in cores.items():
-                if not rgroups:
-                    continue
+        safe_series = safe_name(series)
+        core_hash = hashlib.sha1(str(core).encode()).hexdigest()[:8]
+        core_combo_dir = combo_plot_dir / safe_series / f"core_{core_hash}"
+        core_combo_dir.mkdir(parents=True, exist_ok=True)
 
-                # Try to find the true decomposition core
-                core_frag = None
-                for rg in rgroups:
-                    if str(rg["rgroup_label"]).lower() == "core":
-                        core_frag = rg["rgroup_smiles"]
-                        break
-                if not core_frag:
-                    core_frag = core  # fallback
+        logger.debug(
+            f"[RGroup SAR Tree] Generating combination heatmaps for series={series}, "
+            f"core={core_hash}, R-cols={r_cols}"
+        )
 
-                # Build graph
-                G = nx.DiGraph()
-                core_label = "CORE"
-                G.add_node(core_label, kind="core", smiles=core_frag, pAct=None)
+        residual_combo_df = compute_pairwise_rgroup_residuals(
+            core_wide_df,
+            activity_col=activity_col,
+            min_count=combo_min_count,
+        )
 
-                for rg in rgroups:
-                    if str(rg["rgroup_label"]).lower() == "core":
-                        continue
+        residual_csv = core_combo_dir / "pairwise_nonadditivity.csv"
+        residual_combo_df.to_csv(residual_csv, index=False)
 
-                    r_smiles = rg["rgroup_smiles"]
-                    pAct = rg["mean_pActivity"]
-                    label = rg["rgroup_label"]
+        combo_top_n = cfg.get("combo_top_n", 20)
+        combo_min_count_for_summary = cfg.get("combo_min_count_for_summary", combo_min_count)
+        combo_rank_metric = cfg.get("combo_rank_metric", "residual_activity")
+        combo_score_with_count = cfg.get("combo_score_with_count", True)
 
-                    # ✅ FIX: unique node IDs (prevents overwriting)
-                    node_id = f"{label}_{hash(r_smiles)}"
+        combo_summary_df = summarise_top_pairwise_combinations(
+            residual_combo_df,
+            top_n=combo_top_n,
+            min_count=combo_min_count_for_summary,
+            # rank_metric=combo_rank_metric,
+            score_with_count=combo_score_with_count,
+        )
 
-                    G.add_node(node_id, kind="rgroup", smiles=r_smiles, pAct=pAct, label=label)
-                    G.add_edge(core_label, node_id)
+        if not combo_summary_df.empty:
+            combo_summary_df = combo_summary_df.copy()
+            combo_summary_df["series"] = series
+            combo_summary_df["core"] = core
+            combo_summary_df["core_hash"] = core_hash
+            combo_summary_df["source_dir"] = str(core_combo_dir)
+            all_combo_summaries.append(combo_summary_df)
 
-                # Layout (adaptive)
-                n = len(G.nodes)
+        combo_summary_csv = core_combo_dir / "top_pairwise_combinations.csv"
+        combo_summary_df.to_csv(combo_summary_csv, index=False)
 
-                # dynamic radius (key fix)
-                radius = max(1.5, 0.4 * n)
+        if combo_summary_df.empty:
+            logger.warning(
+                f"[RGroup SAR Tree] No top pairwise combinations found for "
+                f"series={series}, core={core_hash} after min_count={combo_min_count_for_summary}."
+            )
+        else:
+            combo_summary_png = core_combo_dir / "top_pairwise_combinations.png"
 
-                # dynamic image scaling
-                img_size = max(80, int(140 - n * 2))      # shrink with more nodes
-                zoom = max(0.25, 0.5 - n * 0.01)
+            made_combo_plot = plot_top_pairwise_combinations(
+                combo_summary_df,
+                output_path=combo_summary_png,
+                title=f"{series} | top non-additive pairwise R-group combinations | core {core_hash}",
+                top_n_each=combo_top_n,
+                img_size=cfg.get("combo_img_size", 140),
+                dpi=dpi,
+            )
 
-                # reduce label clutter if many nodes
-                show_labels = n <= 12
+            labelled_core_smiles = labelled_core_lookup.get((series, core), core)
 
-                pos = {core_label: np.array([0.0, 0.0])}
-                angle_step = 2 * np.pi / max(1, n - 1)
+            dump_combo_structure_images(
+                combo_summary_df,
+                output_dir=core_combo_dir,
+                labelled_core_smiles=labelled_core_smiles,
+                core_img_size=core_img_size,
+                rgroup_img_size=cfg.get("combo_structure_img_size", 180),
+            )
 
-                i = 0
-                for node in G.nodes:
-                    if node == core_label:
-                        continue
-                    angle = i * angle_step
-                    pos[node] = np.array([
-                        radius * np.cos(angle),
-                        radius * np.sin(angle)
-                    ])
-                    i += 1
+            if cfg.get("make_non_hydrogen_combo_plot", True):
+                non_h_min_count = cfg.get(
+                    "non_hydrogen_combo_min_count",
+                    combo_min_count_for_summary,
+                )
 
-                # Normalize activity
-                pActs = [d.get("pAct") for _, d in G.nodes(data=True) if d["pAct"] is not None]
-                if not pActs:
-                    logger.warning(f"[RGroup SAR Tree] No activity values for core: {core}")
-                    continue
+                treat_dummy_only_as_h = cfg.get(
+                    "treat_dummy_only_rgroup_as_hydrogen",
+                    True,
+                )
 
-                norm = plt.Normalize(min(pActs), max(pActs))
+                non_h_residual_df = filter_non_hydrogen_pairwise_combos(
+                    residual_combo_df,
+                    treat_dummy_only_as_h=treat_dummy_only_as_h,
+                )
 
-                fig, ax = plt.subplots(figsize=(7, 7))
-                ax.axis("off")
+                non_h_summary_df = summarise_top_pairwise_combinations(
+                    non_h_residual_df,
+                    top_n=combo_top_n,
+                    min_count=non_h_min_count,
+                    score_with_count=combo_score_with_count,
+                )
 
-                # Edges
-                nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#666666", width=1.2, arrows=False)
+                non_h_summary_csv = core_combo_dir / "top_pairwise_combinations_non_hydrogen.csv"
+                non_h_summary_df.to_csv(non_h_summary_csv, index=False)
 
-                # Core
-                core_mol = Chem.MolFromSmiles(core_frag)
-                if core_mol is None:
-                    core_mol = Chem.MolFromSmiles(core)
+                if non_h_summary_df.empty:
+                    logger.info(
+                        f"[RGroup SAR Tree] No non-H/non-H pairwise combinations found for "
+                        f"series={series}, core={core_hash} after min_count={non_h_min_count}."
+                    )
+                else:
+                    non_h_summary_png = core_combo_dir / "top_pairwise_combinations_non_hydrogen.png"
 
-                if core_mol:
-                    core_img = draw_core_with_large_atom_numbers(core_mol, size=(300, 300), font_size=50)
-                    if core_img:
-                        im = OffsetImage(core_img, zoom=0.5)
-                        ab = AnnotationBbox(im, (0, 0), frameon=True,
-                                            bboxprops=dict(facecolor="#ffcc00", edgecolor="#333333", lw=1.5))
-                        ax.add_artist(ab)
+                    made_non_h_plot = plot_top_pairwise_combinations(
+                        non_h_summary_df,
+                        output_path=non_h_summary_png,
+                        title=(
+                            f"{series} | top non-H pairwise R-group combinations | "
+                            f"core {core_hash}"
+                        ),
+                        top_n_each=combo_top_n,
+                        img_size=cfg.get("combo_img_size", 140),
+                        dpi=dpi,
+                    )
 
-                # R-groups
-                for node, data in G.nodes(data=True):
-                    if data["kind"] != "rgroup":
-                        continue
+                    dump_combo_structure_images(
+                        non_h_summary_df,
+                        output_dir=core_combo_dir / "non_hydrogen_structures",
+                        labelled_core_smiles=labelled_core_smiles,
+                        core_img_size=core_img_size,
+                        rgroup_img_size=cfg.get("combo_structure_img_size", 180),
+                    )
 
-                    x, y = pos[node]
-                    mol = Chem.MolFromSmiles(data["smiles"])
+                    if made_non_h_plot is not None:
+                        logger.debug(
+                            f"[RGroup SAR Tree] Saved non-H top combo plot: {non_h_summary_png}"
+                        )
 
-                    if mol is None:
-                        continue
+            if made_combo_plot is not None:
+                logger.debug(f"[RGroup SAR Tree] Saved top combo plot: {combo_summary_png}")
 
-                    img = Draw.MolToImage(mol, size=(120, 120))
-                    im = OffsetImage(img, zoom=0.45)
-                    ab = AnnotationBbox(im, (x, y), frameon=False)
-                    ax.add_artist(ab)
-                    ax.set_title(f"{series} | Core SAR", fontsize=10)
+        if residual_combo_df.empty:
+            logger.warning(
+                f"[RGroup SAR Tree] No pairwise residual combinations passed "
+                f"min_count={combo_min_count} for series={series}, core={core_hash}."
+            )
+            continue
 
-                    # label (use stored label, not node_id)
-                    ax.text(x, y + 0.25, data["label"],
-                            ha="center", va="bottom",
-                            fontsize=8, fontweight="bold", color="#333333")
+        for r1, r2 in combinations(r_cols, 2):
+            out_png = core_combo_dir / f"{r1}_{r2}_nonadditivity_heatmap.png"
 
-                    # activity
-                    if data["pAct"] is not None:
-                        ax.text(x, y - 0.25, f"{data['pAct']:.2f}",
-                                ha="center", va="top", fontsize=8,
-                                color=cm.viridis(norm(data["pAct"])))
+            made = plot_pairwise_combo_structure_heatmap(
+                combo_df=residual_combo_df,
+                r1=r1,
+                r2=r2,
+                value_col="residual_activity",
+                count_col="count",
+                output_path=out_png,
+                title=f"{series} | {r1} x {r2} non-additivity | core {core_hash}",
+                max_levels=combo_heatmap_max_levels,
+                dpi=dpi,
+            )
 
-                # Colorbar
-                sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-                sm.set_array([])
-                cbar = fig.colorbar(sm, ax=ax, shrink=0.75, pad=0.03)
-                cbar.set_label("Mean pActivity")
+            if made is not None:
+                n_heatmaps += 1
 
-                # Save
-                core_hash = hashlib.sha1(core_frag.encode()).hexdigest()[:8]
-                plot_path = series_dir / f"rgroup_tree_{core_hash}.png"
-                fig.savefig(plot_path, dpi=300, bbox_inches="tight")
-                plt.close(fig)
+    global_combo_csv = None
 
-                logger.info(f"[RGroup SAR Tree] Saved: {plot_path}")
+    if all_combo_summaries:
+        global_combo_summary = pd.concat(all_combo_summaries, ignore_index=True)
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        logger.warning(f"[RGroup SAR Tree] Plot generation failed: {e}")
+        global_combo_csv = output_dir / "top_pairwise_combinations_all_cores.csv"
+        global_combo_summary.to_csv(global_combo_csv, index=False)
 
-    return {"summary_csv": str(output_csv), "hierarchy_json": str(json_path)}
+        logger.info(f"[RGroup SAR Tree] Global combo index CSV saved: {global_combo_csv}")
+    else:
+        logger.warning("[RGroup SAR Tree] No global pairwise combination summaries generated.")
+
+    logger.info(f"[RGroup SAR Tree] Generated {n_heatmaps} pairwise combination heatmaps.")
+
+    return {
+        "summary_csv": str(output_csv),
+        "hierarchy_json": str(json_path),
+        "rgroup_matrix_csv": str(matrix_csv),
+        "labelled_cores_csv": str(labelled_core_csv),
+        "combination_heatmap_dir": str(combo_plot_dir),
+        "global_combo_summary_csv": str(global_combo_csv) if global_combo_csv else None,
+    }
