@@ -814,7 +814,6 @@ def get_rgroup_columns(wide_df):
         and c[1:].isdigit()
     ]
 
-
 def make_fw_design_matrix(df, r_cols):
     """
     One-hot encode R-group columns for Free-Wilson modelling.

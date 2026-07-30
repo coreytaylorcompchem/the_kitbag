@@ -63,6 +63,8 @@ from modules.utils.free_wilson_helpers import (
     summarise_fw_prediction_distributions
 )
 
+from modules.utils.sar_residual_score_helpers import run_fw_residual_ml_for_group
+
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
@@ -2724,4 +2726,129 @@ def free_wilson_analysis(config, data=None):
         "n_models": len(summary_df),
         "n_observed_predictions": len(observed_all_df),
         "n_virtual_predictions": len(virtual_all_df),
+    }
+
+@register_task(
+    "fw_residual_ml",
+    category="Project-based analyses",
+    description="Train ensemble ML models to predict Free-Wilson residuals and score virtual candidates."
+)
+def fw_residual_ml(config, data=None):
+    cfg = config.get("fw_residual_ml", {})
+
+    observed_path = cfg.get(
+        "observed_predictions",
+        "outputs/mmp/free_wilson/fw_observed_predictions_all.csv",
+    )
+    virtual_path = cfg.get(
+        "virtual_predictions",
+        "outputs/mmp/free_wilson/fw_virtual_predictions_all.csv",
+    )
+
+    output_dir = Path(cfg.get("output_dir", "outputs/mmp/fw_residual_ml"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    group_cols = cfg.get("group_cols", ["series", "core_hash"])
+
+    observed_df = pd.read_csv(observed_path)
+    virtual_df = pd.read_csv(virtual_path)
+
+    missing_obs = [c for c in group_cols if c not in observed_df.columns]
+    missing_virt = [c for c in group_cols if c not in virtual_df.columns]
+
+    if missing_obs:
+        raise KeyError(f"[FW residual ML] Observed data missing group cols: {missing_obs}")
+
+    if missing_virt:
+        raise KeyError(f"[FW residual ML] Virtual data missing group cols: {missing_virt}")
+
+    grouped = list(observed_df.groupby(group_cols, dropna=False))
+
+    logger.info(
+        f"[FW residual ML] Found {len(grouped)} groups "
+        f"using group_cols={group_cols}"
+    )
+
+    all_observed = []
+    all_virtual = []
+    all_top = []
+    summaries = []
+    n_models_fit = 0
+
+    grouped = list(observed_df.groupby(group_cols, dropna=False))
+    for group_idx, (group_key, obs_group) in enumerate(grouped, start=1):
+        if not isinstance(group_key, tuple):
+            group_key = (group_key,)
+
+        group_info = dict(zip(group_cols, group_key))
+        series = group_info.get("series", "Unknown")
+        core_hash = group_info.get("core_hash", "unknown_core")
+
+        logger.info(
+            f"[FW residual ML] "
+            f"Group {group_idx}/{len(grouped)} | "
+            f"series={series} | core={core_hash} | "
+            f"observed={len(obs_group)}"
+        )
+
+        mask = np.ones(len(virtual_df), dtype=bool)
+        for col, val in group_info.items():
+            mask &= virtual_df[col].astype(str).values == str(val)
+
+        virt_group = virtual_df[mask].copy()
+
+        group_dir = output_dir / safe_name(series) / f"core_{core_hash}"
+        group_dir.mkdir(parents=True, exist_ok=True)
+
+        result = run_fw_residual_ml_for_group(
+            observed_df=obs_group,
+            virtual_df=virt_group,
+            cfg=cfg,
+            output_dir=group_dir,
+            series=series,
+            core_hash=core_hash,
+        )
+
+        if result is None:
+            continue
+
+        n_models_fit += 1
+
+        logger.info(
+            f"[FW residual ML] Completed "
+            f"{n_models_fit} models so far"
+        )
+
+        all_observed.append(result["observed"])
+        all_virtual.append(result["virtual"])
+        all_top.append(result["top"])
+        summaries.append(result["summary"])
+
+    if not summaries:
+        logger.warning("[FW residual ML] No residual ML models were fitted.")
+        return None
+
+    observed_all = pd.concat(all_observed, ignore_index=True) if all_observed else pd.DataFrame()
+    virtual_all = pd.concat(all_virtual, ignore_index=True) if all_virtual else pd.DataFrame()
+    top_all = pd.concat(all_top, ignore_index=True) if all_top else pd.DataFrame()
+    summary_df = pd.DataFrame(summaries)
+
+    observed_all_csv = output_dir / "residual_ml_observed_predictions_all.csv"
+    virtual_all_csv = output_dir / "residual_ml_virtual_predictions_all.csv"
+    top_all_csv = output_dir / "residual_ml_top_candidates_all.csv"
+    summary_csv = output_dir / "residual_ml_model_summary.csv"
+
+    observed_all.to_csv(observed_all_csv, index=False)
+    virtual_all.to_csv(virtual_all_csv, index=False)
+    top_all.to_csv(top_all_csv, index=False)
+    summary_df.to_csv(summary_csv, index=False)
+
+    return {
+        "observed_predictions_csv": str(observed_all_csv),
+        "virtual_predictions_csv": str(virtual_all_csv),
+        "top_candidates_csv": str(top_all_csv),
+        "model_summary_csv": str(summary_csv),
+        "n_models": len(summary_df),
+        "n_virtual_scored": len(virtual_all),
+        "n_top_candidates": len(top_all),
     }
