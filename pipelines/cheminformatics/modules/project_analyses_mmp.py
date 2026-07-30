@@ -1,6 +1,4 @@
-import re
 import csv
-import logging
 import subprocess
 import json
 from pathlib import Path
@@ -18,7 +16,6 @@ from itertools import combinations
 
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, QED, rdRGroupDecomposition, Scaffolds
-from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from mpl_toolkits.axes_grid1 import ImageGrid
 
@@ -41,8 +38,6 @@ import matplotlib.cm as cm
 from PIL import Image, ImageDraw
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from pipeline.task_registry import register_task
-from pipeline.logger import setup_logger
 from modules.utils.sar_analysis_utils import (
     compute_pairwise_rgroup_residuals,
     draw_core_with_rgroup_labels,
@@ -58,6 +53,18 @@ from modules.utils.sar_analysis_utils import (
     summarise_top_pairwise_combinations,
 )
 
+from modules.utils.free_wilson_helpers import (
+    run_free_wilson_for_group, 
+    validate_observed_reconstruction,
+    plot_fw_predicted_vs_actual, 
+    plot_fw_residuals,
+    plot_fw_prediction_distributions,
+    plot_overall_virtual_reconstruction_diagnostics,
+    summarise_fw_prediction_distributions
+)
+
+from pipeline.task_registry import register_task
+from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def write_mmpdb_inputs(df, output_prefix, smiles_col="smiles", id_col="id", props_cols=None):
@@ -2079,6 +2086,7 @@ def rgroup_sar_tree(config, data=None):
             wide_record = {
                 "compound_id": compound_id,
                 "series": series,
+                "smiles": subrow["smiles"],
                 "core": core_smiles,
                 "labelled_core": labelled_core_smiles,
                 activity_col: subrow[activity_col],
@@ -2473,4 +2481,247 @@ def rgroup_sar_tree(config, data=None):
         "labelled_cores_csv": str(labelled_core_csv),
         "combination_heatmap_dir": str(combo_plot_dir),
         "global_combo_summary_csv": str(global_combo_csv) if global_combo_csv else None,
+    }
+
+@register_task(
+    "free_wilson_analysis",
+    category="Project-based analyses",
+    description="Fit vanilla Free-Wilson models from R-group matrices and predict observed/virtual activities."
+)
+def free_wilson_analysis(config, data=None):
+    cfg = config.get("free_wilson_analysis", {})
+
+    input_matrix = cfg.get(
+        "input_matrix",
+        "outputs/mmp/rgroup_sar_tree/rgroup_matrix.csv"
+    )
+    activity_col = cfg.get("activity_col", "pActivity")
+    output_dir = Path(cfg.get("output_dir", "outputs/mmp/free_wilson"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    group_cols = cfg.get("group_cols", ["series", "core"])
+    min_compounds_per_group = cfg.get("min_compounds_per_group", 10)
+    min_rgroup_levels_per_group = cfg.get("min_rgroup_levels_per_group", 2)
+
+    logger.info(f"[Free-Wilson] Loading R-group matrix: {input_matrix}")
+
+    if data is not None and isinstance(data, pd.DataFrame):
+        df = data.copy()
+    else:
+        df = pd.read_csv(input_matrix)
+
+    if activity_col not in df.columns:
+        raise KeyError(
+            f"[Free-Wilson] activity_col='{activity_col}' not found. "
+            f"Available columns: {df.columns.tolist()}"
+        )
+
+    missing_group_cols = [c for c in group_cols if c not in df.columns]
+    if missing_group_cols:
+        raise KeyError(
+            f"[Free-Wilson] Missing group_cols={missing_group_cols}. "
+            f"Available columns: {df.columns.tolist()}"
+        )
+
+    df[activity_col] = pd.to_numeric(df[activity_col], errors="coerce")
+    df = df.dropna(subset=[activity_col])
+
+    r_cols_all = get_rgroup_columns(df)
+    if not r_cols_all:
+        raise KeyError(
+            f"[Free-Wilson] No R-group columns found. "
+            f"Expected columns like R1, R2, R3. Available: {df.columns.tolist()}"
+        )
+
+    logger.info(
+        f"[Free-Wilson] Loaded {len(df)} rows with R-group columns: {r_cols_all}"
+    )
+
+    validate_reconstruction = cfg.get("validate_reconstruction", True)
+
+    reconstruction_validation_csv = None
+    reconstruction_summary_csv = None
+
+    if validate_reconstruction:
+        reconstruction_validation_csv, reconstruction_summary_csv = validate_observed_reconstruction(
+            matrix_df=df,
+            activity_col=activity_col,
+            output_dir=output_dir,
+            smiles_col=cfg.get("smiles_col", "smiles"),
+        )
+
+    df[activity_col] = pd.to_numeric(df[activity_col], errors="coerce")
+    df = df.dropna(subset=[activity_col])
+
+    all_observed = []
+    all_virtual = []
+    all_coefficients = []
+    summaries = []
+
+    #grouping/fitting
+
+    grouped = df.groupby(group_cols, dropna=False)
+
+    for group_key, group_df in grouped:
+        if not isinstance(group_key, tuple):
+            group_key = (group_key,)
+
+        group_info = dict(zip(group_cols, group_key))
+        series = group_info.get("series", "Unknown")
+        core = group_info.get("core", "Unknown")
+
+        core_hash = hashlib.sha1(str(core).encode()).hexdigest()[:8]
+        safe_series = safe_name(series)
+        group_output_dir = output_dir / safe_series / f"core_{core_hash}"
+        group_output_dir.mkdir(parents=True, exist_ok=True)
+
+        group_df = group_df.copy()
+
+        if len(group_df) < min_compounds_per_group:
+            logger.info(
+                f"[Free-Wilson] Skipping series={series}, core={core_hash}: "
+                f"n={len(group_df)} < min_compounds_per_group={min_compounds_per_group}"
+            )
+            continue
+
+        r_cols = get_rgroup_columns(group_df)
+
+        # Keep only R columns with at least min_rgroup_levels_per_group non-null levels.
+        usable_r_cols = []
+        for r in r_cols:
+            n_levels = group_df[r].dropna().astype(str).nunique()
+            if n_levels >= min_rgroup_levels_per_group:
+                usable_r_cols.append(r)
+
+        if len(usable_r_cols) < 1:
+            logger.info(
+                f"[Free-Wilson] Skipping series={series}, core={core_hash}: "
+                f"no usable R columns after min_rgroup_levels_per_group={min_rgroup_levels_per_group}"
+            )
+            continue
+
+        logger.info(
+            f"[Free-Wilson] Fitting series={series}, core={core_hash}, "
+            f"n={len(group_df)}, R-cols={usable_r_cols}"
+        )
+
+        result = run_free_wilson_for_group(
+            group_df=group_df,
+            r_cols=usable_r_cols,
+            reconstruction_r_cols=r_cols,
+            activity_col=activity_col,
+            cfg=cfg,
+            output_dir=group_output_dir,
+            series=series,
+            core=core,
+        )
+
+        if result is None:
+            continue
+
+        observed_df = result["observed_predictions"].copy()
+        virtual_df = result["virtual_predictions"].copy()
+        coeff_df = result["coefficients"].copy()
+        summary = result["summary"]
+
+        observed_df["core_hash"] = core_hash
+        observed_df["fw_group_dir"] = str(group_output_dir)
+
+        if virtual_df is not None and not virtual_df.empty:
+            virtual_df["fw_group_dir"] = str(group_output_dir)
+
+        all_observed.append(observed_df)
+
+        if virtual_df is not None and not virtual_df.empty:
+            all_virtual.append(virtual_df)
+
+        all_coefficients.append(coeff_df)
+        summaries.append(summary)
+
+    if not summaries:
+        logger.warning("[Free-Wilson] No Free-Wilson models were fitted.")
+        return None
+
+    observed_all_df = pd.concat(all_observed, ignore_index=True) if all_observed else pd.DataFrame()
+    virtual_all_df = pd.concat(all_virtual, ignore_index=True) if all_virtual else pd.DataFrame()
+    coeff_all_df = pd.concat(all_coefficients, ignore_index=True) if all_coefficients else pd.DataFrame()
+    summary_df = pd.DataFrame(summaries)
+
+    observed_all_csv = output_dir / "fw_observed_predictions_all.csv"
+    virtual_all_csv = output_dir / "fw_virtual_predictions_all.csv"
+    coeff_all_csv = output_dir / "fw_coefficients_all.csv"
+    summary_csv = output_dir / "fw_model_summary.csv"
+
+    observed_all_df.to_csv(observed_all_csv, index=False)
+    virtual_all_df.to_csv(virtual_all_csv, index=False)
+    coeff_all_df.to_csv(coeff_all_csv, index=False)
+    summary_df.to_csv(summary_csv, index=False)
+
+    overall_reconstruction_plot = output_dir / "fw_virtual_reconstruction_diagnostics_all.png"
+
+    plot_overall_virtual_reconstruction_diagnostics(
+        virtual_df=virtual_all_df,
+        output_path=overall_reconstruction_plot,
+        top_n_cores=cfg.get("diagnostics", {}).get("top_n_failure_cores", 30),
+    )
+
+    logger.info(f"[Free-Wilson] Observed predictions saved: {observed_all_csv}")
+    logger.info(f"[Free-Wilson] Virtual predictions saved: {virtual_all_csv}")
+    logger.info(f"[Free-Wilson] Coefficients saved: {coeff_all_csv}")
+    logger.info(f"[Free-Wilson] Model summary saved: {summary_csv}")
+
+    # Global observed predicted-vs-actual diagnostic
+    global_pred_plot = output_dir / "fw_predicted_vs_actual_all.png"
+    plot_fw_predicted_vs_actual(
+        observed_all_df,
+        activity_col=activity_col,
+        pred_col="fw_predicted_activity",
+        output_path=global_pred_plot,
+        title="Free-Wilson predicted vs actual | all fitted groups",
+    )
+
+    global_residual_plot = output_dir / "fw_residual_diagnostics_all.png"
+    plot_fw_residuals(
+        observed_all_df,
+        pred_col="fw_predicted_activity",
+        residual_col="fw_residual",
+        output_path=global_residual_plot,
+        title="Free-Wilson residual diagnostics | all fitted groups",
+    )
+
+    global_distribution_plot = output_dir / "fw_prediction_distributions_observed_vs_virtual.png"
+
+    plot_fw_prediction_distributions(
+        observed_df=observed_all_df,
+        virtual_df=virtual_all_df,
+        output_path=global_distribution_plot,
+        pred_col="fw_predicted_activity",
+        actual_col=activity_col,
+    )
+
+    global_distribution_summary_csv = output_dir / "fw_prediction_distribution_summary.csv"
+
+    summarise_fw_prediction_distributions(
+        observed_df=observed_all_df,
+        virtual_df=virtual_all_df,
+        output_path=global_distribution_summary_csv,
+        pred_col="fw_predicted_activity",
+        actual_col=activity_col,
+    )
+
+    return {
+        "observed_predictions_csv": str(observed_all_csv),
+        "virtual_predictions_csv": str(virtual_all_csv),
+        "coefficients_csv": str(coeff_all_csv),
+        "model_summary_csv": str(summary_csv),
+        "predicted_vs_actual_png": str(global_pred_plot),
+        "residual_diagnostics_png": str(global_residual_plot),
+        "prediction_distribution_png": str(global_distribution_plot),
+        "prediction_distribution_summary_csv": str(global_distribution_summary_csv),
+        "virtual_reconstruction_diagnostics_png": str(overall_reconstruction_plot),
+        "reconstruction_validation_csv": str(reconstruction_validation_csv) if reconstruction_validation_csv else None,
+        "reconstruction_summary_csv": str(reconstruction_summary_csv) if reconstruction_summary_csv else None,
+        "n_models": len(summary_df),
+        "n_observed_predictions": len(observed_all_df),
+        "n_virtual_predictions": len(virtual_all_df),
     }
