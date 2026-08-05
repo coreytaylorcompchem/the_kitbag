@@ -4,6 +4,7 @@ import joblib
 import json
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 from tqdm import trange
@@ -20,6 +21,89 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 ########## HELPERS ##########
+
+def extract_metadata_from_data_list(data_list):
+
+    metadata = []
+
+    for i, data in enumerate(data_list):
+
+        smi = getattr(data, "smiles", None)
+
+        if smi is None:
+            raise AttributeError(
+                "Data object missing '.smiles'"
+            )
+
+        idx = getattr(data, "idx", i)
+
+        metadata.append(
+            {
+                "idx": int(idx),
+                "smiles": str(smi),
+            }
+        )
+
+    return metadata
+
+
+def save_split_metadata(context, pred_dir, train_list=None, val_list=None):
+    """
+    Save the exact train/val SMILES used for this model.
+
+    This is required for OOD/applicability-domain evaluation.
+    """
+
+    pred_dir = Path(pred_dir)
+    pred_dir.mkdir(parents=True, exist_ok=True)
+
+    if train_list is None:
+        train_list = context["train_list"]
+
+    if val_list is None:
+        val_list = context["val_list"]
+
+    train_metadata = extract_metadata_from_data_list(
+        train_list
+    )
+
+    val_metadata = extract_metadata_from_data_list(
+        val_list
+    )
+
+    context["train_metadata"] = train_metadata
+    context["val_metadata"] = val_metadata
+
+    pd_train = pd.DataFrame(train_metadata)
+    pd_train.insert(
+        0,
+        "split",
+        "train"
+    )
+
+    pd_val = pd.DataFrame(val_metadata)
+    pd_val.insert(
+        0,
+        "split",
+        "val"
+    )
+
+    split_df = pd.concat(
+        [
+            pd.DataFrame(pd_train),
+            pd.DataFrame(pd_val),
+        ],
+        ignore_index=True,
+    )
+
+    split_df.to_csv(
+        pred_dir / "split_smiles.csv",
+        index=False
+    )
+
+    logger.info(
+        f"Saved split SMILES metadata to {pred_dir / 'split_smiles.csv'}"
+    )
 
 # =========================
 # COLLATE
@@ -795,26 +879,6 @@ def apply_curriculum_freezing(model, stage_idx, curriculum_cfg, context):
             f"Unknown curriculum strategy: {strategy}"
         )
 
-    # # -------------------------
-    # # Logging
-    # # -------------------------
-    # trainable = sum(
-    #     p.numel()
-    #     for p in model.parameters()
-    #     if p.requires_grad
-    # )
-
-    # total = sum(
-    #     p.numel()
-    #     for p in model.parameters()
-    # )
-
-    # logger.info(
-    #     f"Stage {stage_idx}: "
-    #     f"{trainable:,}/{total:,} params trainable "
-    #     f"({100*trainable/total:.1f}%)"
-    # )
-
 def filter_dataset_for_tasks(data_list, task_indices):
     filtered = []
 
@@ -1285,6 +1349,13 @@ def train_curriculum(context, config, params):
         np.save(pred_dir / "y_pred.npy", y_pred)
         np.save(pred_dir / "y_true.npy", y_true)
 
+        save_split_metadata(
+            context=context,
+            pred_dir=pred_dir,
+            train_list=stage_train_list,
+            val_list=stage_val_list,
+        )
+
         logger.info(f"Saved predictions to {pred_dir}")
 
         model_path = Path(config.get("model_path", "outputs/mtl_adme/models/model.pth"))
@@ -1699,6 +1770,11 @@ def train(context, config):
 
             np.save(pred_dir / "y_pred.npy", y_pred)
             np.save(pred_dir / "y_true.npy", y_true)
+
+            save_split_metadata(
+                context=context,
+                pred_dir=pred_dir
+            )
 
             logger.info(f"Saved best predictions to {pred_dir}")
 

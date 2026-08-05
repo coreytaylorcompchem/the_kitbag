@@ -4,11 +4,11 @@ from torch_geometric.data import Data
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 from rdkit import DataStructs
-from rdkit.Chem import Crippen, rdPartialCharges
+from rdkit.Chem import Crippen
 
 from sklearn.preprocessing import StandardScaler, normalize
 from sklearn.decomposition import PCA
-from joblib import Parallel, delayed
+# from joblib import Parallel, delayed
 
 from pipeline.logger import setup_logger
 

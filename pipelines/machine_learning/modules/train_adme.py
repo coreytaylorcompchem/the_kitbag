@@ -1,13 +1,13 @@
 import importlib
-import json
+# import json
 
 import pandas as pd
 import numpy as np
-from joblib import Parallel, delayed
+# from joblib import Parallel, delayed
 from tqdm import tqdm
 
 from rdkit import Chem
-from rdkit.Chem import AllChem
+# from rdkit.Chem import AllChem
 from rdkit.Chem import Descriptors
 from rdkit.Chem import QED
 
@@ -951,11 +951,16 @@ def featurise_smiles(config, context):
         ):
             g = featuriser(smi, label=y_vec, idx=i)
             if g is not None:
+                g.smiles = smi
                 graphs.append(g)
                 valid_indices.append(i)
 
         
         context["valid_indices"] = valid_indices
+        context["valid_smiles"] = [
+            df.iloc[i][smiles_col]
+            for i in valid_indices
+        ]
         num_tasks = len(label_cols)
 
     # SINGLE-TASK (backward compatible)
@@ -967,6 +972,7 @@ def featurise_smiles(config, context):
         ):
             g = featuriser(smi, label=y, idx=i)
             if g is not None:
+                g.smiles = smi
                 graphs.append(g)
 
         num_tasks = 1
