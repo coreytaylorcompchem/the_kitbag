@@ -1423,7 +1423,7 @@ class ProteinProteinInteractionFingerprintTask:
         )
 
         ax.set_title(
-            f"Protein–protein interaction fingerprint (segment name (CHAIN IDS)\n"
+            f"Protein–protein interaction fingerprint (segment name (CHAIN IDS))\n"
             f"{partner_label} ({partner_chain_str}) "
             f"vs "
             f"{receptor_label} ({receptor_chain_str})"

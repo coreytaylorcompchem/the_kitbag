@@ -227,6 +227,39 @@ class MDPostProcessingWorkflow:
 
             ppi_cfg = post_cfg.get("protein_protein_interactions", {})
 
+            if not ppi_cfg:
+                logger.warning(
+                    "No 'post_processing.protein_protein_interactions' block found. "
+                    "Using fallback/default PPI system definition."
+                )
+
+            systems = ppi_cfg.get("systems")
+
+            if not systems:
+                logger.warning(
+                    "No PPI systems defined under "
+                    "'post_processing.protein_protein_interactions.systems'. "
+                    "Using fallback default_ppi system: receptor_chains=['A'], partner_chains=['B']."
+                )
+                systems = [
+                    {
+                        "name": "default_ppi",
+                        "receptor_chains": ["A"],
+                        "partner_chains": ["B"],
+                    }
+                ]
+
+            logger.info(f"Configured PPI systems: {[s.get('name') for s in systems]}")
+            for s in systems:
+                logger.info(
+                    "PPI system '%s': receptor=%s chains=%s; partner=%s chains=%s",
+                    s.get("name"),
+                    s.get("receptor_name", "Receptor"),
+                    s.get("receptor_chains"),
+                    s.get("partner_name", "Partner"),
+                    s.get("partner_chains"),
+                )
+
             task = ProteinProteinInteractionFingerprintTask(
                 topology=topology,
                 trajectory=wrapped_trajectories or trajectories,
