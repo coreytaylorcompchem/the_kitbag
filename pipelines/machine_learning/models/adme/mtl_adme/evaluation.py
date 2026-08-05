@@ -376,6 +376,16 @@ def plot_ood_diagnostics(pred_long_df, plot_dir):
       3. MAE by OOD bin
     """
 
+    MAX_POINTS = 20000
+
+    if len(pred_long_df) > MAX_POINTS:
+        plot_df = pred_long_df.sample(
+            n=MAX_POINTS,
+            random_state=42,
+        )
+    else:
+        plot_df = pred_long_df
+
     ood_plot_dir = plot_dir / "ood"
     ood_plot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -384,7 +394,7 @@ def plot_ood_diagnostics(pred_long_df, plot_dir):
     # -------------------------
     plt.figure(figsize=(7, 5))
     sns.scatterplot(
-        data=pred_long_df,
+        data=plot_df,
         x="nearest_train_tanimoto",
         y="abs_error",
         hue="ood_bin",
@@ -397,7 +407,8 @@ def plot_ood_diagnostics(pred_long_df, plot_dir):
         x="nearest_train_tanimoto",
         y="abs_error",
         scatter=False,
-        lowess=True,
+        lowess=False,
+        ci=False,
         color="black",
     )
     plt.xlabel("Nearest train Tanimoto")
@@ -415,7 +426,7 @@ def plot_ood_diagnostics(pred_long_df, plot_dir):
     # -------------------------
     plt.figure(figsize=(7, 5))
     sns.scatterplot(
-        data=pred_long_df,
+        data=plot_df,
         x="ood_score",
         y="abs_error",
         hue="ood_bin",
@@ -427,7 +438,8 @@ def plot_ood_diagnostics(pred_long_df, plot_dir):
         x="ood_score",
         y="abs_error",
         scatter=False,
-        lowess=True,
+        lowess=False,
+        ci=False,
         color="black",
     )
     plt.xlabel("OOD score")
@@ -492,12 +504,20 @@ def plot_per_task_ood_panels(pred_long_df, plot_dir, task_names):
         ax = axes[i]
         task_df = pred_long_df[pred_long_df["task"] == task]
 
+        if len(task_df) > 5000:
+            task_plot_df = task_df.sample(
+                n=5000,
+                random_state=42,
+            )
+        else:
+            task_plot_df = task_df
+
         if len(task_df) < 3:
             ax.axis("off")
             continue
 
         sns.scatterplot(
-            data=task_df,
+            data=task_plot_df,
             x="ood_score",
             y="abs_error",
             hue="ood_bin",
@@ -513,7 +533,8 @@ def plot_per_task_ood_panels(pred_long_df, plot_dir, task_names):
                 x="ood_score",
                 y="abs_error",
                 scatter=False,
-                lowess=True,
+                lowess=False,
+                ci=False,
                 color="black",
                 ax=ax,
             )
