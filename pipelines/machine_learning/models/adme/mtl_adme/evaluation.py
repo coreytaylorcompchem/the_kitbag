@@ -15,7 +15,262 @@ from models.adme.mtl_adme.ood import compute_ood_features
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
+palette = {
+    "in_domain": "#7C3AED",
+    "moderate_ood": "#1D4ED8",
+    "high_ood": "#0F766E",
+    "unknown": "#9CA3AF",
+}
+
+hue_order = [
+    "in_domain",
+    "moderate_ood",
+    "high_ood",
+    "unknown",
+]
+
 #### HELPERS
+
+def metrics_by_molecule_group(
+    y_true,
+    y_pred,
+    task_names,
+    group_values,
+    group_name,
+    min_n=5,
+):
+    """
+    Compute per-task metrics for molecule-level groups without building
+    a molecule-task long dataframe.
+
+    Parameters
+    ----------
+    group_values : array-like, shape [n_molecules]
+        One group label per molecule, e.g. ood_bin or known_scaffold.
+    """
+
+    rows = []
+
+    group_values = np.asarray(group_values)
+
+    for task_idx, task in enumerate(task_names):
+        task_true = y_true[:, task_idx]
+        task_pred = y_pred[:, task_idx]
+
+        valid_task = ~np.isnan(task_true)
+
+        if valid_task.sum() == 0:
+            continue
+
+        for group in pd.unique(group_values):
+            group_mask = group_values == group
+            mask = valid_task & group_mask
+
+            if mask.sum() < min_n:
+                continue
+
+            metrics = compute_metrics(
+                task_true[mask],
+                task_pred[mask],
+            )
+
+            rows.append({
+                "task": task,
+                group_name: group,
+                "n_samples": int(mask.sum()),
+                **metrics,
+            })
+
+    return pd.DataFrame(rows)
+
+def overall_metrics_by_molecule_group(
+    y_true,
+    y_pred,
+    group_values,
+    group_name,
+    min_n=20,
+):
+    """
+    Compute pooled all-task metrics by molecule-level group without
+    constructing a long dataframe.
+
+    This loops through groups and flattens only the relevant block.
+    """
+
+    rows = []
+
+    group_values = np.asarray(group_values)
+
+    for group in pd.unique(group_values):
+        mol_mask = group_values == group
+
+        if mol_mask.sum() == 0:
+            continue
+
+        yt = y_true[mol_mask, :]
+        yp = y_pred[mol_mask, :]
+
+        valid = ~np.isnan(yt)
+
+        if valid.sum() < min_n:
+            continue
+
+        metrics = compute_metrics(
+            yt[valid],
+            yp[valid],
+        )
+
+        rows.append({
+            "task": "__all_tasks__",
+            group_name: group,
+            "n_samples": int(valid.sum()),
+            **metrics,
+        })
+
+    return pd.DataFrame(rows)
+
+def metrics_by_continuous_molecule_feature(
+    y_true,
+    y_pred,
+    task_names,
+    values,
+    feature_name,
+    bins,
+    labels=None,
+    min_n=5,
+):
+    """
+    Per-task metrics by bins of a molecule-level continuous feature.
+    """
+
+    values = np.asarray(values, dtype=float)
+
+    if labels is None:
+        labels = [str(i) for i in range(len(bins) - 1)]
+
+    binned = pd.cut(
+        values,
+        bins=bins,
+        labels=labels,
+        include_lowest=True,
+    )
+
+    per_task = metrics_by_molecule_group(
+        y_true=y_true,
+        y_pred=y_pred,
+        task_names=task_names,
+        group_values=np.asarray(binned).astype(object),
+        group_name=f"{feature_name}_bin",
+        min_n=min_n,
+    )
+
+    overall = overall_metrics_by_molecule_group(
+        y_true=y_true,
+        y_pred=y_pred,
+        group_values=np.asarray(binned).astype(object),
+        group_name=f"{feature_name}_bin",
+        min_n=min_n,
+    )
+
+    return pd.concat(
+        [overall, per_task],
+        ignore_index=True,
+    )
+
+def metrics_by_quantile_molecule_feature(
+    y_true,
+    y_pred,
+    task_names,
+    values,
+    feature_name,
+    q=5,
+    min_n=5,
+):
+    """
+    Metrics by quantile bins of a molecule-level continuous feature.
+    """
+
+    values = pd.Series(values)
+
+    binned = pd.qcut(
+        values,
+        q=q,
+        duplicates="drop",
+    )
+
+    per_task = metrics_by_molecule_group(
+        y_true=y_true,
+        y_pred=y_pred,
+        task_names=task_names,
+        group_values=np.asarray(binned).astype(object),
+        group_name=f"{feature_name}_bin",
+        min_n=min_n,
+    )
+
+    overall = overall_metrics_by_molecule_group(
+        y_true=y_true,
+        y_pred=y_pred,
+        group_values=np.asarray(binned).astype(object),
+        group_name=f"{feature_name}_bin",
+        min_n=min_n,
+    )
+
+    return pd.concat(
+        [overall, per_task],
+        ignore_index=True,
+    )
+
+def build_prediction_sample_table(
+    y_true,
+    y_pred,
+    task_names,
+    val_smiles,
+    ood_df,
+    max_rows=100000,
+    random_seed=42,
+):
+    """
+    Build a sampled long-format prediction table for plotting only.
+
+    This avoids materialising all molecule-task observations.
+    """
+
+    rng = np.random.default_rng(random_seed)
+
+    valid_pairs = np.argwhere(~np.isnan(y_true))
+
+    if len(valid_pairs) == 0:
+        return pd.DataFrame()
+
+    if len(valid_pairs) > max_rows:
+        chosen = rng.choice(
+            len(valid_pairs),
+            size=max_rows,
+            replace=False,
+        )
+        valid_pairs = valid_pairs[chosen]
+
+    rows = []
+
+    for mol_idx, task_idx in valid_pairs:
+        yt = y_true[mol_idx, task_idx]
+        yp = y_pred[mol_idx, task_idx]
+        residual = yp - yt
+
+        ood_row = ood_df.iloc[int(mol_idx)].to_dict()
+
+        rows.append({
+            "mol_index": int(mol_idx),
+            "smiles": val_smiles[int(mol_idx)],
+            "task": task_names[int(task_idx)],
+            "y_true": float(yt),
+            "y_pred": float(yp),
+            "residual": float(residual),
+            "abs_error": float(abs(residual)),
+            **ood_row,
+        })
+
+    return pd.DataFrame(rows)
 
 def compute_metrics(y_true, y_pred):
 
@@ -125,6 +380,7 @@ def build_prediction_long_table(
     return pd.DataFrame(rows)
 
 
+
 def compute_metrics_by_ood_bin(pred_long_df):
     rows = []
 
@@ -147,6 +403,8 @@ def compute_metrics_by_ood_bin(pred_long_df):
             })
 
     return pd.DataFrame(rows)
+
+
 
 
 def compute_overall_metrics_by_ood_bin(pred_long_df):
@@ -196,50 +454,50 @@ def metrics_by_scaffold(pred_long_df):
 
     return pd.DataFrame(rows)
 
-def metrics_by_cluster_size(
-    pred_long_df,
-    bins=(0,5,20,100,np.inf),
-):
-    """
-    Evaluate prediction quality as a function of local
-    chemical density.
-    """
+# def metrics_by_cluster_size(
+#     pred_long_df,
+#     bins=(0,5,20,100,np.inf),
+# ):
+#     """
+#     Evaluate prediction quality as a function of local
+#     chemical density.
+#     """
 
-    df = pred_long_df.copy()
+#     df = pred_long_df.copy()
 
-    labels = [
-        "<5",
-        "5-20",
-        "20-100",
-        ">100",
-    ]
+#     labels = [
+#         "<5",
+#         "5-20",
+#         "20-100",
+#         ">100",
+#     ]
 
-    df["cluster_bin"] = pd.cut(
-        df["cluster_size"],
-        bins=bins,
-        labels=labels,
-        include_lowest=True,
-    )
+#     df["cluster_bin"] = pd.cut(
+#         df["cluster_size"],
+#         bins=bins,
+#         labels=labels,
+#         include_lowest=True,
+#     )
 
-    rows = []
+#     rows = []
 
-    for cluster, sub in df.groupby("cluster_bin"):
+#     for cluster, sub in df.groupby("cluster_bin"):
 
-        if len(sub) < 3:
-            continue
+#         if len(sub) < 3:
+#             continue
 
-        metrics = compute_metrics(
-            sub["y_true"],
-            sub["y_pred"],
-        )
+#         metrics = compute_metrics(
+#             sub["y_true"],
+#             sub["y_pred"],
+#         )
 
-        rows.append({
-            "cluster_bin": cluster,
-            "n_samples": len(sub),
-            **metrics
-        })
+#         rows.append({
+#             "cluster_bin": cluster,
+#             "n_samples": len(sub),
+#             **metrics
+#         })
 
-    return pd.DataFrame(rows)
+#     return pd.DataFrame(rows)
 
 def metrics_by_similarity(
     pred_long_df,
@@ -322,23 +580,53 @@ def metrics_by_physchem_distance(
 
     return pd.DataFrame(rows)
 
-def compute_error_correlations(pred_long_df):
+def compute_error_correlations(
+    pred_long_df,
+    candidate_features=None,
+):
     """
-    Correlation between error and each OOD descriptor.
+    Correlation between absolute error and available OOD descriptors.
+
+    This version is robust to optional OOD features being absent, e.g.
+    cluster_size after removing Butina clustering for large datasets.
     """
 
-    features = [
-        "nearest_train_tanimoto",
-        "mean_top5_train_tanimoto",
-        "physchem_robust_distance",
-        "cluster_size",
-        "ood_score",
-    ]
+    if candidate_features is None:
+        candidate_features = [
+            "nearest_train_tanimoto",
+            "mean_top5_train_tanimoto",
+            "physchem_robust_distance",
+            "n_train_neighbors_ge_0.4",
+            "n_train_neighbors_ge_0.5",
+            "n_train_neighbors_ge_0.6",
+            "n_train_neighbors_ge_0.7",
+            "fraction_train_neighbors_ge_0.4",
+            "fraction_train_neighbors_ge_0.5",
+            "fraction_train_neighbors_ge_0.6",
+            "fraction_train_neighbors_ge_0.7",
+            "ood_score",
+            "ood_percentile",
+        ]
 
     rows = []
 
-    for feature in features:
+    available_features = [
+        f for f in candidate_features
+        if f in pred_long_df.columns
+    ]
 
+    missing_features = [
+        f for f in candidate_features
+        if f not in pred_long_df.columns
+    ]
+
+    if missing_features:
+        logger.debug(
+            "Skipping unavailable OOD correlation features: "
+            f"{missing_features}"
+        )
+
+    for feature in available_features:
         df = pred_long_df[
             [feature, "abs_error"]
         ].dropna()
@@ -346,24 +634,27 @@ def compute_error_correlations(pred_long_df):
         if len(df) < 5:
             continue
 
-        rho = spearmanr(
-            df[feature],
-            df["abs_error"],
-        ).correlation
+        try:
+            rho = spearmanr(
+                df[feature],
+                df["abs_error"],
+            ).correlation
+        except Exception:
+            rho = np.nan
 
-        r = pearsonr(
-            df[feature],
-            df["abs_error"],
-        )[0]
+        try:
+            r = pearsonr(
+                df[feature],
+                df["abs_error"],
+            )[0]
+        except Exception:
+            r = np.nan
 
         rows.append({
-
             "feature": feature,
-
             "pearson": r,
-
             "spearman": rho,
-
+            "n_samples": len(df),
         })
 
     return pd.DataFrame(rows)
@@ -398,6 +689,8 @@ def plot_ood_diagnostics(pred_long_df, plot_dir):
         x="nearest_train_tanimoto",
         y="abs_error",
         hue="ood_bin",
+        hue_order=hue_order,
+        palette=palette,
         alpha=0.4,
         s=20,
     )
@@ -430,6 +723,8 @@ def plot_ood_diagnostics(pred_long_df, plot_dir):
         x="ood_score",
         y="abs_error",
         hue="ood_bin",
+        hue_order=hue_order,
+        palette=palette,
         alpha=0.4,
         s=20,
     )
@@ -521,10 +816,12 @@ def plot_per_task_ood_panels(pred_long_df, plot_dir, task_names):
             x="ood_score",
             y="abs_error",
             hue="ood_bin",
+            hue_order=hue_order,
+            palette=palette,            
             alpha=0.5,
             s=18,
             ax=ax,
-            legend=False,
+            legend=(i == 0),
         )
 
         try:
@@ -541,6 +838,17 @@ def plot_per_task_ood_panels(pred_long_df, plot_dir, task_names):
         except Exception:
             pass
 
+        handles, labels = axes[0].get_legend_handles_labels()
+
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.02),
+            ncol=len(labels),
+            frameon=False,
+        )
+        
         ax.set_title(task)
         ax.set_xlabel("OOD score")
         ax.set_ylabel("Absolute error")
@@ -549,7 +857,7 @@ def plot_per_task_ood_panels(pred_long_df, plot_dir, task_names):
     for j in range(i + 1, len(axes)):
         fig.delaxes(axes[j])
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.05, 1, 1])
     plt.savefig(
         ood_plot_dir / "per_task_abs_error_vs_ood_score.png",
         dpi=300
@@ -755,31 +1063,51 @@ def plot_error_correlations(
 ):
     """
     Barplot of Pearson and Spearman correlation between
-    OOD descriptors and prediction error.
+    available OOD descriptors and prediction error.
     """
 
-    if len(corr_df) == 0:
+    if corr_df is None or len(corr_df) == 0:
+        logger.info("No OOD feature correlations to plot")
         return
 
-    corr_df = corr_df.melt(
+    required_cols = {
+        "feature",
+        "pearson",
+        "spearman",
+    }
+
+    missing = required_cols - set(corr_df.columns)
+
+    if missing:
+        logger.warning(
+            "Cannot plot OOD feature correlations because columns are missing: "
+            f"{sorted(missing)}"
+        )
+        return
+
+    corr_long = corr_df.melt(
         id_vars="feature",
         value_vars=["pearson", "spearman"],
         var_name="metric",
         value_name="correlation",
     )
 
-    plt.figure(figsize=(8,5))
+    plt.figure(figsize=(8, 5))
 
     sns.barplot(
-        data=corr_df,
+        data=corr_long,
         x="feature",
         y="correlation",
         hue="metric",
     )
 
     plt.xticks(rotation=30, ha="right")
-
     plt.tight_layout()
+
+    plot_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     plt.savefig(
         plot_dir / "ood_feature_correlations.png",
@@ -1063,10 +1391,31 @@ def evaluate(context, config):
     # =========================
     # 2. TASK CORRELATION HEATMAP
     # =========================
-    df_tasks = pd.DataFrame(y_true, columns=task_names)
+    max_corr_rows = int(config.get("max_corr_rows", 50000))
+
+    if y_true.shape[0] > max_corr_rows:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(
+            y_true.shape[0],
+            size=max_corr_rows,
+            replace=False,
+        )
+        corr_data = y_true[idx, :]
+    else:
+        corr_data = y_true
+
+    df_tasks = pd.DataFrame(
+        corr_data,
+        columns=task_names,
+    )
 
     plt.figure(figsize=(6, 5))
-    sns.heatmap(df_tasks.corr(), annot=True, cmap="coolwarm_r", center=0)
+    sns.heatmap(
+        df_tasks.corr(),
+        annot=True,
+        cmap="coolwarm_r",
+        center=0,
+    )
     plt.title("Task correlation matrix")
     plt.tight_layout()
     plt.savefig(plot_dir / "task_correlation.png", dpi=300)
@@ -1204,7 +1553,7 @@ def evaluate(context, config):
 
         if len(val_smiles) != y_true.shape[0]:
             raise ValueError(
-                "Number of validation SMILES does not match y_true rows: "
+                "Number of n SMILES does not match y_true rows: "
                 f"len(val_smiles)={len(val_smiles)}, "
                 f"y_true.shape[0]={y_true.shape[0]}. "
                 "Check that validation predictions were generated with "
@@ -1212,6 +1561,10 @@ def evaluate(context, config):
                 "to this prediction run."
             )
 
+        # --------------------------------------------------
+        # Molecule-level OOD features only.
+        # One row per validation molecule.
+        # --------------------------------------------------
         ood_df = compute_ood_features(
             query_smiles=val_smiles,
             train_smiles=train_smiles,
@@ -1221,190 +1574,245 @@ def evaluate(context, config):
         ood_df.insert(
             0,
             "smiles",
-            val_smiles
+            val_smiles,
         )
 
         ood_df.to_csv(
             plot_dir / "ood_features_by_molecule.csv",
-            index=False
+            index=False,
         )
 
-        pred_long_df = build_prediction_long_table(
+        logger.info(
+            f"Wrote molecule-level OOD features: "
+            f"{plot_dir / 'ood_features_by_molecule.csv'}"
+        )
+
+        # --------------------------------------------------
+        # Metrics by OOD bin, no long dataframe.
+        # --------------------------------------------------
+        ood_bin_values = ood_df["ood_bin"].values
+
+        per_task_ood = metrics_by_molecule_group(
             y_true=y_true,
             y_pred=y_pred,
             task_names=task_names,
-            val_smiles=val_smiles,
-            ood_df=ood_df,
+            group_values=ood_bin_values,
+            group_name="ood_bin",
+            min_n=5,
         )
 
-        # Convert raw OOD score into dataset-relative percentile
-        # 0 = most in-domain
-        # 100 = most OOD
-
-        pred_long_df["ood_percentile"] = (
-            pred_long_df["ood_score"]
-            .rank(pct=True)
-            * 100
-        )
-
-        pred_long_df.to_csv(
-            plot_dir / "predictions_with_ood_scores_long.csv",
-            index=False
-        )
-
-        metrics_by_ood_bin = compute_metrics_by_ood_bin(
-            pred_long_df
-        )
-
-        overall_by_ood_bin = compute_overall_metrics_by_ood_bin(
-            pred_long_df
+        overall_ood = overall_metrics_by_molecule_group(
+            y_true=y_true,
+            y_pred=y_pred,
+            group_values=ood_bin_values,
+            group_name="ood_bin",
+            min_n=20,
         )
 
         metrics_by_ood_bin = pd.concat(
-            [overall_by_ood_bin, metrics_by_ood_bin],
+            [overall_ood, per_task_ood],
             ignore_index=True,
         )
 
         metrics_by_ood_bin.to_csv(
             plot_dir / "metrics_by_ood_bin.csv",
-            index=False
+            index=False,
         )
 
-        scaffold_metrics = metrics_by_scaffold(pred_long_df)
+        # --------------------------------------------------
+        # Known vs novel scaffold.
+        # --------------------------------------------------
+        scaffold_metrics_per_task = metrics_by_molecule_group(
+            y_true=y_true,
+            y_pred=y_pred,
+            task_names=task_names,
+            group_values=ood_df["known_scaffold"].values,
+            group_name="known_scaffold",
+            min_n=5,
+        )
+
+        scaffold_metrics_overall = overall_metrics_by_molecule_group(
+            y_true=y_true,
+            y_pred=y_pred,
+            group_values=ood_df["known_scaffold"].values,
+            group_name="known_scaffold",
+            min_n=20,
+        )
+
+        scaffold_metrics = pd.concat(
+            [scaffold_metrics_overall, scaffold_metrics_per_task],
+            ignore_index=True,
+        )
 
         scaffold_metrics.to_csv(
             plot_dir / "metrics_by_scaffold.csv",
             index=False,
         )
 
-        plot_metric_table(
-            scaffold_metrics,
-            "known_scaffold",
-            plot_dir / "ood",
-            "scaffold_metrics.png",
-            "Known vs Novel Scaffolds",
+        # --------------------------------------------------
+        # Similarity bins.
+        # --------------------------------------------------
+        similarity_metrics = metrics_by_continuous_molecule_feature(
+            y_true=y_true,
+            y_pred=y_pred,
+            task_names=task_names,
+            values=ood_df["nearest_train_tanimoto"].values,
+            feature_name="similarity",
+            bins=np.linspace(0.0, 1.0, 6),
+            labels=[
+                "0.0-0.2",
+                "0.2-0.4",
+                "0.4-0.6",
+                "0.6-0.8",
+                "0.8-1.0",
+            ],
+            min_n=5,
         )
-
-        cluster_metrics = metrics_by_cluster_size(pred_long_df)
-
-        cluster_metrics.to_csv(
-            plot_dir / "metrics_by_cluster_size.csv",
-            index=False,
-        )
-
-        plot_metric_table(
-            cluster_metrics,
-            "cluster_bin",
-            plot_dir / "ood",
-            "cluster_density_metrics.png",
-            "Prediction Quality vs Cluster Density",
-        )
-
-        similarity_metrics = metrics_by_similarity(pred_long_df)
 
         similarity_metrics.to_csv(
             plot_dir / "metrics_by_similarity.csv",
             index=False,
         )
 
-        plot_metric_table(
-            similarity_metrics,
-            "similarity_bin",
-            plot_dir / "ood",
-            "similarity_metrics.png",
-            "Prediction Quality vs Nearest Neighbour Similarity",
+        # --------------------------------------------------
+        # Physchem-distance quantile bins.
+        # --------------------------------------------------
+        distance_metrics = metrics_by_quantile_molecule_feature(
+            y_true=y_true,
+            y_pred=y_pred,
+            task_names=task_names,
+            values=ood_df["physchem_robust_distance"].values,
+            feature_name="physchem_distance",
+            q=5,
+            min_n=5,
         )
-
-        distance_metrics = metrics_by_physchem_distance(pred_long_df)
 
         distance_metrics.to_csv(
             plot_dir / "metrics_by_physchem_distance.csv",
             index=False,
         )
 
-        plot_metric_table(
-
-            distance_metrics,
-            "distance_bin",
-            plot_dir / "ood",
-            "physchem_distance_metrics.png",
-            "Prediction Quality vs Physicochemical Distance",
+        # --------------------------------------------------
+        # Local density bins using neighbour counts.
+        # --------------------------------------------------
+        density_col = ood_cfg.get(
+            "density_metric_col",
+            "n_train_neighbors_ge_0.6",
         )
 
-        corr_df = compute_error_correlations(pred_long_df)
+        if density_col in ood_df.columns:
+            density_metrics = metrics_by_quantile_molecule_feature(
+                y_true=y_true,
+                y_pred=y_pred,
+                task_names=task_names,
+                values=ood_df[density_col].values,
+                feature_name=density_col,
+                q=5,
+                min_n=5,
+            )
 
-        reliability_df = compute_reliability_curve(
-            pred_long_df
+            density_metrics.to_csv(
+                plot_dir / "metrics_by_local_density.csv",
+                index=False,
+            )
+
+        # --------------------------------------------------
+        # Sampled long dataframe for plotting only.
+        # --------------------------------------------------
+        sample_n = int(
+            ood_cfg.get(
+                "plot_sample_rows",
+                100000,
+            )
         )
 
-        reliability_df.to_csv(
-            plot_dir / "prediction_reliability_curve.csv",
-            index=False,
-        )
-
-        task_reliability = compute_task_reliability_curves(
-            pred_long_df
-        )
-
-        task_reliability.to_csv(
-            plot_dir /
-            "task_prediction_reliability_curves.csv",
-            index=False,
-        )
-
-        plot_per_task_reliability_curves(
-            task_reliability_df=task_reliability,
-            plot_dir=plot_dir,
-        )
-
-        plot_task_reliability_curves(
-            task_reliability,
-            plot_dir,
-        )
-
-        plot_reliability_curve(
-            reliability_df,
-            plot_dir / "ood",
-        )
-
-        plot_error_correlations(
-            corr_df,
-            plot_dir / "ood",
-        )
-
-        reliability_df = compute_reliability_curve(
-            pred_long_df,
-            confidence_col="ood_percentile",
-            n_bins=10,
-        )
-
-        reliability_df.to_csv(
-            plot_dir / "prediction_reliability_curve.csv",
-            index=False,
-        )
-
-        plot_reliability_curve(
-            reliability_df,
-            plot_dir / "ood",
-        )
-
-        corr_df.to_csv(
-            plot_dir / "ood_feature_correlations.csv",
-            index=False,
-        )
-
-        plot_ood_diagnostics(
-            pred_long_df=pred_long_df,
-            plot_dir=plot_dir,
-        )
-
-        plot_per_task_ood_panels(
-            pred_long_df=pred_long_df,
-            plot_dir=plot_dir,
+        pred_sample_df = build_prediction_sample_table(
+            y_true=y_true,
+            y_pred=y_pred,
             task_names=task_names,
+            val_smiles=val_smiles,
+            ood_df=ood_df,
+            max_rows=sample_n,
+            random_seed=42,
         )
 
-        logger.info(f"OOD evaluation written to {plot_dir/'ood'}")
+        pred_sample_df.to_csv(
+            plot_dir / "predictions_with_ood_scores_sampled_long.csv",
+            index=False,
+        )
+
+        if len(pred_sample_df) > 0:
+            density_col = ood_cfg.get(
+                "density_metric_col",
+                "n_train_neighbors_ge_0.6",
+            )
+
+            corr_df = compute_error_correlations(
+                pred_sample_df,
+                candidate_features=[
+                    "nearest_train_tanimoto",
+                    "mean_top5_train_tanimoto",
+                    "physchem_robust_distance",
+                    density_col,
+                    "ood_score",
+                    "ood_percentile",
+                ],
+            )
+
+
+            corr_df.to_csv(
+                plot_dir / "ood_feature_correlations_sampled.csv",
+                index=False,
+            )
+
+            reliability_df = compute_reliability_curve(
+                pred_sample_df,
+                confidence_col="ood_percentile",
+                n_bins=10,
+            )
+
+            reliability_df.to_csv(
+                plot_dir / "prediction_reliability_curve_sampled.csv",
+                index=False,
+            )
+
+            task_reliability = compute_task_reliability_curves(
+                pred_sample_df,
+                n_bins=10,
+            )
+
+            task_reliability.to_csv(
+                plot_dir / "task_prediction_reliability_curves_sampled.csv",
+                index=False,
+            )
+
+            plot_ood_diagnostics(
+                pred_long_df=pred_sample_df,
+                plot_dir=plot_dir,
+            )
+
+            plot_per_task_ood_panels(
+                pred_long_df=pred_sample_df,
+                plot_dir=plot_dir,
+                task_names=task_names,
+            )
+
+            plot_reliability_curve(
+                reliability_df,
+                plot_dir / "ood",
+            )
+
+            plot_error_correlations(
+                corr_df,
+                plot_dir / "ood",
+            )
+
+            plot_per_task_reliability_curves(
+                task_reliability_df=task_reliability,
+                plot_dir=plot_dir,
+            )
+
+        logger.info(f"OOD evaluation written to {plot_dir / 'ood'}")
 
     logger.info(f"Saved evaluation plots to {plot_dir}")
 

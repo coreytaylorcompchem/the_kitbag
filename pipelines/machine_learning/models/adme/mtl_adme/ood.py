@@ -249,15 +249,19 @@ def compute_nn_similarity_features(
     similarity_thresholds=(0.4, 0.5, 0.6, 0.7),
 ):
     """
-    Compute nearest-neighbour similarity features for each query molecule
-    relative to the exact training set.
+    Compute nearest-neighbour and local-density similarity features.
+
+    Memory behaviour:
+      - Stores train fingerprints once.
+      - Processes one query molecule at a time.
+      - Does NOT build a query x train similarity matrix.
     """
 
     train_fps = [
         morgan_fp_from_smiles(
             smi,
             radius=radius,
-            n_bits=n_bits
+            n_bits=n_bits,
         )
         for smi in train_smiles
     ]
@@ -274,12 +278,13 @@ def compute_nn_similarity_features(
         )
 
     rows = []
+    n_train = len(valid_train_fps)
 
     for smi in query_smiles:
         qfp = morgan_fp_from_smiles(
             smi,
             radius=radius,
-            n_bits=n_bits
+            n_bits=n_bits,
         )
 
         if qfp is None:
@@ -289,34 +294,56 @@ def compute_nn_similarity_features(
             }
 
             for thr in similarity_thresholds:
+                row[f"n_train_neighbors_ge_{thr}"] = np.nan
                 row[f"fraction_train_neighbors_ge_{thr}"] = np.nan
 
             rows.append(row)
             continue
 
-        sims = np.array(
+        sims = np.asarray(
             DataStructs.BulkTanimotoSimilarity(
                 qfp,
-                valid_train_fps
+                valid_train_fps,
             ),
-            dtype=float
+            dtype=np.float32,
         )
 
-        sims_sorted = np.sort(sims)[::-1]
-        k_eff = min(top_k, len(sims_sorted))
+        if sims.size == 0:
+            row = {
+                "nearest_train_tanimoto": np.nan,
+                f"mean_top{top_k}_train_tanimoto": np.nan,
+            }
+
+            for thr in similarity_thresholds:
+                row[f"n_train_neighbors_ge_{thr}"] = np.nan
+                row[f"fraction_train_neighbors_ge_{thr}"] = np.nan
+
+            rows.append(row)
+            continue
+
+        k_eff = min(top_k, sims.size)
+
+        if k_eff == sims.size:
+            topk = np.sort(sims)[::-1]
+        else:
+            topk = np.partition(
+                sims,
+                -k_eff,
+            )[-k_eff:]
+
+        nearest = float(np.max(topk))
+        mean_topk = float(np.mean(topk))
 
         row = {
-            "nearest_train_tanimoto": float(sims_sorted[0]),
-            f"mean_top{top_k}_train_tanimoto": float(
-                np.mean(sims_sorted[:k_eff])
-            ),
+            "nearest_train_tanimoto": nearest,
+            f"mean_top{top_k}_train_tanimoto": mean_topk,
         }
 
         for thr in similarity_thresholds:
-            row[f"fraction_train_neighbors_ge_{thr}"] = (
-                np.sum(sims >= float(thr))
-                / len(valid_train_fps)
-            )
+            n_ge = int(np.sum(sims >= float(thr)))
+
+            row[f"n_train_neighbors_ge_{thr}"] = n_ge
+            row[f"fraction_train_neighbors_ge_{thr}"] = n_ge / n_train
 
         rows.append(row)
 
@@ -473,33 +500,59 @@ def percentile_scale_series(values, reference_values):
 
     return out
 
-def compute_composite_ood_score(feature_df):
+def compute_composite_ood_score(
+    feature_df,
+    density_col="n_train_neighbors_ge_0.6",
+):
     """
-    Combine multiple OOD indicators into a single score.
+    Combine multiple OOD indicators into one score.
 
-    Higher = further outside the training domain.
+    Higher = further outside training domain.
+
+    Components:
+      - low nearest-neighbour similarity
+      - high physicochemical distance
+      - low local neighbour density
+      - novel Murcko scaffold
     """
 
     similarity = feature_df["nearest_train_tanimoto"].values
     physchem = feature_df["physchem_robust_distance"].values
-    cluster = feature_df["cluster_size"].values
 
-    # High similarity is GOOD
+    if density_col in feature_df.columns:
+        density = feature_df[density_col].values
+    else:
+        density = np.full(len(feature_df), np.nan)
+
+    # High similarity is good, so invert it.
     similarity_component = 1.0 - minmax_scale_series(similarity)
 
-    # Large distance is BAD
+    # Large physchem distance is bad.
     physchem_component = minmax_scale_series(physchem)
 
-    # Large cluster is GOOD
-    cluster_component = 1.0 - minmax_scale_series(cluster)
+    # High neighbour density is good, so invert it.
+    density_component = 1.0 - minmax_scale_series(density)
 
-    components = np.vstack([
+    components = [
         similarity_component,
         physchem_component,
-        cluster_component,
-    ])
+        density_component,
+    ]
 
-    return np.nanmean(components, axis=0)
+    if "known_scaffold" in feature_df.columns:
+        scaffold_component = np.where(
+            feature_df["known_scaffold"].astype(bool).values,
+            0.0,
+            1.0,
+        )
+        components.append(scaffold_component)
+
+    component_matrix = np.vstack(components)
+
+    return np.nanmean(
+        component_matrix,
+        axis=0,
+    )
 
 def assign_ood_bins(scores):
     """
@@ -531,7 +584,15 @@ def compute_ood_features(
 ):
     """
     Compute applicability-domain features for every query molecule.
+
+    This version is suitable for large datasets because it does not use
+    all-pairs Butina clustering.
     """
+
+    similarity_thresholds = config.get(
+        "similarity_thresholds",
+        (0.4, 0.5, 0.6, 0.7),
+    )
 
     similarity_df = compute_nn_similarity_features(
         query_smiles=query_smiles,
@@ -539,18 +600,15 @@ def compute_ood_features(
         radius=config.get("radius", 2),
         n_bits=config.get("n_bits", 2048),
         top_k=config.get("top_k", 5),
-        similarity_thresholds=config.get(
-            "similarity_thresholds",
-            (0.4, 0.5, 0.6, 0.7),
-        ),
+        similarity_thresholds=similarity_thresholds,
     )
 
     scaffold_df = compute_scaffold_features(
-        query_smiles,
-        train_smiles,
+        query_smiles=query_smiles,
+        train_smiles=train_smiles,
     )
 
-    physchem_df, train_physchem_scaled = compute_physchem_distance_features(
+    physchem_df, _ = compute_physchem_distance_features(
         query_smiles=query_smiles,
         train_smiles=train_smiles,
         descriptors=config.get(
@@ -567,42 +625,29 @@ def compute_ood_features(
         ),
     )
 
-    cluster_df = compute_cluster_features(
-        query_smiles=query_smiles,
-        train_smiles=train_smiles,
-        cutoff=config.get(
-            "cluster_cutoff",
-            0.4,
-        ),
-    )
-
     feature_df = pd.concat(
         [
             similarity_df,
             scaffold_df,
             physchem_df,
-            cluster_df,
         ],
         axis=1,
     )
 
-    # --------------------------
-    # Generalisable percentile OOD
-    # --------------------------
-
-    feature_df["ood_percentile"] = (
-        feature_df["physchem_robust_distance"]
-        .rank(pct=True)
+    density_threshold = config.get(
+        "density_threshold",
+        0.6,
     )
 
-    raw_ood = compute_composite_ood_score(
-        feature_df
+    density_col = f"n_train_neighbors_ge_{density_threshold}"
+
+    feature_df["ood_score"] = compute_composite_ood_score(
+        feature_df,
+        density_col=density_col,
     )
 
-    feature_df["ood_score"] = raw_ood
-
     feature_df["ood_percentile"] = (
-        pd.Series(raw_ood)
+        pd.Series(feature_df["ood_score"])
         .rank(pct=True)
         .values
     )
