@@ -1,4 +1,5 @@
 import os
+import psutil
 import time
 import threading
 
@@ -60,11 +61,20 @@ def run_subprocess_streaming(
 
             if monitor_dir is not None:
                 summary = directory_summary(monitor_dir)
+
+                mem = psutil.virtual_memory()
+
                 logger.info(
                     f"{log_prefix} RUNTIME MSA: {elapsed / 60:.1f} min "
                     f"| files={summary['files']} "
                     f"| size={summary['size_mb']:.1f} MB "
                     # f"| monitor_dir={monitor_dir}"
+                )
+
+                logger.debug(
+                    f"{log_prefix} RAM: "
+                    f"used={mem.used/1024**3:.1f}GB "
+                    f"avail={mem.available/1024**3:.1f}GB"
                 )
             else:
                 logger.info(
