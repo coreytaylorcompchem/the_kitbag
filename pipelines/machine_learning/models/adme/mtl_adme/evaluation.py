@@ -1371,6 +1371,144 @@ def plot_reliability_curve_generic(
 
     plt.close()
 
+def plot_reliability_curve_with_ood_boundaries(
+    reliability_df,
+    plot_dir,
+    y_col,
+    filename,
+    ylabel,
+    title,
+    bin_boundaries=None,
+):
+    """
+    Plot prediction reliability curve with vertical dotted OOD bin boundaries.
+
+    X-axis:
+        Mean OOD percentile.
+
+    Y-axis:
+        Mean error, e.g. mean_abs_error or mean_normalized_abs_error.
+
+    Vertical dotted lines:
+        OOD percentile boundaries used to define bins:
+          in_domain / moderate_ood / high_ood / extreme_ood
+    """
+
+    if reliability_df is None or len(reliability_df) == 0:
+        logger.info(f"No data for reliability plot: {filename}")
+        return
+
+    required_cols = {
+        "mean_ood_percentile",
+        y_col,
+    }
+
+    missing = required_cols - set(reliability_df.columns)
+
+    if missing:
+        logger.warning(
+            f"Cannot plot {filename}; missing columns: {sorted(missing)}"
+        )
+        return
+
+    if bin_boundaries is None:
+        bin_boundaries = {
+            "moderate_ood": 50.0,
+            "high_ood": 80.0,
+            "extreme_ood": 95.0,
+        }
+
+    plot_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    df = reliability_df.sort_values(
+        "mean_ood_percentile"
+    ).copy()
+
+    fig, ax = plt.subplots(
+        figsize=(7, 5)
+    )
+
+    ax.plot(
+        df["mean_ood_percentile"],
+        df[y_col],
+        marker="o",
+        color="#1D4ED8",
+        linewidth=2,
+        label=ylabel,
+    )
+
+    # -------------------------
+    # Vertical dotted bin boundaries
+    # -------------------------
+    boundary_style = {
+        "moderate_ood": {
+            "color": "#7C3AED",
+            "label": "moderate OOD boundary",
+        },
+        "high_ood": {
+            "color": "#0F766E",
+            "label": "high OOD boundary",
+        },
+        "extreme_ood": {
+            "color": "#92400E",
+            "label": "extreme OOD boundary",
+        },
+    }
+
+    y_min, y_max = ax.get_ylim()
+    y_text = y_min + 0.96 * (y_max - y_min)
+
+    for boundary_name, boundary_value in bin_boundaries.items():
+        style = boundary_style.get(
+            boundary_name,
+            {
+                "color": "#6B7280",
+                "label": boundary_name,
+            },
+        )
+
+        ax.axvline(
+            boundary_value,
+            linestyle=":",
+            linewidth=1.5,
+            color=style["color"],
+            alpha=0.8,
+        )
+
+        ax.text(
+            boundary_value,
+            y_text,
+            f"{boundary_name}\n{boundary_value:.0f}%",
+            rotation=90,
+            va="top",
+            ha="right",
+            fontsize=8,
+            color=style["color"],
+        )
+
+    ax.set_xlabel(
+        "OOD percentile\n(higher = less in-domain)"
+    )
+
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+
+    ax.set_xlim(0, 100)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    plt.savefig(
+        plot_dir / filename,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close()
+
 def compute_task_ood_calibration_table(
     y_true,
     y_pred,
@@ -1457,13 +1595,31 @@ def compute_task_ood_calibration_table(
         )
 
         baseline_mae = task_calib["mean_abs_error"].iloc[0]
+        baseline_median_ae = task_calib["median_abs_error"].iloc[0]
 
+        # Absolute degradation relative to the lowest-OOD bin.
+        task_calib["mae_delta_vs_lowest_ood_bin"] = (
+            task_calib["mean_abs_error"] - baseline_mae
+        )
+
+        task_calib["median_ae_delta_vs_lowest_ood_bin"] = (
+            task_calib["median_abs_error"] - baseline_median_ae
+        )
+
+        # Relative degradation relative to the lowest-OOD bin.
         if np.isfinite(baseline_mae) and baseline_mae > 0:
             task_calib["mae_ratio_vs_lowest_ood_bin"] = (
                 task_calib["mean_abs_error"] / baseline_mae
             )
         else:
             task_calib["mae_ratio_vs_lowest_ood_bin"] = np.nan
+
+        if np.isfinite(baseline_median_ae) and baseline_median_ae > 0:
+            task_calib["median_ae_ratio_vs_lowest_ood_bin"] = (
+                task_calib["median_abs_error"] / baseline_median_ae
+            )
+        else:
+            task_calib["median_ae_ratio_vs_lowest_ood_bin"] = np.nan
 
         rows.append(task_calib)
 
@@ -1586,6 +1742,292 @@ def plot_task_reliability_curves(
     )
 
     plt.close()
+
+def plot_per_task_ood_degradation(
+    task_ood_calibration_df,
+    plot_dir,
+    max_cols=3,
+    ratio_thresholds=(1.25, 1.5, 2.0),
+    delta_thresholds=None,
+):
+    """
+    Plot OOD-driven degradation per task.
+
+    Left y-axis:
+        MAE ratio vs lowest-OOD bin.
+
+    Right y-axis:
+        MAE delta vs lowest-OOD bin.
+
+    Dotted horizontal lines show interpretable thresholds.
+    """
+
+    if task_ood_calibration_df is None or len(task_ood_calibration_df) == 0:
+        logger.info("No task OOD calibration data available for degradation plots")
+        return
+
+    required_cols = {
+        "task",
+        "mean_ood_percentile",
+        "mae_ratio_vs_lowest_ood_bin",
+        "mae_delta_vs_lowest_ood_bin",
+    }
+
+    missing = required_cols - set(task_ood_calibration_df.columns)
+
+    if missing:
+        logger.warning(
+            "Cannot plot OOD degradation because columns are missing: "
+            f"{sorted(missing)}"
+        )
+        return
+
+    out_dir = plot_dir / "ood" / "ood_degradation"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    tasks = list(task_ood_calibration_df["task"].dropna().unique())
+
+    if len(tasks) == 0:
+        return
+
+    # -------------------------
+    # Individual task plots
+    # -------------------------
+    for task in tasks:
+        task_df = (
+            task_ood_calibration_df[
+                task_ood_calibration_df["task"] == task
+            ]
+            .sort_values("mean_ood_percentile")
+            .copy()
+        )
+
+        if len(task_df) == 0:
+            continue
+
+        fig, ax1 = plt.subplots(figsize=(7, 5))
+
+        ax1.plot(
+            task_df["mean_ood_percentile"],
+            task_df["mae_ratio_vs_lowest_ood_bin"],
+            marker="o",
+            color="#1D4ED8",
+            label="MAE ratio",
+        )
+
+        ax1.set_xlabel("Mean OOD percentile")
+        ax1.set_ylabel("MAE ratio vs lowest-OOD bin", color="#1D4ED8")
+        ax1.tick_params(axis="y", labelcolor="#1D4ED8")
+        ax1.grid(True, alpha=0.3)
+
+        for thr in ratio_thresholds:
+            ax1.axhline(
+                thr,
+                linestyle=":",
+                linewidth=1.2,
+                color="#1D4ED8",
+                alpha=0.6,
+            )
+
+            ax1.text(
+                task_df["mean_ood_percentile"].min(),
+                thr,
+                f"{thr:.2f}x",
+                color="#1D4ED8",
+                fontsize=8,
+                va="bottom",
+            )
+
+        ax2 = ax1.twinx()
+
+        ax2.plot(
+            task_df["mean_ood_percentile"],
+            task_df["mae_delta_vs_lowest_ood_bin"],
+            marker="s",
+            color="#0F766E",
+            label="MAE delta",
+        )
+
+        ax2.set_ylabel("MAE delta vs lowest-OOD bin", color="#0F766E")
+        ax2.tick_params(axis="y", labelcolor="#0F766E")
+
+        if delta_thresholds is not None:
+            for thr in delta_thresholds:
+                ax2.axhline(
+                    thr,
+                    linestyle=":",
+                    linewidth=1.2,
+                    color="#0F766E",
+                    alpha=0.6,
+                )
+
+                ax2.text(
+                    task_df["mean_ood_percentile"].max(),
+                    thr,
+                    f"+{thr:.2f}",
+                    color="#0F766E",
+                    fontsize=8,
+                    va="bottom",
+                    ha="right",
+                )
+
+        lines_1, labels_1 = ax1.get_legend_handles_labels()
+        lines_2, labels_2 = ax2.get_legend_handles_labels()
+
+        ax1.legend(
+            lines_1 + lines_2,
+            labels_1 + labels_2,
+            loc="upper left",
+            frameon=False,
+        )
+
+        plt.title(task)
+        plt.tight_layout()
+
+        safe_task = (
+            str(task)
+            .replace("/", "_")
+            .replace("\\", "_")
+            .replace(" ", "_")
+            .replace(":", "_")
+        )
+
+        plt.savefig(
+            out_dir / f"{safe_task}_ood_degradation.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+        plt.close()
+
+    # -------------------------
+    # Combined grid plot
+    # -------------------------
+    n_tasks = len(tasks)
+    n_rows = math.ceil(n_tasks / max_cols)
+
+    fig, axes = plt.subplots(
+        n_rows,
+        max_cols,
+        figsize=(5 * max_cols, 4 * n_rows),
+    )
+
+    axes = np.array(axes).flatten()
+
+    for i, task in enumerate(tasks):
+        ax = axes[i]
+
+        task_df = (
+            task_ood_calibration_df[
+                task_ood_calibration_df["task"] == task
+            ]
+            .sort_values("mean_ood_percentile")
+            .copy()
+        )
+
+        ax.plot(
+            task_df["mean_ood_percentile"],
+            task_df["mae_ratio_vs_lowest_ood_bin"],
+            marker="o",
+            color="#1D4ED8",
+            label="MAE ratio",
+        )
+
+        for thr in ratio_thresholds:
+            ax.axhline(
+                thr,
+                linestyle=":",
+                linewidth=1.0,
+                color="#1D4ED8",
+                alpha=0.5,
+            )
+
+        ax.set_title(task)
+        ax.set_xlabel("OOD percentile")
+        ax.set_ylabel("MAE ratio")
+        ax.grid(True, alpha=0.3)
+
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+
+    plt.savefig(
+        out_dir / "per_task_ood_mae_ratio_grid.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close()
+
+def summarise_task_ood_degradation(
+    task_ood_calibration_df,
+    ratio_thresholds=(1.25, 1.5, 2.0),
+    delta_thresholds=None,
+):
+    """
+    Summarise OOD degradation per task.
+
+    Reports:
+      - maximum MAE ratio
+      - maximum MAE delta
+      - first OOD percentile crossing each ratio threshold
+      - first OOD percentile crossing each delta threshold, if provided
+    """
+
+    if task_ood_calibration_df is None or len(task_ood_calibration_df) == 0:
+        return pd.DataFrame()
+
+    rows = []
+
+    for task, task_df in task_ood_calibration_df.groupby("task"):
+        task_df = task_df.sort_values("mean_ood_percentile").copy()
+
+        row = {
+            "task": task,
+            "n_bins": len(task_df),
+            "max_mae_ratio_vs_lowest_ood_bin": task_df[
+                "mae_ratio_vs_lowest_ood_bin"
+            ].max(),
+            "max_mae_delta_vs_lowest_ood_bin": task_df[
+                "mae_delta_vs_lowest_ood_bin"
+            ].max(),
+            "mean_mae_ratio_vs_lowest_ood_bin": task_df[
+                "mae_ratio_vs_lowest_ood_bin"
+            ].mean(),
+            "mean_mae_delta_vs_lowest_ood_bin": task_df[
+                "mae_delta_vs_lowest_ood_bin"
+            ].mean(),
+        }
+
+        for thr in ratio_thresholds:
+            crossing = task_df[
+                task_df["mae_ratio_vs_lowest_ood_bin"] >= thr
+            ]
+
+            col = f"first_ood_percentile_mae_ratio_ge_{thr}"
+
+            if len(crossing) > 0:
+                row[col] = crossing["mean_ood_percentile"].iloc[0]
+            else:
+                row[col] = np.nan
+
+        if delta_thresholds is not None:
+            for thr in delta_thresholds:
+                crossing = task_df[
+                    task_df["mae_delta_vs_lowest_ood_bin"] >= thr
+                ]
+
+                col = f"first_ood_percentile_mae_delta_ge_{thr}"
+
+                if len(crossing) > 0:
+                    row[col] = crossing["mean_ood_percentile"].iloc[0]
+                else:
+                    row[col] = np.nan
+
+        rows.append(row)
+
+    return pd.DataFrame(rows)
 
 def evaluate(context, config):
     plot_dir = Path(config.get("eval_plot_dir", "outputs/eval"))
@@ -1855,7 +2297,7 @@ def evaluate(context, config):
     # =========================
 
     logger.info("Starting OOD evaluation block")
-    
+
     ood_cfg = config.get("ood", {})
 
     if ood_cfg.get("enabled", False):
@@ -2124,6 +2566,42 @@ def evaluate(context, config):
                 plot_dir=plot_dir,
             )
 
+            ratio_thresholds = tuple(
+                ood_cfg.get(
+                    "mae_ratio_thresholds",
+                    [1.25, 1.5, 2.0],
+                )
+            )
+
+            delta_thresholds_cfg = ood_cfg.get(
+                "mae_delta_thresholds",
+                None,
+            )
+
+            if delta_thresholds_cfg is not None:
+                delta_thresholds = tuple(delta_thresholds_cfg)
+            else:
+                delta_thresholds = None
+
+            plot_per_task_ood_degradation(
+                task_ood_calibration_df=task_ood_calibration,
+                plot_dir=plot_dir,
+                max_cols=3,
+                ratio_thresholds=ratio_thresholds,
+                delta_thresholds=delta_thresholds,
+            )
+
+            task_ood_degradation_summary = summarise_task_ood_degradation(
+                task_ood_calibration_df=task_ood_calibration,
+                ratio_thresholds=ratio_thresholds,
+                delta_thresholds=delta_thresholds,
+            )
+
+            task_ood_degradation_summary.to_csv(
+                plot_dir / "task_ood_degradation_summary.csv",
+                index=False,
+            )
+
         if len(pred_sample_df) > 0:
             density_col = ood_cfg.get(
                 "density_metric_col",
@@ -2205,20 +2683,39 @@ def evaluate(context, config):
                 task_names=task_names,
             )
 
-            plot_reliability_curve_generic(
+            bin_cfg = ood_cfg.get("binning", {})
+
+            ood_bin_boundaries = {
+                "moderate_ood": bin_cfg.get("moderate_cut", 50.0),
+                "high_ood": bin_cfg.get("high_cut", 80.0),
+                "extreme_ood": bin_cfg.get("extreme_cut", 95.0),
+            }
+
+            plot_reliability_curve_with_ood_boundaries(
                 reliability_df,
                 plot_dir / "ood",
                 y_col="mean_abs_error",
                 filename="prediction_reliability_curve.png",
                 ylabel="Mean absolute error",
                 title="Prediction reliability curve",
+                bin_boundaries=ood_bin_boundaries,
+            )
+
+            plot_reliability_curve_with_ood_boundaries(
+                normalized_reliability_df,
+                plot_dir / "ood",
+                y_col="mean_normalized_abs_error",
+                filename="prediction_reliability_curve_normalized.png",
+                ylabel="Mean normalized absolute error",
+                title="Prediction reliability curve, task-normalized",
+                bin_boundaries=ood_bin_boundaries,
             )
 
             plot_reliability_curve_generic(
                 normalized_reliability_df,
                 plot_dir / "ood",
                 y_col="mean_normalized_abs_error",
-                filename="prediction_reliability_curve_normalized.png",
+                filename="prediction_reliability_curve_normalized_plain.png",
                 ylabel="Mean normalized absolute error",
                 title="Prediction reliability curve, task-normalized",
             )
