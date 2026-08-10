@@ -19,6 +19,7 @@ palette = {
     "in_domain": "#7C3AED",
     "moderate_ood": "#1D4ED8",
     "high_ood": "#0F766E",
+    "extreme_ood": "#92400E",
     "unknown": "#9CA3AF",
 }
 
@@ -26,6 +27,7 @@ hue_order = [
     "in_domain",
     "moderate_ood",
     "high_ood",
+    "extreme_ood",
     "unknown",
 ]
 
@@ -226,6 +228,7 @@ def build_prediction_sample_table(
     task_names,
     val_smiles,
     ood_df,
+    task_error_scales=None,
     max_rows=100000,
     random_seed=42,
 ):
@@ -259,14 +262,28 @@ def build_prediction_sample_table(
 
         ood_row = ood_df.iloc[int(mol_idx)].to_dict()
 
+        task = task_names[int(task_idx)]
+        abs_error = float(abs(residual))
+
+        if task_error_scales is not None:
+            scale = task_error_scales.get(task, np.nan)
+
+            if np.isfinite(scale) and scale > 0:
+                normalized_abs_error = abs_error / scale
+            else:
+                normalized_abs_error = np.nan
+        else:
+            normalized_abs_error = np.nan
+
         rows.append({
             "mol_index": int(mol_idx),
             "smiles": val_smiles[int(mol_idx)],
-            "task": task_names[int(task_idx)],
+            "task": task,
             "y_true": float(yt),
             "y_pred": float(yp),
             "residual": float(residual),
-            "abs_error": float(abs(residual)),
+            "abs_error": abs_error,
+            "normalized_abs_error": normalized_abs_error,
             **ood_row,
         })
 
@@ -297,6 +314,61 @@ def compute_metrics(y_true, y_pred):
         "spearman": spearman,
         "pearson": pearson,
     }
+
+def compute_task_error_scales(
+    y_true,
+    y_pred,
+    task_names,
+    method="mae",
+    min_scale=1e-8,
+):
+    """
+    Compute per-task error scaling factors.
+
+    Used to normalize absolute errors across endpoints.
+
+    method="mae":
+        scale = global validation MAE for that task
+
+    method="iqr":
+        scale = IQR of y_true for that task
+    """
+
+    scales = {}
+
+    for task_idx, task in enumerate(task_names):
+        yt = y_true[:, task_idx]
+        yp = y_pred[:, task_idx]
+
+        mask = ~np.isnan(yt)
+
+        if mask.sum() < 2:
+            scales[task] = np.nan
+            continue
+
+        if method == "mae":
+            scale = np.mean(
+                np.abs(yp[mask] - yt[mask])
+            )
+
+        elif method == "iqr":
+            q75, q25 = np.nanpercentile(
+                yt[mask],
+                [75, 25],
+            )
+            scale = q75 - q25
+
+        else:
+            raise ValueError(
+                f"Unknown task error scale method: {method}"
+            )
+
+        if not np.isfinite(scale) or scale < min_scale:
+            scale = np.nan
+
+        scales[task] = scale
+
+    return scales
 
 def load_split_smiles_from_context_or_disk(context, config):
     """
@@ -453,51 +525,6 @@ def metrics_by_scaffold(pred_long_df):
         })
 
     return pd.DataFrame(rows)
-
-# def metrics_by_cluster_size(
-#     pred_long_df,
-#     bins=(0,5,20,100,np.inf),
-# ):
-#     """
-#     Evaluate prediction quality as a function of local
-#     chemical density.
-#     """
-
-#     df = pred_long_df.copy()
-
-#     labels = [
-#         "<5",
-#         "5-20",
-#         "20-100",
-#         ">100",
-#     ]
-
-#     df["cluster_bin"] = pd.cut(
-#         df["cluster_size"],
-#         bins=bins,
-#         labels=labels,
-#         include_lowest=True,
-#     )
-
-#     rows = []
-
-#     for cluster, sub in df.groupby("cluster_bin"):
-
-#         if len(sub) < 3:
-#             continue
-
-#         metrics = compute_metrics(
-#             sub["y_true"],
-#             sub["y_pred"],
-#         )
-
-#         rows.append({
-#             "cluster_bin": cluster,
-#             "n_samples": len(sub),
-#             **metrics
-#         })
-
-#     return pd.DataFrame(rows)
 
 def metrics_by_similarity(
     pred_long_df,
@@ -748,6 +775,86 @@ def plot_ood_diagnostics(pred_long_df, plot_dir):
     plt.close()
 
     # -------------------------
+    # Normalized abs error vs OOD score
+    # -------------------------
+    if "normalized_abs_error" in pred_long_df.columns:
+        plt.figure(figsize=(7, 5))
+
+        sns.scatterplot(
+            data=plot_df,
+            x="ood_score",
+            y="normalized_abs_error",
+            hue="ood_bin",
+            hue_order=hue_order,
+            palette=palette,
+            alpha=0.4,
+            s=20,
+        )
+
+        sns.regplot(
+            data=pred_long_df.dropna(
+                subset=["ood_score", "normalized_abs_error"]
+            ),
+            x="ood_score",
+            y="normalized_abs_error",
+            scatter=False,
+            lowess=False,
+            ci=False,
+            color="black",
+        )
+
+        plt.xlabel("OOD score")
+        plt.ylabel("Normalized absolute error")
+        plt.title("Normalized absolute error vs OOD score")
+        plt.tight_layout()
+
+        plt.savefig(
+            ood_plot_dir / "normalized_abs_error_vs_ood_score.png",
+            dpi=300,
+        )
+
+        plt.close()
+    
+    # -------------------------
+    # Normalized MAE by OOD bin
+    # -------------------------
+    if "normalized_abs_error" in pred_long_df.columns:
+        plt.figure(figsize=(6, 5))
+
+        order = [
+            "in_domain",
+            "moderate_ood",
+            "high_ood",
+            "extreme_ood",
+            "unknown",
+        ]
+
+        sns.barplot(
+            data=pred_long_df,
+            x="ood_bin",
+            y="normalized_abs_error",
+            order=[
+                x for x in order
+                if x in pred_long_df["ood_bin"].unique()
+            ],
+            estimator=np.mean,
+            errorbar="se",
+            palette=palette,
+        )
+
+        plt.xlabel("OOD bin")
+        plt.ylabel("Normalized MAE")
+        plt.title("Task-normalized MAE by OOD bin")
+        plt.tight_layout()
+
+        plt.savefig(
+            ood_plot_dir / "normalized_mae_by_ood_bin.png",
+            dpi=300,
+        )
+
+        plt.close()
+
+    # -------------------------
     # MAE by OOD bin, all tasks pooled
     # -------------------------
     plt.figure(figsize=(6, 5))
@@ -838,16 +945,16 @@ def plot_per_task_ood_panels(pred_long_df, plot_dir, task_names):
         except Exception:
             pass
 
-        handles, labels = axes[0].get_legend_handles_labels()
+        # handles, labels = axes[0].get_legend_handles_labels()
 
-        fig.legend(
-            handles,
-            labels,
-            loc="lower center",
-            bbox_to_anchor=(0.5, -0.02),
-            ncol=len(labels),
-            frameon=False,
-        )
+        # fig.legend(
+        #     handles,
+        #     labels,
+        #     loc="lower center",
+        #     bbox_to_anchor=(0.5, -0.02),
+        #     ncol=len(labels),
+        #     frameon=False,
+        # )
         
         ax.set_title(task)
         ax.set_xlabel("OOD score")
@@ -856,11 +963,26 @@ def plot_per_task_ood_panels(pred_long_df, plot_dir, task_names):
 
     for j in range(i + 1, len(axes)):
         fig.delaxes(axes[j])
+    
+    handles, labels = axes[0].get_legend_handles_labels()
 
-    plt.tight_layout(rect=[0, 0.05, 1, 1])
+    if len(labels) > 0:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 0.01),
+            ncol=len(labels),
+            frameon=False,
+            title="OOD bin",
+        )
+
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+
     plt.savefig(
         ood_plot_dir / "per_task_abs_error_vs_ood_score.png",
-        dpi=300
+        dpi=300,
+        bbox_inches="tight",
     )
     plt.close()
 
@@ -1119,20 +1241,25 @@ def plot_error_correlations(
 def compute_reliability_curve(
     pred_long_df,
     confidence_col="ood_percentile",
+    error_col="abs_error",
     n_bins=10,
 ):
     """
     Prediction reliability curve.
 
-    Higher confidence percentile = more OOD.
+    X-axis:
+        OOD percentile or other confidence/risk column.
 
-    Reports:
-        mean OOD percentile
-        mean absolute error
-        number of predictions
+    Y-axis:
+        Mean error column, e.g. abs_error or normalized_abs_error.
     """
 
-    df = pred_long_df.copy()
+    df = pred_long_df[
+        [confidence_col, error_col]
+    ].dropna().copy()
+
+    if len(df) < 5:
+        return pd.DataFrame()
 
     df["confidence_bin"] = pd.qcut(
         df[confidence_col],
@@ -1142,19 +1269,16 @@ def compute_reliability_curve(
 
     rows = []
 
-    for b, sub in df.groupby("confidence_bin"):
+    for b, sub in df.groupby("confidence_bin", observed=False):
 
         if len(sub) < 5:
             continue
 
         rows.append({
             "confidence_bin": str(b),
-            "mean_ood_percentile":
-                sub[confidence_col].mean(),
-            "mean_abs_error":
-                sub["abs_error"].mean(),
-            "n_predictions":
-                len(sub),
+            "mean_ood_percentile": sub[confidence_col].mean(),
+            f"mean_{error_col}": sub[error_col].mean(),
+            "n_predictions": len(sub),
         })
 
     return pd.DataFrame(rows)
@@ -1195,16 +1319,191 @@ def plot_reliability_curve(
 
     plt.close()
 
-def compute_task_reliability_curves(
-    pred_long_df,
-    n_bins=10,
+def plot_reliability_curve_generic(
+    reliability_df,
+    plot_dir,
+    y_col,
+    filename,
+    ylabel,
+    title,
 ):
+    """
+    Plot a reliability curve using a specified y column.
+    """
+
+    if reliability_df is None or len(reliability_df) == 0:
+        logger.info(f"No data for reliability plot: {filename}")
+        return
+
+    if y_col not in reliability_df.columns:
+        logger.warning(
+            f"Cannot plot {filename}; missing column {y_col}"
+        )
+        return
+
+    plot_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    plt.figure(figsize=(7, 5))
+
+    plt.plot(
+        reliability_df["mean_ood_percentile"],
+        reliability_df[y_col],
+        marker="o",
+    )
+
+    plt.xlabel(
+        "OOD percentile (higher = less in-domain)"
+    )
+
+    plt.ylabel(ylabel)
+    plt.title(title)
+
+    plt.grid(True)
+    plt.tight_layout()
+
+    plt.savefig(
+        plot_dir / filename,
+        dpi=300,
+    )
+
+    plt.close()
+
+def compute_task_ood_calibration_table(
+    y_true,
+    y_pred,
+    task_names,
+    ood_percentile,
+    n_bins=10,
+    min_n=5,
+):
+    """
+    Per-task calibration of prediction error against OOD percentile.
+
+    Unlike sampled reliability plots, this uses the full validation matrix.
+
+    Outputs one row per task per OOD percentile bin.
+    """
 
     rows = []
 
+    ood_percentile = np.asarray(
+        ood_percentile,
+        dtype=float,
+    )
+
+    for task_idx, task in enumerate(task_names):
+        yt = y_true[:, task_idx]
+        yp = y_pred[:, task_idx]
+
+        valid = (
+            ~np.isnan(yt)
+            & np.isfinite(ood_percentile)
+        )
+
+        if valid.sum() < min_n:
+            continue
+
+        task_df = pd.DataFrame({
+            "ood_percentile": ood_percentile[valid],
+            "y_true": yt[valid],
+            "y_pred": yp[valid],
+        })
+
+        task_df["abs_error"] = np.abs(
+            task_df["y_pred"] - task_df["y_true"]
+        )
+
+        task_df["ood_percentile_bin"] = pd.qcut(
+            task_df["ood_percentile"],
+            q=n_bins,
+            duplicates="drop",
+        )
+
+        task_rows = []
+
+        for b, sub in task_df.groupby(
+            "ood_percentile_bin",
+            observed=False,
+        ):
+            if len(sub) < min_n:
+                continue
+
+            metrics = compute_metrics(
+                sub["y_true"].values,
+                sub["y_pred"].values,
+            )
+
+            task_rows.append({
+                "task": task,
+                "ood_percentile_bin": str(b),
+                "mean_ood_percentile": sub["ood_percentile"].mean(),
+                "mean_abs_error": sub["abs_error"].mean(),
+                "median_abs_error": sub["abs_error"].median(),
+                "n_predictions": len(sub),
+                **metrics,
+            })
+
+        if len(task_rows) == 0:
+            continue
+
+        task_calib = pd.DataFrame(task_rows)
+
+        # Ratio to the lowest-OOD bin for this task.
+        task_calib = task_calib.sort_values(
+            "mean_ood_percentile"
+        )
+
+        baseline_mae = task_calib["mean_abs_error"].iloc[0]
+
+        if np.isfinite(baseline_mae) and baseline_mae > 0:
+            task_calib["mae_ratio_vs_lowest_ood_bin"] = (
+                task_calib["mean_abs_error"] / baseline_mae
+            )
+        else:
+            task_calib["mae_ratio_vs_lowest_ood_bin"] = np.nan
+
+        rows.append(task_calib)
+
+    if len(rows) == 0:
+        return pd.DataFrame()
+
+    return pd.concat(
+        rows,
+        ignore_index=True,
+    )
+
+def compute_task_reliability_curves(
+    pred_long_df,
+    n_bins=10,
+    error_col="abs_error",
+):
+    rows = []
+
+    required = {
+        "task",
+        "ood_percentile",
+        error_col,
+    }
+
+    missing = required - set(pred_long_df.columns)
+
+    if missing:
+        logger.warning(
+            f"Cannot compute task reliability curves; missing {sorted(missing)}"
+        )
+        return pd.DataFrame()
+
     for task, task_df in pred_long_df.groupby("task"):
 
-        task_df = task_df.copy()
+        task_df = task_df[
+            ["ood_percentile", error_col]
+        ].dropna().copy()
+
+        if len(task_df) < 5:
+            continue
 
         task_df["confidence_bin"] = pd.qcut(
             task_df["ood_percentile"],
@@ -1213,7 +1512,8 @@ def compute_task_reliability_curves(
         )
 
         for b, sub in task_df.groupby(
-            "confidence_bin"
+            "confidence_bin",
+            observed=False,
         ):
 
             if len(sub) < 5:
@@ -1222,12 +1522,10 @@ def compute_task_reliability_curves(
             rows.append({
                 "task": task,
                 "confidence_bin": str(b),
-                "mean_ood_percentile":
-                    sub["ood_percentile"].mean(),
-                "mean_abs_error":
-                    sub["abs_error"].mean(),
-                "n_predictions":
-                    len(sub),
+                "mean_ood_percentile": sub["ood_percentile"].mean(),
+                "mean_abs_error": sub[error_col].mean(),
+                "n_predictions": len(sub),
+                "error_col": error_col,
             })
 
     return pd.DataFrame(rows)
@@ -1355,6 +1653,9 @@ def evaluate(context, config):
     # =========================
     # 1. METRICS + COUNTS CSV
     # =========================
+
+    logger.info("Computing task metrics")
+
     rows = []
 
     metrics_by_task = {}
@@ -1391,6 +1692,9 @@ def evaluate(context, config):
     # =========================
     # 2. TASK CORRELATION HEATMAP
     # =========================
+
+    logger.info("Plotting task correlation heatmap")
+
     max_corr_rows = int(config.get("max_corr_rows", 50000))
 
     if y_true.shape[0] > max_corr_rows:
@@ -1424,6 +1728,9 @@ def evaluate(context, config):
     # =========================
     # 3. TRUE VS PREDICTED
     # =========================
+
+    logger.info("Plotting true vs predicted panels")
+
     n_cols = 3
     n_rows = math.ceil(n_tasks / n_cols)
 
@@ -1472,6 +1779,9 @@ def evaluate(context, config):
     # =========================
     # 4. RESIDUALS
     # =========================
+
+    logger.info("Plotting residual panels")
+
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 5*n_rows))
     axes = axes.flatten()
 
@@ -1508,6 +1818,8 @@ def evaluate(context, config):
     # 5. RESIDUAL HISTOGRAMS
     # =========================
 
+    logger.info("Plotting residual histograms")
+
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
     axes = axes.flatten()
 
@@ -1541,6 +1853,9 @@ def evaluate(context, config):
     # =========================
     # 6. OOD / APPLICABILITY-DOMAIN EVALUATION
     # =========================
+
+    logger.info("Starting OOD evaluation block")
+    
     ood_cfg = config.get("ood", {})
 
     if ood_cfg.get("enabled", False):
@@ -1618,6 +1933,29 @@ def evaluate(context, config):
             plot_dir / "metrics_by_ood_bin.csv",
             index=False,
         )
+
+        # --------------------------------------------------
+        # OOD component summary.
+        # Helps interpret what drives the composite score.
+        # --------------------------------------------------
+        component_cols = [
+            c for c in ood_df.columns
+            if c.startswith("ood_component_")
+        ]
+
+        if len(component_cols) > 0:
+            component_summary = (
+                ood_df[component_cols + ["ood_score", "ood_percentile"]]
+                .describe()
+                .T
+                .reset_index()
+                .rename(columns={"index": "feature"})
+            )
+
+            component_summary.to_csv(
+                plot_dir / "ood_component_summary.csv",
+                index=False,
+            )
 
         # --------------------------------------------------
         # Known vs novel scaffold.
@@ -1726,12 +2064,37 @@ def evaluate(context, config):
             )
         )
 
+        task_error_scale_method = ood_cfg.get(
+            "task_error_scale_method",
+            "mae",
+        )
+
+        task_error_scales = compute_task_error_scales(
+            y_true=y_true,
+            y_pred=y_pred,
+            task_names=task_names,
+            method=task_error_scale_method,
+        )
+
+        pd.DataFrame([
+            {
+                "task": task,
+                "error_scale_method": task_error_scale_method,
+                "error_scale": scale,
+            }
+            for task, scale in task_error_scales.items()
+        ]).to_csv(
+            plot_dir / "task_error_scales.csv",
+            index=False,
+        )
+
         pred_sample_df = build_prediction_sample_table(
             y_true=y_true,
             y_pred=y_pred,
             task_names=task_names,
             val_smiles=val_smiles,
             ood_df=ood_df,
+            task_error_scales=task_error_scales,
             max_rows=sample_n,
             random_seed=42,
         )
@@ -1740,6 +2103,26 @@ def evaluate(context, config):
             plot_dir / "predictions_with_ood_scores_sampled_long.csv",
             index=False,
         )
+
+        task_ood_calibration = compute_task_ood_calibration_table(
+            y_true=y_true,
+            y_pred=y_pred,
+            task_names=task_names,
+            ood_percentile=ood_df["ood_percentile"].values,
+            n_bins=ood_cfg.get("task_calibration_bins", 10),
+            min_n=ood_cfg.get("task_calibration_min_n", 5),
+        )
+
+        task_ood_calibration.to_csv(
+            plot_dir / "task_ood_calibration.csv",
+            index=False,
+        )
+
+        if len(task_ood_calibration) > 0:
+            plot_per_task_reliability_curves(
+                task_reliability_df=task_ood_calibration,
+                plot_dir=plot_dir,
+            )
 
         if len(pred_sample_df) > 0:
             density_col = ood_cfg.get(
@@ -1768,6 +2151,7 @@ def evaluate(context, config):
             reliability_df = compute_reliability_curve(
                 pred_sample_df,
                 confidence_col="ood_percentile",
+                error_col="abs_error",
                 n_bins=10,
             )
 
@@ -1776,13 +2160,37 @@ def evaluate(context, config):
                 index=False,
             )
 
+            normalized_reliability_df = compute_reliability_curve(
+                pred_sample_df,
+                confidence_col="ood_percentile",
+                error_col="normalized_abs_error",
+                n_bins=10,
+            )
+
+            normalized_reliability_df.to_csv(
+                plot_dir / "prediction_reliability_curve_normalized_sampled.csv",
+                index=False,
+            )
+
             task_reliability = compute_task_reliability_curves(
                 pred_sample_df,
                 n_bins=10,
+                error_col="abs_error",
             )
 
             task_reliability.to_csv(
                 plot_dir / "task_prediction_reliability_curves_sampled.csv",
+                index=False,
+            )
+
+            task_reliability_norm = compute_task_reliability_curves(
+                pred_sample_df,
+                n_bins=10,
+                error_col="normalized_abs_error",
+            )
+
+            task_reliability_norm.to_csv(
+                plot_dir / "task_prediction_reliability_curves_normalized_sampled.csv",
                 index=False,
             )
 
@@ -1797,9 +2205,22 @@ def evaluate(context, config):
                 task_names=task_names,
             )
 
-            plot_reliability_curve(
+            plot_reliability_curve_generic(
                 reliability_df,
                 plot_dir / "ood",
+                y_col="mean_abs_error",
+                filename="prediction_reliability_curve.png",
+                ylabel="Mean absolute error",
+                title="Prediction reliability curve",
+            )
+
+            plot_reliability_curve_generic(
+                normalized_reliability_df,
+                plot_dir / "ood",
+                y_col="mean_normalized_abs_error",
+                filename="prediction_reliability_curve_normalized.png",
+                ylabel="Mean normalized absolute error",
+                title="Prediction reliability curve, task-normalized",
             )
 
             plot_error_correlations(

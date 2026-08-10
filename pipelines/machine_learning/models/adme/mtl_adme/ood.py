@@ -462,6 +462,42 @@ def minmax_scale_series(values):
 
     return out
 
+def safe_inverse_minmax_component(values):
+    """
+    Component where high raw value is good, so low values are more OOD.
+
+    Example:
+        nearest_train_tanimoto
+        mean_top5_train_tanimoto
+        local neighbour density
+
+    Returns
+    -------
+    ndarray
+        0 = in-domain-like
+        1 = OOD-like
+    """
+
+    return 1.0 - minmax_scale_series(values)
+
+
+def safe_positive_minmax_component(values):
+    """
+    Component where high raw value is more OOD.
+
+    Example:
+        physchem_robust_distance
+
+    Returns
+    -------
+    ndarray
+        0 = in-domain-like
+        1 = OOD-like
+    """
+
+    return minmax_scale_series(values)
+
+
 def percentile_scale_series(values, reference_values):
     """
     Scale values relative to a reference distribution.
@@ -500,59 +536,156 @@ def percentile_scale_series(values, reference_values):
 
     return out
 
-def compute_composite_ood_score(
+# def compute_composite_ood_score(
+#     feature_df,
+#     density_col="n_train_neighbors_ge_0.6",
+# ):
+#     """
+#     Combine multiple OOD indicators into one score.
+
+#     Higher = further outside training domain.
+
+#     Components:
+#       - low nearest-neighbour similarity
+#       - high physicochemical distance
+#       - low local neighbour density
+#       - novel Murcko scaffold
+#     """
+
+#     similarity = feature_df["nearest_train_tanimoto"].values
+#     physchem = feature_df["physchem_robust_distance"].values
+
+#     if density_col in feature_df.columns:
+#         density = feature_df[density_col].values
+#     else:
+#         density = np.full(len(feature_df), np.nan)
+
+#     # High similarity is good, so invert it.
+#     similarity_component = 1.0 - minmax_scale_series(similarity)
+
+#     # Large physchem distance is bad.
+#     physchem_component = minmax_scale_series(physchem)
+
+#     # High neighbour density is good, so invert it.
+#     density_component = 1.0 - minmax_scale_series(density)
+
+#     components = [
+#         similarity_component,
+#         physchem_component,
+#         density_component,
+#     ]
+
+#     if "known_scaffold" in feature_df.columns:
+#         scaffold_component = np.where(
+#             feature_df["known_scaffold"].astype(bool).values,
+#             0.0,
+#             1.0,
+#         )
+#         components.append(scaffold_component)
+
+#     component_matrix = np.vstack(components)
+
+#     return np.nanmean(
+#         component_matrix,
+#         axis=0,
+#     )
+
+def add_ood_score_columns(
     feature_df,
     density_col="n_train_neighbors_ge_0.6",
+    include_scaffold=False,
 ):
     """
-    Combine multiple OOD indicators into one score.
+    Add interpretable OOD component columns and composite OOD score.
 
-    Higher = further outside training domain.
-
-    Components:
+    Default components:
       - low nearest-neighbour similarity
-      - high physicochemical distance
+      - low top-k neighbourhood similarity
       - low local neighbour density
-      - novel Murcko scaffold
+      - high physicochemical distance
+
+    Scaffold novelty is kept as a separate feature by default because
+    it can dominate scaffold-split evaluations.
     """
 
-    similarity = feature_df["nearest_train_tanimoto"].values
-    physchem = feature_df["physchem_robust_distance"].values
+    df = feature_df.copy()
 
-    if density_col in feature_df.columns:
-        density = feature_df[density_col].values
-    else:
-        density = np.full(len(feature_df), np.nan)
+    # -------------------------
+    # Nearest-neighbour component
+    # -------------------------
+    df["ood_component_nearest_similarity"] = safe_inverse_minmax_component(
+        df["nearest_train_tanimoto"].values
+    )
 
-    # High similarity is good, so invert it.
-    similarity_component = 1.0 - minmax_scale_series(similarity)
-
-    # Large physchem distance is bad.
-    physchem_component = minmax_scale_series(physchem)
-
-    # High neighbour density is good, so invert it.
-    density_component = 1.0 - minmax_scale_series(density)
-
-    components = [
-        similarity_component,
-        physchem_component,
-        density_component,
+    # -------------------------
+    # Top-k similarity component
+    # -------------------------
+    topk_cols = [
+        c for c in df.columns
+        if c.startswith("mean_top") and c.endswith("_train_tanimoto")
     ]
 
-    if "known_scaffold" in feature_df.columns:
-        scaffold_component = np.where(
-            feature_df["known_scaffold"].astype(bool).values,
+    if len(topk_cols) > 0:
+        topk_col = topk_cols[0]
+
+        df["ood_component_topk_similarity"] = safe_inverse_minmax_component(
+            df[topk_col].values
+        )
+    else:
+        df["ood_component_topk_similarity"] = np.nan
+
+    # -------------------------
+    # Physchem distance component
+    # -------------------------
+    df["ood_component_physchem_distance"] = safe_positive_minmax_component(
+        df["physchem_robust_distance"].values
+    )
+
+    # -------------------------
+    # Local density component
+    # -------------------------
+    if density_col in df.columns:
+        density = df[density_col].values.astype(float)
+
+        # Neighbour counts are usually very skewed, so log-scale them.
+        density_log = np.log1p(density)
+
+        df["ood_component_local_density"] = safe_inverse_minmax_component(
+            density_log
+        )
+    else:
+        df["ood_component_local_density"] = np.nan
+
+    # -------------------------
+    # Optional scaffold component
+    # -------------------------
+    if include_scaffold and "known_scaffold" in df.columns:
+        df["ood_component_scaffold"] = np.where(
+            df["known_scaffold"].astype(bool).values,
             0.0,
             1.0,
         )
-        components.append(scaffold_component)
+    else:
+        df["ood_component_scaffold"] = np.nan
 
-    component_matrix = np.vstack(components)
+    component_cols = [
+        "ood_component_nearest_similarity",
+        "ood_component_topk_similarity",
+        "ood_component_physchem_distance",
+        "ood_component_local_density",
+    ]
 
-    return np.nanmean(
+    if include_scaffold:
+        component_cols.append("ood_component_scaffold")
+
+    component_matrix = df[component_cols].values.astype(float)
+
+    df["ood_score"] = np.nanmean(
         component_matrix,
-        axis=0,
+        axis=1,
     )
+
+    return df
 
 def assign_ood_bins(scores):
     """
@@ -574,6 +707,45 @@ def assign_ood_bins(scores):
 
         else:
             bins.append("high_ood")
+
+    return bins
+
+def assign_ood_bins_from_percentile(
+    percentiles,
+    moderate_cut=50.0,
+    high_cut=80.0,
+    extreme_cut=95.0,
+):
+    """
+    Convert OOD percentile into interpretable bins.
+
+    Percentile is expected on a 0-100 scale.
+
+    Default:
+      0-50   = in_domain
+      50-80  = moderate_ood
+      80-95  = high_ood
+      95-100 = extreme_ood
+    """
+
+    bins = []
+
+    for p in percentiles:
+
+        if not np.isfinite(p):
+            bins.append("unknown")
+
+        elif p < moderate_cut:
+            bins.append("in_domain")
+
+        elif p < high_cut:
+            bins.append("moderate_ood")
+
+        elif p < extreme_cut:
+            bins.append("high_ood")
+
+        else:
+            bins.append("extreme_ood")
 
     return bins
 
@@ -641,19 +813,47 @@ def compute_ood_features(
 
     density_col = f"n_train_neighbors_ge_{density_threshold}"
 
-    feature_df["ood_score"] = compute_composite_ood_score(
-        feature_df,
-        density_col=density_col,
+    # feature_df["ood_score"] = compute_composite_ood_score(
+    #     feature_df,
+    #     density_col=density_col,
+    # )
+
+    # feature_df["ood_percentile"] = (
+    #     pd.Series(feature_df["ood_score"])
+    #     .rank(pct=True)
+    #     .values
+    # )
+
+    # feature_df["ood_bin"] = assign_ood_bins(
+    #     feature_df["ood_score"].values
+    # )
+
+    include_scaffold = config.get(
+        "include_scaffold_in_score",
+        False,
     )
 
+    feature_df = add_ood_score_columns(
+        feature_df,
+        density_col=density_col,
+        include_scaffold=include_scaffold,
+    )
+
+    # Dataset-relative percentile on 0-100 scale.
     feature_df["ood_percentile"] = (
         pd.Series(feature_df["ood_score"])
         .rank(pct=True)
         .values
+        * 100.0
     )
 
-    feature_df["ood_bin"] = assign_ood_bins(
-        feature_df["ood_score"].values
+    bin_cfg = config.get("binning", {})
+
+    feature_df["ood_bin"] = assign_ood_bins_from_percentile(
+        feature_df["ood_percentile"].values,
+        moderate_cut=bin_cfg.get("moderate_cut", 50.0),
+        high_cut=bin_cfg.get("high_cut", 80.0),
+        extreme_cut=bin_cfg.get("extreme_cut", 95.0),
     )
 
     return feature_df
