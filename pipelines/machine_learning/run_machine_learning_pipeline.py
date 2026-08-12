@@ -8,6 +8,13 @@ from workflows import get_workflow, load_all_workflows, list_workflows
 from pipeline.import_utilities import import_modules_recursively
 from pipeline.task_registry import list_tasks, get_task
 
+from dotenv import load_dotenv
+
+load_dotenv(
+    Path.cwd() / ".env",
+    override=False,
+) # ONLY NEEDED FOR NOW AS WE AUTHETICATE WITH USERNAMES AND PASSWORDS
+
 from pipeline.logger import setup_logger
 
 logger = setup_logger(
