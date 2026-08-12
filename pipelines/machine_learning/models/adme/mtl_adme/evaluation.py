@@ -1027,11 +1027,50 @@ def plot_per_task_reliability_curves(
             "mean_ood_percentile"
         )
 
-        plt.plot(
-            task_df["mean_ood_percentile"],
-            task_df["mean_abs_error"],
-            marker="o",
-        )
+        if {
+            "mae_ci_low",
+            "mae_ci_high",
+        }.issubset(task_df.columns):
+
+            mae_y = task_df[
+                "mean_abs_error"
+            ].to_numpy(dtype=float)
+
+            mae_low = task_df[
+                "mae_ci_low"
+            ].to_numpy(dtype=float)
+
+            mae_high = task_df[
+                "mae_ci_high"
+            ].to_numpy(dtype=float)
+
+            mae_yerr = np.vstack([
+                np.maximum(
+                    0.0,
+                    mae_y - mae_low,
+                ),
+                np.maximum(
+                    0.0,
+                    mae_high - mae_y,
+                ),
+            ])
+
+            plt.errorbar(
+                task_df["mean_ood_percentile"],
+                mae_y,
+                yerr=mae_yerr,
+                marker="o",
+                linestyle="-",
+                capsize=3,
+                color="#1D4ED8",
+            )
+
+        else:
+            plt.plot(
+                task_df["mean_ood_percentile"],
+                task_df["mean_abs_error"],
+                marker="o",
+            )
 
         plt.xlabel(
             "OOD percentile\n(higher = less reliable)"
@@ -1509,23 +1548,215 @@ def plot_reliability_curve_with_ood_boundaries(
 
     plt.close()
 
+def choose_calibration_bins(
+    n_samples,
+    requested_bins=10,
+    min_samples_per_bin=25,
+    min_bins=2,
+):
+    """
+    Choose the number of quantile bins from task sample size.
+
+    Examples
+    --------
+    100 samples, minimum 25 per bin -> 4 bins
+    250 samples, minimum 25 per bin -> 10 bins
+    """
+
+    if n_samples <= 0:
+        return 0
+
+    max_supported_bins = n_samples // min_samples_per_bin
+
+    if max_supported_bins < min_bins:
+        return 0
+
+    return int(
+        min(
+            requested_bins,
+            max_supported_bins,
+        )
+    )
+
+def percentile_interval(
+    values,
+    confidence_level=0.95,
+):
+    """
+    Calculate a two-sided percentile interval.
+    """
+
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+
+    if len(values) == 0:
+        return np.nan, np.nan
+
+    alpha = 1.0 - confidence_level
+
+    low = np.quantile(
+        values,
+        alpha / 2.0,
+    )
+
+    high = np.quantile(
+        values,
+        1.0 - alpha / 2.0,
+    )
+
+    return float(low), float(high)
+
+
+def bootstrap_bin_degradation(
+    baseline_errors,
+    bin_errors,
+    n_resamples=1000,
+    confidence_level=0.95,
+    random_seed=42,
+):
+    """
+    Bootstrap MAE, MAE ratio, and MAE delta for an OOD bin.
+
+    The baseline bin and current OOD bin are independently resampled
+    within each bootstrap iteration.
+
+    Returns confidence intervals for:
+      - bin MAE
+      - MAE ratio vs baseline
+      - MAE delta vs baseline
+    """
+
+    baseline_errors = np.asarray(
+        baseline_errors,
+        dtype=float,
+    )
+
+    bin_errors = np.asarray(
+        bin_errors,
+        dtype=float,
+    )
+
+    baseline_errors = baseline_errors[
+        np.isfinite(baseline_errors)
+    ]
+
+    bin_errors = bin_errors[
+        np.isfinite(bin_errors)
+    ]
+
+    result = {
+        "mae_ci_low": np.nan,
+        "mae_ci_high": np.nan,
+        "mae_ratio_ci_low": np.nan,
+        "mae_ratio_ci_high": np.nan,
+        "mae_delta_ci_low": np.nan,
+        "mae_delta_ci_high": np.nan,
+    }
+
+    if len(baseline_errors) < 2 or len(bin_errors) < 2:
+        return result
+
+    rng = np.random.default_rng(random_seed)
+
+    mae_samples = np.empty(
+        n_resamples,
+        dtype=float,
+    )
+
+    ratio_samples = np.full(
+        n_resamples,
+        np.nan,
+        dtype=float,
+    )
+
+    delta_samples = np.empty(
+        n_resamples,
+        dtype=float,
+    )
+
+    for bootstrap_idx in range(n_resamples):
+        baseline_sample = rng.choice(
+            baseline_errors,
+            size=len(baseline_errors),
+            replace=True,
+        )
+
+        bin_sample = rng.choice(
+            bin_errors,
+            size=len(bin_errors),
+            replace=True,
+        )
+
+        baseline_mae = float(
+            np.mean(baseline_sample)
+        )
+
+        bin_mae = float(
+            np.mean(bin_sample)
+        )
+
+        mae_samples[bootstrap_idx] = bin_mae
+        delta_samples[bootstrap_idx] = (
+            bin_mae - baseline_mae
+        )
+
+        if baseline_mae > 0:
+            ratio_samples[bootstrap_idx] = (
+                bin_mae / baseline_mae
+            )
+
+    (
+        result["mae_ci_low"],
+        result["mae_ci_high"],
+    ) = percentile_interval(
+        mae_samples,
+        confidence_level=confidence_level,
+    )
+
+    (
+        result["mae_ratio_ci_low"],
+        result["mae_ratio_ci_high"],
+    ) = percentile_interval(
+        ratio_samples,
+        confidence_level=confidence_level,
+    )
+
+    (
+        result["mae_delta_ci_low"],
+        result["mae_delta_ci_high"],
+    ) = percentile_interval(
+        delta_samples,
+        confidence_level=confidence_level,
+    )
+
+    return result
+
 def compute_task_ood_calibration_table(
     y_true,
     y_pred,
     task_names,
     ood_percentile,
-    n_bins=10,
-    min_n=5,
+    requested_bins=10,
+    min_samples_per_bin=25,
+    min_bins=2,
+    min_samples_total=10,
+    bootstrap_enabled=True,
+    bootstrap_resamples=1000,
+    confidence_level=0.95,
+    random_seed=42,
 ):
     """
     Per-task calibration of prediction error against OOD percentile.
 
-    Unlike sampled reliability plots, this uses the full validation matrix.
-
-    Outputs one row per task per OOD percentile bin.
+    Features
+    --------
+    - adaptive quantile bin count
+    - mean and median absolute error
+    - MAE ratio and delta vs lowest-OOD bin
+    - bootstrap confidence intervals for MAE, ratio, and delta
     """
 
-    rows = []
+    task_results = []
 
     ood_percentile = np.asarray(
         ood_percentile,
@@ -1537,11 +1768,33 @@ def compute_task_ood_calibration_table(
         yp = y_pred[:, task_idx]
 
         valid = (
-            ~np.isnan(yt)
+            np.isfinite(yt)
+            & np.isfinite(yp)
             & np.isfinite(ood_percentile)
         )
 
-        if valid.sum() < min_n:
+        n_valid = int(valid.sum())
+
+        if n_valid < min_samples_total:
+            logger.info(
+                f"Skipping OOD calibration for {task}: "
+                f"only {n_valid} valid observations"
+            )
+            continue
+
+        n_bins = choose_calibration_bins(
+            n_samples=n_valid,
+            requested_bins=requested_bins,
+            min_samples_per_bin=min_samples_per_bin,
+            min_bins=min_bins,
+        )
+
+        if n_bins < min_bins:
+            logger.info(
+                f"Skipping OOD calibration for {task}: "
+                f"not enough observations for at least {min_bins} bins "
+                f"with {min_samples_per_bin} observations per bin"
+            )
             continue
 
         task_df = pd.DataFrame({
@@ -1560,74 +1813,136 @@ def compute_task_ood_calibration_table(
             duplicates="drop",
         )
 
+        grouped = list(
+            task_df.groupby(
+                "ood_percentile_bin",
+                observed=False,
+            )
+        )
+
+        grouped = [
+            (bin_label, bin_df)
+            for bin_label, bin_df in grouped
+            if len(bin_df) >= 2
+        ]
+
+        if len(grouped) < min_bins:
+            continue
+
+        # Lowest-OOD bin is the reference distribution.
+        baseline_label, baseline_df = grouped[0]
+
+        baseline_errors = baseline_df[
+            "abs_error"
+        ].to_numpy(dtype=float)
+
+        baseline_mae = float(
+            np.mean(baseline_errors)
+        )
+
+        baseline_median_ae = float(
+            np.median(baseline_errors)
+        )
+
         task_rows = []
 
-        for b, sub in task_df.groupby(
-            "ood_percentile_bin",
-            observed=False,
-        ):
-            if len(sub) < min_n:
-                continue
+        for bin_idx, (bin_label, bin_df) in enumerate(grouped):
+            errors = bin_df[
+                "abs_error"
+            ].to_numpy(dtype=float)
 
             metrics = compute_metrics(
-                sub["y_true"].values,
-                sub["y_pred"].values,
+                bin_df["y_true"].values,
+                bin_df["y_pred"].values,
             )
+
+            mean_abs_error = float(
+                np.mean(errors)
+            )
+
+            median_abs_error = float(
+                np.median(errors)
+            )
+
+            mae_delta = (
+                mean_abs_error - baseline_mae
+            )
+
+            median_ae_delta = (
+                median_abs_error - baseline_median_ae
+            )
+
+            if baseline_mae > 0:
+                mae_ratio = (
+                    mean_abs_error / baseline_mae
+                )
+            else:
+                mae_ratio = np.nan
+
+            if baseline_median_ae > 0:
+                median_ae_ratio = (
+                    median_abs_error / baseline_median_ae
+                )
+            else:
+                median_ae_ratio = np.nan
+
+            bootstrap_stats = {
+                "mae_ci_low": np.nan,
+                "mae_ci_high": np.nan,
+                "mae_ratio_ci_low": np.nan,
+                "mae_ratio_ci_high": np.nan,
+                "mae_delta_ci_low": np.nan,
+                "mae_delta_ci_high": np.nan,
+            }
+
+            if bootstrap_enabled:
+                bootstrap_stats = bootstrap_bin_degradation(
+                    baseline_errors=baseline_errors,
+                    bin_errors=errors,
+                    n_resamples=bootstrap_resamples,
+                    confidence_level=confidence_level,
+                    random_seed=(
+                        random_seed
+                        + task_idx * 1000
+                        + bin_idx
+                    ),
+                )
 
             task_rows.append({
                 "task": task,
-                "ood_percentile_bin": str(b),
-                "mean_ood_percentile": sub["ood_percentile"].mean(),
-                "mean_abs_error": sub["abs_error"].mean(),
-                "median_abs_error": sub["abs_error"].median(),
-                "n_predictions": len(sub),
+                "ood_percentile_bin": str(bin_label),
+                "mean_ood_percentile": float(
+                    bin_df["ood_percentile"].mean()
+                ),
+                "min_ood_percentile": float(
+                    bin_df["ood_percentile"].min()
+                ),
+                "max_ood_percentile": float(
+                    bin_df["ood_percentile"].max()
+                ),
+                "n_predictions": int(len(bin_df)),
+                "n_calibration_bins": int(len(grouped)),
+                "baseline_mae": baseline_mae,
+                "baseline_median_ae": baseline_median_ae,
+                "mean_abs_error": mean_abs_error,
+                "median_abs_error": median_abs_error,
+                "mae_ratio_vs_lowest_ood_bin": mae_ratio,
+                "mae_delta_vs_lowest_ood_bin": mae_delta,
+                "median_ae_ratio_vs_lowest_ood_bin": median_ae_ratio,
+                "median_ae_delta_vs_lowest_ood_bin": median_ae_delta,
+                **bootstrap_stats,
                 **metrics,
             })
 
-        if len(task_rows) == 0:
-            continue
-
-        task_calib = pd.DataFrame(task_rows)
-
-        # Ratio to the lowest-OOD bin for this task.
-        task_calib = task_calib.sort_values(
-            "mean_ood_percentile"
+        task_results.append(
+            pd.DataFrame(task_rows)
         )
 
-        baseline_mae = task_calib["mean_abs_error"].iloc[0]
-        baseline_median_ae = task_calib["median_abs_error"].iloc[0]
-
-        # Absolute degradation relative to the lowest-OOD bin.
-        task_calib["mae_delta_vs_lowest_ood_bin"] = (
-            task_calib["mean_abs_error"] - baseline_mae
-        )
-
-        task_calib["median_ae_delta_vs_lowest_ood_bin"] = (
-            task_calib["median_abs_error"] - baseline_median_ae
-        )
-
-        # Relative degradation relative to the lowest-OOD bin.
-        if np.isfinite(baseline_mae) and baseline_mae > 0:
-            task_calib["mae_ratio_vs_lowest_ood_bin"] = (
-                task_calib["mean_abs_error"] / baseline_mae
-            )
-        else:
-            task_calib["mae_ratio_vs_lowest_ood_bin"] = np.nan
-
-        if np.isfinite(baseline_median_ae) and baseline_median_ae > 0:
-            task_calib["median_ae_ratio_vs_lowest_ood_bin"] = (
-                task_calib["median_abs_error"] / baseline_median_ae
-            )
-        else:
-            task_calib["median_ae_ratio_vs_lowest_ood_bin"] = np.nan
-
-        rows.append(task_calib)
-
-    if len(rows) == 0:
+    if len(task_results) == 0:
         return pd.DataFrame()
 
     return pd.concat(
-        rows,
+        task_results,
         ignore_index=True,
     )
 
@@ -1807,12 +2122,41 @@ def plot_per_task_ood_degradation(
 
         fig, ax1 = plt.subplots(figsize=(7, 5))
 
-        ax1.plot(
+        ratio_y = task_df[
+            "mae_ratio_vs_lowest_ood_bin"
+        ].to_numpy(dtype=float)
+
+        ratio_low = task_df[
+            "mae_ratio_ci_low"
+        ].to_numpy(dtype=float)
+
+        ratio_high = task_df[
+            "mae_ratio_ci_high"
+        ].to_numpy(dtype=float)
+
+        ratio_yerr = np.vstack([
+            np.maximum(
+                0.0,
+                ratio_y - ratio_low,
+            ),
+            np.maximum(
+                0.0,
+                ratio_high - ratio_y,
+            ),
+        ])
+
+        ax1.errorbar(
             task_df["mean_ood_percentile"],
-            task_df["mae_ratio_vs_lowest_ood_bin"],
+            ratio_y,
+            yerr=ratio_yerr,
             marker="o",
+            linestyle="-",
             color="#1D4ED8",
-            label="MAE ratio",
+            ecolor="#1D4ED8",
+            elinewidth=1.0,
+            capsize=3,
+            alpha=0.9,
+            label="MAE ratio, bootstrap CI",
         )
 
         ax1.set_xlabel("Mean OOD percentile")
@@ -1840,12 +2184,41 @@ def plot_per_task_ood_degradation(
 
         ax2 = ax1.twinx()
 
-        ax2.plot(
+        delta_y = task_df[
+            "mae_delta_vs_lowest_ood_bin"
+        ].to_numpy(dtype=float)
+
+        delta_low = task_df[
+            "mae_delta_ci_low"
+        ].to_numpy(dtype=float)
+
+        delta_high = task_df[
+            "mae_delta_ci_high"
+        ].to_numpy(dtype=float)
+
+        delta_yerr = np.vstack([
+            np.maximum(
+                0.0,
+                delta_y - delta_low,
+            ),
+            np.maximum(
+                0.0,
+                delta_high - delta_y,
+            ),
+        ])
+
+        ax2.errorbar(
             task_df["mean_ood_percentile"],
-            task_df["mae_delta_vs_lowest_ood_bin"],
+            delta_y,
+            yerr=delta_yerr,
             marker="s",
+            linestyle="-",
             color="#0F766E",
-            label="MAE delta",
+            ecolor="#0F766E",
+            elinewidth=1.0,
+            capsize=3,
+            alpha=0.9,
+            label="MAE delta, bootstrap CI",
         )
 
         ax2.set_ylabel("MAE delta vs lowest-OOD bin", color="#0F766E")
@@ -2001,11 +2374,16 @@ def summarise_task_ood_degradation(
         }
 
         for thr in ratio_thresholds:
-            crossing = task_df[
-                task_df["mae_ratio_vs_lowest_ood_bin"] >= thr
-            ]
+            if "mae_ratio_ci_low" in task_df.columns:
+                crossing = task_df[
+                    task_df["mae_ratio_ci_low"] >= thr
+                ]
+            else:
+                crossing = task_df[
+                    task_df["mae_ratio_vs_lowest_ood_bin"] >= thr
+                ]
 
-            col = f"first_ood_percentile_mae_ratio_ge_{thr}"
+            col = f"first_ood_percentile_ratio_ci_low_ge_{thr}"
 
             if len(crossing) > 0:
                 row[col] = crossing["mean_ood_percentile"].iloc[0]
@@ -2014,11 +2392,16 @@ def summarise_task_ood_degradation(
 
         if delta_thresholds is not None:
             for thr in delta_thresholds:
-                crossing = task_df[
-                    task_df["mae_delta_vs_lowest_ood_bin"] >= thr
-                ]
+                if "mae_delta_ci_low" in task_df.columns:
+                    crossing = task_df[
+                        task_df["mae_delta_ci_low"] >= thr
+                    ]
+                else:
+                    crossing = task_df[
+                        task_df["mae_delta_vs_lowest_ood_bin"] >= thr
+                    ]
 
-                col = f"first_ood_percentile_mae_delta_ge_{thr}"
+                col = f"first_ood_percentile_delta_ci_low_ge_{thr}"
 
                 if len(crossing) > 0:
                     row[col] = crossing["mean_ood_percentile"].iloc[0]
@@ -2475,7 +2858,12 @@ def evaluate(context, config):
         # --------------------------------------------------
         # Local density bins using neighbour counts.
         # --------------------------------------------------
-        density_col = ood_cfg.get(
+        neighbours_cfg = ood_cfg.get(
+            "neighbours",
+            {},
+        )
+
+        density_col = neighbours_cfg.get(
             "density_metric_col",
             "n_train_neighbors_ge_0.6",
         )
@@ -2499,9 +2887,14 @@ def evaluate(context, config):
         # --------------------------------------------------
         # Sampled long dataframe for plotting only.
         # --------------------------------------------------
+        plotting_cfg = ood_cfg.get(
+            "plotting",
+            {},
+        )
+
         sample_n = int(
-            ood_cfg.get(
-                "plot_sample_rows",
+            plotting_cfg.get(
+                "sample_rows",
                 100000,
             )
         )
@@ -2546,13 +2939,53 @@ def evaluate(context, config):
             index=False,
         )
 
+        calibration_cfg = ood_cfg.get(
+            "calibration",
+            {},
+        )
+
+        bootstrap_cfg = calibration_cfg.get(
+            "bootstrap",
+            {},
+        )
+
         task_ood_calibration = compute_task_ood_calibration_table(
             y_true=y_true,
             y_pred=y_pred,
             task_names=task_names,
             ood_percentile=ood_df["ood_percentile"].values,
-            n_bins=ood_cfg.get("task_calibration_bins", 10),
-            min_n=ood_cfg.get("task_calibration_min_n", 5),
+            requested_bins=calibration_cfg.get(
+                "requested_bins",
+                10,
+            ),
+            min_samples_per_bin=calibration_cfg.get(
+                "min_samples_per_bin",
+                25,
+            ),
+            min_bins=calibration_cfg.get(
+                "min_bins",
+                2,
+            ),
+            min_samples_total=calibration_cfg.get(
+                "min_samples_total",
+                10,
+            ),
+            bootstrap_enabled=bootstrap_cfg.get(
+                "enabled",
+                True,
+            ),
+            bootstrap_resamples=bootstrap_cfg.get(
+                "n_resamples",
+                1000,
+            ),
+            confidence_level=bootstrap_cfg.get(
+                "confidence_level",
+                0.95,
+            ),
+            random_seed=bootstrap_cfg.get(
+                "random_seed",
+                42,
+            ),
         )
 
         task_ood_calibration.to_csv(
@@ -2603,7 +3036,12 @@ def evaluate(context, config):
             )
 
         if len(pred_sample_df) > 0:
-            density_col = ood_cfg.get(
+            neighbours_cfg = ood_cfg.get(
+                "neighbours",
+                {},
+            )
+
+            density_col = neighbours_cfg.get(
                 "density_metric_col",
                 "n_train_neighbors_ge_0.6",
             )

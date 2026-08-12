@@ -9,6 +9,7 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.ML.Cluster import Butina
 
 DESCRIPTOR_FUNCS = {
+    # Broad ADME descriptors
     "MolWt": Descriptors.MolWt,
     "MolLogP": Descriptors.MolLogP,
     "TPSA": Descriptors.TPSA,
@@ -18,6 +19,18 @@ DESCRIPTOR_FUNCS = {
     "FractionCSP3": Descriptors.FractionCSP3,
     "RingCount": Descriptors.RingCount,
     "HeavyAtomCount": Descriptors.HeavyAtomCount,
+
+    # Additional permeability-relevant descriptors
+    "FormalCharge": lambda mol: float(
+        Chem.GetFormalCharge(mol)
+    ),
+    "NumAromaticRings": Descriptors.NumAromaticRings,
+    "NumAliphaticRings": Descriptors.NumAliphaticRings,
+    "NumHeteroatoms": Descriptors.NumHeteroatoms,
+    "MolMR": Descriptors.MolMR,
+    "LabuteASA": Descriptors.LabuteASA,
+    "NHOHCount": Descriptors.NHOHCount,
+    "NOCount": Descriptors.NOCount,
 }
 
 def murcko_scaffold(smiles):
@@ -757,21 +770,65 @@ def compute_ood_features(
     """
     Compute applicability-domain features for every query molecule.
 
-    This version is suitable for large datasets because it does not use
-    all-pairs Butina clustering.
+    Reads nested OOD configuration blocks:
+      fingerprint
+      neighbours
+      physchem
+      binning
     """
 
-    similarity_thresholds = config.get(
+    fingerprint_cfg = config.get("fingerprint", {})
+    neighbours_cfg = config.get("neighbours", {})
+    physchem_cfg = config.get("physchem", {})
+    bin_cfg = config.get("binning", {})
+
+    radius = int(
+        fingerprint_cfg.get(
+            "radius",
+            config.get("radius", 2),
+        )
+    )
+
+    n_bits = int(
+        fingerprint_cfg.get(
+            "n_bits",
+            config.get("n_bits", 2048),
+        )
+    )
+
+    top_k = int(
+        neighbours_cfg.get(
+            "top_k",
+            config.get("top_k", 5),
+        )
+    )
+
+    similarity_thresholds = neighbours_cfg.get(
         "similarity_thresholds",
-        (0.4, 0.5, 0.6, 0.7),
+        config.get(
+            "similarity_thresholds",
+            (0.4, 0.5, 0.6, 0.7),
+        ),
+    )
+
+    density_threshold = float(
+        neighbours_cfg.get(
+            "density_threshold",
+            config.get("density_threshold", 0.6),
+        )
+    )
+
+    density_col = neighbours_cfg.get(
+        "density_metric_col",
+        f"n_train_neighbors_ge_{density_threshold}",
     )
 
     similarity_df = compute_nn_similarity_features(
         query_smiles=query_smiles,
         train_smiles=train_smiles,
-        radius=config.get("radius", 2),
-        n_bits=config.get("n_bits", 2048),
-        top_k=config.get("top_k", 5),
+        radius=radius,
+        n_bits=n_bits,
+        top_k=top_k,
         similarity_thresholds=similarity_thresholds,
     )
 
@@ -780,11 +837,9 @@ def compute_ood_features(
         train_smiles=train_smiles,
     )
 
-    physchem_df, _ = compute_physchem_distance_features(
-        query_smiles=query_smiles,
-        train_smiles=train_smiles,
-        descriptors=config.get(
-            "physchem_descriptors",
+    if physchem_cfg.get("enabled", True):
+        descriptors = physchem_cfg.get(
+            "descriptors",
             [
                 "MolWt",
                 "MolLogP",
@@ -794,8 +849,21 @@ def compute_ood_features(
                 "NumRotatableBonds",
                 "FractionCSP3",
             ],
-        ),
-    )
+        )
+
+        physchem_df, _ = compute_physchem_distance_features(
+            query_smiles=query_smiles,
+            train_smiles=train_smiles,
+            descriptors=descriptors,
+        )
+    else:
+        physchem_df = pd.DataFrame({
+            "physchem_robust_distance": np.full(
+                len(query_smiles),
+                np.nan,
+                dtype=float,
+            )
+        })
 
     feature_df = pd.concat(
         [
@@ -805,28 +873,6 @@ def compute_ood_features(
         ],
         axis=1,
     )
-
-    density_threshold = config.get(
-        "density_threshold",
-        0.6,
-    )
-
-    density_col = f"n_train_neighbors_ge_{density_threshold}"
-
-    # feature_df["ood_score"] = compute_composite_ood_score(
-    #     feature_df,
-    #     density_col=density_col,
-    # )
-
-    # feature_df["ood_percentile"] = (
-    #     pd.Series(feature_df["ood_score"])
-    #     .rank(pct=True)
-    #     .values
-    # )
-
-    # feature_df["ood_bin"] = assign_ood_bins(
-    #     feature_df["ood_score"].values
-    # )
 
     include_scaffold = config.get(
         "include_scaffold_in_score",
@@ -839,15 +885,12 @@ def compute_ood_features(
         include_scaffold=include_scaffold,
     )
 
-    # Dataset-relative percentile on 0-100 scale.
     feature_df["ood_percentile"] = (
         pd.Series(feature_df["ood_score"])
         .rank(pct=True)
         .values
         * 100.0
     )
-
-    bin_cfg = config.get("binning", {})
 
     feature_df["ood_bin"] = assign_ood_bins_from_percentile(
         feature_df["ood_percentile"].values,
