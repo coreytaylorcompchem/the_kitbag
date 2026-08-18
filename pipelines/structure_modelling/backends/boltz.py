@@ -3,7 +3,11 @@ import yaml
 import subprocess
 import logging
 import json
+import shutil
+
+from collections import OrderedDict
 from pathlib import Path
+
 from backends.base import BaseStructureTool
 
 from pipeline.logger import setup_logger
@@ -354,6 +358,377 @@ def build_boltz_constraints(
 
     return compiled
 
+def pdb_has_seqres(pdb_path: Path) -> bool:
+    """
+    Return True if the PDB contains at least one SEQRES record.
+    """
+    pdb_path = Path(pdb_path)
+
+    with pdb_path.open("r", errors="replace") as handle:
+        return any(
+            line.startswith("SEQRES")
+            for line in handle
+        )
+
+
+def extract_atom_residues_by_chain(pdb_path: Path) -> OrderedDict:
+    """
+    Extract ordered polymer residue names from ATOM records.
+
+    Residues are identified by:
+      - chain ID
+      - residue number
+      - insertion code
+
+    Only ATOM records are used. HETATM records such as waters, ions,
+    ligands, glycans, and cofactors are deliberately excluded.
+
+    Alternative locations other than blank or A are ignored.
+    """
+    pdb_path = Path(pdb_path)
+
+    residues_by_chain = OrderedDict()
+    seen_residues = set()
+
+    with pdb_path.open("r", errors="replace") as handle:
+        for line in handle:
+            if not line.startswith("ATOM  "):
+                continue
+
+            if len(line) < 27:
+                logger.warning(
+                    f"[Template repair] Skipping malformed ATOM line "
+                    f"in {pdb_path}: {line.rstrip()}"
+                )
+                continue
+
+            # PDB fixed-width fields.
+            altloc = line[16].strip()
+            residue_name = line[17:20].strip().upper()
+            chain_id = line[21].strip()
+            residue_number = line[22:26].strip()
+            insertion_code = line[26].strip()
+
+            # Ignore secondary alternative conformations.
+            if altloc not in {"", "A"}:
+                continue
+
+            if not residue_name:
+                continue
+
+            # Blank chain IDs are valid in PDB files, although not ideal.
+            residue_key = (
+                chain_id,
+                residue_number,
+                insertion_code,
+            )
+
+            if residue_key in seen_residues:
+                continue
+
+            seen_residues.add(residue_key)
+
+            residues_by_chain.setdefault(chain_id, [])
+            residues_by_chain[chain_id].append(residue_name)
+
+    return residues_by_chain
+
+
+def format_seqres_records(residues_by_chain: dict) -> list:
+    """
+    Construct PDB SEQRES records from ordered three-letter residue names.
+
+    PDB SEQRES records contain up to 13 residues per line.
+    """
+    records = []
+
+    for chain_id, residue_names in residues_by_chain.items():
+        if not residue_names:
+            continue
+
+        displayed_chain_id = chain_id if chain_id else " "
+        total_residues = len(residue_names)
+
+        chunks = [
+            residue_names[i:i + 13]
+            for i in range(0, total_residues, 13)
+        ]
+
+        for serial_number, chunk in enumerate(chunks, start=1):
+            residue_text = " ".join(
+                f"{name:>3}"
+                for name in chunk
+            )
+
+            records.append(
+                f"SEQRES {serial_number:>3} "
+                f"{displayed_chain_id:1} "
+                f"{total_residues:>4}  "
+                f"{residue_text}\n"
+            )
+
+    return records
+
+
+def add_seqres_to_pdb(
+    input_path: Path,
+    output_path: Path,
+) -> Path:
+    """
+    Create a copy of a PDB file with SEQRES records reconstructed from
+    coordinate-bearing ATOM residues.
+
+    The original PDB is not modified.
+
+    Important:
+        The reconstructed SEQRES contains only residues present in the
+        coordinate section. Unresolved residues absent from the PDB cannot
+        be recovered by this procedure.
+    """
+    input_path = Path(input_path).expanduser().resolve()
+    output_path = Path(output_path).expanduser().resolve()
+
+    if not input_path.is_file():
+        raise FileNotFoundError(
+            f"Template PDB does not exist: {input_path}"
+        )
+
+    residues_by_chain = extract_atom_residues_by_chain(input_path)
+
+    if not residues_by_chain:
+        raise ValueError(
+            f"Cannot reconstruct SEQRES for {input_path}: "
+            "no ATOM polymer residues were found."
+        )
+
+    seqres_records = format_seqres_records(residues_by_chain)
+
+    if not seqres_records:
+        raise ValueError(
+            f"Cannot reconstruct SEQRES for {input_path}: "
+            "no SEQRES records could be generated."
+        )
+
+    original_lines = input_path.read_text(
+        errors="replace"
+    ).splitlines(keepends=True)
+
+    # Remove any malformed or partial existing SEQRES records.
+    original_lines = [
+        line
+        for line in original_lines
+        if not line.startswith("SEQRES")
+    ]
+
+    # Place SEQRES before the first coordinate or MODEL record.
+    coordinate_start = next(
+        (
+            index
+            for index, line in enumerate(original_lines)
+            if line.startswith(("ATOM  ", "HETATM", "MODEL "))
+        ),
+        len(original_lines),
+    )
+
+    repaired_lines = (
+        original_lines[:coordinate_start]
+        + seqres_records
+        + original_lines[coordinate_start:]
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_path.write_text(
+        "".join(repaired_lines)
+    )
+
+    chain_summary = {
+        chain_id if chain_id else "<blank>": len(residue_names)
+        for chain_id, residue_names in residues_by_chain.items()
+    }
+
+    logger.info(
+        f"[Template repair] Added SEQRES to {input_path.name} "
+        f"| chains={chain_summary} "
+        f"| output={output_path}"
+    )
+
+    return output_path
+
+
+def validate_boltz_template(template_path: Path) -> None:
+    """
+    Validate that Gemmi can read the template and that it contains at
+    least one coordinate model, chain, and polymer residue.
+
+    Full Boltz parsing is deliberately not performed here because the
+    low-level parse_pdb() and parse_mmcif() functions require Boltz CCD
+    molecule resources that are initialized by the Boltz CLI.
+    """
+    import gemmi
+
+    template_path = Path(template_path).expanduser().resolve()
+
+    if not template_path.is_file():
+        raise FileNotFoundError(
+            f"Boltz template does not exist: {template_path}"
+        )
+
+    if template_path.stat().st_size == 0:
+        raise ValueError(
+            f"Boltz template is empty: {template_path}"
+        )
+
+    suffix = template_path.suffix.lower()
+
+    if suffix not in {".pdb", ".cif", ".mmcif"}:
+        raise ValueError(
+            f"Unsupported Boltz template extension "
+            f"{suffix!r}: {template_path}"
+        )
+
+    try:
+        structure = gemmi.read_structure(str(template_path))
+    except Exception as exc:
+        raise ValueError(
+            f"Gemmi cannot read template: {template_path}\n"
+            f"Original Gemmi error: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    if len(structure) == 0:
+        raise ValueError(
+            f"Template contains no coordinate models recognized by Gemmi: "
+            f"{template_path}"
+        )
+
+    first_model = structure[0]
+
+    if len(first_model) == 0:
+        raise ValueError(
+            f"Template model 1 contains no chains: {template_path}"
+        )
+
+    chain_summary = {}
+    total_polymer_residues = 0
+
+    for chain in first_model:
+        polymer_residues = [
+            residue
+            for residue in chain
+            if residue.entity_type == gemmi.EntityType.Polymer
+        ]
+
+        chain_name = chain.name if chain.name else "<blank>"
+        residue_count = len(polymer_residues)
+
+        chain_summary[chain_name] = residue_count
+        total_polymer_residues += residue_count
+
+    if total_polymer_residues == 0:
+        raise ValueError(
+            f"Template contains no polymer residues recognized by Gemmi: "
+            f"{template_path}\n"
+            f"Chains found: {chain_summary}"
+        )
+
+    logger.info(
+        f"[Template validation] Gemmi successfully parsed template "
+        f"| models={len(structure)} "
+        f"| chains={chain_summary} "
+        f"| template={template_path}"
+    )
+
+
+def prepare_boltz_templates(
+    templates: list,
+    run_dir: Path,
+    auto_add_seqres: bool = True,
+) -> list:
+    """
+    Normalize, optionally repair, and validate Boltz template paths.
+
+    PyMOL-exported PDB files commonly lack SEQRES records. If
+    auto_add_seqres is True, a repaired copy is created under the
+    current Boltz run directory.
+
+    The original template file is never modified.
+    """
+    prepared_templates = []
+
+    if not templates:
+        return prepared_templates
+
+    template_dir = Path(run_dir) / "prepared_templates"
+    template_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    for index, template in enumerate(templates, start=1):
+        template_path = Path(template).expanduser().resolve()
+
+        if not template_path.is_file():
+            raise FileNotFoundError(
+                f"Template does not exist: {template_path}"
+            )
+
+        suffix = template_path.suffix.lower()
+
+        if suffix not in {".pdb", ".cif", ".mmcif"}:
+            raise ValueError(
+                f"Unsupported template format: {template_path}"
+            )
+
+        if suffix == ".pdb" and not pdb_has_seqres(template_path):
+            if not auto_add_seqres:
+                raise ValueError(
+                    f"Template PDB contains no SEQRES records: "
+                    f"{template_path}\n"
+                    "Either provide a PDB or mmCIF with complete sequence "
+                    "metadata, or enable "
+                    "structure_prediction.templates.auto_add_seqres."
+                )
+
+            repaired_name = (
+                f"template_{index}_"
+                f"{template_path.stem}_with_seqres.pdb"
+            )
+
+            prepared_path = template_dir / repaired_name
+
+            add_seqres_to_pdb(
+                input_path=template_path,
+                output_path=prepared_path,
+            )
+
+        else:
+            copied_name = (
+                f"template_{index}_{template_path.name}"
+            )
+
+            prepared_path = template_dir / copied_name
+
+            shutil.copy2(
+                template_path,
+                prepared_path,
+            )
+
+            logger.info(
+                f"[Template preparation] Copied template "
+                f"{template_path} to {prepared_path}"
+            )
+
+        validate_boltz_template(prepared_path)
+
+        prepared_templates.append(
+            str(prepared_path.resolve())
+        )
+
+    return prepared_templates
+
 def generate_boltz_yaml(
     sequences: dict,
     ligands: list,
@@ -374,15 +749,23 @@ def generate_boltz_yaml(
         data["templates"] = []
 
         for t in templates:
-            # detect extension
-            ext = Path(t).suffix.lower()
+            template_path = Path(t).expanduser().resolve()
+            ext = template_path.suffix.lower()
 
-            if ext == ".cif":
-                entry = {"cif": t}
+            if ext in {".cif", ".mmcif"}:
+                entry = {
+                    "cif": str(template_path)
+                }
             elif ext == ".pdb":
-                entry = {"pdb": t}
+                entry = {
+                    "pdb": str(template_path)
+                }
             else:
-                raise ValueError(f"Unsupported template format: {t}")
+                raise ValueError(
+                    f"Unsupported template format: {template_path}"
+                )
+
+            data["templates"].append(entry)
 
             data["templates"].append(entry)
                
@@ -541,6 +924,7 @@ class BoltzBackend(BaseStructureTool):
         inf_cfg = sp_cfg.get("inference", {})
         constraints_cfg = sp_cfg.get("constraints", {})
         affinity_cfg = sp_cfg.get("affinity", {})
+        templates_cfg = sp_cfg.get("templates", {})
       
         affinity_runtime = resolve_affinity_config(
             affinity_cfg,
@@ -554,14 +938,23 @@ class BoltzBackend(BaseStructureTool):
             row_constraints=row_constraints or [],
         )
 
+        prepared_templates = prepare_boltz_templates(
+            templates=templates or [],
+            run_dir=run_dir,
+            auto_add_seqres=templates_cfg.get(
+                "auto_add_seqres",
+                True,
+            ),
+        )
+
         generate_boltz_yaml(
-            sequences,
-            ligands or [],
-            templates or [],
-            msas or {},
-            boltz_constraints,
-            affinity_runtime,
-            yaml_file
+            sequences=sequences,
+            ligands=ligands or [],
+            templates=prepared_templates,
+            msas=msas or {},
+            constraints=boltz_constraints,
+            affinity=affinity_runtime,
+            yaml_path=yaml_file,
         )
 
         cmd = [

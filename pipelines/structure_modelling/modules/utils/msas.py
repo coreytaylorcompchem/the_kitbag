@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 def directory_summary(path: Path):
     if not path.exists():
