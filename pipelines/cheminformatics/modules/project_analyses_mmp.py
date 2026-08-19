@@ -63,7 +63,10 @@ from modules.utils.free_wilson_helpers import (
     summarise_fw_prediction_distributions
 )
 
-from modules.utils.sar_residual_score_helpers import run_fw_residual_ml_for_group
+from modules.utils.sar_residual_score_helpers import (
+    run_fw_residual_ml_for_group, 
+    plot_top_candidate_cards
+)
 
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
@@ -2841,6 +2844,17 @@ def fw_residual_ml(config, data=None):
     observed_all.to_csv(observed_all_csv, index=False)
     virtual_all.to_csv(virtual_all_csv, index=False)
     top_all.to_csv(top_all_csv, index=False)
+
+    global_top_cards_png = output_dir / "residual_ml_top_candidate_cards_all.png"
+
+    plot_top_candidate_cards(
+        virtual_df=top_all,
+        output_path=global_top_cards_png,
+        smiles_col=cfg.get("smiles_col_virtual", "final_smiles"),
+        top_n=cfg.get("diagnostics", {}).get("global_candidate_card_top_n", 50),
+        sort_col="priority_score",
+        n_cols=cfg.get("diagnostics", {}).get("candidate_card_n_cols", 5),
+    )
     summary_df.to_csv(summary_csv, index=False)
 
     return {
@@ -2851,4 +2865,5 @@ def fw_residual_ml(config, data=None):
         "n_models": len(summary_df),
         "n_virtual_scored": len(virtual_all),
         "n_top_candidates": len(top_all),
+        "top_candidate_cards_png": str(global_top_cards_png),
     }

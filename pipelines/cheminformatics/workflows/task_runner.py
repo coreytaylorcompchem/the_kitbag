@@ -180,7 +180,18 @@ def dynamic_task_runner(config):
 
     chunk_size = config.get("chunk_size", None)
 
+    workflow_parallel = config.get("workflow_parallel", [])
+
+    # If there are no parallel tasks, force sequential mode.
+    if not workflow_parallel:
+        logger.info(
+            "No workflow_parallel tasks configured. "
+            "Ignoring chunk_size and running sequential workflow."
+        )
+        chunk_size = None
+
     if not chunk_size or chunk_size <= 0:
+        # sequential mode
         # === Run all tasks sequentially on the full dataset ===
 
         logger.info("No chunk_size specified or <= 0: Running all tasks sequentially on full dataset")
