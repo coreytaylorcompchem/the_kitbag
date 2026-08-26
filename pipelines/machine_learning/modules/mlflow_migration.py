@@ -17,6 +17,10 @@ import torch
 import yaml
 
 from mlflow.tracking import MlflowClient
+from mlflow.models import ModelSignature
+from mlflow.types import ColSpec, Schema
+
+# from inference.adme_pyfunc_model import ADMEMultitaskPyFunc
 
 from pipeline.logger import setup_logger
 from pipeline.task_registry import register_task
@@ -709,6 +713,92 @@ def _log_model_artifacts(
             artifact_path=remote_artifact_path,
         )
 
+def _log_deployable_model(
+    model_config: dict[str, Any],
+) -> None:
+    checkpoint_path = model_config["checkpoint_path"]
+    inference_config_path = model_config.get(
+        "inference_config_path"
+    )
+
+    if inference_config_path is None:
+        raise ValueError(
+            "A deployable model requires inference_config_path."
+        )
+
+    artifacts = {
+        "checkpoint": str(checkpoint_path),
+        "inference_config": str(inference_config_path),
+    }
+
+    scaler_path = model_config.get("scaler_path")
+
+    if scaler_path is not None:
+        artifacts["label_scalers"] = str(scaler_path)
+
+    transform_metadata_path = model_config.get(
+        "transform_metadata_path"
+    )
+
+    if transform_metadata_path is not None:
+        artifacts["transform_metadata"] = str(
+            transform_metadata_path
+        )
+
+    input_schema = Schema(
+        [
+            ColSpec("string", "compound_id", required=False),
+            ColSpec("string", "smiles", required=True),
+        ]
+    )
+
+    output_schema = Schema(
+        [
+            ColSpec("string", "compound_id"),
+            ColSpec("string", "input_smiles"),
+            ColSpec("string", "canonical_smiles"),
+            ColSpec("boolean", "valid_smiles"),
+            ColSpec("string", "error"),
+        ]
+    )
+
+    signature = ModelSignature(
+        inputs=input_schema,
+        outputs=output_schema,
+    )
+
+    input_example = pd.DataFrame(
+        {
+            "compound_id": ["example_1", "example_2"],
+            "smiles": [
+                "CCO",
+                "CC(=O)Oc1ccccc1C(=O)O",
+            ],
+        }
+    )
+
+    mlflow.pyfunc.log_model(
+        artifact_path="deployable_model",
+        python_model=ADMEMultitaskPyFunc(),
+        artifacts=artifacts,
+        code_paths=[
+            "inference/adme_pyfunc_model.py",
+            "inference/adme_inference_adapter.py",
+            "models",
+        ],
+        pip_requirements=[
+            f"mlflow=={mlflow.__version__}",
+            f"torch=={torch.__version__}",
+            "pandas",
+            "numpy",
+            "rdkit",
+            "torch-geometric",
+            "joblib",
+            "pyyaml",
+        ],
+        signature=signature,
+        input_example=input_example,
+    )
 
 def _build_import_manifest(
     model_config: dict[str, Any],

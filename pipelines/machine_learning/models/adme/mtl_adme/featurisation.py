@@ -14,13 +14,13 @@ from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-from models.adme.utils.compute_fp import compute_morgan_fp
+# from models.adme.utils.compute_fp import compute_morgan_fp
 
-# =========================
-# GLOBAL STORAGE (pipeline-safe)
-# =========================
-GLOBAL_FEATURES = None
-FP_FEATURES = None
+# # =========================
+# # GLOBAL STORAGE (pipeline-safe)
+# # =========================
+# GLOBAL_FEATURES = None
+# FP_FEATURES = None
 
 # =========================
 # HELPERS
@@ -56,14 +56,14 @@ def prepare_features(
     dict
         Contains fitted/used preprocessing objects.
     """
-    global GLOBAL_FEATURES, FP_FEATURES
+    # global GLOBAL_FEATURES, FP_FEATURES
 
     smiles_list = df[smiles_col].tolist()
 
     def process_mol(smi):
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
-            return np.zeros(28, dtype=np.float32)
+            return np.zeros(27, dtype=np.float32)
 
         return np.array([
             safe_value(Descriptors.MolWt(mol)),
@@ -100,15 +100,21 @@ def prepare_features(
 
     if fit_global_scaler:
         scaler = StandardScaler()
-        GLOBAL_FEATURES = scaler.fit_transform(global_feats)
+        scaled_global_feats = scaler.fit_transform(
+            global_feats
+        )
     else:
         if global_scaler is None:
             raise ValueError(
-                "fit_global_scaler=False but no global_scaler was supplied."
+                "fit_global_scaler=False but no "
+                "global_scaler was supplied."
             )
-        scaler = global_scaler
-        GLOBAL_FEATURES = scaler.transform(global_feats)
 
+        scaler = global_scaler
+        scaled_global_feats = scaler.transform(
+            global_feats
+        )
+    
     def process_fp(smi):
         mol = Chem.MolFromSmiles(smi)
 
@@ -163,25 +169,81 @@ def prepare_features(
             fp_torsion
         ])
 
-    fps = [process_fp(s) for s in smiles_list]
-    fps = np.array(fps, dtype=np.float32)
+    fps = np.asarray(
+        [process_fp(s) for s in smiles_list],
+        dtype=np.float32,
+    )
 
-    FP_FEATURES = normalize(fps, axis=1)
+    normalized_fps = normalize(
+        fps,
+        axis=1,
+    )
 
     return {
-        "global_feature_scaler": scaler
+        "global_feature_scaler": scaler,
+        "global_features": scaled_global_feats.astype(
+            np.float32
+        ),
+        "fp_features": normalized_fps.astype(
+            np.float32
+        ),
     }
+
+    # fps = [process_fp(s) for s in smiles_list]
+    # fps = np.array(fps, dtype=np.float32)
+
+    # FP_FEATURES = normalize(fps, axis=1)
+
+    # return {
+    #     "global_feature_scaler": scaler,
+    #     "global_features": np.asarray(
+    #         scaled_global_feats,
+    #         dtype=np.float32,
+    #     ),
+    #     "fp_features": np.asarray(
+    #         normalized_fps,
+    #         dtype=np.float32,
+    #     ),
+    # }
 
 
 # =========================
 # GRAPH CONSTRUCTION
 # =========================
 
-def mol_to_graph(smiles: str, label=None, idx=None, global_feats=None, fps=None):
-    global GLOBAL_FEATURES, FP_FEATURES
+def mol_to_graph(
+    smiles: str,
+    label=None,
+    idx=None,
+    global_feats=None,
+    fps=None,
+):
+    """
+    Convert one molecule into a PyG Data object.
 
-    if idx is None:
-        raise ValueError("Index required for multitask featurisation")
+    Parameters
+    ----------
+    smiles
+        Input SMILES.
+    label
+        Optional multitask label vector.
+    idx
+        Optional source-row index retained as metadata.
+    global_feats
+        Precomputed and scaled global descriptor vector for this molecule.
+    fps
+        Precomputed and normalized fingerprint vector for this molecule.
+    """
+    if global_feats is None:
+        raise ValueError(
+            "global_feats must be supplied."
+        )
+
+    if fps is None:
+        raise ValueError(
+            "fps must be supplied."
+        )
+    # global GLOBAL_FEATURES, FP_FEATURES
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -284,8 +346,26 @@ def mol_to_graph(smiles: str, label=None, idx=None, global_feats=None, fps=None)
             int(bond.GetBondType() == Chem.rdchem.BondType.AROMATIC),
         ]] * 2
 
-    edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-    edge_attr = torch.tensor(edge_attr, dtype=torch.float32)
+    if edge_index:
+        edge_index = torch.tensor(
+            edge_index,
+            dtype=torch.long,
+        ).t().contiguous()
+
+        edge_attr = torch.tensor(
+            edge_attr,
+            dtype=torch.float32,
+        )
+    else:
+        edge_index = torch.empty(
+            (2, 0),
+            dtype=torch.long,
+        )
+
+        edge_attr = torch.empty(
+            (0, 9),
+            dtype=torch.float32,
+        )
 
     data = Data(
         x=x,
@@ -293,17 +373,40 @@ def mol_to_graph(smiles: str, label=None, idx=None, global_feats=None, fps=None)
         edge_attr=edge_attr,
     )
 
-    # Attach precomputed features
-    data.global_features = torch.tensor(GLOBAL_FEATURES[idx]).unsqueeze(0)
-    data.fp = torch.tensor(FP_FEATURES[idx]).unsqueeze(0)
+    if idx is not None:
+        data.idx = int(idx)
+        # raise ValueError("Index required for multitask featurisation")
 
-    if GLOBAL_FEATURES is None or FP_FEATURES is None:
-        raise RuntimeError(
-            "GLOBAL_FEATURES / FP_FEATURES not initialised. "
-            "Did you forget to call prepare_features()?"
-        )
+    # # Attach precomputed features
+    # if global_feats is None:
+    #     raise ValueError(
+    #         "global_feats must be supplied."
+    #     )
+
+    # if fps is None:
+    #     raise ValueError(
+    #         "fps must be supplied."
+    #     )
+
+    data.global_features = torch.as_tensor(
+        global_feats,
+        dtype=torch.float32,
+    ).view(1, -1)
+
+    data.fp = torch.as_tensor(
+        fps,
+        dtype=torch.float32,
+    ).view(1, -1)
+
+    data.smiles = smiles
+
+    # if idx is not None:
+    #     data.idx = int(idx)
 
     if label is not None:
-        data.y = torch.tensor(label, dtype=torch.float32).view(1, -1)
+        data.y = torch.as_tensor(
+            label,
+            dtype=torch.float32,
+        ).view(1, -1)
 
     return data

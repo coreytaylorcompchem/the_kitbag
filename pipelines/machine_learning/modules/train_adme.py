@@ -897,6 +897,8 @@ def featurise_smiles(config, context):
     module = importlib.import_module(feat_cfg["module"])
     featuriser = getattr(module, feat_cfg["function"])
 
+    logger.debug(f"Using featuriser: {featuriser}")
+
     if hasattr(module, "prepare_features"):
         use_pretrained_feature_scaler = config.get(
             "use_pretrained_feature_scaler",
@@ -935,7 +937,26 @@ def featurise_smiles(config, context):
                 fit_global_scaler=True,
             )
 
+        if not hasattr(module, "prepare_features"):
+            raise RuntimeError(
+                "ADME featurisation requires prepare_features()."
+            )
+
         context["feature_state"] = feature_state
+        global_features = feature_state["global_features"]
+        fp_features = feature_state["fp_features"]
+
+        if len(global_features) != len(df):
+            raise RuntimeError(
+                f"Expected {len(df)} global feature rows, "
+                f"got {len(global_features)}"
+            )
+
+        if len(fp_features) != len(df):
+            raise RuntimeError(
+                f"Expected {len(df)} fingerprint rows, "
+                f"got {len(fp_features)}"
+            )
 
     graphs = []
     valid_indices = []
@@ -945,11 +966,20 @@ def featurise_smiles(config, context):
         labels = df[label_cols].values.astype(np.float32)
 
         for i, (smi, y_vec) in enumerate(
-            tqdm(zip(df[smiles_col], labels),
+            tqdm(
+                zip(df[smiles_col], labels),
                 total=len(df),
-                desc="Featurising molecules")
+                desc="Featurising molecules"
+            )
         ):
-            g = featuriser(smi, label=y_vec, idx=i)
+            g = featuriser(
+                smi,
+                label=y_vec,
+                idx=i,
+                global_feats=global_features[i],
+                fps=fp_features[i],
+            )
+
             if g is not None:
                 g.smiles = smi
                 graphs.append(g)
@@ -966,11 +996,20 @@ def featurise_smiles(config, context):
     # SINGLE-TASK (backward compatible)
     else:
         for i, (smi, y) in enumerate(
-            tqdm(zip(df[smiles_col], df[label_col]),
+            tqdm(
+                zip(df[smiles_col], df[label_col]),
                 total=len(df),
-                desc="Featurising molecules")
+                desc="Featurising molecules"
+            )
         ):
-            g = featuriser(smi, label=y, idx=i)
+            g = featuriser(
+                smi,
+                label=y,
+                idx=i,
+                global_feats=global_features[i],
+                fps=fp_features[i],
+            )
+
             if g is not None:
                 g.smiles = smi
                 graphs.append(g)
