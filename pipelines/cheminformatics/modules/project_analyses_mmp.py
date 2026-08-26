@@ -2833,6 +2833,87 @@ def fw_residual_ml(config, data=None):
 
     observed_all = pd.concat(all_observed, ignore_index=True) if all_observed else pd.DataFrame()
     virtual_all = pd.concat(all_virtual, ignore_index=True) if all_virtual else pd.DataFrame()
+
+    if not virtual_all.empty:
+        # Preserve the within-core ranks.
+        for rank_col in [
+            "rank_predicted_potency",
+            "rank_expected_improvement",
+            "rank_confidence",
+            "rank_novelty",
+        ]:
+            if rank_col in virtual_all.columns:
+                virtual_all[f"{rank_col}_within_core"] = virtual_all[rank_col]
+
+        # Global potency rank.
+        virtual_all["rank_predicted_potency"] = (
+            pd.to_numeric(
+                virtual_all["combined_predicted_activity"],
+                errors="coerce",
+            )
+            .rank(
+                method="min",
+                ascending=False,
+                na_option="bottom",
+            )
+            .astype("Int64")
+        )
+
+        # Global EI rank.
+        virtual_all["rank_expected_improvement"] = (
+            pd.to_numeric(
+                virtual_all["expected_improvement"],
+                errors="coerce",
+            )
+            .rank(
+                method="min",
+                ascending=False,
+                na_option="bottom",
+            )
+            .astype("Int64")
+        )
+
+        # Global conservative-confidence rank.
+        virtual_all["rank_confidence"] = (
+            pd.to_numeric(
+                virtual_all["combined_pred_lower_95"],
+                errors="coerce",
+            )
+            .rank(
+                method="min",
+                ascending=False,
+                na_option="bottom",
+            )
+            .astype("Int64")
+        )
+
+        # Global novelty rank using the same lexicographic logic.
+        global_novelty_order = virtual_all.sort_values(
+            by=[
+                "nearest_analogue_similarity",
+                "combined_predicted_activity",
+                "ml_residual_bootstrap_sd",
+            ],
+            ascending=[
+                True,
+                False,
+                True,
+            ],
+            na_position="last",
+            kind="mergesort",
+        ).index
+
+        global_novelty_rank = pd.Series(
+            np.arange(1, len(virtual_all) + 1),
+            index=global_novelty_order,
+            dtype="int64",
+        )
+
+        virtual_all["rank_novelty"] = (
+            global_novelty_rank
+            .reindex(virtual_all.index)
+            .astype("Int64")
+        )
     top_all = pd.concat(all_top, ignore_index=True) if all_top else pd.DataFrame()
     summary_df = pd.DataFrame(summaries)
 
@@ -2843,18 +2924,89 @@ def fw_residual_ml(config, data=None):
 
     observed_all.to_csv(observed_all_csv, index=False)
     virtual_all.to_csv(virtual_all_csv, index=False)
+
+    global_top_n = cfg.get(
+        "ranking",
+        {},
+    ).get(
+        "top_n_global_per_ranking",
+        100,
+    )
+
+    global_top_indices = set()
+
+    for rank_col in [
+        "rank_predicted_potency",
+        "rank_expected_improvement",
+        "rank_confidence",
+        "rank_novelty",
+    ]:
+        global_top_indices.update(
+            virtual_all
+            .nsmallest(global_top_n, rank_col)
+            .index
+            .tolist()
+        )
+
+    top_all = (
+        virtual_all.loc[sorted(global_top_indices)]
+        .sort_values(
+            [
+                "rank_predicted_potency",
+                "rank_expected_improvement",
+                "rank_confidence",
+                "rank_novelty",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
     top_all.to_csv(top_all_csv, index=False)
 
-    global_top_cards_png = output_dir / "residual_ml_top_candidate_cards_all.png"
+    global_card_plots = {}
 
-    plot_top_candidate_cards(
-        virtual_df=top_all,
-        output_path=global_top_cards_png,
-        smiles_col=cfg.get("smiles_col_virtual", "final_smiles"),
-        top_n=cfg.get("diagnostics", {}).get("global_candidate_card_top_n", 50),
-        sort_col="priority_score",
-        n_cols=cfg.get("diagnostics", {}).get("candidate_card_n_cols", 5),
-    )
+    global_ranking_specs = {
+        "potency": "rank_predicted_potency",
+        "expected_improvement": "rank_expected_improvement",
+        "confidence": "rank_confidence",
+        "novelty": "rank_novelty",
+    }
+
+    for ranking_name, rank_col in global_ranking_specs.items():
+        global_card_path = (
+            output_dir
+            / f"residual_ml_top_candidate_cards_{ranking_name}_all.png"
+        )
+
+        made_plot = plot_top_candidate_cards(
+            virtual_df=virtual_all,
+            output_path=global_card_path,
+            smiles_col=cfg.get(
+                "smiles_col_virtual",
+                "final_smiles",
+            ),
+            top_n=cfg.get(
+                "diagnostics",
+                {},
+            ).get(
+                "global_candidate_card_top_n",
+                50,
+            ),
+            sort_col=rank_col,
+            n_cols=cfg.get(
+                "diagnostics",
+                {},
+            ).get(
+                "candidate_card_n_cols",
+                5,
+            ),
+        )
+
+        global_card_plots[ranking_name] = (
+            str(made_plot)
+            if made_plot is not None
+            else None
+        )
     summary_df.to_csv(summary_csv, index=False)
 
     return {
@@ -2865,5 +3017,10 @@ def fw_residual_ml(config, data=None):
         "n_models": len(summary_df),
         "n_virtual_scored": len(virtual_all),
         "n_top_candidates": len(top_all),
-        "top_candidate_cards_png": str(global_top_cards_png),
+        "top_candidate_cards_potency_png": global_card_plots.get("potency"),
+        "top_candidate_cards_expected_improvement_png": global_card_plots.get(
+            "expected_improvement"
+        ),
+        "top_candidate_cards_confidence_png": global_card_plots.get("confidence"),
+        "top_candidate_cards_novelty_png": global_card_plots.get("novelty"),
     }

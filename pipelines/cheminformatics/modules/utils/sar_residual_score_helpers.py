@@ -10,13 +10,14 @@ from joblib import Parallel, delayed, parallel_config
 
 from rdkit.Chem import Draw
 from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, QED, rdRGroupDecomposition, Scaffolds
+from rdkit.Chem import AllChem, Draw, Descriptors, Crippen, rdMolDescriptors, DataStructs
 
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, HistGradientBoostingRegressor
 from sklearn.model_selection import KFold
 from sklearn.base import clone
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-from rdkit.Chem import AllChem, DataStructs, Descriptors, Crippen, rdMolDescriptors
+
+from scipy.stats import norm
 
 from modules.utils.free_wilson_helpers import get_rgroup_columns
 
@@ -28,7 +29,7 @@ def plot_virtual_prediction_components(
     virtual_df,
     output_path,
     top_n=100,
-    sort_col="priority_score",
+    sort_col="rank_predicted_potency",
     dpi=300,
 ):
     """
@@ -63,7 +64,17 @@ def plot_virtual_prediction_components(
     if df.empty:
         return None
 
-    df = df.sort_values(sort_col, ascending=False).head(top_n).reset_index(drop=True)
+    sort_ascending = str(sort_col).startswith("rank_")
+
+    df = (
+        df.sort_values(
+            sort_col,
+            ascending=sort_ascending,
+        )
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
     df["rank"] = np.arange(1, len(df) + 1)
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
@@ -79,7 +90,7 @@ def plot_virtual_prediction_components(
 
     axes[1].bar(df["rank"], df["ml_residual_pred"], color=colors)
     axes[1].axhline(0, color="black", linewidth=1)
-    axes[1].set_xlabel(f"Candidate rank by {sort_col}")
+    axes[1].set_xlabel(f"Candidates ordered by {sort_col}")
     axes[1].set_ylabel("ML residual correction")
     axes[1].set_title("ML residual contribution")
     axes[1].grid(True, alpha=0.3)
@@ -205,7 +216,7 @@ def plot_top_candidate_cards(
     output_path,
     smiles_col="final_smiles",
     top_n=50,
-    sort_col="priority_score",
+    sort_col="rank_predicted_potency",
     dpi=300,
     n_cols=5,
 ):
@@ -221,11 +232,22 @@ def plot_top_candidate_cards(
         "fw_predicted_activity",
         "ml_residual_pred",
         "combined_predicted_activity",
-        "priority_score",
+        "combined_pred_lower_95",
         "ml_residual_bootstrap_sd",
         "nearest_analogue_similarity",
         "applicability_domain",
         "novelty",
+        "expected_improvement",
+        "probability_improves_best",
+        "clogP",
+        "predicted_lle",
+        "predicted_lle_lower_bound",
+        "rank_predicted_potency",
+        "rank_expected_improvement",
+        "rank_confidence",
+        "rank_novelty",
+        "rank_lle",
+        "rank_lle_confidence",
     }
 
     missing = required - set(virtual_df.columns)
@@ -244,18 +266,45 @@ def plot_top_candidate_cards(
     if "has_unresolved_dummy_atoms" in df.columns:
         df = df[df["has_unresolved_dummy_atoms"] == False].copy()
 
-    for col in [
+    numeric_card_cols = [
         "fw_predicted_activity",
         "ml_residual_pred",
         "combined_predicted_activity",
-        "priority_score",
+        "combined_pred_lower_95",
         "ml_residual_bootstrap_sd",
         "nearest_analogue_similarity",
-    ]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        "expected_improvement",
+        "probability_improves_best",
+        "clogP",
+        "predicted_lle",
+        "predicted_lle_lower_bound",
+        "rank_predicted_potency",
+        "rank_expected_improvement",
+        "rank_confidence",
+        "rank_novelty",
+        "rank_lle",
+        "rank_lle_confidence",
+    ]
+
+    for col in numeric_card_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(
+                df[col],
+                errors="coerce",
+            )
 
     df = df.dropna(subset=[smiles_col, sort_col])
-    df = df.sort_values(sort_col, ascending=False).head(top_n).reset_index(drop=True)
+
+    sort_ascending = str(sort_col).startswith("rank_")
+
+    df = (
+        df.sort_values(
+            sort_col,
+            ascending=sort_ascending,
+        )
+        .head(top_n)
+        .reset_index(drop=True)
+    )
 
     if df.empty:
         return None
@@ -289,15 +338,38 @@ def plot_top_candidate_cards(
 
         ax.set_title(title, fontsize=8)
 
+        prob_improves = row.get(
+            "probability_improves_best",
+            np.nan,
+        )
+
+        prob_improves_text = (
+            f"{prob_improves:.1%}"
+            if pd.notna(prob_improves)
+            else "NA"
+        )
+
         txt = (
             f"FW={row['fw_predicted_activity']:.2f}\n"
             f"ML resid={row['ml_residual_pred']:+.2f}\n"
             f"Combined={row['combined_predicted_activity']:.2f}\n"
-            f"Priority={row['priority_score']:.2f}\n"
+            f"95% low={row['combined_pred_lower_95']:.2f}\n"
             f"SD={row['ml_residual_bootstrap_sd']:.2f}\n"
+            f"EI={row['expected_improvement']:.3f}\n"
+            f"P(>best)={prob_improves_text}\n"
+            f"cLogP={row['clogP']:.2f}\n"
+            f"LLE={row['predicted_lle']:.2f}\n"
+            f"LLE LB={row['predicted_lle_lower_bound']:.2f}\n"
             f"NN sim={row['nearest_analogue_similarity']:.2f}\n"
-            f"AD={row['applicability_domain']}\n"
-            f"Novelty={row['novelty']}"
+            f"AD={row['applicability_domain']} | "
+            f"Novelty={row['novelty']}\n"
+            f"Ranks: "
+            f"P={int(row['rank_predicted_potency'])}, "
+            f"EI={int(row['rank_expected_improvement'])}, "
+            f"C={int(row['rank_confidence'])}, "
+            f"N={int(row['rank_novelty'])}, "
+            f"LLE={int(row['rank_lle'])}, "
+            f"LLE-C={int(row['rank_lle_confidence'])}"
         )
 
         ax.text(
@@ -784,6 +856,348 @@ def classify_novelty(similarity, cfg):
 
     return "High"
 
+def compute_expected_improvement(
+    predicted_mean,
+    predicted_sd,
+    best_observed,
+    exploration_margin=0.0,
+    min_sd=1e-8,
+):
+    """
+    Calculate Gaussian expected improvement over the best observed activity.
+
+    For activity values where higher is better:
+
+        improvement = predicted_mean - best_observed - exploration_margin
+
+        EI = improvement * Phi(z) + predicted_sd * phi(z)
+
+        z = improvement / predicted_sd
+
+    Parameters
+    ----------
+    predicted_mean : array-like
+        Combined FW + ML activity prediction.
+
+    predicted_sd : array-like
+        Predictive uncertainty estimate. Here this is the bootstrap SD
+        of the ML residual prediction.
+
+    best_observed : float
+        Highest observed activity within the current series/core group.
+
+    exploration_margin : float
+        Optional minimum improvement required over the current best.
+        A value of 0.0 uses standard expected improvement.
+
+    min_sd : float
+        Numerical floor for SD values.
+
+    Returns
+    -------
+    numpy.ndarray
+        Expected improvement values.
+    """
+
+    mean = np.asarray(predicted_mean, dtype=float)
+    sd = np.asarray(predicted_sd, dtype=float)
+
+    sd_safe = np.maximum(sd, min_sd)
+
+    improvement = (
+        mean
+        - float(best_observed)
+        - float(exploration_margin)
+    )
+
+    z = improvement / sd_safe
+
+    expected_improvement = (
+        improvement * norm.cdf(z)
+        + sd_safe * norm.pdf(z)
+    )
+
+    # Deterministic limit where SD is effectively zero.
+    near_zero_sd = sd <= min_sd
+
+    expected_improvement[near_zero_sd] = np.maximum(
+        improvement[near_zero_sd],
+        0.0,
+    )
+
+    expected_improvement[~np.isfinite(expected_improvement)] = np.nan
+
+    return expected_improvement
+
+def add_candidate_rankings(
+    virtual_df,
+    observed_df,
+    activity_col,
+    combined_pred_col="combined_predicted_activity",
+    uncertainty_col="ml_residual_bootstrap_sd",
+    lower_bound_col="combined_pred_lower_95",
+    similarity_col="nearest_analogue_similarity",
+    exploration_margin=0.0,
+):
+    """
+    Add four independent, data-derived candidate rankings.
+
+    Rankings
+    --------
+    rank_predicted_potency
+        Highest combined FW + ML prediction first.
+
+    rank_expected_improvement
+        Highest expected improvement over the best observed activity first.
+
+    rank_confidence
+        Highest conservative lower prediction bound first.
+
+    rank_novelty
+        Lowest nearest-analogue similarity first. Combined predicted
+        activity and lower uncertainty are used only as tie-breakers.
+
+    No weighted priority score is calculated.
+    """
+
+    if virtual_df is None or virtual_df.empty:
+        return virtual_df
+
+    if observed_df is None or observed_df.empty:
+        raise ValueError(
+            "[FW residual ML] Cannot rank candidates without observed data."
+        )
+
+    candidate_df = virtual_df.copy()
+    observed_work = observed_df.copy()
+
+    required_virtual = {
+        combined_pred_col,
+        uncertainty_col,
+        lower_bound_col,
+        similarity_col,
+        "predicted_lle",
+        "predicted_lle_lower_bound",
+    }
+
+    missing_virtual = required_virtual - set(candidate_df.columns)
+
+    if missing_virtual:
+        raise KeyError(
+            f"[FW residual ML] Cannot calculate candidate rankings. "
+            f"Missing virtual columns: {sorted(missing_virtual)}"
+        )
+
+    if activity_col not in observed_work.columns:
+        raise KeyError(
+            f"[FW residual ML] Observed activity column "
+            f"'{activity_col}' is missing."
+        )
+
+    numeric_virtual_cols = [
+        combined_pred_col,
+        uncertainty_col,
+        lower_bound_col,
+        similarity_col,
+        "predicted_lle",
+        "predicted_lle_lower_bound",
+    ]
+
+    for col in numeric_virtual_cols:
+        candidate_df[col] = pd.to_numeric(
+            candidate_df[col],
+            errors="coerce",
+        )
+
+    observed_activity = pd.to_numeric(
+        observed_work[activity_col],
+        errors="coerce",
+    ).dropna()
+
+    if observed_activity.empty:
+        raise ValueError(
+            "[FW residual ML] No valid observed activity values "
+            "available for candidate ranking."
+        )
+
+    best_observed = float(observed_activity.max())
+
+    candidate_df["best_observed_activity"] = best_observed
+
+    candidate_df["predicted_improvement_over_best"] = (
+        candidate_df[combined_pred_col]
+        - best_observed
+    )
+
+    candidate_df["expected_improvement"] = compute_expected_improvement(
+        predicted_mean=candidate_df[combined_pred_col].values,
+        predicted_sd=candidate_df[uncertainty_col].values,
+        best_observed=best_observed,
+        exploration_margin=exploration_margin,
+    )
+
+    candidate_df["probability_improves_best"] = np.nan
+
+    valid_uncertainty = (
+        candidate_df[uncertainty_col].notna()
+        & (candidate_df[uncertainty_col] > 0)
+        & candidate_df[combined_pred_col].notna()
+    )
+
+    candidate_df.loc[
+        valid_uncertainty,
+        "probability_improves_best",
+    ] = norm.cdf(
+        (
+            candidate_df.loc[
+                valid_uncertainty,
+                combined_pred_col,
+            ]
+            - best_observed
+            - exploration_margin
+        )
+        / candidate_df.loc[
+            valid_uncertainty,
+            uncertainty_col,
+        ]
+    )
+
+    deterministic_rows = (
+        candidate_df[uncertainty_col].notna()
+        & (candidate_df[uncertainty_col] <= 0)
+        & candidate_df[combined_pred_col].notna()
+    )
+
+    candidate_df.loc[
+        deterministic_rows,
+        "probability_improves_best",
+    ] = (
+        candidate_df.loc[
+            deterministic_rows,
+            combined_pred_col,
+        ]
+        > best_observed + exploration_margin
+    ).astype(float)
+
+    # Rank 1: highest combined predicted potency.
+    candidate_df["rank_predicted_potency"] = (
+        candidate_df[combined_pred_col]
+        .rank(
+            method="min",
+            ascending=False,
+            na_option="bottom",
+        )
+        .astype("Int64")
+    )
+
+    # Rank 2: highest expected improvement.
+    candidate_df["rank_expected_improvement"] = (
+        candidate_df["expected_improvement"]
+        .rank(
+            method="min",
+            ascending=False,
+            na_option="bottom",
+        )
+        .astype("Int64")
+    )
+
+    # Rank 3: highest conservative lower bound.
+    candidate_df["rank_confidence"] = (
+        candidate_df[lower_bound_col]
+        .rank(
+            method="min",
+            ascending=False,
+            na_option="bottom",
+        )
+        .astype("Int64")
+    )
+
+    # Rank 4: highest conservative lower bound.
+
+    candidate_df["rank_lle"] = (
+        candidate_df["predicted_lle"]
+        .rank(
+            method="min",
+            ascending=False,
+            na_option="bottom",
+        )
+        .astype("Int64")
+    )
+
+    candidate_df["rank_lle_confidence"] = (
+        candidate_df["predicted_lle_lower_bound"]
+        .rank(
+            method="min",
+            ascending=False,
+            na_option="bottom",
+        )
+        .astype("Int64")
+    )
+
+    # Rank 5: most novel first.
+    #
+    # This uses lexicographic ordering rather than a weighted score:
+    #   1. lower nearest-neighbour similarity,
+    #   2. higher combined predicted activity,
+    #   3. lower bootstrap uncertainty.
+    #
+    # Therefore novelty is never converted into an arbitrary activity bonus.
+    novelty_order = candidate_df.sort_values(
+        by=[
+            similarity_col,
+            combined_pred_col,
+            uncertainty_col,
+        ],
+        ascending=[
+            True,
+            False,
+            True,
+        ],
+        na_position="last",
+        kind="mergesort",
+    ).index
+
+    novelty_rank = pd.Series(
+        np.arange(1, len(candidate_df) + 1),
+        index=novelty_order,
+        dtype="int64",
+    )
+
+    candidate_df["rank_novelty"] = (
+        novelty_rank
+        .reindex(candidate_df.index)
+        .astype("Int64")
+    )
+
+    n_candidates = len(candidate_df)
+
+    for rank_col in [
+        "rank_predicted_potency",
+        "rank_expected_improvement",
+        "rank_confidence",
+        "rank_novelty",
+        "rank_lle",
+        "rank_lle_confidence",
+    ]:
+        if rank_col not in candidate_df.columns:
+            continue
+
+        pct_col = rank_col.replace("rank_", "pct_")
+
+        candidate_df[pct_col] = (
+            100.0
+            * (
+                1.0
+                - (
+                    candidate_df[rank_col] - 1
+                )
+                / max(1, n_candidates - 1)
+            )
+        )
+
+
+    return candidate_df
+
 def run_fw_residual_ml_for_group(
     observed_df,
     virtual_df,
@@ -975,8 +1389,60 @@ def run_fw_residual_ml_for_group(
     virtual_df["ml_residual_p95"] = virt_ens["p95"]
 
     virtual_df["combined_predicted_activity"] = (
-        virtual_df[fw_pred_col] + virtual_df["ml_residual_pred"]
+        virtual_df[fw_pred_col]
+        + virtual_df["ml_residual_pred"]
     )
+
+    # Add conformal interval before calculating lower-bound LLE.
+    virtual_df["conformal_abs_error_q95"] = conformal_q
+
+    virtual_df["combined_pred_lower_95"] = (
+        virtual_df["combined_predicted_activity"]
+        - conformal_q
+    )
+
+    virtual_df["combined_pred_upper_95"] = (
+        virtual_df["combined_predicted_activity"]
+        + conformal_q
+    )
+
+    # Calculate and retain physicochemical descriptors.
+    descriptor_df = pd.DataFrame(
+        [
+            calc_physchem_descriptors(smiles)
+            for smiles in virtual_df[smiles_col_virtual]
+        ],
+        index=virtual_df.index,
+    )
+
+    for col in descriptor_df.columns:
+        virtual_df[col] = descriptor_df[col]
+
+    # Ensure the descriptor needed for LLE is numeric.
+    virtual_df["clogP"] = pd.to_numeric(
+        virtual_df["clogP"],
+        errors="coerce",
+    )
+
+    # Predicted LLE based on the mean combined potency prediction.
+    virtual_df["predicted_lle"] = (
+        virtual_df["combined_predicted_activity"]
+        - virtual_df["clogP"]
+    )
+
+    # Conservative LLE based on the lower potency bound.
+    virtual_df["predicted_lle_lower_bound"] = (
+        virtual_df["combined_pred_lower_95"]
+        - virtual_df["clogP"]
+    )
+
+    descriptor_df = pd.DataFrame([
+        calc_physchem_descriptors(s)
+        for s in virtual_df[smiles_col_virtual]
+    ])
+
+    for col in descriptor_df.columns:
+        virtual_df[col] = descriptor_df[col].values
 
     virtual_df["conformal_abs_error_q95"] = conformal_q
     virtual_df["combined_pred_lower_95"] = (
@@ -1018,33 +1484,68 @@ def run_fw_residual_ml_for_group(
     )
 
     ranking_cfg = cfg.get("ranking", {})
-    uncertainty_weight = ranking_cfg.get("uncertainty_weight", 0.5)
-    outside_penalty = ranking_cfg.get("outside_ad_penalty", 0.5)
-    novelty_bonus_moderate = ranking_cfg.get("novelty_bonus_moderate", 0.1)
-    novelty_penalty_high = ranking_cfg.get("novelty_penalty_high", 0.1)
 
-    virtual_df["priority_score"] = virtual_df["combined_predicted_activity"]
-    virtual_df["priority_score"] -= uncertainty_weight * virtual_df["ml_residual_bootstrap_sd"]
+    exploration_margin = ranking_cfg.get(
+        "expected_improvement_margin",
+        0.0,
+    )
 
-    virtual_df.loc[
-        virtual_df["applicability_domain"] == "Outside",
-        "priority_score"
-    ] -= outside_penalty
+    virtual_df = add_candidate_rankings(
+        virtual_df=virtual_df,
+        observed_df=observed_df,
+        activity_col=activity_col,
+        combined_pred_col="combined_predicted_activity",
+        uncertainty_col="ml_residual_bootstrap_sd",
+        lower_bound_col="combined_pred_lower_95",
+        similarity_col="nearest_analogue_similarity",
+        exploration_margin=exploration_margin,
+    )
 
-    virtual_df.loc[
-        virtual_df["novelty"] == "Moderate",
-        "priority_score"
-    ] += novelty_bonus_moderate
-
-    virtual_df.loc[
-        virtual_df["novelty"] == "High",
-        "priority_score"
-    ] -= novelty_penalty_high
-
-    virtual_df = virtual_df.sort_values("priority_score", ascending=False).reset_index(drop=True)
+    # Remove the legacy score if this task is rerun using an input dataframe
+    # that already contains it.
+    virtual_df = virtual_df.drop(
+        columns=["priority_score"],
+        errors="ignore",
+    )
 
     top_n = ranking_cfg.get("top_n_per_group", 100)
-    top_df = virtual_df.head(top_n).copy()
+
+    # Keep a union of the top candidates from every ranking.
+    # A candidate appearing in several rankings is retained once.
+    top_candidate_indices = set()
+
+    for rank_col in [
+        "rank_predicted_potency",
+        "rank_expected_improvement",
+        "rank_confidence",
+        "rank_novelty",
+    ]:
+        selected_indices = (
+            virtual_df
+            .nsmallest(top_n, rank_col)
+            .index
+            .tolist()
+        )
+
+        top_candidate_indices.update(selected_indices)
+
+    top_df = virtual_df.loc[
+        sorted(top_candidate_indices)
+    ].copy()
+
+    # Sort the combined review table by potency rank only for stable display.
+    # The other independent ranks remain available as columns.
+    top_df = top_df.sort_values(
+        [
+            "rank_predicted_potency",
+            "rank_expected_improvement",
+            "rank_confidence",
+            "rank_lle",
+            "rank_lle_confidence",
+            "rank_novelty",
+        ],
+        ascending=True,
+    ).reset_index(drop=True)
 
     observed_csv = output_dir / "observed_residual_predictions.csv"
     virtual_csv = output_dir / "virtual_residual_predictions.csv"
@@ -1059,7 +1560,7 @@ def run_fw_residual_ml_for_group(
 
     observed_validation_plot = None
     virtual_components_plot = None
-    top_candidate_cards_plot = None
+    candidate_card_plots = {}
 
     if make_plots:
         observed_validation_plot = output_dir / "observed_fw_vs_ml_validation.png"
@@ -1076,18 +1577,47 @@ def run_fw_residual_ml_for_group(
             virtual_df=virtual_df,
             output_path=virtual_components_plot,
             top_n=diagnostics_cfg.get("component_plot_top_n", 100),
-            sort_col=diagnostics_cfg.get("component_plot_sort_col", "priority_score"),
+            sort_col=diagnostics_cfg.get(
+                "component_plot_sort_col",
+                "rank_predicted_potency",
+            ),
         )
 
-        top_candidate_cards_plot = output_dir / "top_candidate_cards.png"
-        plot_top_candidate_cards(
-            virtual_df=virtual_df,
-            output_path=top_candidate_cards_plot,
-            smiles_col=smiles_col_virtual,
-            top_n=diagnostics_cfg.get("candidate_card_top_n", 50),
-            sort_col=diagnostics_cfg.get("candidate_card_sort_col", "priority_score"),
-            n_cols=diagnostics_cfg.get("candidate_card_n_cols", 5),
-        )
+        ranking_plot_specs = {
+            "potency": "rank_predicted_potency",
+            "expected_improvement": "rank_expected_improvement",
+            "confidence": "rank_confidence",
+            "novelty": "rank_novelty",
+            "lle": "rank_lle",
+            "lle_confidence": "rank_lle_confidence",
+        }
+
+        for ranking_name, rank_col in ranking_plot_specs.items():
+            card_path = (
+                output_dir
+                / f"top_candidate_cards_{ranking_name}.png"
+            )
+
+            made_plot = plot_top_candidate_cards(
+                virtual_df=virtual_df,
+                output_path=card_path,
+                smiles_col=smiles_col_virtual,
+                top_n=diagnostics_cfg.get(
+                    "candidate_card_top_n",
+                    50,
+                ),
+                sort_col=rank_col,
+                n_cols=diagnostics_cfg.get(
+                    "candidate_card_n_cols",
+                    5,
+                ),
+            )
+
+            candidate_card_plots[ranking_name] = (
+                str(made_plot)
+                if made_plot is not None
+                else None
+            )
 
     summary = {
         "series": series,
@@ -1110,7 +1640,32 @@ def run_fw_residual_ml_for_group(
         "top_candidates_csv": str(top_csv),
         "observed_validation_plot": str(observed_validation_plot) if observed_validation_plot else None,
         "virtual_components_plot": str(virtual_components_plot) if virtual_components_plot else None,
-        "top_candidate_cards_plot": str(top_candidate_cards_plot) if top_candidate_cards_plot else None,
+        "top_candidate_cards_potency": candidate_card_plots.get("potency"),
+        "top_candidate_cards_expected_improvement": candidate_card_plots.get(
+            "expected_improvement"
+        ),
+        "top_candidate_cards_confidence": candidate_card_plots.get("confidence"),
+        "top_candidate_cards_novelty": candidate_card_plots.get("novelty"),
+        "top_candidate_cards_lle": candidate_card_plots.get("lle"),
+        "top_candidate_cards_lle_confidence": candidate_card_plots.get(
+            "lle_confidence"
+        ),
+        "best_observed_activity": (
+            float(virtual_df["best_observed_activity"].iloc[0])
+            if (
+                not virtual_df.empty
+                and "best_observed_activity" in virtual_df.columns
+            )
+            else np.nan
+        ),
+        "max_expected_improvement": (
+            float(virtual_df["expected_improvement"].max())
+            if (
+                not virtual_df.empty
+                and "expected_improvement" in virtual_df.columns
+            )
+            else np.nan
+        ),
     }
 
     logger.info(
