@@ -259,3 +259,60 @@ def migrate_adme_models_to_mlflow(config_path: str):
     )
 
     return current_data
+
+@register_workflow(
+    "deploy_adme_models_to_mlflow",
+    description="Package ADME checkpoints as MLflow PyFunc models",
+)
+def deploy_adme_models_to_mlflow(config_path: str):
+
+    config_path = Path(config_path)
+
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Config file not found: {config_path}"
+        )
+
+    with open(config_path, "r") as file:
+        config = yaml.safe_load(file)
+
+    workflow_name = config.get(
+        "workflow_name",
+        "deploy_adme_models_to_mlflow",
+    )
+
+    task_list = config.get(
+        "workflow",
+        [],
+    )
+
+    current_data = {
+        "full_config": config,
+        "config_path": str(
+            config_path.resolve()
+        ),
+    }
+
+    for task_name in task_list:
+
+        task_func = get_task(task_name)
+
+        if task_func is None:
+            raise ValueError(
+                f"Task '{task_name}' not found."
+            )
+
+        result = task_func(
+            config.get(task_name, {}),
+            current_data,
+        )
+
+        if isinstance(result, dict):
+            current_data.update(result)
+
+        elif result is not None:
+            current_data[task_name] = result
+
+        gc.collect()
+
+    return current_data
