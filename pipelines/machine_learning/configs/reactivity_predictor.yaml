@@ -1,0 +1,36 @@
+workflow_name: run_pipeline
+
+workflow:
+  - load_building_blocks
+  - process_building_blocks
+  - save_building_block_database
+
+
+load_building_blocks:
+  input_file: input/mcule_purchasable_building_blocks_260802.smi
+  smiles_col: smiles
+  id_col: mcule_id
+
+
+process_building_blocks:
+  canonicalise_smiles: true
+  remove_invalid_smiles: true
+  remove_duplicates: true
+
+  descriptors:
+    - molecular_weight
+    - logp
+    - tpsa
+    - hbd
+    - hba
+    - rotatable_bonds
+    - ring_count
+    - heavy_atom_count
+
+  parallel:
+    enabled: true
+    n_workers: 16
+    chunk_size: 10000
+
+save_building_block_database:
+  output_file: outputs/commercial_bbs/mcule_building_blocks.parquet

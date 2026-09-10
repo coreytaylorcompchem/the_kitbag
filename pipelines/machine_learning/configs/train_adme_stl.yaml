@@ -1,4 +1,4 @@
-workflow_name: train_model
+workflow_name: run_pipeline
 
 workflow:
   - load_smiles_dataset

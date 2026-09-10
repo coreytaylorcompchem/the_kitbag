@@ -7,9 +7,9 @@ import pandas as pd
 from pipeline.logger import setup_logger
 from pipeline.task_registry import register_task
 
-from models.adme.mlflow_pyfunc import (
-    ADMEMultitaskPyFunc,
-)
+# from models.adme.mlflow_pyfunc import (
+#     ADMEMultitaskPyFunc,
+# )
 
 logger = setup_logger(
     __name__,
@@ -128,7 +128,6 @@ def create_mlflow_serving_models(
             experiment_id=experiment.experiment_id,
             run_name=f"deploy_{model_id}",
         ):
-        `
 
             mlflow.set_tags(
                 {
