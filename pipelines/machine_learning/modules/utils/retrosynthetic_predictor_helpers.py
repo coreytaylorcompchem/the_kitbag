@@ -29,12 +29,18 @@ def _process_building_block_chunk(records, smiles_col):
             canonical_smiles = Chem.MolToSmiles(mol, canonical=True)
             inchikey = Chem.MolToInchiKey(mol)
 
+            elements = sorted({
+                atom.GetSymbol()
+                for atom in mol.GetAtoms()
+            })
+
             processed.append({
                 **row,
                 "smiles": canonical_smiles,
                 "canonical_smiles": canonical_smiles,
                 "inchikey": inchikey,
                 "valid_smiles": True,
+                "elements": elements,
                 "molecular_weight": Descriptors.MolWt(mol),
                 "logp": Crippen.MolLogP(mol),
                 "tpsa": Descriptors.TPSA(mol),

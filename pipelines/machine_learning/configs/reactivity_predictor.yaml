@@ -1,9 +1,12 @@
 workflow_name: run_pipeline
 
 workflow:
-  - load_building_blocks
-  - process_building_blocks
-  - save_building_block_database
+  # - load_building_blocks
+  # - process_building_blocks
+  # - save_building_block_database
+  - validate_building_block_database
+  - plot_building_block_database
+  - classify_building_blocks
 
 
 load_building_blocks:
@@ -34,3 +37,60 @@ process_building_blocks:
 
 save_building_block_database:
   output_file: outputs/commercial_bbs/mcule_building_blocks.parquet
+
+validate_building_block_database:
+  input_file: outputs/commercial_bbs/mcule_building_blocks.parquet
+  output_file: outputs/commercial_bbs/validation/validation_summary.json
+
+  very_small_mw: 50
+  very_large_mw: 800
+
+
+plot_building_block_database:
+  input_file: outputs/commercial_bbs/mcule_building_blocks.parquet
+  output_dir: outputs/commercial_bbs/validation
+
+  very_small_mw: 50
+  very_large_mw: 800
+
+  mw_normal_min: 50
+  mw_normal_max: 800
+
+  logp_normal_min: -5
+  logp_normal_max: 10
+
+  tpsa_normal_min: 0
+  tpsa_normal_max: 250
+
+  hac_normal_min: 3
+  hac_normal_max: 60
+
+  mw_plot_max: 1000
+  max_molecules_per_category: 25
+
+
+classify_building_blocks:
+  input_file: outputs/commercial_bbs/mcule_building_blocks.parquet
+
+  retrosynthesis_output: outputs/commercial_bbs/mcule_retrosynthesis_building_blocks.parquet
+  excluded_output: outputs/commercial_bbs/mcule_excluded_building_blocks.parquet
+
+  very_small_mw: 50
+  very_large_mw: 800
+
+  min_heavy_atoms: 3
+  max_heavy_atoms: 60
+
+  allowed_elements:
+    - H
+    - B
+    - C
+    - N
+    - O
+    - F
+    - P
+    - S
+    - Cl
+    - Br
+    - I
+    - Si
