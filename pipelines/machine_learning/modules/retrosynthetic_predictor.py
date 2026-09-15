@@ -1673,3 +1673,342 @@ def build_building_block_search_index(config, context):
         "building_block_search_index_dir": output_dir,
         "building_block_search_index_metadata": metadata_file,
     }
+
+@register_task(
+    "validate_reactivity_annotations",
+    category="SYNTHESIS",
+    description="Validate reaction-handle annotations and generate representative molecular depictions."
+)
+def validate_reactivity_annotations(config, context):
+
+    input_file = Path(
+        config.get(
+            "input_file",
+            "outputs/commercial_bbs/"
+            "mcule_retrosynthesis_building_blocks_reactivity.parquet"
+        )
+    )
+
+    output_dir = Path(
+        config.get(
+            "output_dir",
+            "outputs/commercial_bbs/validation/reactivity"
+        )
+    )
+
+    sample_size = int(
+        config.get(
+            "sample_size",
+            25
+        )
+    )
+
+    random_state = int(
+        config.get(
+            "random_state",
+            42
+        )
+    )
+
+    if not input_file.exists():
+        raise FileNotFoundError(
+            f"Annotated building-block database not found: "
+            f"{input_file}"
+        )
+
+    df = pd.read_parquet(input_file)
+
+    logger.info(
+        f"Validating reaction annotations for "
+        f"{len(df):,} building blocks"
+    )
+
+    required_columns = [
+        "canonical_smiles",
+        "inchikey",
+        "reaction_handles",
+        "n_reaction_handles",
+        "has_reaction_handle",
+    ]
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing required columns: {missing_columns}"
+        )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    # ------------------------------------------------------------------
+    # Reaction-handle definitions
+    #
+    # Keep this list in the same order as the annotation task.
+    # ------------------------------------------------------------------
+
+    reaction_handles = [
+        "amine",
+        "alcohol",
+        "phenol",
+        "carboxylic_acid",
+        "acid_chloride",
+        "aldehyde",
+        "ketone",
+        "alkyl_halide",
+        "aryl_vinyl_halide",
+        "boronic_acid",
+        "boronate_ester",
+        "sulfonyl_chloride",
+        "nitrile",
+    ]
+
+    # ------------------------------------------------------------------
+    # Count molecules carrying each handle
+    # ------------------------------------------------------------------
+
+    handle_counts = {}
+
+    for handle in reaction_handles:
+
+        mask = (
+            df["reaction_handles"]
+            .fillna("")
+            .str.contains(
+                rf"(?:^|;){handle}(?:;|$)",
+                regex=True,
+            )
+        )
+
+        handle_counts[handle] = int(
+            mask.sum()
+        )
+
+    n_with_handle = int(
+        df["has_reaction_handle"]
+        .fillna(False)
+        .astype(bool)
+        .sum()
+    )
+
+    n_without_handle = (
+        len(df) - n_with_handle
+    )
+
+    # ------------------------------------------------------------------
+    # Handle-combination statistics
+    #
+    # This is useful because it tells us how often molecules have
+    # multiple possible reaction handles.
+    # ------------------------------------------------------------------
+
+    handle_number_counts = (
+        pd.to_numeric(
+            df["n_reaction_handles"],
+            errors="coerce",
+        )
+        .fillna(0)
+        .astype(int)
+        .value_counts()
+        .sort_index()
+        .to_dict()
+    )
+
+    # ------------------------------------------------------------------
+    # Generate representative SVG examples
+    # ------------------------------------------------------------------
+
+    depiction_files = {}
+
+    for handle in reaction_handles:
+
+        mask = (
+            df["reaction_handles"]
+            .fillna("")
+            .str.contains(
+                rf"(?:^|;){handle}(?:;|$)",
+                regex=True,
+            )
+        )
+
+        handle_df = df.loc[
+            mask,
+            [
+                "canonical_smiles",
+                "inchikey",
+            ]
+        ].copy()
+
+        if handle_df.empty:
+
+            logger.info(
+                f"{handle}: no molecules found"
+            )
+
+            continue
+
+        n_sample = min(
+            sample_size,
+            len(handle_df)
+        )
+
+        sample_df = handle_df.sample(
+            n=n_sample,
+            random_state=random_state,
+        )
+
+        molecules = []
+        legends = []
+
+        for _, row in sample_df.iterrows():
+
+            smiles = row["canonical_smiles"]
+
+            try:
+                mol = Chem.MolFromSmiles(smiles)
+
+            except Exception:
+                mol = None
+
+            if mol is None:
+                continue
+
+            molecules.append(mol)
+
+            legends.append(
+                row["inchikey"]
+            )
+
+        if not molecules:
+            logger.warning(
+                f"{handle}: no valid molecules available "
+                f"for depiction"
+            )
+            continue
+
+        # --------------------------------------------------------------
+        # Create SVG grid without Cairo
+        # --------------------------------------------------------------
+
+        n_cols = 5
+        n_rows = (
+            len(molecules) + n_cols - 1
+        ) // n_cols
+
+        cell_width = 250
+        cell_height = 220
+
+        drawer = rdMolDraw2D.MolDraw2DSVG(
+            n_cols * cell_width,
+            n_rows * cell_height,
+            cell_width,
+            cell_height,
+        )
+
+        drawer.DrawMolecules(
+            molecules,
+            legends=legends,
+        )
+
+        drawer.FinishDrawing()
+
+        svg = drawer.GetDrawingText()
+
+        output_file = (
+            output_dir /
+            f"{handle}_examples.svg"
+        )
+
+        with open(
+            output_file,
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write(svg)
+
+        depiction_files[handle] = str(
+            output_file
+        )
+
+        logger.info(
+            f"{handle}: "
+            f"{handle_counts[handle]:,} molecules, "
+            f"saved {len(molecules)} examples to "
+            f"{output_file}"
+        )
+
+    # ------------------------------------------------------------------
+    # Build validation summary
+    # ------------------------------------------------------------------
+
+    summary = {
+        "input_file": str(input_file),
+        "n_building_blocks": int(len(df)),
+        "n_with_reaction_handle": n_with_handle,
+        "n_without_reaction_handle": n_without_handle,
+        "fraction_with_reaction_handle": (
+            float(n_with_handle / len(df))
+            if len(df) > 0
+            else 0.0
+        ),
+        "reaction_handle_counts": handle_counts,
+        "n_reaction_handles_per_molecule": {
+            str(key): int(value)
+            for key, value
+            in handle_number_counts.items()
+        },
+        "sample_size": sample_size,
+        "random_state": random_state,
+        "depiction_files": depiction_files,
+    }
+
+    summary_file = (
+        output_dir /
+        "reactivity_validation_summary.json"
+    )
+
+    with open(
+        summary_file,
+        "w",
+        encoding="utf-8",
+    ) as f:
+        json.dump(
+            summary,
+            f,
+            indent=2,
+        )
+
+    logger.info(
+        f"Reaction annotation validation complete"
+    )
+
+    logger.info(
+        f"  Building blocks: "
+        f"{len(df):,}"
+    )
+
+    logger.info(
+        f"  With recognised handle: "
+        f"{n_with_handle:,}"
+    )
+
+    logger.info(
+        f"  Without recognised handle: "
+        f"{n_without_handle:,}"
+    )
+
+    logger.info(
+        f"  Summary saved to {summary_file}"
+    )
+
+    return {
+        "reactivity_validation": summary,
+        "reactivity_validation_file": summary_file,
+        "reactivity_validation_dir": output_dir,
+    }
