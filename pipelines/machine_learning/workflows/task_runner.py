@@ -8,7 +8,7 @@ from pipeline.task_registry import get_task, list_tasks
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-@register_workflow("train_model", description="Train and evaluate specified model")
+@register_workflow("run_pipeline", description="Train and evaluate specified model")
 def train_model(config_path: str):
     """
     Dynamically runs model training workflow as defined in a YAML config file.
