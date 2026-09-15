@@ -1,0 +1,61 @@
+workflow_name: run_pipeline
+
+workflow:
+  - load_retrosynthesis_targets
+  - generate_reaction_disconnections
+  - search_commercial_building_blocks
+  - assemble_candidate_routes
+  - save_candidate_routes
+  - validate_candidate_routes
+  # - score_routes
+  # - rank_routes
+
+
+load_retrosynthesis_targets:
+  input_file: input/retrosynthesis_candidates.csv
+  smiles_col: SMILES
+  id_col: molecule_id
+
+
+generate_reaction_disconnections:
+  rules:
+    - amide_formation
+    - ester_formation
+    - suzuki_coupling
+    - reductive_amination
+    - ether_formation
+
+
+search_commercial_building_blocks:
+  index_dir: outputs/commercial_bbs/search_index
+
+  max_candidates_per_fragment: 20
+
+  similarity_threshold: 0.40
+
+  fingerprint_radius: 2
+  fingerprint_bits: 2048
+
+assemble_candidate_routes:
+  max_routes_per_disconnection: 20
+
+save_candidate_routes:
+  output_dir: outputs/retrosynthesis/routes
+  route_output_file: candidate_routes.parquet
+  precursor_output_file: candidate_route_precursors.parquet
+
+validate_candidate_routes:
+  route_file: outputs/retrosynthesis/routes/candidate_routes.parquet
+  precursor_file: outputs/retrosynthesis/routes/candidate_route_precursors.parquet
+  output_dir: outputs/retrosynthesis/routes/validation
+
+score_routes:
+  weights:
+    reaction_difficulty: 0.30
+    commercial_availability: 0.30
+    n_steps: 0.20
+    reaction_confidence: 0.20
+
+
+rank_routes:
+  top_k: 10

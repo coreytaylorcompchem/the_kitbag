@@ -1,9 +1,9 @@
 workflow_name: run_pipeline
 
 workflow:
-  # - load_building_blocks
-  # - process_building_blocks
-  # - save_building_block_database
+  - load_building_blocks
+  - process_building_blocks
+  - save_building_block_database
   - validate_building_block_database
   - plot_building_block_database
   - classify_building_blocks

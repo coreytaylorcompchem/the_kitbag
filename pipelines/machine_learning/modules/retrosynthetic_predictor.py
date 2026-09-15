@@ -1,5 +1,5 @@
-import json
-import math
+# import json
+# import math
 
 from pathlib import Path
 
@@ -10,15 +10,12 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
-from rdkit import Chem
-# from rdkit.Chem import AllChem
-# from rdkit.Chem import Descriptors, Lipinski, Crippen
-# from rdkit.Chem import QED
-from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit import Chem, DataStructs
+from rdkit.Chem import AllChem
 
-from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
+# from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 
-from modules.utils.retrosynthetic_predictor_helpers import _process_building_block_chunk, _annotate_building_block_chunk, REACTION_HANDLE_SMARTS
+from modules.utils.retrosynth_rxn_rules import REACTION_RULES, COMPILED_REACTION_RULES, _canonicalise_smiles, _apply_reaction_rule
 
 from pipeline.task_registry import register_task
 
@@ -27,1988 +24,1442 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 @register_task(
-    "load_building_blocks",
-    category="Retrosenthetic predictor",
-    description="Load commercial building blocks from a SMILES file."
+    "load_retrosynthesis_targets",
+    category="SYNTHESIS",
+    description="Load candidate molecules for retrosynthetic analysis."
 )
-def load_building_blocks(config, context):
+def load_retrosynthesis_targets(config, context):
 
     input_file = Path(config["input_file"])
 
     if not input_file.exists():
         raise FileNotFoundError(
-            f"Building-block file not found: {input_file}"
+            f"Retrosynthesis target file not found: {input_file}"
+        )
+
+    file_type = input_file.suffix.lower()
+
+    if file_type == ".csv":
+        df = pd.read_csv(input_file)
+
+    elif file_type == ".parquet":
+        df = pd.read_parquet(input_file)
+
+    else:
+        raise ValueError(
+            f"Unsupported target file format: {file_type}. "
+            "Use CSV or Parquet."
         )
 
     smiles_col = config.get("smiles_col", "smiles")
-    id_col = config.get("id_col", "mcule_id")
 
-    records = []
-
-    with open(input_file, "r") as f:
-        for line_number, line in enumerate(f, start=1):
-
-            line = line.strip()
-
-            if not line:
-                continue
-
-            parts = line.split()
-
-            if len(parts) < 2:
-                logger.warning(
-                    f"Skipping malformed line {line_number}: {line}"
-                )
-                continue
-
-            records.append({
-                smiles_col: parts[0],
-                id_col: parts[1],
-            })
-
-    df = pd.DataFrame(records)
-
-    if df.empty:
+    if smiles_col not in df.columns:
         raise ValueError(
-            f"No building blocks loaded from {input_file}"
+            f"SMILES column '{smiles_col}' not found in "
+            f"target dataset. Available columns: {list(df.columns)}"
         )
 
-    logger.info(
-        f"Loaded {len(df):,} building blocks from {input_file}"
-    )
+    df = df.copy()
 
-    context["building_blocks"] = df
+    # Keep the original column but provide a standard name for
+    # downstream retrosynthesis tasks.
+    if smiles_col != "target_smiles":
+        df["target_smiles"] = df[smiles_col]
+    else:
+        df["target_smiles"] = df[smiles_col]
 
-    return {
-        "building_blocks": df
-    }
+    id_col = config.get("id_col")
 
-@register_task(
-    "process_building_blocks",
-    category="SYNTHESIS",
-    description="Canonicalise and calculate descriptors for commercial building blocks."
-)
-def process_building_blocks(config, context):
+    if id_col is not None:
 
-    df = context["building_blocks"].copy()
+        if id_col not in df.columns:
+            raise ValueError(
+                f"ID column '{id_col}' not found in target dataset."
+            )
 
-    smiles_col = config.get("smiles_col", "smiles")
-
-    canonicalise = config.get("canonicalise_smiles", True)
-    remove_invalid = config.get("remove_invalid_smiles", True)
-    remove_duplicates = config.get("remove_duplicates", True)
-
-    parallel_config = config.get("parallel", {})
-
-    parallel_enabled = parallel_config.get("enabled", True)
-    n_workers = parallel_config.get("n_workers", None)
-    chunk_size = parallel_config.get("chunk_size", 10000)
-
-    logger.info(
-        f"Processing {len(df):,} building blocks"
-    )
-
-    # ------------------------------------------------------------------
-    # Convert the input into chunks of ordinary Python dictionaries.
-    # This avoids the very slow DataFrame.iterrows() loop.
-    # ------------------------------------------------------------------
-
-    records = df.to_dict(orient="records")
-
-    chunks = (
-        records[i:i + chunk_size]
-        for i in range(0, len(records), chunk_size)
-    )
-
-    processed = []
-
-    # ------------------------------------------------------------------
-    # Parallel processing
-    # ------------------------------------------------------------------
-
-    if parallel_enabled:
-
-        logger.info(
-            f"Using multiprocessing with "
-            f"{n_workers or 'default'} workers "
-            f"and chunk size {chunk_size:,}"
-        )
-
-        with ProcessPoolExecutor(
-            max_workers=n_workers
-        ) as executor:
-
-            pending = set()
-            max_pending = (n_workers or 4) * 2
-
-            with tqdm(
-                total=len(df),
-                desc="Processing building blocks"
-            ) as progress:
-
-                for chunk in chunks:
-
-                    future = executor.submit(
-                        _process_building_block_chunk,
-                        chunk,
-                        smiles_col,
-                    )
-
-                    pending.add(future)
-
-                    # Keep the number of outstanding jobs bounded.
-                    if len(pending) >= max_pending:
-
-                        done, pending = wait(
-                            pending,
-                            return_when=FIRST_COMPLETED
-                        )
-
-                        for completed in done:
-
-                            result = completed.result()
-
-                            processed.extend(result)
-
-                            progress.update(len(result))
-
-                # Collect remaining jobs.
-                while pending:
-
-                    done, pending = wait(
-                        pending,
-                        return_when=FIRST_COMPLETED
-                    )
-
-                    for completed in done:
-
-                        result = completed.result()
-
-                        processed.extend(result)
-
-                        progress.update(len(result))
-
-    # ------------------------------------------------------------------
-    # Serial fallback
-    # ------------------------------------------------------------------
+        df["target_id"] = df[id_col]
 
     else:
-
-        logger.info(
-            "Parallel processing disabled; using single process."
-        )
-
-        with tqdm(
-            total=len(df),
-            desc="Processing building blocks"
-        ) as progress:
-
-            for chunk in chunks:
-
-                result = _process_building_block_chunk(
-                    chunk,
-                    smiles_col,
-                )
-
-                processed.extend(result)
-
-                progress.update(len(result))
-
-    # ------------------------------------------------------------------
-    # Construct processed DataFrame
-    # ------------------------------------------------------------------
-
-    processed_df = pd.DataFrame(processed)
-
-    # ------------------------------------------------------------------
-    # Remove invalid molecules
-    # ------------------------------------------------------------------
-
-    if remove_invalid:
-
-        n_invalid = (~processed_df["valid_smiles"]).sum()
-
-        logger.info(
-            f"Removing {n_invalid:,} invalid SMILES"
-        )
-
-        processed_df = processed_df[
-            processed_df["valid_smiles"]
-        ].copy()
-
-    # ------------------------------------------------------------------
-    # Remove duplicates
-    # ------------------------------------------------------------------
-
-    if remove_duplicates:
-
-        before = len(processed_df)
-
-        processed_df = processed_df.drop_duplicates(
-            subset="inchikey"
-        ).copy()
-
-        logger.info(
-            f"Removed {before - len(processed_df):,} duplicate molecules"
-        )
-
-    processed_df.reset_index(drop=True, inplace=True)
-
-    logger.info(
-        f"Processed building-block database: "
-        f"{len(processed_df):,} unique molecules"
-    )
-
-    context["building_blocks"] = processed_df
-
-    return {
-        "building_blocks": processed_df
-    }
-
-@register_task(
-    "save_building_block_database",
-    category="SYNTHESIS",
-    description="Save processed commercial building-block database."
-)
-def save_building_block_database(config, context):
-
-    output_file = Path(config["output_file"])
-
-    output_file.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    df = context["building_blocks"]
-
-    df.to_parquet(
-        output_file,
-        index=False
-    )
-
-    logger.info(
-        f"Saved {len(df):,} building blocks to {output_file}"
-    )
-
-    return {
-        "building_block_database": output_file
-    }
-
-
-@register_task(
-    "validate_building_block_database",
-    category="SYNTHESIS",
-    description="Validate the processed commercial building-block database."
-)
-def validate_building_block_database(config, context):
-
-    input_file = Path(
-        config.get(
-            "input_file",
-            "outputs/commercial_bbs/mcule_building_blocks.parquet"
-        )
-    )
-
-    output_file = Path(
-        config.get(
-            "output_file",
-            "outputs/commercial_bbs/validation/validation_summary.json"
-        )
-    )
-
-    if not input_file.exists():
-        raise FileNotFoundError(
-            f"Building-block database not found: {input_file}"
-        )
-
-    df = pd.read_parquet(input_file)
-
-    logger.info(
-        f"Validating building-block database: "
-        f"{len(df):,} rows"
-    )
-
-    required_columns = [
-        "smiles",
-        "canonical_smiles",
-        "inchikey",
-        "valid_smiles",
-        "molecular_weight",
-        "logp",
-        "tpsa",
-        "hbd",
-        "hba",
-        "rotatable_bonds",
-        "ring_count",
-        "heavy_atom_count",
-    ]
-
-    missing_columns = [
-        col for col in required_columns
-        if col not in df.columns
-    ]
-
-    if missing_columns:
-        raise ValueError(
-            f"Missing required columns: {missing_columns}"
-        )
-
-    # ------------------------------------------------------------------
-    # Basic integrity
-    # ------------------------------------------------------------------
-
-    n_rows = len(df)
-
-    n_duplicate_inchikey = int(
-        df["inchikey"].duplicated().sum()
-    )
-
-    n_duplicate_canonical_smiles = int(
-        df["canonical_smiles"].duplicated().sum()
-    )
-
-    n_missing_smiles = int(
-        df["smiles"].isna().sum()
-    )
-
-    n_missing_inchikey = int(
-        df["inchikey"].isna().sum()
-    )
-
-    n_invalid_flag = int(
-        (~df["valid_smiles"].astype(bool)).sum()
-    )
-
-    # ------------------------------------------------------------------
-    # Multi-component molecules
-    # ------------------------------------------------------------------
-
-    is_multicomponent = (
-        df["canonical_smiles"]
-        .fillna("")
-        .str.contains(r"\.", regex=True)
-    )
-
-    n_multicomponent = int(is_multicomponent.sum())
-
-    # ------------------------------------------------------------------
-    # Descriptor validation
-    # ------------------------------------------------------------------
-
-    descriptor_columns = [
-        "molecular_weight",
-        "logp",
-        "tpsa",
-        "hbd",
-        "hba",
-        "rotatable_bonds",
-        "ring_count",
-        "heavy_atom_count",
-    ]
-
-    descriptor_summary = {}
-
-    for column in descriptor_columns:
-
-        values = pd.to_numeric(
-            df[column],
-            errors="coerce"
-        )
-
-        finite = values[np.isfinite(values)]
-
-        descriptor_summary[column] = {
-            "missing": int(values.isna().sum()),
-            "non_finite": int(
-                (~np.isfinite(values.fillna(0))).sum()
-            ),
-            "min": float(finite.min()) if len(finite) else None,
-            "max": float(finite.max()) if len(finite) else None,
-            "mean": float(finite.mean()) if len(finite) else None,
-            "median": float(finite.median()) if len(finite) else None,
-            "q01": float(finite.quantile(0.01)) if len(finite) else None,
-            "q05": float(finite.quantile(0.05)) if len(finite) else None,
-            "q95": float(finite.quantile(0.95)) if len(finite) else None,
-            "q99": float(finite.quantile(0.99)) if len(finite) else None,
-        }
-
-    # ------------------------------------------------------------------
-    # Basic chemical sanity checks
-    # ------------------------------------------------------------------
-
-    very_small = df["molecular_weight"] < config.get(
-        "very_small_mw",
-        50.0
-    )
-
-    very_large = df["molecular_weight"] > config.get(
-        "very_large_mw",
-        800.0
-    )
-
-    zero_heavy_atoms = df["heavy_atom_count"] <= 0
-
-    summary = {
-        "input_file": str(input_file),
-        "n_rows": n_rows,
-        "n_unique_inchikey": int(df["inchikey"].nunique()),
-        "n_duplicate_inchikey": n_duplicate_inchikey,
-        "n_duplicate_canonical_smiles": n_duplicate_canonical_smiles,
-        "n_missing_smiles": n_missing_smiles,
-        "n_missing_inchikey": n_missing_inchikey,
-        "n_invalid_smiles": n_invalid_flag,
-        "n_multicomponent": n_multicomponent,
-        "n_single_component": n_rows - n_multicomponent,
-        "n_very_small": int(very_small.sum()),
-        "n_very_large": int(very_large.sum()),
-        "n_zero_heavy_atoms": int(zero_heavy_atoms.sum()),
-        "descriptor_summary": descriptor_summary,
-    }
-
-    # ------------------------------------------------------------------
-    # Save report
-    # ------------------------------------------------------------------
-
-    output_file.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    with open(output_file, "w") as f:
-        json.dump(
-            summary,
-            f,
-            indent=2
-        )
-
-    logger.info(
-        f"Validation complete. "
-        f"{n_rows:,} rows, "
-        f"{n_multicomponent:,} multi-component"
-    )
-
-    logger.info(
-        f"Validation report saved to {output_file}"
-    )
-
-    return {
-        "building_block_validation": summary,
-        "building_block_validation_file": output_file,
-    }
-
-def plot_distribution_and_outliers(
-    df,
-    column,
-    normal_min,
-    normal_max,
-    xlabel,
-    title,
-    output_dir,
-    bins=100,
-):
-    """
-    Generate two plots for a descriptor:
-
-    1. Normal distribution within the specified range.
-    2. Distribution of values outside that range.
-
-    The ranges are for visualisation only and do not filter the
-    underlying database.
-    """
-
-    values = pd.to_numeric(
-        df[column],
-        errors="coerce"
-    ).dropna()
-
-    normal = values[
-        (values >= normal_min) &
-        (values <= normal_max)
-    ]
-
-    outliers = values[
-        (values < normal_min) |
-        (values > normal_max)
-    ]
-
-    # --------------------------------------------------------------
-    # Normal distribution
-    # --------------------------------------------------------------
-
-    fig, ax = plt.subplots(
-        figsize=(10, 6)
-    )
-
-    if not normal.empty:
-        ax.hist(
-            normal,
-            bins=bins,
-        )
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Number of molecules")
-
-    ax.set_title(
-        f"{title} — normal range"
-    )
-
-    ax.set_xlim(
-        normal_min,
-        normal_max
-    )
-
-    ax.grid(
-        alpha=0.2
-    )
-
-    fig.tight_layout()
-
-    fig.savefig(
-        output_dir / f"{column}_distribution.png",
-        dpi=200
-    )
-
-    plt.close(fig)
-
-    # --------------------------------------------------------------
-    # Outlier distribution
-    # --------------------------------------------------------------
-
-    fig, ax = plt.subplots(
-        figsize=(10, 6)
-    )
-
-    if not outliers.empty:
-
-        # Don't let a handful of extreme values make this plot
-        # unreadable either. Use the 1st–99th percentile for the
-        # plotting range, but report the full outlier count.
-        lower = outliers.quantile(0.01)
-        upper = outliers.quantile(0.99)
-
-        if lower == upper:
-            lower = outliers.min()
-            upper = outliers.max()
-
-        if lower == upper:
-            lower -= 1
-            upper += 1
-
-        ax.hist(
-            outliers,
-            bins=bins,
-            range=(lower, upper),
-        )
-
-        ax.axvline(
-            normal_min,
-            linestyle="--",
-            linewidth=1,
-        )
-
-        ax.axvline(
-            normal_max,
-            linestyle="--",
-            linewidth=1,
-        )
-
-        ax.set_xlim(
-            lower,
-            upper
-        )
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Number of molecules")
-
-    ax.set_title(
-        f"{title} — outliers "
-        f"({len(outliers):,} molecules)"
-    )
-
-    ax.grid(
-        alpha=0.2
-    )
-
-    fig.tight_layout()
-
-    fig.savefig(
-        output_dir / f"{column}_outliers.png",
-        dpi=200
-    )
-
-    plt.close(fig)
-
-    logger.info(
-        f"{column}: "
-        f"{len(normal):,} within normal range, "
-        f"{len(outliers):,} outliers"
-    )
-
-@register_task(
-    "plot_building_block_database",
-    category="SYNTHESIS",
-    description="Generate diagnostic plots and molecular depictions for the building-block database."
-)
-def plot_building_block_database(config, context):
-
-    input_file = Path(
-        config.get(
-            "input_file",
-            "outputs/commercial_bbs/mcule_building_blocks.parquet"
-        )
-    )
-
-    output_dir = Path(
-        config.get(
-            "output_dir",
-            "outputs/commercial_bbs/validation"
-        )
-    )
-
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    if not input_file.exists():
-        raise FileNotFoundError(
-            f"Building-block database not found: {input_file}"
-        )
-
-    df = pd.read_parquet(input_file)
-
-    logger.info(
-        f"Generating plots for {len(df):,} building blocks"
-    )
-
-    # ------------------------------------------------------------------
-    # Descriptor distributions
-    # ------------------------------------------------------------------
-
-    plot_distribution_and_outliers(
-        df=df,
-        column="molecular_weight",
-        normal_min=config.get("mw_normal_min", 50),
-        normal_max=config.get("mw_normal_max", 800),
-        xlabel="Molecular weight",
-        title="Building-block molecular weight",
-        output_dir=output_dir,
-    )
-
-    plot_distribution_and_outliers(
-        df=df,
-        column="logp",
-        normal_min=config.get("logp_normal_min", -5),
-        normal_max=config.get("logp_normal_max", 10),
-        xlabel="LogP",
-        title="Building-block LogP",
-        output_dir=output_dir,
-    )
-
-    plot_distribution_and_outliers(
-        df=df,
-        column="tpsa",
-        normal_min=config.get("tpsa_normal_min", 0),
-        normal_max=config.get("tpsa_normal_max", 250),
-        xlabel="TPSA",
-        title="Building-block TPSA",
-        output_dir=output_dir,
-    )
-
-    plot_distribution_and_outliers(
-        df=df,
-        column="heavy_atom_count",
-        normal_min=config.get("hac_normal_min", 3),
-        normal_max=config.get("hac_normal_max", 60),
-        xlabel="Heavy atom count",
-        title="Building-block heavy atom count",
-        output_dir=output_dir,
-    )
-
-    # ------------------------------------------------------------------
-    # Multi-component vs single-component
-    # ------------------------------------------------------------------
-
-    is_multicomponent = (
-        df["canonical_smiles"]
-        .fillna("")
-        .str.contains(r"\.")
-    )
-
-    counts = pd.Series(
-        {
-            "Single component": int((~is_multicomponent).sum()),
-            "Multi-component": int(is_multicomponent.sum()),
-        }
-    )
-
-    plt.figure(figsize=(8, 6))
-
-    counts.plot(
-        kind="bar"
-    )
-
-    plt.ylabel("Number of molecules")
-    plt.title("Single-component vs multi-component structures")
-    plt.xticks(rotation=0)
-    plt.tight_layout()
-
-    plt.savefig(
-        output_dir / "multi_component_summary.png",
-        dpi=200
-    )
-
-    plt.close()
-
-    # ------------------------------------------------------------------
-    # Molecular weight zoom
-    #
-    # This is useful because a handful of huge molecules can compress
-    # the interesting part of the MW distribution.
-    # ------------------------------------------------------------------
-
-    mw_max = config.get(
-        "mw_plot_max",
-        1000
-    )
-
-    plt.figure(figsize=(10, 6))
-
-    plt.hist(
-        df.loc[
-            df["molecular_weight"] <= mw_max,
-            "molecular_weight"
-        ].dropna(),
-        bins=100
-    )
-
-    plt.xlabel("Molecular weight")
-    plt.ylabel("Number of molecules")
-    plt.title(
-        f"Building-block molecular weight distribution "
-        f"(MW ≤ {mw_max})"
-    )
-
-    plt.tight_layout()
-
-    plt.savefig(
-        output_dir / "molecular_weight_distribution_zoomed.png",
-        dpi=200
-    )
-
-    plt.close()
-
-    # ------------------------------------------------------------------
-    # Representative / problematic molecules
-    # ------------------------------------------------------------------
-
-    problematic = []
-
-    # Very small
-    small = df[
-        df["molecular_weight"] < config.get(
-            "very_small_mw",
-            50
-        )
-    ]
-
-    problematic.append(
-        ("Very small", small)
-    )
-
-    # Very large
-    large = df[
-        df["molecular_weight"] > config.get(
-            "very_large_mw",
-            800
-        )
-    ]
-
-    problematic.append(
-        ("Very large", large)
-    )
-
-    # Multi-component
-    multi = df[is_multicomponent]
-
-    problematic.append(
-        ("Multi-component", multi)
-    )
-
-    # ------------------------------------------------------------------
-    # Generate molecular depiction sheets
-    # ------------------------------------------------------------------
-
-    max_per_category = config.get(
-        "max_molecules_per_category",
-        25
-    )
-
-    for category, subset in problematic:
-
-        if subset.empty:
-            continue
-
-        subset = subset.head(max_per_category)
-
-        molecules = []
-        legends = []
-
-        for _, row in subset.iterrows():
-
-            mol = Chem.MolFromSmiles(
-                row["canonical_smiles"]
-            )
-
-            if mol is None:
-                continue
-
-            molecules.append(mol)
-
-            legends.append(
-                f"{row['inchikey']}\n"
-                f"MW={row['molecular_weight']:.1f}"
-            )
-
-        if not molecules:
-            continue
-
-        safe_category = (
-            category.lower()
-            .replace(" ", "_")
-            .replace("-", "_")
-        )
-
-        output_file = (
-            output_dir /
-            f"{safe_category}_molecules.svg"
-        )
-
-        # ------------------------------------------------------------------
-        # RDKit SVG renderer
-        #
-        # This avoids the Cairo dependency required by MolsToGridImage().
-        # ------------------------------------------------------------------
-
-        mols_per_row = 5
-        cell_width = 250
-        cell_height = 250
-
-        n_rows = math.ceil(
-            len(molecules) / mols_per_row
-        )
-
-        drawer = rdMolDraw2D.MolDraw2DSVG(
-            mols_per_row * cell_width,
-            n_rows * cell_height,
-            cell_width,
-            cell_height,
-        )
-
-        drawer.DrawMolecules(
-            molecules,
-            legends=legends
-        )
-
-        drawer.FinishDrawing()
-
-        svg = drawer.GetDrawingText()
-
-        with open(output_file, "w") as f:
-            f.write(svg)
-
-        logger.info(
-            f"Saved {len(molecules)} {category.lower()} "
-            f"molecular depictions to {output_file}"
-        )
-
-    return {
-        "building_block_plot_directory": output_dir,
-    }
-
-@register_task(
-    "classify_building_blocks",
-    category="SYNTHESIS",
-    description="Classify commercial molecules and split the database into retrosynthesis and excluded sets."
-)
-def classify_building_blocks(config, context):
-
-    input_file = Path(
-        config.get(
-            "input_file",
-            "outputs/commercial_bbs/mcule_building_blocks.parquet"
-        )
-    )
-
-    retrosynthesis_output = Path(
-        config.get(
-            "retrosynthesis_output",
-            "outputs/commercial_bbs/mcule_retrosynthesis_building_blocks.parquet"
-        )
-    )
-
-    excluded_output = Path(
-        config.get(
-            "excluded_output",
-            "outputs/commercial_bbs/mcule_excluded_building_blocks.parquet"
-        )
-    )
-
-    if not input_file.exists():
-        raise FileNotFoundError(
-            f"Building-block database not found: {input_file}"
-        )
-
-    df = pd.read_parquet(input_file)
-
-    logger.info(
-        f"Classifying {len(df):,} building blocks"
-    )
-
-    # ------------------------------------------------------------------
-    # Configuration
-    # ------------------------------------------------------------------
-
-    very_small_mw = config.get(
-        "very_small_mw",
-        50.0
-    )
-
-    very_large_mw = config.get(
-        "very_large_mw",
-        800.0
-    )
-
-    min_heavy_atoms = config.get(
-        "min_heavy_atoms",
-        3
-    )
-
-    max_heavy_atoms = config.get(
-        "max_heavy_atoms",
-        60
-    )
-
-    allowed_elements = set(
-        config.get(
-            "allowed_elements",
-            [
-                "H",
-                "B",
-                "C",
-                "N",
-                "O",
-                "F",
-                "P",
-                "S",
-                "Cl",
-                "Br",
-                "I",
-                "Si",
-            ]
-        )
-    )
-
-    # ------------------------------------------------------------------
-    # Start with default classification
-    # ------------------------------------------------------------------
-
-    df["building_block_category"] = (
-        "retrosynthesis_building_block"
-    )
-
-    df["retrosynthesis_usable"] = True
-
-    # ------------------------------------------------------------------
-    # Multi-component structures
-    # ------------------------------------------------------------------
-
-    multi_component = (
-        df["canonical_smiles"]
-        .fillna("")
-        .str.contains(r"\.")
-    )
-
-    df.loc[
-        multi_component,
-        "building_block_category"
-    ] = "multi_component"
-
-    df.loc[
-        multi_component,
-        "retrosynthesis_usable"
-    ] = False
-
-    # ------------------------------------------------------------------
-    # Very small molecules
-    # ------------------------------------------------------------------
-
-    very_small = (
-        df["molecular_weight"] < very_small_mw
-    )
-
-    df.loc[
-        very_small & df["retrosynthesis_usable"],
-        "building_block_category"
-    ] = "very_small"
-
-    df.loc[
-        very_small,
-        "retrosynthesis_usable"
-    ] = False
-
-    # ------------------------------------------------------------------
-    # Very large molecules
-    # ------------------------------------------------------------------
-
-    very_large = (
-        df["molecular_weight"] > very_large_mw
-    )
-
-    df.loc[
-        very_large & df["retrosynthesis_usable"],
-        "building_block_category"
-    ] = "very_large"
-
-    df.loc[
-        very_large,
-        "retrosynthesis_usable"
-    ] = False
-
-    # ------------------------------------------------------------------
-    # Heavy atom count
-    # ------------------------------------------------------------------
-
-    too_few_atoms = (
-        df["heavy_atom_count"] < min_heavy_atoms
-    )
-
-    df.loc[
-        too_few_atoms & df["retrosynthesis_usable"],
-        "building_block_category"
-    ] = "too_few_heavy_atoms"
-
-    df.loc[
-        too_few_atoms,
-        "retrosynthesis_usable"
-    ] = False
-
-    too_many_atoms = (
-        df["heavy_atom_count"] > max_heavy_atoms
-    )
-
-    df.loc[
-        too_many_atoms & df["retrosynthesis_usable"],
-        "building_block_category"
-    ] = "too_many_heavy_atoms"
-
-    df.loc[
-        too_many_atoms,
-        "retrosynthesis_usable"
-    ] = False
-
-    # ------------------------------------------------------------------
-    # Unusual elements
-    # ------------------------------------------------------------------
-
-    unusual_elements = ~df["elements"].apply(
-        lambda elements: set(elements).issubset(allowed_elements)
-    )
-
-    df.loc[
-        unusual_elements & df["retrosynthesis_usable"],
-        "building_block_category"
-    ] = "unusual_elements"
-
-    df.loc[
-        unusual_elements,
-        "retrosynthesis_usable"
-    ] = False
-
-    # ------------------------------------------------------------------
-    # Save the two datasets
-    # ------------------------------------------------------------------
-
-    retrosynthesis_df = df[
-        df["retrosynthesis_usable"]
+        df["target_id"] = range(len(df))
+
+    df = df[
+        df["target_smiles"].notna()
+        & (df["target_smiles"].astype(str).str.strip() != "")
     ].copy()
 
-    excluded_df = df[
-        ~df["retrosynthesis_usable"]
-    ].copy()
-
-    retrosynthesis_output.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    excluded_output.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    retrosynthesis_df.to_parquet(
-        retrosynthesis_output,
-        index=False
-    )
-
-    excluded_df.to_parquet(
-        excluded_output,
-        index=False
-    )
-
-    # ------------------------------------------------------------------
-    # Report
-    # ------------------------------------------------------------------
-
-    category_counts = (
-        df["building_block_category"]
-        .value_counts()
-        .to_dict()
-    )
+    df.reset_index(drop=True, inplace=True)
 
     logger.info(
-        f"Retrosynthesis-usable: "
-        f"{len(retrosynthesis_df):,}"
+        f"Loaded {len(df):,} retrosynthesis targets "
+        f"from {input_file}"
     )
 
-    logger.info(
-        f"Excluded: "
-        f"{len(excluded_df):,}"
-    )
-
-    logger.info(
-        "Building-block categories:"
-    )
-
-    for category, count in category_counts.items():
-        logger.info(
-            f"  {category}: {count:,}"
-        )
-
-    logger.info(
-        f"Saved retrosynthesis database to "
-        f"{retrosynthesis_output}"
-    )
-
-    logger.info(
-        f"Saved excluded database to "
-        f"{excluded_output}"
-    )
+    context["retrosynthesis_targets"] = df
 
     return {
-        "building_blocks": retrosynthesis_df,
-        "retrosynthesis_building_blocks": retrosynthesis_df,
-        "excluded_building_blocks": excluded_df,
-        "building_block_category_counts": category_counts,
-        "retrosynthesis_building_block_database": retrosynthesis_output,
-        "excluded_building_block_database": excluded_output,
+        "retrosynthesis_targets": df,
     }
 
 @register_task(
-    "annotate_building_block_reactivity",
+    "generate_reaction_disconnections",
     category="SYNTHESIS",
-    description="Annotate commercial building blocks with retrosynthetically useful reaction handles."
+    description="Generate retrosynthetic disconnections using configured reaction rules."
 )
-def annotate_building_block_reactivity(config, context):
+def generate_reaction_disconnections(config, context):
 
-    input_file = Path(
-        config.get(
-            "input_file",
-            "outputs/commercial_bbs/mcule_retrosynthesis_building_blocks.parquet"
-        )
-    )
+    targets_df = context.get("retrosynthesis_targets")
 
-    output_file = Path(
-        config.get(
-            "output_file",
-            "outputs/commercial_bbs/mcule_retrosynthesis_building_blocks_reactivity.parquet"
-        )
-    )
-
-    if not input_file.exists():
-        raise FileNotFoundError(
-            f"Retrosynthesis building-block database not found: {input_file}"
-        )
-
-    df = pd.read_parquet(input_file)
-
-    logger.info(
-        f"Annotating reaction handles for {len(df):,} building blocks"
-    )
-
-    required_columns = [
-        "canonical_smiles",
-        "inchikey",
-    ]
-
-    missing_columns = [
-        col for col in required_columns
-        if col not in df.columns
-    ]
-
-    if missing_columns:
+    if targets_df is None:
         raise ValueError(
-            f"Missing required columns: {missing_columns}"
+            "No retrosynthesis targets found in pipeline context. "
+            "Run 'load_retrosynthesis_targets' before "
+            "'generate_reaction_disconnections'."
         )
 
-    parallel_config = config.get("parallel", {})
-
-    parallel_enabled = parallel_config.get(
-        "enabled",
-        True
-    )
-
-    n_workers = parallel_config.get(
-        "n_workers",
-        None
-    )
-
-    chunk_size = parallel_config.get(
-        "chunk_size",
-        10000
-    )
-
-    records = df.to_dict(orient="records")
-
-    chunks = (
-        records[i:i + chunk_size]
-        for i in range(
-            0,
-            len(records),
-            chunk_size
-        )
-    )
-
-    annotated = []
-
-    if parallel_enabled:
-
-        logger.info(
-            f"Using multiprocessing with "
-            f"{n_workers or 'default'} workers "
-            f"and chunk size {chunk_size:,}"
+    if "target_smiles" not in targets_df.columns:
+        raise ValueError(
+            "Retrosynthesis target dataset must contain "
+            "'target_smiles'."
         )
 
-        with ProcessPoolExecutor(
-            max_workers=n_workers
-        ) as executor:
+    enabled_rules = config.get(
+        "rules",
+        list(REACTION_RULES.keys()),
+    )
 
-            pending = set()
+    unknown_rules = [
+        rule
+        for rule in enabled_rules
+        if rule not in COMPILED_REACTION_RULES
+    ]
 
-            max_pending = (
-                (n_workers or 4) * 2
+    if unknown_rules:
+        raise ValueError(
+            f"Unknown reaction rules: {unknown_rules}. "
+            f"Available rules: {list(REACTION_RULES)}"
+        )
+
+    all_disconnections = []
+
+    for _, target_row in targets_df.iterrows():
+
+        target_smiles = target_row["target_smiles"]
+        target_id = target_row["target_id"]
+
+        canonical_target = _canonicalise_smiles(target_smiles)
+
+        if canonical_target is None:
+            logger.warning(
+                f"Skipping invalid target {target_id}: "
+                f"{target_smiles}"
+            )
+            continue
+
+        for rule_name in enabled_rules:
+
+            reaction = COMPILED_REACTION_RULES[rule_name]
+
+            candidates = _apply_reaction_rule(
+                canonical_target,
+                rule_name,
+                reaction,
             )
 
-            with tqdm(
-                total=len(df),
-                desc="Annotating reaction handles"
-            ) as progress:
+            for candidate in candidates:
+                candidate["target_id"] = target_id
 
-                for chunk in chunks:
+            all_disconnections.extend(candidates)
 
-                    future = executor.submit(
-                        _annotate_building_block_chunk,
-                        chunk,
-                    )
+    # Assign stable IDs.
+    for index, candidate in enumerate(
+        all_disconnections,
+        start=1,
+    ):
+        candidate["disconnection_id"] = index
 
-                    pending.add(future)
+    logger.info(
+        f"Generated {len(all_disconnections):,} "
+        f"retrosynthetic disconnections from "
+        f"{len(targets_df):,} target(s)"
+    )
 
-                    if len(pending) >= max_pending:
+    for rule_name in enabled_rules:
 
-                        done, pending = wait(
-                            pending,
-                            return_when=FIRST_COMPLETED,
-                        )
-
-                        for completed in done:
-
-                            result = completed.result()
-
-                            annotated.extend(result)
-
-                            progress.update(
-                                len(result)
-                            )
-
-                while pending:
-
-                    done, pending = wait(
-                        pending,
-                        return_when=FIRST_COMPLETED,
-                    )
-
-                    for completed in done:
-
-                        result = completed.result()
-
-                        annotated.extend(result)
-
-                        progress.update(
-                            len(result)
-                        )
-
-    else:
+        count = sum(
+            candidate["reaction_rule"] == rule_name
+            for candidate in all_disconnections
+        )
 
         logger.info(
-            "Parallel processing disabled; "
-            "using single process."
+            f"  {rule_name}: {count:,}"
         )
 
-        with tqdm(
-            total=len(df),
-            desc="Annotating reaction handles"
-        ) as progress:
-
-            for chunk in chunks:
-
-                result = _annotate_building_block_chunk(
-                    chunk
-                )
-
-                annotated.extend(result)
-
-                progress.update(
-                    len(result)
-                )
-
-    annotated_df = pd.DataFrame(
-        annotated
-    )
-
-    output_file.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    annotated_df.to_parquet(
-        output_file,
-        index=False
-    )
-
-    handle_counts = {}
-
-    for handle in REACTION_HANDLE_SMARTS:
-
-        count = int(
-            annotated_df["reaction_handles"]
-            .fillna("")
-            .str.contains(
-                rf"(^|;){handle}(;|$)",
-                regex=True
-            )
-            .sum()
-        )
-
-        handle_counts[handle] = count
-
-    logger.info(
-        f"Building blocks with at least one "
-        f"reaction handle: "
-        f"{int(annotated_df['has_reaction_handle'].sum()):,}"
-    )
-
-    logger.info(
-        f"Building blocks with no recognised "
-        f"reaction handle: "
-        f"{int((~annotated_df['has_reaction_handle']).sum()):,}"
-    )
-
-    logger.info(
-        "Reaction-handle counts:"
-    )
-
-    for handle, count in handle_counts.items():
-
-        logger.info(
-            f"  {handle}: {count:,}"
-        )
-
-    logger.info(
-        f"Saved annotated building-block database "
-        f"to {output_file}"
-    )
-
-    context[
-        "retrosynthesis_building_blocks"
-    ] = annotated_df
+    context["reaction_disconnections"] = all_disconnections
 
     return {
-        "retrosynthesis_building_blocks": annotated_df,
-        "annotated_building_block_database": output_file,
-        "reaction_handle_counts": handle_counts,
+        "reaction_disconnections": all_disconnections,
     }
 
 @register_task(
-    "build_building_block_search_index",
+    "search_commercial_building_blocks",
     category="SYNTHESIS",
-    description="Build searchable reaction-handle indexes for commercial building blocks."
+    description="Search commercial building blocks using reaction-handle constrained molecular similarity."
 )
-def build_building_block_search_index(config, context):
+def search_commercial_building_blocks(config, context):
 
-    input_file = Path(
-        config.get(
-            "input_file",
-            "outputs/commercial_bbs/mcule_retrosynthesis_building_blocks_reactivity.parquet"
+    disconnections = context.get("reaction_disconnections")
+
+    if disconnections is None:
+        raise ValueError(
+            "No reaction disconnections found in pipeline context. "
+            "Run 'generate_reaction_disconnections' before "
+            "'search_commercial_building_blocks'."
         )
-    )
 
-    output_dir = Path(
+    index_dir = Path(
         config.get(
-            "output_dir",
+            "index_dir",
             "outputs/commercial_bbs/search_index"
         )
     )
 
-    if not input_file.exists():
+    if not index_dir.exists():
         raise FileNotFoundError(
-            f"Annotated building-block database not found: {input_file}"
+            f"Building-block search index not found: {index_dir}"
         )
 
-    df = pd.read_parquet(input_file)
-
-    logger.info(
-        f"Building search index from {len(df):,} building blocks"
+    max_candidates = int(
+        config.get("max_candidates_per_fragment", 20)
     )
 
-    required_columns = [
-        "canonical_smiles",
-        "inchikey",
-        "reaction_handles",
-    ]
+    similarity_threshold = float(
+        config.get("similarity_threshold", 0.40)
+    )
 
-    missing_columns = [
-        col for col in required_columns
-        if col not in df.columns
-    ]
+    fingerprint_radius = int(
+        config.get("fingerprint_radius", 2)
+    )
 
-    if missing_columns:
-        raise ValueError(
-            f"Missing required columns: {missing_columns}"
-        )
-
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True
+    fingerprint_bits = int(
+        config.get("fingerprint_bits", 2048)
     )
 
     # ------------------------------------------------------------------
-    # Columns retained in the search index
+    # Reaction-rule → possible commercial reaction handles
     # ------------------------------------------------------------------
 
-    index_columns = [
-        "inchikey",
-        "canonical_smiles",
-    ]
+    rule_handles = {
+        "amide_formation": {
+            "amine": "amine",
+            "carboxylic_acid": "carboxylic_acid",
+            "acid_chloride": "acid_chloride",
+        },
 
-    optional_columns = [
-        "smiles",
-        "mcule_id",
-        "molecular_weight",
-        "logp",
-        "tpsa",
-        "hbd",
-        "hba",
-        "rotatable_bonds",
-        "ring_count",
-        "heavy_atom_count",
-    ]
+        "ester_formation": {
+            "alcohol": "alcohol",
+            "phenol": "phenol",
+            "carboxylic_acid": "carboxylic_acid",
+            "acid_chloride": "acid_chloride",
+        },
 
-    index_columns.extend(
-        [
-            column
-            for column in optional_columns
-            if column in df.columns
-        ]
-    )
+        "suzuki_coupling": {
+            "aryl_vinyl_halide": "aryl_vinyl_halide",
+            "boronic_acid": "boronic_acid",
+            "boronate_ester": "boronate_ester",
+        },
 
-    # ------------------------------------------------------------------
-    # Expand reaction handles
-    # ------------------------------------------------------------------
+        "reductive_amination": {
+            "amine": "amine",
+            "aldehyde": "aldehyde",
+            "ketone": "ketone",
+        },
 
-    index_df = df[
-        index_columns + ["reaction_handles"]
-    ].copy()
-
-    index_df["reaction_handle"] = (
-        index_df["reaction_handles"]
-        .fillna("")
-        .str.split(";")
-    )
-
-    index_df = index_df.explode(
-        "reaction_handle"
-    )
-
-    index_df["reaction_handle"] = (
-        index_df["reaction_handle"]
-        .astype(str)
-        .str.strip()
-    )
-
-    # Remove rows where no reaction handle exists.
-
-    index_df = index_df[
-        index_df["reaction_handle"] != ""
-    ].copy()
-
-    # The original combined string is no longer needed.
-
-    index_df.drop(
-        columns=["reaction_handles"],
-        inplace=True
-    )
-
-    # Avoid accidental duplicate handle/molecule pairs.
-
-    index_df.drop_duplicates(
-        subset=[
-            "reaction_handle",
-            "inchikey",
-        ],
-        inplace=True,
-    )
-
-    index_df.reset_index(
-        drop=True,
-        inplace=True
-    )
+        "ether_formation": {
+            "alcohol": "alcohol",
+            "phenol": "phenol",
+            "alkyl_halide": "alkyl_halide",
+        },
+    }
 
     # ------------------------------------------------------------------
-    # Save master handle index
+    # Cache commercial indexes and fingerprints
     # ------------------------------------------------------------------
 
-    master_index_file = (
-        output_dir /
-        "building_blocks_by_reaction_handle.parquet"
-    )
+    index_cache = {}
+    fingerprint_cache = {}
 
-    index_df.to_parquet(
-        master_index_file,
-        index=False
-    )
+    def load_handle_index(handle):
 
-    logger.info(
-        f"Saved master reaction-handle index "
-        f"({len(index_df):,} entries) "
-        f"to {master_index_file}"
-    )
+        if handle in index_cache:
+            return index_cache[handle]
 
-    # ------------------------------------------------------------------
-    # Save one index per reaction handle
-    # ------------------------------------------------------------------
+        index_file = index_dir / f"{handle}.parquet"
 
-    handle_files = {}
+        if not index_file.exists():
+            logger.warning(
+                f"No commercial building-block index exists for "
+                f"reaction handle '{handle}'"
+            )
 
-    for handle, handle_df in index_df.groupby(
-        "reaction_handle",
-        sort=True
-    ):
+            index_cache[handle] = None
+            fingerprint_cache[handle] = None
 
-        handle_df = handle_df.drop(
-            columns=["reaction_handle"]
-        ).reset_index(drop=True)
+            return None
 
-        handle_file = (
-            output_dir /
-            f"{handle}.parquet"
-        )
+        handle_df = pd.read_parquet(index_file)
 
-        handle_df.to_parquet(
-            handle_file,
-            index=False
-        )
+        if "canonical_smiles" not in handle_df.columns:
+            raise ValueError(
+                f"Commercial index '{index_file}' does not contain "
+                "'canonical_smiles'."
+            )
 
-        handle_files[handle] = str(
-            handle_file
-        )
+        index_cache[handle] = handle_df
 
         logger.info(
-            f"  {handle}: "
+            f"Loaded commercial index '{handle}': "
             f"{len(handle_df):,} building blocks"
         )
 
-    # ------------------------------------------------------------------
-    # Save metadata
-    # ------------------------------------------------------------------
+        return handle_df
 
-    metadata = {
-        "input_file": str(input_file),
-        "n_building_blocks": int(len(df)),
-        "n_index_entries": int(len(index_df)),
-        "n_reaction_handles": int(
-            index_df["reaction_handle"].nunique()
-        ),
-        "reaction_handles": sorted(
-            index_df["reaction_handle"].unique().tolist()
-        ),
-        "handle_files": handle_files,
-    }
+    def build_fingerprints(handle, handle_df):
 
-    metadata_file = (
-        output_dir /
-        "search_index_metadata.json"
-    )
+        if handle in fingerprint_cache:
+            return fingerprint_cache[handle]
 
-    import json
-
-    with open(
-        metadata_file,
-        "w"
-    ) as f:
-        json.dump(
-            metadata,
-            f,
-            indent=2
+        logger.info(
+            f"Generating fingerprints for '{handle}' index"
         )
 
+        fingerprints = []
+
+        for smiles in tqdm(
+            handle_df["canonical_smiles"],
+            desc=f"Fingerprints: {handle}",
+            leave=False,
+        ):
+
+            mol = Chem.MolFromSmiles(smiles)
+
+            if mol is None:
+                fingerprints.append(None)
+                continue
+
+            fp = AllChem.GetMorganFingerprintAsBitVect(
+                mol,
+                radius=fingerprint_radius,
+                nBits=fingerprint_bits,
+            )
+
+            fingerprints.append(fp)
+
+        fingerprint_cache[handle] = fingerprints
+
+        return fingerprints
+
+    # ------------------------------------------------------------------
+    # Similarity search
+    # ------------------------------------------------------------------
+
+    def search_index(
+        precursor_smiles,
+        handle,
+    ):
+
+        canonical_precursor = _canonicalise_smiles(
+            precursor_smiles
+        )
+
+        if canonical_precursor is None:
+            return []
+
+        precursor_mol = Chem.MolFromSmiles(
+            canonical_precursor
+        )
+
+        if precursor_mol is None:
+            return []
+
+        handle_df = load_handle_index(handle)
+
+        if handle_df is None or handle_df.empty:
+            return []
+
+        # --------------------------------------------------------------
+        # Exact match first
+        # --------------------------------------------------------------
+
+        exact_matches = handle_df[
+            handle_df["canonical_smiles"] == canonical_precursor
+        ].copy()
+
+        exact_records = []
+
+        for _, row in exact_matches.iterrows():
+
+            record = row.to_dict()
+
+            record["similarity"] = 1.0
+            record["exact_match"] = True
+            record["expected_reaction_handle"] = handle
+            record["precursor_smiles"] = canonical_precursor
+
+            exact_records.append(record)
+
+        # --------------------------------------------------------------
+        # Similarity search
+        # --------------------------------------------------------------
+
+        query_fp = AllChem.GetMorganFingerprintAsBitVect(
+            precursor_mol,
+            radius=fingerprint_radius,
+            nBits=fingerprint_bits,
+        )
+
+        fingerprints = build_fingerprints(
+            handle,
+            handle_df,
+        )
+
+        similarities = []
+
+        for index, fp in enumerate(fingerprints):
+
+            if fp is None:
+                continue
+
+            similarity = DataStructs.TanimotoSimilarity(
+                query_fp,
+                fp,
+            )
+
+            if similarity >= similarity_threshold:
+
+                similarities.append(
+                    (
+                        similarity,
+                        index,
+                    )
+                )
+
+        similarities.sort(
+            key=lambda x: x[0],
+            reverse=True,
+        )
+
+        # --------------------------------------------------------------
+        # Convert similarity results into records
+        # --------------------------------------------------------------
+
+        similarity_records = []
+
+        exact_inchikeys = {
+            record["inchikey"]
+            for record in exact_records
+            if "inchikey" in record
+        }
+
+        for similarity, index in similarities:
+
+            row = handle_df.iloc[index]
+
+            # Don't return exact matches twice.
+            if row["inchikey"] in exact_inchikeys:
+                continue
+
+            record = row.to_dict()
+
+            record["similarity"] = float(similarity)
+            record["exact_match"] = False
+            record["expected_reaction_handle"] = handle
+            record["precursor_smiles"] = canonical_precursor
+
+            similarity_records.append(record)
+
+            if len(similarity_records) >= max_candidates:
+                break
+
+        # Exact matches always appear first.
+        results = (
+            exact_records
+            + similarity_records
+        )
+
+        return results[:max_candidates]
+
+    # ------------------------------------------------------------------
+    # Search all disconnections
+    # ------------------------------------------------------------------
+
+    searched_disconnections = []
+
+    for disconnection in tqdm(
+        disconnections,
+        desc="Searching commercial building blocks",
+    ):
+
+        rule_name = disconnection["reaction_rule"]
+        precursor_smiles = disconnection["precursor_smiles"]
+
+        possible_handles = rule_handles.get(rule_name)
+
+        if possible_handles is None:
+
+            logger.warning(
+                f"No commercial-search mapping defined for "
+                f"reaction rule '{rule_name}'"
+            )
+
+            searched_disconnections.append({
+                **disconnection,
+                "commercial_candidates": [],
+                "commercial_search_complete": False,
+            })
+
+            continue
+
+        fragment_results = []
+
+        for precursor in precursor_smiles:
+
+            precursor_candidates = []
+
+            # Search every chemically compatible handle index.
+            for role, handle in possible_handles.items():
+
+                matches = search_index(
+                    precursor,
+                    handle,
+                )
+
+                for match in matches:
+
+                    match["precursor_role"] = role
+
+                    precursor_candidates.append(
+                        match
+                    )
+
+            # ----------------------------------------------------------
+            # Deduplicate commercial molecules.
+            #
+            # A molecule can appear in multiple handle indexes, so
+            # retain its best similarity result.
+            # ----------------------------------------------------------
+
+            unique_candidates = {}
+
+            for candidate in precursor_candidates:
+
+                key = candidate["inchikey"]
+
+                if key not in unique_candidates:
+
+                    unique_candidates[key] = candidate
+
+                else:
+
+                    existing = unique_candidates[key]
+
+                    if candidate["similarity"] > existing["similarity"]:
+                        unique_candidates[key] = candidate
+
+            precursor_candidates = list(
+                unique_candidates.values()
+            )
+
+            precursor_candidates.sort(
+                key=lambda x: x["similarity"],
+                reverse=True,
+            )
+
+            precursor_candidates = (
+                precursor_candidates[:max_candidates]
+            )
+
+            fragment_results.append({
+                "precursor_smiles": precursor,
+                "commercial_candidates": precursor_candidates,
+                "n_commercial_candidates": len(
+                    precursor_candidates
+                ),
+                "commercial_match": bool(
+                    precursor_candidates
+                ),
+            })
+
+        searched_disconnections.append({
+            **disconnection,
+            "commercial_candidates": fragment_results,
+            "commercial_search_complete": True,
+        })
+
+    # ------------------------------------------------------------------
+    # Summary statistics
+    # ------------------------------------------------------------------
+
+    n_disconnections = len(
+        searched_disconnections
+    )
+
+    n_with_commercial_matches = 0
+
+    for disconnection in searched_disconnections:
+
+        if any(
+            fragment["commercial_match"]
+            for fragment in disconnection["commercial_candidates"]
+        ):
+            n_with_commercial_matches += 1
+
     logger.info(
-        f"Saved search-index metadata "
-        f"to {metadata_file}"
+        "Commercial building-block search complete"
+    )
+
+    logger.info(
+        f"  Disconnections searched: "
+        f"{n_disconnections:,}"
+    )
+
+    logger.info(
+        f"  Disconnections with at least one "
+        f"commercial precursor match: "
+        f"{n_with_commercial_matches:,}"
+    )
+
+    logger.info(
+        f"  Similarity threshold: "
+        f"{similarity_threshold:.2f}"
+    )
+
+    logger.info(
+        f"  Maximum candidates per fragment: "
+        f"{max_candidates}"
+    )
+
+    context["commercial_building_block_matches"] = (
+        searched_disconnections
     )
 
     return {
-        "building_block_search_index": index_df,
-        "building_block_search_index_file": master_index_file,
-        "building_block_search_index_dir": output_dir,
-        "building_block_search_index_metadata": metadata_file,
+        "commercial_building_block_matches": (
+            searched_disconnections
+        ),
     }
 
 @register_task(
-    "validate_reactivity_annotations",
-    category="SYNTHESIS",
-    description="Validate reaction-handle annotations and generate representative molecular depictions."
+"assemble_candidate_routes",
+category="SYNTHESIS",
+description="Assemble candidate retrosynthetic routes from reaction disconnections and commercial building-block matches."
 )
-def validate_reactivity_annotations(config, context):
+def assemble_candidate_routes(config, context):
 
-    input_file = Path(
+    commercial_matches = context.get(
+        "commercial_building_block_matches"
+    )
+
+    if commercial_matches is None:
+        raise ValueError(
+            "No commercial building-block matches found in "
+            "pipeline context. Run "
+            "'search_commercial_building_blocks' before "
+            "'assemble_candidate_routes'."
+        )
+
+    max_routes_per_disconnection = int(
+        config.get("max_routes_per_disconnection", 20)
+    )
+
+    candidate_routes = []
+
+    route_id = 1
+
+    for disconnection in tqdm(
+        commercial_matches,
+        desc="Assembling candidate routes",
+    ):
+
+        target_id = disconnection["target_id"]
+        target_smiles = disconnection["target_smiles"]
+        reaction_rule = disconnection["reaction_rule"]
+        disconnection_id = disconnection["disconnection_id"]
+
+        fragment_results = disconnection.get(
+            "commercial_candidates",
+            []
+        )
+
+        if not fragment_results:
+            continue
+
+        # Each precursor fragment may have zero or more
+        # commercial candidates.
+        #
+        # We deliberately retain unmatched fragments rather
+        # than discarding the entire disconnection. This allows
+        # later route scoring to distinguish:
+        #
+        #   - fully commercial routes
+        #   - partially commercial routes
+        #   - completely non-commercial routes
+        candidate_lists = []
+
+        for fragment in fragment_results:
+
+            candidates = fragment.get(
+                "commercial_candidates",
+                []
+            )
+
+            if candidates:
+                candidate_lists.append(
+                    candidates
+                )
+            else:
+                # No commercial candidate for this precursor.
+                #
+                # None is used as a placeholder so that the
+                # disconnection can still become a candidate
+                # route.
+                candidate_lists.append(
+                    [None]
+                )
+
+        from itertools import product
+
+        route_combinations = product(
+            *candidate_lists
+        )
+
+        n_routes = 0
+
+        for combination in route_combinations:
+
+            if n_routes >= max_routes_per_disconnection:
+                break
+
+            precursors = []
+
+            n_commercial_precursors = 0
+            precursor_similarities = []
+
+            for fragment, candidate in zip(
+                fragment_results,
+                combination,
+            ):
+
+                precursor = {
+                    "precursor_smiles": (
+                        fragment["precursor_smiles"]
+                    ),
+                    "precursor_role": None,
+                    "required_reaction_handle": None,
+                    "commercial_smiles": None,
+                    "inchikey": None,
+                    "mcule_id": None,
+                    "similarity": None,
+                    "exact_match": False,
+                    "commercially_available": False,
+                }
+
+                if candidate is not None:
+
+                    precursor["precursor_role"] = (
+                        candidate.get(
+                            "precursor_role"
+                        )
+                    )
+
+                    precursor[
+                        "required_reaction_handle"
+                    ] = candidate.get(
+                        "expected_reaction_handle"
+                    )
+
+                    precursor["commercial_smiles"] = (
+                        candidate.get(
+                            "canonical_smiles"
+                        )
+                    )
+
+                    precursor["inchikey"] = (
+                        candidate.get(
+                            "inchikey"
+                        )
+                    )
+
+                    precursor["mcule_id"] = (
+                        candidate.get(
+                            "mcule_id"
+                        )
+                    )
+
+                    precursor["similarity"] = float(
+                        candidate.get(
+                            "similarity",
+                            0.0
+                        )
+                    )
+
+                    precursor["exact_match"] = bool(
+                        candidate.get(
+                            "exact_match",
+                            False
+                        )
+                    )
+
+                    precursor[
+                        "commercially_available"
+                    ] = True
+
+                    n_commercial_precursors += 1
+
+                    precursor_similarities.append(
+                        precursor["similarity"]
+                    )
+
+                precursors.append(precursor)
+
+            n_precursors = len(precursors)
+
+            all_precursors_commercial = (
+                n_commercial_precursors
+                == n_precursors
+            )
+
+            any_precursors_commercial = (
+                n_commercial_precursors > 0
+            )
+
+            all_precursors_exact = (
+                all_precursors_commercial
+                and all(
+                    precursor["exact_match"]
+                    for precursor in precursors
+                )
+            )
+
+            if precursor_similarities:
+                min_precursor_similarity = float(
+                    min(precursor_similarities)
+                )
+
+                mean_precursor_similarity = float(
+                    np.mean(
+                        precursor_similarities
+                    )
+                )
+            else:
+                min_precursor_similarity = None
+                mean_precursor_similarity = None
+
+            route = {
+                "route_id": route_id,
+
+                "target_id": target_id,
+                "target_smiles": target_smiles,
+
+                "disconnection_id": (
+                    disconnection_id
+                ),
+
+                "reaction_rule": reaction_rule,
+
+                "n_steps": 1,
+
+                "precursors": precursors,
+
+                "n_precursors": n_precursors,
+
+                "n_commercial_precursors": (
+                    n_commercial_precursors
+                ),
+
+                "all_precursors_commercial": (
+                    all_precursors_commercial
+                ),
+
+                "any_precursors_commercial": (
+                    any_precursors_commercial
+                ),
+
+                "all_precursors_exact": (
+                    all_precursors_exact
+                ),
+
+                "min_precursor_similarity": (
+                    min_precursor_similarity
+                ),
+
+                "mean_precursor_similarity": (
+                    mean_precursor_similarity
+                ),
+            }
+
+            candidate_routes.append(route)
+
+            route_id += 1
+            n_routes += 1
+
+    logger.info(
+        "Candidate route assembly complete"
+    )
+
+    logger.info(
+        f"  Disconnections considered: "
+        f"{len(commercial_matches):,}"
+    )
+
+    logger.info(
+        f"  Candidate routes generated: "
+        f"{len(candidate_routes):,}"
+    )
+
+    n_fully_commercial = sum(
+        route["all_precursors_commercial"]
+        for route in candidate_routes
+    )
+
+    n_partially_commercial = sum(
+        route["any_precursors_commercial"]
+        and not route["all_precursors_commercial"]
+        for route in candidate_routes
+    )
+
+    n_non_commercial = sum(
+        not route["any_precursors_commercial"]
+        for route in candidate_routes
+    )
+
+    logger.info(
+        f"  Fully commercial routes: "
+        f"{n_fully_commercial:,}"
+    )
+
+    logger.info(
+        f"  Partially commercial routes: "
+        f"{n_partially_commercial:,}"
+    )
+
+    logger.info(
+        f"  Non-commercial routes: "
+        f"{n_non_commercial:,}"
+    )
+
+    context["candidate_routes"] = candidate_routes
+
+    return {
+        "candidate_routes": candidate_routes,
+    }
+
+@register_task(
+"save_candidate_routes",
+category="SYNTHESIS",
+description="Save assembled retrosynthetic routes and precursor details to Parquet."
+)
+def save_candidate_routes(config, context):
+
+    candidate_routes = context.get("candidate_routes")
+
+    if candidate_routes is None:
+        raise ValueError(
+            "No candidate routes found in pipeline context. "
+            "Run 'assemble_candidate_routes' before "
+            "'save_candidate_routes'."
+        )
+
+    output_dir = Path(
         config.get(
-            "input_file",
-            "outputs/commercial_bbs/"
-            "mcule_retrosynthesis_building_blocks_reactivity.parquet"
+            "output_dir",
+            "outputs/retrosynthesis/routes"
+        )
+    )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    route_output_file = output_dir / config.get(
+        "route_output_file",
+        "candidate_routes.parquet"
+    )
+
+    precursor_output_file = output_dir / config.get(
+        "precursor_output_file",
+        "candidate_route_precursors.parquet"
+    )
+
+    # ------------------------------------------------------------------
+    # Route-level table
+    # ------------------------------------------------------------------
+
+    route_records = []
+
+    for route in candidate_routes:
+
+        route_records.append({
+            "route_id": route["route_id"],
+            "target_id": route["target_id"],
+            "target_smiles": route["target_smiles"],
+            "disconnection_id": route["disconnection_id"],
+            "reaction_rule": route["reaction_rule"],
+            "n_steps": route["n_steps"],
+            "n_precursors": route["n_precursors"],
+            "n_commercial_precursors": (
+                route["n_commercial_precursors"]
+            ),
+            "all_precursors_commercial": (
+                route["all_precursors_commercial"]
+            ),
+            "any_precursors_commercial": (
+                route["any_precursors_commercial"]
+            ),
+            "all_precursors_exact": (
+                route["all_precursors_exact"]
+            ),
+            "min_precursor_similarity": (
+                route["min_precursor_similarity"]
+            ),
+            "mean_precursor_similarity": (
+                route["mean_precursor_similarity"]
+            ),
+        })
+
+    routes_df = pd.DataFrame(
+        route_records
+    )
+
+    routes_df.to_parquet(
+        route_output_file,
+        index=False,
+    )
+
+    # ------------------------------------------------------------------
+    # Precursor-level table
+    # ------------------------------------------------------------------
+
+    precursor_records = []
+
+    for route in candidate_routes:
+
+        for precursor_index, precursor in enumerate(
+            route["precursors"],
+            start=1,
+        ):
+
+            precursor_records.append({
+                "route_id": route["route_id"],
+                "target_id": route["target_id"],
+                "target_smiles": route["target_smiles"],
+                "disconnection_id": (
+                    route["disconnection_id"]
+                ),
+                "reaction_rule": (
+                    route["reaction_rule"]
+                ),
+                "precursor_index": precursor_index,
+                "precursor_smiles": (
+                    precursor["precursor_smiles"]
+                ),
+                "precursor_role": (
+                    precursor["precursor_role"]
+                ),
+                "required_reaction_handle": (
+                    precursor[
+                        "required_reaction_handle"
+                    ]
+                ),
+                "commercial_smiles": (
+                    precursor["commercial_smiles"]
+                ),
+                "inchikey": precursor["inchikey"],
+                "mcule_id": precursor["mcule_id"],
+                "similarity": precursor["similarity"],
+                "exact_match": precursor["exact_match"],
+                "commercially_available": (
+                    precursor[
+                        "commercially_available"
+                    ]
+                ),
+            })
+
+    precursors_df = pd.DataFrame(
+        precursor_records
+    )
+
+    precursors_df.to_parquet(
+        precursor_output_file,
+        index=False,
+    )
+
+    logger.info(
+        "Candidate route files saved"
+    )
+
+    logger.info(
+        f"  Routes: {route_output_file}"
+    )
+
+    logger.info(
+        f"  Route records: {len(routes_df):,}"
+    )
+
+    logger.info(
+        f"  Precursors: {precursor_output_file}"
+    )
+
+    logger.info(
+        f"  Precursor records: {len(precursors_df):,}"
+    )
+
+    context["candidate_routes_df"] = routes_df
+    context["candidate_route_precursors_df"] = precursors_df
+
+    return {
+        "candidate_routes_df": routes_df,
+        "candidate_route_precursors_df": precursors_df,
+    }
+
+@register_task(
+"validate_candidate_routes",
+category="SYNTHESIS",
+description="Validate and visualise assembled retrosynthetic candidate routes."
+)
+def validate_candidate_routes(config, context):
+
+    route_file = Path(
+        config.get(
+            "route_file",
+            "outputs/retrosynthesis/routes/candidate_routes.parquet"
+        )
+    )
+
+    precursor_file = Path(
+        config.get(
+            "precursor_file",
+            "outputs/retrosynthesis/routes/candidate_route_precursors.parquet"
         )
     )
 
     output_dir = Path(
         config.get(
             "output_dir",
-            "outputs/commercial_bbs/validation/reactivity"
+            "outputs/retrosynthesis/routes/validation"
         )
     )
-
-    sample_size = int(
-        config.get(
-            "sample_size",
-            25
-        )
-    )
-
-    random_state = int(
-        config.get(
-            "random_state",
-            42
-        )
-    )
-
-    if not input_file.exists():
-        raise FileNotFoundError(
-            f"Annotated building-block database not found: "
-            f"{input_file}"
-        )
-
-    df = pd.read_parquet(input_file)
-
-    logger.info(
-        f"Validating reaction annotations for "
-        f"{len(df):,} building blocks"
-    )
-
-    required_columns = [
-        "canonical_smiles",
-        "inchikey",
-        "reaction_handles",
-        "n_reaction_handles",
-        "has_reaction_handle",
-    ]
-
-    missing_columns = [
-        column
-        for column in required_columns
-        if column not in df.columns
-    ]
-
-    if missing_columns:
-        raise ValueError(
-            f"Missing required columns: {missing_columns}"
-        )
 
     output_dir.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
+    if not route_file.exists():
+        raise FileNotFoundError(
+            f"Candidate route file not found: {route_file}"
+        )
+
+    if not precursor_file.exists():
+        raise FileNotFoundError(
+            f"Candidate precursor file not found: {precursor_file}"
+        )
+
+    routes_df = pd.read_parquet(
+        route_file
+    )
+
+    precursors_df = pd.read_parquet(
+        precursor_file
+    )
+
+    if routes_df.empty:
+        logger.warning(
+            "Candidate route file is empty. "
+            "Nothing to validate."
+        )
+        return {}
+
     # ------------------------------------------------------------------
-    # Reaction-handle definitions
-    #
-    # Keep this list in the same order as the annotation task.
+    # Summary statistics
     # ------------------------------------------------------------------
 
-    reaction_handles = [
-        "amine",
-        "alcohol",
-        "phenol",
-        "carboxylic_acid",
-        "acid_chloride",
-        "aldehyde",
-        "ketone",
-        "alkyl_halide",
-        "aryl_vinyl_halide",
-        "boronic_acid",
-        "boronate_ester",
-        "sulfonyl_chloride",
-        "nitrile",
+    summary_records = [
+        {
+            "metric": "n_routes",
+            "value": len(routes_df),
+        },
+        {
+            "metric": "n_targets",
+            "value": routes_df["target_id"].nunique(),
+        },
+        {
+            "metric": "n_disconnections",
+            "value": routes_df["disconnection_id"].nunique(),
+        },
+        {
+            "metric": "n_fully_commercial_routes",
+            "value": int(
+                routes_df[
+                    "all_precursors_commercial"
+                ].sum()
+            ),
+        },
+        {
+            "metric": "n_partially_commercial_routes",
+            "value": int(
+                (
+                    routes_df[
+                        "any_precursors_commercial"
+                    ]
+                    & ~routes_df[
+                        "all_precursors_commercial"
+                    ]
+                ).sum()
+            ),
+        },
+        {
+            "metric": "n_non_commercial_routes",
+            "value": int(
+                (
+                    ~routes_df[
+                        "any_precursors_commercial"
+                    ]
+                ).sum()
+            ),
+        },
+        {
+            "metric": "n_precursor_records",
+            "value": len(precursors_df),
+        },
+        {
+            "metric": "n_commercial_precursor_records",
+            "value": int(
+                precursors_df[
+                    "commercially_available"
+                ].sum()
+            ),
+        },
+        {
+            "metric": "mean_precursor_similarity",
+            "value": float(
+                precursors_df[
+                    "similarity"
+                ].dropna().mean()
+            ),
+        },
+        {
+            "metric": "median_precursor_similarity",
+            "value": float(
+                precursors_df[
+                    "similarity"
+                ].dropna().median()
+            ),
+        },
     ]
 
-    # ------------------------------------------------------------------
-    # Count molecules carrying each handle
-    # ------------------------------------------------------------------
-
-    handle_counts = {}
-
-    for handle in reaction_handles:
-
-        mask = (
-            df["reaction_handles"]
-            .fillna("")
-            .str.contains(
-                rf"(?:^|;){handle}(?:;|$)",
-                regex=True,
-            )
-        )
-
-        handle_counts[handle] = int(
-            mask.sum()
-        )
-
-    n_with_handle = int(
-        df["has_reaction_handle"]
-        .fillna(False)
-        .astype(bool)
-        .sum()
+    summary_df = pd.DataFrame(
+        summary_records
     )
 
-    n_without_handle = (
-        len(df) - n_with_handle
-    )
-
-    # ------------------------------------------------------------------
-    # Handle-combination statistics
-    #
-    # This is useful because it tells us how often molecules have
-    # multiple possible reaction handles.
-    # ------------------------------------------------------------------
-
-    handle_number_counts = (
-        pd.to_numeric(
-            df["n_reaction_handles"],
-            errors="coerce",
-        )
-        .fillna(0)
-        .astype(int)
-        .value_counts()
-        .sort_index()
-        .to_dict()
-    )
-
-    # ------------------------------------------------------------------
-    # Generate representative SVG examples
-    # ------------------------------------------------------------------
-
-    depiction_files = {}
-
-    for handle in reaction_handles:
-
-        mask = (
-            df["reaction_handles"]
-            .fillna("")
-            .str.contains(
-                rf"(?:^|;){handle}(?:;|$)",
-                regex=True,
-            )
-        )
-
-        handle_df = df.loc[
-            mask,
-            [
-                "canonical_smiles",
-                "inchikey",
-            ]
-        ].copy()
-
-        if handle_df.empty:
-
-            logger.info(
-                f"{handle}: no molecules found"
-            )
-
-            continue
-
-        n_sample = min(
-            sample_size,
-            len(handle_df)
-        )
-
-        sample_df = handle_df.sample(
-            n=n_sample,
-            random_state=random_state,
-        )
-
-        molecules = []
-        legends = []
-
-        for _, row in sample_df.iterrows():
-
-            smiles = row["canonical_smiles"]
-
-            try:
-                mol = Chem.MolFromSmiles(smiles)
-
-            except Exception:
-                mol = None
-
-            if mol is None:
-                continue
-
-            molecules.append(mol)
-
-            legends.append(
-                row["inchikey"]
-            )
-
-        if not molecules:
-            logger.warning(
-                f"{handle}: no valid molecules available "
-                f"for depiction"
-            )
-            continue
-
-        # --------------------------------------------------------------
-        # Create SVG grid without Cairo
-        # --------------------------------------------------------------
-
-        n_cols = 5
-        n_rows = (
-            len(molecules) + n_cols - 1
-        ) // n_cols
-
-        cell_width = 250
-        cell_height = 220
-
-        drawer = rdMolDraw2D.MolDraw2DSVG(
-            n_cols * cell_width,
-            n_rows * cell_height,
-            cell_width,
-            cell_height,
-        )
-
-        drawer.DrawMolecules(
-            molecules,
-            legends=legends,
-        )
-
-        drawer.FinishDrawing()
-
-        svg = drawer.GetDrawingText()
-
-        output_file = (
-            output_dir /
-            f"{handle}_examples.svg"
-        )
-
-        with open(
-            output_file,
-            "w",
-            encoding="utf-8",
-        ) as f:
-            f.write(svg)
-
-        depiction_files[handle] = str(
-            output_file
-        )
-
-        logger.info(
-            f"{handle}: "
-            f"{handle_counts[handle]:,} molecules, "
-            f"saved {len(molecules)} examples to "
-            f"{output_file}"
-        )
-
-    # ------------------------------------------------------------------
-    # Build validation summary
-    # ------------------------------------------------------------------
-
-    summary = {
-        "input_file": str(input_file),
-        "n_building_blocks": int(len(df)),
-        "n_with_reaction_handle": n_with_handle,
-        "n_without_reaction_handle": n_without_handle,
-        "fraction_with_reaction_handle": (
-            float(n_with_handle / len(df))
-            if len(df) > 0
-            else 0.0
-        ),
-        "reaction_handle_counts": handle_counts,
-        "n_reaction_handles_per_molecule": {
-            str(key): int(value)
-            for key, value
-            in handle_number_counts.items()
-        },
-        "sample_size": sample_size,
-        "random_state": random_state,
-        "depiction_files": depiction_files,
-    }
-
-    summary_file = (
-        output_dir /
-        "reactivity_validation_summary.json"
+    summary_df.to_csv(
+        output_dir / "route_summary.csv",
+        index=False,
     )
 
     with open(
-        summary_file,
+        output_dir / "route_summary.txt",
         "w",
-        encoding="utf-8",
-    ) as f:
-        json.dump(
-            summary,
-            f,
-            indent=2,
+    ) as handle:
+
+        handle.write(
+            "RETROSYNTHESIS ROUTE VALIDATION\n"
+        )
+        handle.write(
+            "================================\n\n"
         )
 
+        for _, row in summary_df.iterrows():
+
+            handle.write(
+                f"{row['metric']}: "
+                f"{row['value']}\n"
+            )
+
+    # ------------------------------------------------------------------
+    # Plot 1: commercial coverage
+    # ------------------------------------------------------------------
+
+    commercial_counts = pd.Series({
+        "Fully commercial": int(
+            routes_df[
+                "all_precursors_commercial"
+            ].sum()
+        ),
+        "Partially commercial": int(
+            (
+                routes_df[
+                    "any_precursors_commercial"
+                ]
+                & ~routes_df[
+                    "all_precursors_commercial"
+                ]
+            ).sum()
+        ),
+        "Non-commercial": int(
+            (
+                ~routes_df[
+                    "any_precursors_commercial"
+                ]
+            ).sum()
+        ),
+    })
+
+    fig, ax = plt.subplots(
+        figsize=(8, 5)
+    )
+
+    commercial_counts.plot.bar(
+        ax=ax
+    )
+
+    ax.set_ylabel(
+        "Number of routes"
+    )
+
+    ax.set_title(
+        "Commercial availability of candidate routes"
+    )
+
+    ax.tick_params(
+        axis="x",
+        rotation=0,
+    )
+
+    fig.tight_layout()
+
+    fig.savefig(
+        output_dir / "commercial_coverage.svg"
+    )
+
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Plot 2: routes by reaction rule
+    # ------------------------------------------------------------------
+
+    rule_counts = (
+        routes_df[
+            "reaction_rule"
+        ]
+        .value_counts()
+        .sort_values(
+            ascending=False
+        )
+    )
+
+    fig, ax = plt.subplots(
+        figsize=(9, 5)
+    )
+
+    rule_counts.plot.bar(
+        ax=ax
+    )
+
+    ax.set_ylabel(
+        "Number of routes"
+    )
+
+    ax.set_title(
+        "Candidate routes by reaction rule"
+    )
+
+    ax.tick_params(
+        axis="x",
+        rotation=45,
+    )
+
+    fig.tight_layout()
+
+    fig.savefig(
+        output_dir / "routes_by_reaction.svg"
+    )
+
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Plot 3: precursor similarity distribution
+    # ------------------------------------------------------------------
+
+    similarity_values = (
+        precursors_df[
+            "similarity"
+        ]
+        .dropna()
+    )
+
+    if not similarity_values.empty:
+
+        fig, ax = plt.subplots(
+            figsize=(8, 5)
+        )
+
+        ax.hist(
+            similarity_values,
+            bins=20,
+        )
+
+        ax.set_xlabel(
+            "Morgan/Tanimoto similarity"
+        )
+
+        ax.set_ylabel(
+            "Number of precursor matches"
+        )
+
+        ax.set_title(
+            "Commercial precursor similarity"
+        )
+
+        fig.tight_layout()
+
+        fig.savefig(
+            output_dir / "precursor_similarity.svg"
+        )
+
+        plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Logging
+    # ------------------------------------------------------------------
+
     logger.info(
-        f"Reaction annotation validation complete"
+        "Candidate route validation complete"
     )
 
     logger.info(
-        f"  Building blocks: "
-        f"{len(df):,}"
+        f"  Routes: {len(routes_df):,}"
     )
 
     logger.info(
-        f"  With recognised handle: "
-        f"{n_with_handle:,}"
+        f"  Targets: "
+        f"{routes_df['target_id'].nunique():,}"
     )
 
     logger.info(
-        f"  Without recognised handle: "
-        f"{n_without_handle:,}"
+        f"  Fully commercial: "
+        f"{int(routes_df['all_precursors_commercial'].sum()):,}"
     )
 
     logger.info(
-        f"  Summary saved to {summary_file}"
+        f"  Partially commercial: "
+        f"{int((routes_df['any_precursors_commercial'] & ~routes_df['all_precursors_commercial']).sum()):,}"
+    )
+
+    logger.info(
+        f"  Validation output: {output_dir}"
     )
 
     return {
-        "reactivity_validation": summary,
-        "reactivity_validation_file": summary_file,
-        "reactivity_validation_dir": output_dir,
+        "candidate_route_validation": summary_df,
     }
