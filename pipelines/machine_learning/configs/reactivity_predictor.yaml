@@ -7,6 +7,8 @@ workflow:
   - validate_building_block_database
   - plot_building_block_database
   - classify_building_blocks
+  - annotate_building_block_reactivity
+  - build_building_block_search_index
 
 
 load_building_blocks:
@@ -94,3 +96,18 @@ classify_building_blocks:
     - Br
     - I
     - Si
+  
+annotate_building_block_reactivity:
+  input_file: outputs/commercial_bbs/mcule_retrosynthesis_building_blocks.parquet
+
+  output_file: outputs/commercial_bbs/mcule_retrosynthesis_building_blocks_reactivity.parquet
+
+  parallel:
+    enabled: true
+    n_workers: 16
+    chunk_size: 10000
+
+build_building_block_search_index:
+  input_file: outputs/commercial_bbs/mcule_retrosynthesis_building_blocks_reactivity.parquet
+
+  output_dir: outputs/commercial_bbs/search_index

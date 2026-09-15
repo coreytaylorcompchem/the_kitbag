@@ -18,7 +18,7 @@ from rdkit.Chem.Draw import rdMolDraw2D
 
 from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 
-from modules.utils.retrosynthetic_predictor_helpers import _process_building_block_chunk
+from modules.utils.retrosynthetic_predictor_helpers import _process_building_block_chunk, _annotate_building_block_chunk, REACTION_HANDLE_SMARTS
 
 from pipeline.task_registry import register_task
 
@@ -1203,4 +1203,473 @@ def classify_building_blocks(config, context):
         "building_block_category_counts": category_counts,
         "retrosynthesis_building_block_database": retrosynthesis_output,
         "excluded_building_block_database": excluded_output,
+    }
+
+@register_task(
+    "annotate_building_block_reactivity",
+    category="SYNTHESIS",
+    description="Annotate commercial building blocks with retrosynthetically useful reaction handles."
+)
+def annotate_building_block_reactivity(config, context):
+
+    input_file = Path(
+        config.get(
+            "input_file",
+            "outputs/commercial_bbs/mcule_retrosynthesis_building_blocks.parquet"
+        )
+    )
+
+    output_file = Path(
+        config.get(
+            "output_file",
+            "outputs/commercial_bbs/mcule_retrosynthesis_building_blocks_reactivity.parquet"
+        )
+    )
+
+    if not input_file.exists():
+        raise FileNotFoundError(
+            f"Retrosynthesis building-block database not found: {input_file}"
+        )
+
+    df = pd.read_parquet(input_file)
+
+    logger.info(
+        f"Annotating reaction handles for {len(df):,} building blocks"
+    )
+
+    required_columns = [
+        "canonical_smiles",
+        "inchikey",
+    ]
+
+    missing_columns = [
+        col for col in required_columns
+        if col not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing required columns: {missing_columns}"
+        )
+
+    parallel_config = config.get("parallel", {})
+
+    parallel_enabled = parallel_config.get(
+        "enabled",
+        True
+    )
+
+    n_workers = parallel_config.get(
+        "n_workers",
+        None
+    )
+
+    chunk_size = parallel_config.get(
+        "chunk_size",
+        10000
+    )
+
+    records = df.to_dict(orient="records")
+
+    chunks = (
+        records[i:i + chunk_size]
+        for i in range(
+            0,
+            len(records),
+            chunk_size
+        )
+    )
+
+    annotated = []
+
+    if parallel_enabled:
+
+        logger.info(
+            f"Using multiprocessing with "
+            f"{n_workers or 'default'} workers "
+            f"and chunk size {chunk_size:,}"
+        )
+
+        with ProcessPoolExecutor(
+            max_workers=n_workers
+        ) as executor:
+
+            pending = set()
+
+            max_pending = (
+                (n_workers or 4) * 2
+            )
+
+            with tqdm(
+                total=len(df),
+                desc="Annotating reaction handles"
+            ) as progress:
+
+                for chunk in chunks:
+
+                    future = executor.submit(
+                        _annotate_building_block_chunk,
+                        chunk,
+                    )
+
+                    pending.add(future)
+
+                    if len(pending) >= max_pending:
+
+                        done, pending = wait(
+                            pending,
+                            return_when=FIRST_COMPLETED,
+                        )
+
+                        for completed in done:
+
+                            result = completed.result()
+
+                            annotated.extend(result)
+
+                            progress.update(
+                                len(result)
+                            )
+
+                while pending:
+
+                    done, pending = wait(
+                        pending,
+                        return_when=FIRST_COMPLETED,
+                    )
+
+                    for completed in done:
+
+                        result = completed.result()
+
+                        annotated.extend(result)
+
+                        progress.update(
+                            len(result)
+                        )
+
+    else:
+
+        logger.info(
+            "Parallel processing disabled; "
+            "using single process."
+        )
+
+        with tqdm(
+            total=len(df),
+            desc="Annotating reaction handles"
+        ) as progress:
+
+            for chunk in chunks:
+
+                result = _annotate_building_block_chunk(
+                    chunk
+                )
+
+                annotated.extend(result)
+
+                progress.update(
+                    len(result)
+                )
+
+    annotated_df = pd.DataFrame(
+        annotated
+    )
+
+    output_file.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    annotated_df.to_parquet(
+        output_file,
+        index=False
+    )
+
+    handle_counts = {}
+
+    for handle in REACTION_HANDLE_SMARTS:
+
+        count = int(
+            annotated_df["reaction_handles"]
+            .fillna("")
+            .str.contains(
+                rf"(^|;){handle}(;|$)",
+                regex=True
+            )
+            .sum()
+        )
+
+        handle_counts[handle] = count
+
+    logger.info(
+        f"Building blocks with at least one "
+        f"reaction handle: "
+        f"{int(annotated_df['has_reaction_handle'].sum()):,}"
+    )
+
+    logger.info(
+        f"Building blocks with no recognised "
+        f"reaction handle: "
+        f"{int((~annotated_df['has_reaction_handle']).sum()):,}"
+    )
+
+    logger.info(
+        "Reaction-handle counts:"
+    )
+
+    for handle, count in handle_counts.items():
+
+        logger.info(
+            f"  {handle}: {count:,}"
+        )
+
+    logger.info(
+        f"Saved annotated building-block database "
+        f"to {output_file}"
+    )
+
+    context[
+        "retrosynthesis_building_blocks"
+    ] = annotated_df
+
+    return {
+        "retrosynthesis_building_blocks": annotated_df,
+        "annotated_building_block_database": output_file,
+        "reaction_handle_counts": handle_counts,
+    }
+
+@register_task(
+    "build_building_block_search_index",
+    category="SYNTHESIS",
+    description="Build searchable reaction-handle indexes for commercial building blocks."
+)
+def build_building_block_search_index(config, context):
+
+    input_file = Path(
+        config.get(
+            "input_file",
+            "outputs/commercial_bbs/mcule_retrosynthesis_building_blocks_reactivity.parquet"
+        )
+    )
+
+    output_dir = Path(
+        config.get(
+            "output_dir",
+            "outputs/commercial_bbs/search_index"
+        )
+    )
+
+    if not input_file.exists():
+        raise FileNotFoundError(
+            f"Annotated building-block database not found: {input_file}"
+        )
+
+    df = pd.read_parquet(input_file)
+
+    logger.info(
+        f"Building search index from {len(df):,} building blocks"
+    )
+
+    required_columns = [
+        "canonical_smiles",
+        "inchikey",
+        "reaction_handles",
+    ]
+
+    missing_columns = [
+        col for col in required_columns
+        if col not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing required columns: {missing_columns}"
+        )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    # ------------------------------------------------------------------
+    # Columns retained in the search index
+    # ------------------------------------------------------------------
+
+    index_columns = [
+        "inchikey",
+        "canonical_smiles",
+    ]
+
+    optional_columns = [
+        "smiles",
+        "mcule_id",
+        "molecular_weight",
+        "logp",
+        "tpsa",
+        "hbd",
+        "hba",
+        "rotatable_bonds",
+        "ring_count",
+        "heavy_atom_count",
+    ]
+
+    index_columns.extend(
+        [
+            column
+            for column in optional_columns
+            if column in df.columns
+        ]
+    )
+
+    # ------------------------------------------------------------------
+    # Expand reaction handles
+    # ------------------------------------------------------------------
+
+    index_df = df[
+        index_columns + ["reaction_handles"]
+    ].copy()
+
+    index_df["reaction_handle"] = (
+        index_df["reaction_handles"]
+        .fillna("")
+        .str.split(";")
+    )
+
+    index_df = index_df.explode(
+        "reaction_handle"
+    )
+
+    index_df["reaction_handle"] = (
+        index_df["reaction_handle"]
+        .astype(str)
+        .str.strip()
+    )
+
+    # Remove rows where no reaction handle exists.
+
+    index_df = index_df[
+        index_df["reaction_handle"] != ""
+    ].copy()
+
+    # The original combined string is no longer needed.
+
+    index_df.drop(
+        columns=["reaction_handles"],
+        inplace=True
+    )
+
+    # Avoid accidental duplicate handle/molecule pairs.
+
+    index_df.drop_duplicates(
+        subset=[
+            "reaction_handle",
+            "inchikey",
+        ],
+        inplace=True,
+    )
+
+    index_df.reset_index(
+        drop=True,
+        inplace=True
+    )
+
+    # ------------------------------------------------------------------
+    # Save master handle index
+    # ------------------------------------------------------------------
+
+    master_index_file = (
+        output_dir /
+        "building_blocks_by_reaction_handle.parquet"
+    )
+
+    index_df.to_parquet(
+        master_index_file,
+        index=False
+    )
+
+    logger.info(
+        f"Saved master reaction-handle index "
+        f"({len(index_df):,} entries) "
+        f"to {master_index_file}"
+    )
+
+    # ------------------------------------------------------------------
+    # Save one index per reaction handle
+    # ------------------------------------------------------------------
+
+    handle_files = {}
+
+    for handle, handle_df in index_df.groupby(
+        "reaction_handle",
+        sort=True
+    ):
+
+        handle_df = handle_df.drop(
+            columns=["reaction_handle"]
+        ).reset_index(drop=True)
+
+        handle_file = (
+            output_dir /
+            f"{handle}.parquet"
+        )
+
+        handle_df.to_parquet(
+            handle_file,
+            index=False
+        )
+
+        handle_files[handle] = str(
+            handle_file
+        )
+
+        logger.info(
+            f"  {handle}: "
+            f"{len(handle_df):,} building blocks"
+        )
+
+    # ------------------------------------------------------------------
+    # Save metadata
+    # ------------------------------------------------------------------
+
+    metadata = {
+        "input_file": str(input_file),
+        "n_building_blocks": int(len(df)),
+        "n_index_entries": int(len(index_df)),
+        "n_reaction_handles": int(
+            index_df["reaction_handle"].nunique()
+        ),
+        "reaction_handles": sorted(
+            index_df["reaction_handle"].unique().tolist()
+        ),
+        "handle_files": handle_files,
+    }
+
+    metadata_file = (
+        output_dir /
+        "search_index_metadata.json"
+    )
+
+    import json
+
+    with open(
+        metadata_file,
+        "w"
+    ) as f:
+        json.dump(
+            metadata,
+            f,
+            indent=2
+        )
+
+    logger.info(
+        f"Saved search-index metadata "
+        f"to {metadata_file}"
+    )
+
+    return {
+        "building_block_search_index": index_df,
+        "building_block_search_index_file": master_index_file,
+        "building_block_search_index_dir": output_dir,
+        "building_block_search_index_metadata": metadata_file,
     }
