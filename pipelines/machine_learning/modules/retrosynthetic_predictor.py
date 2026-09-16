@@ -15,13 +15,13 @@ from rdkit.Chem import AllChem
 
 # from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 
-from modules.utils.retrosynth_rxn_rules import REACTION_RULES, COMPILED_REACTION_RULES, _canonicalise_smiles, _apply_reaction_rule
+from modules.utils.retrosynth_rxn_rules import load_reaction_rules, compile_reaction_rules, _canonicalise_smiles, _apply_reaction_rule
 
 from pipeline.task_registry import register_task
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 @register_task(
     "load_retrosynthesis_targets",
@@ -101,13 +101,81 @@ def load_retrosynthesis_targets(config, context):
     }
 
 @register_task(
+    "load_reaction_rules",
+    category="SYNTHESIS",
+    description="Load and compile retrosynthetic reaction rules."
+)
+def load_reaction_rules_task(config, context):
+
+    input_file = Path(
+        config["input_file"]
+    )
+
+    reaction_rules = load_reaction_rules(
+        input_file
+    )
+
+    compiled_reaction_rules = compile_reaction_rules(
+        reaction_rules
+    )
+
+    logger.info(
+        f"Loaded {len(reaction_rules):,} "
+        f"reaction rules from {input_file}"
+    )
+
+    for rule_name in reaction_rules:
+        logger.debug(
+            f"  {rule_name}"
+        )
+
+    context[
+        "reaction_rules"
+    ] = reaction_rules
+
+    context[
+        "compiled_reaction_rules"
+    ] = compiled_reaction_rules
+
+    return {
+        "reaction_rules": reaction_rules,
+        "compiled_reaction_rules": (
+            compiled_reaction_rules
+        ),
+    }
+
+@register_task(
     "generate_reaction_disconnections",
     category="SYNTHESIS",
     description="Generate retrosynthetic disconnections using configured reaction rules."
 )
 def generate_reaction_disconnections(config, context):
 
-    targets_df = context.get("retrosynthesis_targets")
+    targets_df = context.get(
+        "retrosynthesis_targets"
+    )
+
+    compiled_reaction_rules = context.get(
+        "compiled_reaction_rules"
+    )
+
+    reaction_rules = context.get(
+        "reaction_rules"
+    )
+
+    if compiled_reaction_rules is None:
+        raise ValueError(
+            "No compiled reaction rules found in "
+            "pipeline context. Run 'load_reaction_rules' "
+            "before 'generate_reaction_disconnections'."
+        )
+
+    if reaction_rules is None:
+        raise ValueError(
+            "No reaction rules found in pipeline context. "
+            "Run 'load_reaction_rules' before "
+            "'generate_reaction_disconnections'."
+        )
 
     if targets_df is None:
         raise ValueError(
@@ -124,19 +192,26 @@ def generate_reaction_disconnections(config, context):
 
     enabled_rules = config.get(
         "rules",
-        list(REACTION_RULES.keys()),
+        list(reaction_rules.keys()),
+    )
+
+    inspect_rules = set(
+        config.get(
+            "inspect_rules",
+            [],
+        )
     )
 
     unknown_rules = [
         rule
         for rule in enabled_rules
-        if rule not in COMPILED_REACTION_RULES
+        if rule not in compiled_reaction_rules
     ]
 
     if unknown_rules:
         raise ValueError(
             f"Unknown reaction rules: {unknown_rules}. "
-            f"Available rules: {list(REACTION_RULES)}"
+            f"Available rules: {list(reaction_rules)}"
         )
 
     all_disconnections = []
@@ -148,6 +223,35 @@ def generate_reaction_disconnections(config, context):
 
         canonical_target = _canonicalise_smiles(target_smiles)
 
+        logger.info(
+            f"Target {target_id}: {canonical_target}"
+        )
+
+        target_mol = Chem.MolFromSmiles(
+            canonical_target
+        )
+
+        for rule_name in enabled_rules:
+
+            reaction = compiled_reaction_rules[
+                rule_name
+            ]
+
+            try:
+                raw_matches = reaction.RunReactants(
+                    (target_mol,)
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"  {rule_name}: RDKit error: {exc}"
+                )
+                continue
+
+            logger.debug(
+                f"  {rule_name}: "
+                f"{len(raw_matches)} raw reaction match(es)"
+            )
+
         if canonical_target is None:
             logger.warning(
                 f"Skipping invalid target {target_id}: "
@@ -157,12 +261,20 @@ def generate_reaction_disconnections(config, context):
 
         for rule_name in enabled_rules:
 
-            reaction = COMPILED_REACTION_RULES[rule_name]
+            reaction = compiled_reaction_rules[rule_name]
 
             candidates = _apply_reaction_rule(
                 canonical_target,
                 rule_name,
                 reaction,
+                reaction_rules[rule_name],
+                inspect=rule_name in inspect_rules,
+            )
+
+            logger.debug(
+                f"  {rule_name}: "
+                f"{len(candidates):,} valid disconnection(s) "
+                f"after filtering"
             )
 
             for candidate in candidates:
@@ -190,9 +302,9 @@ def generate_reaction_disconnections(config, context):
             for candidate in all_disconnections
         )
 
-        logger.info(
-            f"  {rule_name}: {count:,}"
-        )
+        # logger.info(
+        #     f"  {rule_name}: {count:,}"
+        # )
 
     context["reaction_disconnections"] = all_disconnections
 
@@ -244,42 +356,42 @@ def search_commercial_building_blocks(config, context):
         config.get("fingerprint_bits", 2048)
     )
 
-    # ------------------------------------------------------------------
-    # Reaction-rule → possible commercial reaction handles
-    # ------------------------------------------------------------------
+    # # ------------------------------------------------------------------
+    # # Reaction-rule → possible commercial reaction handles
+    # # ------------------------------------------------------------------
 
-    rule_handles = {
-        "amide_formation": {
-            "amine": "amine",
-            "carboxylic_acid": "carboxylic_acid",
-            "acid_chloride": "acid_chloride",
-        },
+    # rule_handles = {
+    #     "Schotten-Baumann_amide": {
+    #         "amine": "amine",
+    #         "carboxylic_acid": "carboxylic_acid",
+    #         "acid_chloride": "acid_chloride",
+    #     },
 
-        "ester_formation": {
-            "alcohol": "alcohol",
-            "phenol": "phenol",
-            "carboxylic_acid": "carboxylic_acid",
-            "acid_chloride": "acid_chloride",
-        },
+    #     "ester_formation": {
+    #         "alcohol": "alcohol",
+    #         "phenol": "phenol",
+    #         "carboxylic_acid": "carboxylic_acid",
+    #         "acid_chloride": "acid_chloride",
+    #     },
 
-        "suzuki_coupling": {
-            "aryl_vinyl_halide": "aryl_vinyl_halide",
-            "boronic_acid": "boronic_acid",
-            "boronate_ester": "boronate_ester",
-        },
+    #     "Suzuki": {
+    #         "aryl_vinyl_halide": "aryl_vinyl_halide",
+    #         "boronic_acid": "boronic_acid",
+    #         "boronate_ester": "boronate_ester",
+    #     },
 
-        "reductive_amination": {
-            "amine": "amine",
-            "aldehyde": "aldehyde",
-            "ketone": "ketone",
-        },
+    #     "reductive amination": {
+    #         "amine": "amine",
+    #         "aldehyde": "aldehyde",
+    #         "ketone": "ketone",
+    #     },
 
-        "ether_formation": {
-            "alcohol": "alcohol",
-            "phenol": "phenol",
-            "alkyl_halide": "alkyl_halide",
-        },
-    }
+    #     "ether_formation": {
+    #         "alcohol": "alcohol",
+    #         "phenol": "phenol",
+    #         "alkyl_halide": "alkyl_halide",
+    #     },
+    # }
 
     # ------------------------------------------------------------------
     # Cache commercial indexes and fingerprints
@@ -502,12 +614,15 @@ def search_commercial_building_blocks(config, context):
         rule_name = disconnection["reaction_rule"]
         precursor_smiles = disconnection["precursor_smiles"]
 
-        possible_handles = rule_handles.get(rule_name)
+        reaction_handles = disconnection.get(
+            "reaction_handles",
+            []
+        )
 
-        if possible_handles is None:
+        if not reaction_handles:
 
             logger.warning(
-                f"No commercial-search mapping defined for "
+                f"No commercial reaction handles inferred for "
                 f"reaction rule '{rule_name}'"
             )
 
@@ -526,7 +641,7 @@ def search_commercial_building_blocks(config, context):
             precursor_candidates = []
 
             # Search every chemically compatible handle index.
-            for role, handle in possible_handles.items():
+            for handle in reaction_handles:
 
                 matches = search_index(
                     precursor,
@@ -535,7 +650,7 @@ def search_commercial_building_blocks(config, context):
 
                 for match in matches:
 
-                    match["precursor_role"] = role
+                    match["reaction_handle"] = handle
 
                     precursor_candidates.append(
                         match

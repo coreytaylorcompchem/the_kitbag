@@ -2,6 +2,7 @@ workflow_name: run_pipeline
 
 workflow:
   - load_retrosynthesis_targets
+  - load_reaction_rules
   - generate_reaction_disconnections
   - search_commercial_building_blocks
   - assemble_candidate_routes
@@ -16,15 +17,21 @@ load_retrosynthesis_targets:
   smiles_col: SMILES
   id_col: molecule_id
 
+load_reaction_rules:
+  input_file: input/hartenfeller_rxns.csv
 
 generate_reaction_disconnections:
   rules:
-    - amide_formation
-    - ester_formation
-    - suzuki_coupling
-    - reductive_amination
-    - ether_formation
-
+    - Suzuki
+    # - Williamson ether
+    - Schotten-Baumann_amide
+    - reductive amination
+  
+  inspect_rules: # debugging
+    - Suzuki
+    - Schotten-Baumann_amide
+    - Williamson ether
+    - reductive amination
 
 search_commercial_building_blocks:
   index_dir: outputs/commercial_bbs/search_index

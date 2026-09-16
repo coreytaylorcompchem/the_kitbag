@@ -19,7 +19,7 @@ from rdkit.Chem.Draw import rdMolDraw2D
 from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 
 from modules.utils.retrosynthetic_predictor_helpers import _process_building_block_chunk, _annotate_building_block_chunk, REACTION_HANDLE_SMARTS
-from modules.utils.retrosynth_rxn_rules import REACTION_RULES, COMPILED_REACTION_RULES, _canonicalise_smiles, _apply_reaction_rule
+# from modules.utils.retrosynth_rxn_rules import REACTION_RULES, COMPILED_REACTION_RULES, _canonicalise_smiles, _apply_reaction_rule
 
 from pipeline.task_registry import register_task
 
