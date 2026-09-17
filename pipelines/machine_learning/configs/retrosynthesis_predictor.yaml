@@ -5,9 +5,11 @@ workflow:
   - load_reaction_rules
   - generate_reaction_disconnections
   - search_commercial_building_blocks
+  - validate_retrosynthesis_results # debugging task
+  - inspect_retrosynthesis_results # debugging task
   - assemble_candidate_routes
   - save_candidate_routes
-  - validate_candidate_routes
+  - validate_candidate_routes # debugging task
   # - score_routes
   # - rank_routes
 
@@ -42,6 +44,12 @@ search_commercial_building_blocks:
 
   fingerprint_radius: 2
   fingerprint_bits: 2048
+
+validate_retrosynthesis_results:
+  output_dir: outputs/retrosynthesis/validation
+
+inspect_retrosynthesis_results:
+  output_dir: outputs/retrosynthesis/validation
 
 assemble_candidate_routes:
   max_routes_per_disconnection: 20

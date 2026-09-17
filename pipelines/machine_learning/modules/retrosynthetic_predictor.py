@@ -1,4 +1,4 @@
-# import json
+import json
 # import math
 
 from pathlib import Path
@@ -15,7 +15,8 @@ from rdkit.Chem import AllChem
 
 # from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 
-from modules.utils.retrosynth_rxn_rules import load_reaction_rules, compile_reaction_rules, _canonicalise_smiles, _apply_reaction_rule
+from modules.utils.retrosynth_rxn_rules import load_reaction_rules, compile_reaction_rules, _canonicalise_smiles, _apply_reaction_rule, _is_sensible_suzuki_boron_candidate
+from modules.utils.retrosynth_parameter_dicts import REACTION_HANDLE_SMARTS
 
 from pipeline.task_registry import register_task
 
@@ -223,6 +224,13 @@ def generate_reaction_disconnections(config, context):
 
         canonical_target = _canonicalise_smiles(target_smiles)
 
+        if canonical_target is None:
+            logger.warning(
+                f"Skipping invalid target {target_id}: "
+                f"{target_smiles}"
+            )
+            continue
+
         logger.info(
             f"Target {target_id}: {canonical_target}"
         )
@@ -251,13 +259,6 @@ def generate_reaction_disconnections(config, context):
                 f"  {rule_name}: "
                 f"{len(raw_matches)} raw reaction match(es)"
             )
-
-        if canonical_target is None:
-            logger.warning(
-                f"Skipping invalid target {target_id}: "
-                f"{target_smiles}"
-            )
-            continue
 
         for rule_name in enabled_rules:
 
@@ -356,43 +357,6 @@ def search_commercial_building_blocks(config, context):
         config.get("fingerprint_bits", 2048)
     )
 
-    # # ------------------------------------------------------------------
-    # # Reaction-rule → possible commercial reaction handles
-    # # ------------------------------------------------------------------
-
-    # rule_handles = {
-    #     "Schotten-Baumann_amide": {
-    #         "amine": "amine",
-    #         "carboxylic_acid": "carboxylic_acid",
-    #         "acid_chloride": "acid_chloride",
-    #     },
-
-    #     "ester_formation": {
-    #         "alcohol": "alcohol",
-    #         "phenol": "phenol",
-    #         "carboxylic_acid": "carboxylic_acid",
-    #         "acid_chloride": "acid_chloride",
-    #     },
-
-    #     "Suzuki": {
-    #         "aryl_vinyl_halide": "aryl_vinyl_halide",
-    #         "boronic_acid": "boronic_acid",
-    #         "boronate_ester": "boronate_ester",
-    #     },
-
-    #     "reductive amination": {
-    #         "amine": "amine",
-    #         "aldehyde": "aldehyde",
-    #         "ketone": "ketone",
-    #     },
-
-    #     "ether_formation": {
-    #         "alcohol": "alcohol",
-    #         "phenol": "phenol",
-    #         "alkyl_halide": "alkyl_halide",
-    #     },
-    # }
-
     # ------------------------------------------------------------------
     # Cache commercial indexes and fingerprints
     # ------------------------------------------------------------------
@@ -477,6 +441,7 @@ def search_commercial_building_blocks(config, context):
     def search_index(
         precursor_smiles,
         handle,
+        reaction_rule,
     ):
 
         canonical_precursor = _canonicalise_smiles(
@@ -490,6 +455,47 @@ def search_commercial_building_blocks(config, context):
             canonical_precursor
         )
 
+        # --------------------------------------------------------------
+        # Verify that the query precursor actually contains the required
+        # reaction handle.
+        #
+        # The index itself is handle-specific, but this protects against
+        # stale/misclassified indexes and makes the semantic contract
+        # explicit.
+        # --------------------------------------------------------------
+
+        handle_smarts = REACTION_HANDLE_SMARTS.get(
+            handle
+        )
+
+        if handle_smarts is None:
+            logger.warning(
+                f"No SMARTS definition found for reaction handle "
+                f"'{handle}'"
+            )
+            return []
+
+        handle_pattern = Chem.MolFromSmarts(
+            handle_smarts
+        )
+
+        if handle_pattern is None:
+            logger.warning(
+                f"Could not compile reaction handle SMARTS "
+                f"for '{handle}'"
+            )
+            return []
+
+        try:
+
+            if not precursor_mol.HasSubstructMatch(
+                handle_pattern
+            ):
+                return []
+
+        except Exception:
+            return []
+
         if precursor_mol is None:
             return []
 
@@ -497,6 +503,52 @@ def search_commercial_building_blocks(config, context):
 
         if handle_df is None or handle_df.empty:
             return []
+
+        # --------------------------------------------------------------
+        # Rule-specific commercial building-block sanity checks.
+        #
+        # Handle matching alone is not sufficient. For Suzuki reactions,
+        # a molecule can contain a boronic-acid-like SMARTS match while
+        # still being an unsuitable Suzuki coupling partner.
+        #
+        # Example rejected structure:
+        #
+        #     Ar-B(O)-O-B(O)-Ar
+        #
+        # which can otherwise pass the generic boronic_acid handle
+        # filter.
+        # --------------------------------------------------------------
+
+        if (
+            reaction_rule == "Suzuki"
+            and handle in {
+                "boronic_acid",
+                "boronate_ester",
+            }
+        ):
+
+            valid_candidate_mask = []
+
+            for candidate_smiles in (
+                handle_df["canonical_smiles"]
+            ):
+
+                candidate_mol = Chem.MolFromSmiles(
+                    candidate_smiles
+                )
+
+                valid_candidate_mask.append(
+                    _is_sensible_suzuki_boron_candidate(
+                        candidate_mol
+                    )
+                )
+
+            handle_df = handle_df.loc[
+                valid_candidate_mask
+            ].copy()
+
+            if handle_df.empty:
+                return []
 
         # --------------------------------------------------------------
         # Exact match first
@@ -636,16 +688,82 @@ def search_commercial_building_blocks(config, context):
 
         fragment_results = []
 
-        for precursor in precursor_smiles:
+        # for precursor in precursor_smiles:
+
+        #     precursor_candidates = []
+
+        #     # Search every chemically compatible handle index.
+        #     for handle in reaction_handles:
+
+        #         matches = search_index(
+        #             precursor,
+        #             handle,
+        #         )
+
+        #         for match in matches:
+
+        #             match["reaction_handle"] = handle
+
+        #             precursor_candidates.append(
+        #                 match
+        #             )
+
+        for precursor_index, precursor in enumerate(
+            precursor_smiles
+        ):
 
             precursor_candidates = []
 
-            # Search every chemically compatible handle index.
-            for handle in reaction_handles:
+            # --------------------------------------------------------------
+            # Each retrosynthetic precursor has its own required reaction
+            # handle(s).
+            # --------------------------------------------------------------
+
+            if precursor_index >= len(
+                reaction_handles
+            ):
+
+                logger.warning(
+                    f"No reaction-handle definition for precursor "
+                    f"{precursor_index} of disconnection "
+                    f"{disconnection['disconnection_id']} "
+                    f"({rule_name})"
+                )
+
+                fragment_results.append({
+                    "precursor_smiles": precursor,
+                    "required_reaction_handles": [],
+                    "commercial_candidates": [],
+                    "n_commercial_candidates": 0,
+                    "commercial_match": False,
+                })
+
+                continue
+
+            required_handles = (
+                reaction_handles[
+                    precursor_index
+                ]
+            )
+
+            if not required_handles:
+
+                logger.debug(
+                    f"No reaction handles inferred for precursor "
+                    f"{precursor_index} of {rule_name}: "
+                    f"{precursor}"
+                )
+
+            # --------------------------------------------------------------
+            # Search ONLY the handle indexes compatible with this precursor.
+            # --------------------------------------------------------------
+
+            for handle in required_handles:
 
                 matches = search_index(
                     precursor,
                     handle,
+                    reaction_rule=rule_name,
                 )
 
                 for match in matches:
@@ -655,6 +773,71 @@ def search_commercial_building_blocks(config, context):
                     precursor_candidates.append(
                         match
                     )
+
+            # --------------------------------------------------------------
+            # Deduplicate commercial molecules.
+            #
+            # A molecule can still occur in more than one compatible handle
+            # index. Retain its best similarity result.
+            # --------------------------------------------------------------
+
+            unique_candidates = {}
+
+            for candidate in precursor_candidates:
+
+                key = candidate["inchikey"]
+
+                if key not in unique_candidates:
+
+                    unique_candidates[
+                        key
+                    ] = candidate
+
+                else:
+
+                    existing = unique_candidates[
+                        key
+                    ]
+
+                    if (
+                        candidate["similarity"]
+                        > existing["similarity"]
+                    ):
+
+                        unique_candidates[
+                            key
+                        ] = candidate
+
+            precursor_candidates = list(
+                unique_candidates.values()
+            )
+
+            precursor_candidates.sort(
+                key=lambda x: x["similarity"],
+                reverse=True,
+            )
+
+            precursor_candidates = (
+                precursor_candidates[
+                    :max_candidates
+                ]
+            )
+
+            fragment_results.append({
+                "precursor_smiles": precursor,
+                "required_reaction_handles": (
+                    required_handles
+                ),
+                "commercial_candidates": (
+                    precursor_candidates
+                ),
+                "n_commercial_candidates": len(
+                    precursor_candidates
+                ),
+                "commercial_match": bool(
+                    precursor_candidates
+                ),
+            })
 
             # ----------------------------------------------------------
             # Deduplicate commercial molecules.
@@ -693,16 +876,16 @@ def search_commercial_building_blocks(config, context):
                 precursor_candidates[:max_candidates]
             )
 
-            fragment_results.append({
-                "precursor_smiles": precursor,
-                "commercial_candidates": precursor_candidates,
-                "n_commercial_candidates": len(
-                    precursor_candidates
-                ),
-                "commercial_match": bool(
-                    precursor_candidates
-                ),
-            })
+            # fragment_results.append({
+            #     "precursor_smiles": precursor,
+            #     "commercial_candidates": precursor_candidates,
+            #     "n_commercial_candidates": len(
+            #         precursor_candidates
+            #     ),
+            #     "commercial_match": bool(
+            #         precursor_candidates
+            #     ),
+            # })
 
         searched_disconnections.append({
             **disconnection,
@@ -869,7 +1052,16 @@ def assemble_candidate_routes(config, context):
                         fragment["precursor_smiles"]
                     ),
                     "precursor_role": None,
+
+                    "required_reaction_handles": (
+                        fragment.get(
+                            "required_reaction_handles",
+                            [],
+                        )
+                    ),
+
                     "required_reaction_handle": None,
+
                     "commercial_smiles": None,
                     "inchikey": None,
                     "mcule_id": None,
@@ -1577,4 +1769,976 @@ def validate_candidate_routes(config, context):
 
     return {
         "candidate_route_validation": summary_df,
+    }
+
+@register_task(
+    "validate_retrosynthesis_results",
+    category="SYNTHESIS",
+    description=(
+        "Validate retrosynthetic disconnections, reaction-handle "
+        "assignments, and commercial building-block matches."
+    ),
+)
+def validate_retrosynthesis_results(
+    config,
+    context,
+):
+    """
+    Validate retrosynthetic disconnections and commercial precursor
+    matching before recursive retrosynthesis is introduced.
+
+    Checks:
+
+    1. Each disconnection has aligned precursor and handle positions.
+    2. Every required reaction handle is defined.
+    3. Every precursor actually contains its required reaction handle.
+    4. Every disconnection has the expected number of commercial
+       fragment records.
+    5. Every commercial candidate was matched using a handle required
+       for that precursor.
+    6. Every commercial candidate actually contains the matched handle.
+    7. Records suspicious cases for manual inspection.
+
+    Outputs
+    -------
+    context["retrosynthesis_validation"]
+
+    Files
+    -----
+    outputs/retrosynthesis/validation/
+        retrosynthesis_validation.json
+        disconnection_precursor_validation.csv
+    """
+
+    # ------------------------------------------------------------------
+    # Configuration
+    # ------------------------------------------------------------------
+
+    disconnections = context.get(
+        "reaction_disconnections"
+    )
+
+    if disconnections is None:
+        raise ValueError(
+            "No reaction disconnections found in pipeline context. "
+            "Run 'generate_reaction_disconnections' before "
+            "'validate_retrosynthesis_results'."
+        )
+
+    commercial_matches = context.get(
+        "commercial_building_block_matches"
+    )
+
+    if commercial_matches is None:
+        raise ValueError(
+            "No commercial building-block matches found in pipeline "
+            "context. Run 'search_commercial_building_blocks' before "
+            "'validate_retrosynthesis_results'."
+        )
+
+    output_dir = Path(
+        config.get(
+            "output_dir",
+            "outputs/retrosynthesis/validation",
+        )
+    )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    # ------------------------------------------------------------------
+    # Containers for validation results
+    # ------------------------------------------------------------------
+
+    failures = {
+        "handle_position_alignment": [],
+        "unknown_reaction_handles": [],
+        # "precursor_handle_missing": [],
+        "fragment_count_mismatch": [],
+        "commercial_handle_mismatch": [],
+        "commercial_candidate_missing_handle": [],
+    }
+
+    warnings = {
+        "no_required_handles": [],
+        "no_commercial_candidates": [],
+        "zero_valid_disconnections": [],
+    }
+
+    # ------------------------------------------------------------------
+    # Helper
+    # ------------------------------------------------------------------
+
+    def molecule_contains_handle(
+        smiles,
+        handle,
+    ):
+        """
+        Return True if a molecule contains the specified commercial
+        reaction handle.
+        """
+
+        if not isinstance(smiles, str):
+            return False
+
+        mol = Chem.MolFromSmiles(
+            smiles
+        )
+
+        if mol is None:
+            return False
+
+        handle_smarts = REACTION_HANDLE_SMARTS.get(
+            handle
+        )
+
+        if handle_smarts is None:
+            return False
+
+        pattern = Chem.MolFromSmarts(
+            handle_smarts
+        )
+
+        if pattern is None:
+            return False
+
+        try:
+            return mol.HasSubstructMatch(
+                pattern
+            )
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Validate disconnections
+    # ------------------------------------------------------------------
+
+    disconnection_rows = []
+
+    for disconnection in disconnections:
+
+        disconnection_id = disconnection.get(
+            "disconnection_id"
+        )
+
+        target_id = disconnection.get(
+            "target_id"
+        )
+
+        reaction_rule = disconnection.get(
+            "reaction_rule"
+        )
+
+        precursor_smiles = disconnection.get(
+            "precursor_smiles",
+            [],
+        )
+
+        reaction_handles = disconnection.get(
+            "reaction_handles",
+            [],
+        )
+
+        # --------------------------------------------------------------
+        # Handle position alignment
+        # --------------------------------------------------------------
+
+        if len(precursor_smiles) != len(
+            reaction_handles
+        ):
+
+            failures[
+                "handle_position_alignment"
+            ].append(
+                {
+                    "disconnection_id": disconnection_id,
+                    "target_id": target_id,
+                    "reaction_rule": reaction_rule,
+                    "n_precursors": len(
+                        precursor_smiles
+                    ),
+                    "n_handle_positions": len(
+                        reaction_handles
+                    ),
+                }
+            )
+
+        # --------------------------------------------------------------
+        # No handles
+        # --------------------------------------------------------------
+
+        if not reaction_handles:
+
+            warnings[
+                "no_required_handles"
+            ].append(
+                {
+                    "disconnection_id": disconnection_id,
+                    "target_id": target_id,
+                    "reaction_rule": reaction_rule,
+                }
+            )
+
+        # --------------------------------------------------------------
+        # Validate each precursor
+        # --------------------------------------------------------------
+
+        for precursor_index, precursor in enumerate(
+            precursor_smiles
+        ):
+
+            if precursor_index >= len(
+                reaction_handles
+            ):
+                required_handles = []
+
+            else:
+                required_handles = (
+                    reaction_handles[
+                        precursor_index
+                    ]
+                )
+
+            # ----------------------------------------------------------
+            # Known handle definitions
+            # ----------------------------------------------------------
+
+            for handle in required_handles:
+
+                if handle not in REACTION_HANDLE_SMARTS:
+
+                    failures[
+                        "unknown_reaction_handles"
+                    ].append(
+                        {
+                            "disconnection_id": disconnection_id,
+                            "target_id": target_id,
+                            "reaction_rule": reaction_rule,
+                            "precursor_index": precursor_index,
+                            "precursor_smiles": precursor,
+                            "handle": handle,
+                        }
+                    )
+
+            # # ----------------------------------------------------------
+            # # Precursor actually contains required handle
+            # # ----------------------------------------------------------
+
+            # missing_handles = []
+
+            # for handle in required_handles:
+
+            #     if handle not in REACTION_HANDLE_SMARTS:
+            #         continue
+
+            #     if not molecule_contains_handle(
+            #         precursor,
+            #         handle,
+            #     ):
+            #         missing_handles.append(
+            #             handle
+            #         )
+
+            # if missing_handles:
+
+            #     failures[
+            #         "precursor_handle_missing"
+            #     ].append(
+            #         {
+            #             "disconnection_id": disconnection_id,
+            #             "target_id": target_id,
+            #             "reaction_rule": reaction_rule,
+            #             "precursor_index": precursor_index,
+            #             "precursor_smiles": precursor,
+            #             "required_handles": required_handles,
+            #             "missing_handles": missing_handles,
+            #         }
+            #     )
+
+            # ----------------------------------------------------------
+            # Compact precursor-level output
+            # ----------------------------------------------------------
+
+            disconnection_rows.append(
+                {
+                    "disconnection_id": disconnection_id,
+                    "target_id": target_id,
+                    "reaction_rule": reaction_rule,
+                    "precursor_index": precursor_index,
+                    "precursor_smiles": precursor,
+                    "required_reaction_handles": (
+                        "|".join(
+                            required_handles
+                        )
+                    ),
+                }
+            )
+
+    # ------------------------------------------------------------------
+    # Validate commercial search results
+    # ------------------------------------------------------------------
+
+    for disconnection in commercial_matches:
+
+        disconnection_id = disconnection.get(
+            "disconnection_id"
+        )
+
+        target_id = disconnection.get(
+            "target_id"
+        )
+
+        reaction_rule = disconnection.get(
+            "reaction_rule"
+        )
+
+        precursor_smiles = disconnection.get(
+            "precursor_smiles",
+            [],
+        )
+
+        fragment_results = disconnection.get(
+            "commercial_candidates",
+            [],
+        )
+
+        # --------------------------------------------------------------
+        # There should be one fragment result per precursor.
+        # --------------------------------------------------------------
+
+        if len(fragment_results) != len(
+            precursor_smiles
+        ):
+
+            failures[
+                "fragment_count_mismatch"
+            ].append(
+                {
+                    "disconnection_id": disconnection_id,
+                    "target_id": target_id,
+                    "reaction_rule": reaction_rule,
+                    "n_precursors": len(
+                        precursor_smiles
+                    ),
+                    "n_fragment_results": len(
+                        fragment_results
+                    ),
+                }
+            )
+
+        # --------------------------------------------------------------
+        # Validate each fragment result
+        # --------------------------------------------------------------
+
+        for precursor_index, fragment in enumerate(
+            fragment_results
+        ):
+
+            precursor = fragment.get(
+                "precursor_smiles"
+            )
+
+            required_handles = fragment.get(
+                "required_reaction_handles",
+                [],
+            )
+
+            candidates = fragment.get(
+                "commercial_candidates",
+                [],
+            )
+
+            # ----------------------------------------------------------
+            # No commercial candidates
+            # ----------------------------------------------------------
+
+            if not candidates:
+
+                warnings[
+                    "no_commercial_candidates"
+                ].append(
+                    {
+                        "disconnection_id": disconnection_id,
+                        "target_id": target_id,
+                        "reaction_rule": reaction_rule,
+                        "precursor_index": precursor_index,
+                        "precursor_smiles": precursor,
+                        "required_reaction_handles": (
+                            required_handles
+                        ),
+                    }
+                )
+
+            # ----------------------------------------------------------
+            # Validate every commercial candidate
+            # ----------------------------------------------------------
+
+            for candidate in candidates:
+
+                matched_handle = candidate.get(
+                    "reaction_handle"
+                )
+
+                candidate_smiles = candidate.get(
+                    "canonical_smiles"
+                )
+
+                # ------------------------------------------------------
+                # Candidate should have a reaction handle.
+                # ------------------------------------------------------
+
+                if matched_handle not in (
+                    required_handles
+                ):
+
+                    failures[
+                        "commercial_handle_mismatch"
+                    ].append(
+                        {
+                            "disconnection_id": disconnection_id,
+                            "target_id": target_id,
+                            "reaction_rule": reaction_rule,
+                            "precursor_index": precursor_index,
+                            "precursor_smiles": precursor,
+                            "required_reaction_handles": (
+                                required_handles
+                            ),
+                            "matched_reaction_handle": (
+                                matched_handle
+                            ),
+                            "candidate_smiles": (
+                                candidate_smiles
+                            ),
+                            "inchikey": candidate.get(
+                                "inchikey"
+                            ),
+                            "similarity": candidate.get(
+                                "similarity"
+                            ),
+                        }
+                    )
+
+                # ------------------------------------------------------
+                # Candidate itself should contain the matched handle.
+                # ------------------------------------------------------
+
+                if (
+                    matched_handle in
+                    REACTION_HANDLE_SMARTS
+                    and not molecule_contains_handle(
+                        candidate_smiles,
+                        matched_handle,
+                    )
+                ):
+
+                    failures[
+                        "commercial_candidate_missing_handle"
+                    ].append(
+                        {
+                            "disconnection_id": disconnection_id,
+                            "target_id": target_id,
+                            "reaction_rule": reaction_rule,
+                            "precursor_index": precursor_index,
+                            "precursor_smiles": precursor,
+                            "required_reaction_handles": (
+                                required_handles
+                            ),
+                            "matched_reaction_handle": (
+                                matched_handle
+                            ),
+                            "candidate_smiles": (
+                                candidate_smiles
+                            ),
+                            "inchikey": candidate.get(
+                                "inchikey"
+                            ),
+                            "similarity": candidate.get(
+                                "similarity"
+                            ),
+                        }
+                    )
+
+    # ------------------------------------------------------------------
+    # Identify disconnections with zero valid reaction products.
+    #
+    # These should be inspected manually because a large number can
+    # indicate a reaction-template problem.
+    # ------------------------------------------------------------------
+
+    for disconnection in disconnections:
+
+        if not disconnection.get(
+            "precursor_smiles"
+        ):
+
+            warnings[
+                "zero_valid_disconnections"
+            ].append(
+                {
+                    "disconnection_id": disconnection.get(
+                        "disconnection_id"
+                    ),
+                    "target_id": disconnection.get(
+                        "target_id"
+                    ),
+                    "reaction_rule": disconnection.get(
+                        "reaction_rule"
+                    ),
+                    "target_smiles": disconnection.get(
+                        "target_smiles"
+                    ),
+                }
+            )
+
+    # ------------------------------------------------------------------
+    # Summary
+    # ------------------------------------------------------------------
+
+    n_failures = sum(
+        len(items)
+        for items in failures.values()
+    )
+
+    n_warnings = sum(
+        len(items)
+        for items in warnings.values()
+    )
+
+    checks = {}
+
+    for check_name, items in failures.items():
+
+        checks[check_name] = {
+            "passed": len(items) == 0,
+            "n_failures": len(items),
+        }
+
+    report = {
+        "summary": {
+            "n_disconnections": len(
+                disconnections
+            ),
+            "n_commercial_search_results": len(
+                commercial_matches
+            ),
+            "n_failures": n_failures,
+            "n_warnings": n_warnings,
+            "passed": n_failures == 0,
+        },
+        "checks": checks,
+        "failures": failures,
+        "warnings": warnings,
+    }
+
+    # ------------------------------------------------------------------
+    # Save JSON report
+    # ------------------------------------------------------------------
+
+    json_path = (
+        output_dir
+        / "retrosynthesis_validation.json"
+    )
+
+    with open(
+        json_path,
+        "w",
+    ) as handle:
+
+        json.dump(
+            report,
+            handle,
+            indent=2,
+        )
+
+    # ------------------------------------------------------------------
+    # Save precursor CSV
+    # ------------------------------------------------------------------
+
+    csv_path = (
+        output_dir
+        / "disconnection_precursor_validation.csv"
+    )
+
+    pd.DataFrame(
+        disconnection_rows
+    ).to_csv(
+        csv_path,
+        index=False,
+    )
+
+    # ------------------------------------------------------------------
+    # Logging
+    # ------------------------------------------------------------------
+
+    logger.info(
+        "Retrosynthesis validation complete"
+    )
+
+    logger.info(
+        f"  Disconnections: "
+        f"{len(disconnections):,}"
+    )
+
+    logger.info(
+        f"  Validation failures: "
+        f"{n_failures:,}"
+    )
+
+    logger.info(
+        f"  Validation warnings: "
+        f"{n_warnings:,}"
+    )
+
+    for check_name, check in checks.items():
+
+        status = (
+            "PASS"
+            if check["passed"]
+            else "FAIL"
+        )
+
+        logger.info(
+            f"  {status}: {check_name} "
+            f"({check['n_failures']:,})"
+        )
+
+    logger.info(
+        f"  Validation JSON: {json_path}"
+    )
+
+    logger.info(
+        f"  Precursor CSV: {csv_path}"
+    )
+
+    # ------------------------------------------------------------------
+    # Context
+    # ------------------------------------------------------------------
+
+    context[
+        "retrosynthesis_validation"
+    ] = report
+
+    return {
+        "retrosynthesis_validation": report,
+        "retrosynthesis_validation_json": str(
+            json_path
+        ),
+        "retrosynthesis_validation_csv": str(
+            csv_path
+        ),
+    }
+
+@register_task(
+    "inspect_retrosynthesis_results",
+    category="SYNTHESIS",
+    description=(
+        "Generate a compact inspection table of retrosynthetic "
+        "disconnections and their best commercial precursor matches."
+    ),
+)
+def inspect_retrosynthesis_results(
+    config,
+    context,
+):
+    """
+    Generate a compact CSV for manual inspection of retrosynthetic
+    disconnections and commercial building-block matches.
+
+    One row is produced per retrosynthetic precursor.
+
+    The output includes:
+        - target
+        - disconnection
+        - reaction rule
+        - precursor position
+        - generated precursor
+        - required reaction handles
+        - number of commercial candidates
+        - best commercial candidate
+        - matched commercial handle
+        - similarity
+        - exact-match status
+
+    This is intended as a lightweight pre-recursion diagnostic rather
+    than a formal validation stage.
+    """
+
+    # ------------------------------------------------------------------
+    # Input
+    # ------------------------------------------------------------------
+
+    commercial_matches = context.get(
+        "commercial_building_block_matches"
+    )
+
+    if commercial_matches is None:
+        raise ValueError(
+            "No commercial building-block matches found in pipeline "
+            "context. Run 'search_commercial_building_blocks' before "
+            "'inspect_retrosynthesis_results'."
+        )
+
+    # ------------------------------------------------------------------
+    # Configuration
+    # ------------------------------------------------------------------
+
+    output_dir = Path(
+        config.get(
+            "output_dir",
+            "outputs/retrosynthesis/validation",
+        )
+    )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_file = output_dir / (
+        "retrosynthesis_inspection.csv"
+    )
+
+    # ------------------------------------------------------------------
+    # Build inspection records
+    # ------------------------------------------------------------------
+
+    rows = []
+
+    for disconnection in commercial_matches:
+
+        disconnection_id = disconnection.get(
+            "disconnection_id"
+        )
+
+        target_id = disconnection.get(
+            "target_id"
+        )
+
+        target_smiles = disconnection.get(
+            "target_smiles"
+        )
+
+        reaction_rule = disconnection.get(
+            "reaction_rule"
+        )
+
+        fragment_results = disconnection.get(
+            "commercial_candidates",
+            []
+        )
+
+        for precursor_index, fragment in enumerate(
+            fragment_results
+        ):
+
+            precursor_smiles = fragment.get(
+                "precursor_smiles"
+            )
+
+            required_handles = fragment.get(
+                "required_reaction_handles",
+                []
+            )
+
+            candidates = fragment.get(
+                "commercial_candidates",
+                []
+            )
+
+            # ----------------------------------------------------------
+            # Sort defensively by similarity.
+            # ----------------------------------------------------------
+
+            candidates = sorted(
+                candidates,
+                key=lambda candidate: candidate.get(
+                    "similarity",
+                    0.0
+                ),
+                reverse=True,
+            )
+
+            # ----------------------------------------------------------
+            # Top commercial candidate
+            # ----------------------------------------------------------
+
+            if candidates:
+
+                top_candidate = candidates[0]
+
+                top_candidate_smiles = (
+                    top_candidate.get(
+                        "canonical_smiles"
+                    )
+                )
+
+                top_candidate_handle = (
+                    top_candidate.get(
+                        "reaction_handle"
+                    )
+                )
+
+                top_candidate_similarity = (
+                    top_candidate.get(
+                        "similarity"
+                    )
+                )
+
+                top_candidate_exact = (
+                    top_candidate.get(
+                        "exact_match"
+                    )
+                )
+
+                top_candidate_inchikey = (
+                    top_candidate.get(
+                        "inchikey"
+                    )
+                )
+
+            else:
+
+                top_candidate_smiles = None
+                top_candidate_handle = None
+                top_candidate_similarity = None
+                top_candidate_exact = None
+                top_candidate_inchikey = None
+
+            # ----------------------------------------------------------
+            # Produce one row per precursor.
+            # ----------------------------------------------------------
+
+            rows.append(
+                {
+                    "target_id": target_id,
+                    "disconnection_id": disconnection_id,
+                    "reaction_rule": reaction_rule,
+                    "target_smiles": target_smiles,
+                    "precursor_index": precursor_index,
+                    "precursor_smiles": precursor_smiles,
+                    "required_reaction_handles": "|".join(
+                        required_handles
+                    ),
+                    "n_required_handles": len(
+                        required_handles
+                    ),
+                    "n_commercial_candidates": len(
+                        candidates
+                    ),
+                    "top_candidate_smiles": (
+                        top_candidate_smiles
+                    ),
+                    "top_candidate_reaction_handle": (
+                        top_candidate_handle
+                    ),
+                    "top_candidate_similarity": (
+                        top_candidate_similarity
+                    ),
+                    "top_candidate_exact_match": (
+                        top_candidate_exact
+                    ),
+                    "top_candidate_inchikey": (
+                        top_candidate_inchikey
+                    ),
+                }
+            )
+
+    # ------------------------------------------------------------------
+    # DataFrame
+    # ------------------------------------------------------------------
+
+    inspection_df = pd.DataFrame(
+        rows
+    )
+
+    if not inspection_df.empty:
+
+        inspection_df = inspection_df.sort_values(
+            by=[
+                "target_id",
+                "disconnection_id",
+                "precursor_index",
+            ]
+        ).reset_index(
+            drop=True
+        )
+
+    # ------------------------------------------------------------------
+    # Save
+    # ------------------------------------------------------------------
+
+    inspection_df.to_csv(
+        output_file,
+        index=False,
+    )
+
+    # ------------------------------------------------------------------
+    # Summary logging
+    # ------------------------------------------------------------------
+
+    logger.info(
+        "Retrosynthesis inspection complete"
+    )
+
+    # logger.info(
+    #     f"  Disconnections: "
+    #     f"{inspection_df['disconnection_id'].nunique() "
+    #     if not inspection_df.empty
+    #     else 0:,}"
+    # )
+
+    logger.info(
+        f"  Precursor records: "
+        f"{len(inspection_df):,}"
+    )
+
+    if not inspection_df.empty:
+
+        n_with_candidates = int(
+            (
+                inspection_df[
+                    "n_commercial_candidates"
+                ]
+                > 0
+            ).sum()
+        )
+
+        n_without_candidates = int(
+            (
+                inspection_df[
+                    "n_commercial_candidates"
+                ]
+                == 0
+            ).sum()
+        )
+
+        logger.info(
+            f"  Precursors with commercial matches: "
+            f"{n_with_candidates:,}"
+        )
+
+        logger.info(
+            f"  Precursors without commercial matches: "
+            f"{n_without_candidates:,}"
+        )
+
+    logger.info(
+        f"  Inspection CSV: {output_file}"
+    )
+
+    # ------------------------------------------------------------------
+    # Context
+    # ------------------------------------------------------------------
+
+    context[
+        "retrosynthesis_inspection"
+    ] = inspection_df
+
+    return {
+        "retrosynthesis_inspection": inspection_df,
+        "retrosynthesis_inspection_file": str(
+            output_file
+        ),
     }
