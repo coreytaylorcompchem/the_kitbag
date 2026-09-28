@@ -7,9 +7,9 @@ import pandas as pd
 from pipeline.logger import setup_logger
 from pipeline.task_registry import register_task
 
-# from models.adme.mlflow_pyfunc import (
-#     ADMEMultitaskPyFunc,
-# )
+from models.adme.mtl_adme.mlflow_pyfunc import (
+ADMEMultitaskPyFunc,
+)
 
 logger = setup_logger(
     __name__,
