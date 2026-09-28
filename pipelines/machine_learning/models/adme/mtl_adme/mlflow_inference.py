@@ -83,7 +83,7 @@ def load_checkpoint(
             f"{sorted(missing_keys)}"
         )
 
-        task_names = list(
+    task_names = list(
         checkpoint["task_names"]
     )
 
@@ -127,10 +127,17 @@ def load_checkpoint(
         raise KeyError(
             "Checkpoint is missing transform metadata "
             f"for tasks: {missing_transforms}"
-        )        
+        )
+
+    if checkpoint["global_feature_scaler"] is None:
+        raise ValueError(
+            "Checkpoint contains "
+            "global_feature_scaler=None. "
+            "Inference requires the fitted scaler "
+            "used during training."
+        )  
 
     return checkpoint
-
 
 def build_model_from_checkpoint(
     checkpoint: dict[str, Any],
