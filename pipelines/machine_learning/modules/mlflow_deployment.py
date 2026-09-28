@@ -41,7 +41,15 @@ def _find_migrated_run(
 
     if len(runs) == 0:
         raise RuntimeError(
-            f"No migrated run found for model_id={model_id}"
+            f"No migrated run found for "
+            f"model_id={model_id}"
+        )
+
+    if len(runs) > 1:
+        raise RuntimeError(
+            f"Found {len(runs)} migrated runs for "
+            f"model_id={model_id}. "
+            "Expected exactly one source run."
         )
 
     return runs.iloc[0]
@@ -95,29 +103,54 @@ def create_mlflow_serving_models(
         source_run_id = source_run[
             "run_id"
         ]
-    
-        checkpoint_path = Path(checkpoint_dir)
 
-        if checkpoint_path.is_file():
-            checkpoint_file = checkpoint_path
-        else:
-            checkpoint_files = list(
-                checkpoint_path.glob("*.pth")
+        checkpoint_path = mlflow.artifacts.download_artifacts(
+            run_id=source_run_id,
+            artifact_path=run_cfg[
+                "checkpoint_artifact_path"
+            ],
+        )
+
+        checkpoint_candidate = Path(checkpoint_path)
+
+        if checkpoint_candidate.is_file():
+            checkpoint_file = checkpoint_candidate
+        elif checkpoint_candidate.is_dir():
+            checkpoint_files = sorted(
+                checkpoint_candidate.rglob("*.pth")
             )
 
             if not checkpoint_files:
-                raise RuntimeError(...)
+                raise RuntimeError(
+                    f"No checkpoint found for source run "
+                    f"{source_run_id} under {checkpoint_candidate}"
+                )
+
+            if len(checkpoint_files) > 1:
+                raise RuntimeError(
+                    "Multiple checkpoints found. Configure the exact "
+                    f"artifact path instead: {checkpoint_files}"
+                )
 
             checkpoint_file = checkpoint_files[0]
-
-        if not checkpoint_files:
+        else:
             raise RuntimeError(
-                f"No checkpoint found in run "
-                f"{source_run_id}"
+                f"Checkpoint artifact does not exist: "
+                f"{checkpoint_candidate}"
+            )
+
+        checkpoint_file = Path(
+            checkpoint_path
+        )
+
+        if not checkpoint_file.is_file():
+            raise RuntimeError(
+                "Downloaded checkpoint artifact is not "
+                f"a file: {checkpoint_file}"
             )
 
         checkpoint_path = str(
-            checkpoint_files[0]
+            checkpoint_file
         )
 
         experiment = mlflow.get_experiment_by_name(
@@ -150,7 +183,7 @@ def create_mlflow_serving_models(
         
             model_info = mlflow.pyfunc.log_model(
                 artifact_path=pyfunc_cfg[
-                    "artifact_path"
+                    "model_name"
                 ],
 
                 python_model=ADMEMultitaskPyFunc(
