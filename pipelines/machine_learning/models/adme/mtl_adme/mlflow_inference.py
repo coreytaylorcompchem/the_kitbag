@@ -19,6 +19,12 @@ from models.adme.mtl_adme.model import (
     GINRegressor,
 )
 
+from modules.utils.transforms import (
+    log_to_vd,
+    logfu_to_ppb,
+    logit_to_bioavailability,
+    pic50_to_ic50,
+)
 
 REQUIRED_CHECKPOINT_KEYS = {
     "model_state_dict",
@@ -77,22 +83,61 @@ def load_checkpoint(
             f"{sorted(missing_keys)}"
         )
 
-    task_names = checkpoint["task_names"]
-    num_tasks = int(checkpoint["num_tasks"])
+    task_names = list(
+        checkpoint["task_names"]
+    )
+
+    num_tasks = int(
+        checkpoint["num_tasks"]
+    )
 
     if len(task_names) != num_tasks:
         raise ValueError(
-            f"Checkpoint contains {len(task_names)} task names "
-            f"but num_tasks={num_tasks}."
+            f"Checkpoint contains {len(task_names)} "
+            f"task names but num_tasks={num_tasks}."
+        )
+
+    label_scalers = checkpoint[
+        "label_scalers"
+    ]
+
+    transform_metadata = checkpoint[
+        "label_transform_metadata"
+    ]
+
+    missing_scalers = [
+        task_name
+        for task_name in task_names
+        if task_name not in label_scalers
+    ]
+
+    if missing_scalers:
+        raise KeyError(
+            "Checkpoint is missing label scalers "
+            f"for tasks: {missing_scalers}"
+        )
+
+    missing_transforms = [
+        task_name
+        for task_name in task_names
+        if task_name not in transform_metadata
+    ]
+
+    if missing_transforms:
+        raise KeyError(
+            "Checkpoint is missing transform metadata "
+            f"for tasks: {missing_transforms}"
         )
 
     if checkpoint["global_feature_scaler"] is None:
         raise ValueError(
-            "Checkpoint global_feature_scaler is None."
-        )
+            "Checkpoint contains "
+            "global_feature_scaler=None. "
+            "Inference requires the fitted scaler "
+            "used during training."
+        )  
 
     return checkpoint
-
 
 def build_model_from_checkpoint(
     checkpoint: dict[str, Any],
@@ -144,7 +189,6 @@ def build_model_from_checkpoint(
 
     return model
 
-
 def _apply_label_inverse_transform(
     predictions: np.ndarray,
     task_names: list[str],
@@ -152,25 +196,161 @@ def _apply_label_inverse_transform(
     transform_metadata: Any,
 ) -> np.ndarray:
     """
-    Convert network outputs back to final assay units.
+    Convert model predictions from standardized transformed
+    space back to original assay units.
 
-    IMPORTANT
-    ---------
-    Replace the body of this function with the exact inverse-transform
-    function already used by the existing ADME prediction/evaluation
-    pipeline.
+    Training:
+        raw value
+        -> endpoint transform
+        -> StandardScaler
 
-    The checkpoint contains the required objects, but the supplied
-    training code does not show the exact order in which scaling and
-    endpoint-specific transformations are inverted. That order must
-    not be guessed here.
+    Inference:
+        model output
+        -> inverse StandardScaler
+        -> inverse endpoint transform
     """
-    raise NotImplementedError(
-        "Connect _apply_label_inverse_transform() to the existing "
-        "ADME inverse-transform implementation before logging the "
-        "production PyFunc model."
+    predictions = np.asarray(
+        predictions,
+        dtype=np.float64,
     )
 
+    if predictions.ndim != 2:
+        raise ValueError(
+            "Predictions must have shape "
+            "[number_of_compounds, number_of_tasks]. "
+            f"Received {predictions.shape}."
+        )
+
+    if predictions.shape[1] != len(
+        task_names
+    ):
+        raise ValueError(
+            "Prediction task dimension does not match "
+            "the checkpoint task list. "
+            f"Received {predictions.shape[1]} columns "
+            f"for {len(task_names)} tasks."
+        )
+
+    restored = np.full(
+        predictions.shape,
+        np.nan,
+        dtype=np.float64,
+    )
+
+    for task_index, task_name in enumerate(
+        task_names
+    ):
+        if task_name not in label_scalers:
+            raise KeyError(
+                f"Checkpoint has no label scaler for "
+                f"task '{task_name}'."
+            )
+
+        if task_name not in transform_metadata:
+            raise KeyError(
+                f"Checkpoint has no transform metadata "
+                f"for task '{task_name}'."
+            )
+
+        scaler = label_scalers[
+            task_name
+        ]
+
+        metadata = transform_metadata[
+            task_name
+        ]
+
+        transform_name = metadata.get(
+            "transform"
+        )
+
+        if transform_name is None:
+            raise KeyError(
+                f"Transform metadata for '{task_name}' "
+                "does not contain 'transform'."
+            )
+
+        scaled_values = predictions[
+            :,
+            task_index,
+        ]
+
+        finite_mask = np.isfinite(
+            scaled_values
+        )
+
+        if not finite_mask.any():
+            continue
+
+        transformed_values = np.full(
+            scaled_values.shape,
+            np.nan,
+            dtype=np.float64,
+        )
+
+        transformed_values[
+            finite_mask
+        ] = (
+            scaler
+            .inverse_transform(
+                scaled_values[
+                    finite_mask
+                ].reshape(-1, 1)
+            )
+            .reshape(-1)
+        )
+
+        if transform_name == "identity":
+            assay_values = transformed_values
+
+        elif transform_name == "log":
+            assay_values = np.exp(
+                transformed_values
+            )
+
+        elif transform_name == "log1p":
+            assay_values = np.expm1(
+                transformed_values
+            )
+
+        elif transform_name == "ic50_to_pic50":
+            assay_values = pic50_to_ic50(
+                transformed_values
+            )
+
+        elif transform_name == "ppb_to_logfu":
+            assay_values = logfu_to_ppb(
+                transformed_values
+            )
+
+        elif transform_name == "log_vd":
+            assay_values = log_to_vd(
+                transformed_values
+            )
+
+        elif transform_name == "logit_f":
+            assay_values = (
+                logit_to_bioavailability(
+                    transformed_values
+                )
+            )
+
+        else:
+            raise ValueError(
+                f"Unsupported transform "
+                f"'{transform_name}' for task "
+                f"'{task_name}'."
+            )
+
+        restored[
+            :,
+            task_index,
+        ] = np.asarray(
+            assay_values,
+            dtype=np.float64,
+        )
+
+    return restored
 
 class ADMECheckpointPredictor:
     """
@@ -278,6 +458,12 @@ class ADMECheckpointPredictor:
         for position, smiles in enumerate(
             request_df["smiles"].tolist()
         ):
+
+            if not smiles:
+                errors[position] = (
+                "SMILES is missing or empty."
+                )
+                continue
             mol = Chem.MolFromSmiles(
                 smiles
             )
@@ -365,9 +551,19 @@ class ADMECheckpointPredictor:
             .astype(str)
         )
 
+        missing_smiles = (
+            request_df["smiles"].isna()
+        )
+
+        request_df.loc[
+            missing_smiles,
+            "smiles",
+        ] = ""
+
         request_df["smiles"] = (
             request_df["smiles"]
             .astype(str)
+            .str.strip()
         )
 
         output_df = pd.DataFrame(
