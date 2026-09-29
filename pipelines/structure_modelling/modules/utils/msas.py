@@ -37,23 +37,147 @@ def directory_summary(path: Path):
         "size_mb": total_size / (1024 * 1024),
     }
 
+def detect_colabfold_stage(search_dir: Path):
+    """
+    Infer progress through the ColabFold/MMseqs2 monomer MSA workflow
+    from intermediate database files.
+
+    Stage numbers are operational milestones only. They must not be
+    interpreted as percentage completion because stages can differ
+    substantially in runtime.
+    """
+
+    search_dir = Path(search_dir)
+
+    if not search_dir.exists():
+        return 1, 10, "PREPARING_QUERIES"
+
+    def exists(prefix):
+        """
+        Check whether an MMseqs2 database/output with this prefix exists.
+
+        MMseqs2 databases consist of multiple associated files, commonly
+        including a .dbtype file, so check the prefix and related files.
+        """
+        return (
+            (search_dir / prefix).exists()
+            or (search_dir / f"{prefix}.dbtype").exists()
+            or any(search_dir.glob(f"{prefix}.*"))
+        )
+
+    # --------------------------------------------------------------
+    # 10. Final per-query A3Ms are being written
+    # --------------------------------------------------------------
+
+    if any(search_dir.glob("*.a3m")):
+        return 10, 10, "WRITING_A3MS"
+
+    # --------------------------------------------------------------
+    # 9. UniRef and environmental MSAs have been combined
+    # --------------------------------------------------------------
+
+    if exists("final.a3m"):
+        return 9, 10, "MERGING_MSAS"
+
+    # --------------------------------------------------------------
+    # 8. Environmental alignments are being filtered / converted
+    #    into the environmental MSA
+    # --------------------------------------------------------------
+
+    if (
+        exists("bfd.mgnify30.metaeuk30.smag30.a3m")
+        or exists("res_env_exp_realign_filter")
+        or exists("res_env_exp_realign")
+    ):
+        return 8, 10, "BUILDING_ENV_MSA"
+
+    # --------------------------------------------------------------
+    # 7. Environmental database hits are being expanded
+    # --------------------------------------------------------------
+
+    if exists("res_env_exp"):
+        return 7, 10, "EXPANDING_ENV"
+
+    # --------------------------------------------------------------
+    # 6. Searching environmental sequence database
+    # --------------------------------------------------------------
+
+    if exists("res_env"):
+        return 6, 10, "SEARCHING_ENV"
+
+    # --------------------------------------------------------------
+    # 5. UniRef alignments are being filtered / converted
+    #    into the UniRef MSA
+    # --------------------------------------------------------------
+
+    if (
+        exists("uniref.a3m")
+        or exists("res_exp_realign_filter")
+    ):
+        return 5, 10, "BUILDING_UNIREF_MSA"
+
+    # --------------------------------------------------------------
+    # 4. Detailed realignment of expanded UniRef hits
+    # --------------------------------------------------------------
+
+    if exists("res_exp_realign"):
+        return 4, 10, "ALIGNING_UNIREF"
+
+    # --------------------------------------------------------------
+    # 3. Initial UniRef hits are being expanded
+    # --------------------------------------------------------------
+
+    if exists("res_exp"):
+        return 3, 10, "EXPANDING_UNIREF"
+
+    # --------------------------------------------------------------
+    # 2. Searching UniRef
+    # --------------------------------------------------------------
+
+    if exists("res"):
+        return 2, 10, "SEARCHING_UNIREF"
+
+    # --------------------------------------------------------------
+    # 1. FASTA has been converted / is being converted into qdb
+    # --------------------------------------------------------------
+
+    if exists("qdb"):
+        return 1, 10, "PREPARING_QUERIES"
+
+    return 1, 10, "PREPARING_QUERIES"
 
 def run_subprocess_streaming(
     cmd,
     cwd: Path = None,
     monitor_dir: Path = None,
     log_prefix: str = "[CMD]",
-    heartbeat_seconds: int = 10,
+    heartbeat_seconds: int = 60,
+    expected_queries: int = None,
 ):
     """
     Run an external command while streaming stdout/stderr into the pipeline logger.
 
     Also emits periodic heartbeat messages so long-running MSA searches do not
     look stalled.
+
+    For ColabFold MSA searches, the heartbeat reports:
+      - total runtime
+      - inferred MMseqs2/ColabFold stage
+      - time spent in the current stage
+      - number of final A3M files written
+      - files and disk usage in the search directory
+
+    Stage numbers are operational milestones only. They do not represent equal
+    fractions of total runtime.
     """
 
     start_time = time.time()
     stop_event = threading.Event()
+
+    progress_state = {
+        "stage_key": None,
+        "stage_started": start_time,
+    }
 
     def heartbeat():
         while not stop_event.wait(heartbeat_seconds):
@@ -62,13 +186,46 @@ def run_subprocess_streaming(
             if monitor_dir is not None:
                 summary = directory_summary(monitor_dir)
 
+                stage_num, stage_total, stage_name = detect_colabfold_stage(
+                    monitor_dir
+                )
+
+                stage_key = (stage_num, stage_name)
+
+                if progress_state["stage_key"] != stage_key:
+                    progress_state["stage_key"] = stage_key
+                    progress_state["stage_started"] = time.time()
+
+                    logger.info(
+                        f"{log_prefix} Stage changed to "
+                        f"{stage_num}/{stage_total} ({stage_name})"
+                    )
+
+                stage_elapsed = (
+                    time.time() - progress_state["stage_started"]
+                )
+
+                a3m_count = sum(
+                    1
+                    for p in monitor_dir.rglob("*.a3m")
+                    if p.is_file()
+                )
+
                 mem = psutil.virtual_memory()
 
+                if expected_queries is not None:
+                    a3m_text = f"{a3m_count}/{expected_queries}"
+                else:
+                    a3m_text = str(a3m_count)
+
                 logger.info(
-                    f"{log_prefix} RUNTIME MSA: {elapsed / 60:.1f} min "
+                    f"{log_prefix} RUNTIME MSA: "
+                    f"{elapsed / 60:.1f} min "
+                    f"| stage={stage_num}/{stage_total} ({stage_name}) "
+                    f"| stage time elapsed={stage_elapsed / 60:.1f} min "
+                    f"| A3Ms DONE={a3m_text} "
                     f"| files={summary['files']} "
-                    f"| size={summary['size_mb']:.1f} MB "
-                    # f"| monitor_dir={monitor_dir}"
+                    # f"| size={summary['size_mb'\]:.1f} MB"
                 )
 
                 logger.debug(
@@ -76,9 +233,11 @@ def run_subprocess_streaming(
                     f"used={mem.used/1024**3:.1f}GB "
                     f"avail={mem.available/1024**3:.1f}GB"
                 )
+
             else:
                 logger.info(
-                    f"{log_prefix} still running after {elapsed / 60:.1f} min"
+                    f"{log_prefix} still running after "
+                    f"{elapsed / 60:.1f} min"
                 )
 
     heartbeat_thread = threading.Thread(
@@ -123,7 +282,8 @@ def run_subprocess_streaming(
         )
 
     logger.info(
-        f"{log_prefix} command completed successfully in {elapsed / 60:.1f} min"
+        f"{log_prefix} command completed successfully in "
+        f"{elapsed / 60:.1f} min"
     )
 
 def sequence_hash(sequence: str) -> str:
@@ -556,6 +716,7 @@ def generate_local_msas_batch(
         cwd=batch_work_dir,
         monitor_dir=search_out_dir,
         log_prefix="[MSA:BATCH]",
+        expected_queries=len(pending_jobs),
     )
 
     # --------------------------------------------------------------

@@ -209,7 +209,7 @@ def generate_msas(backend, config, **kwargs):
             sequence = sequence.strip().upper()
             seq_hash = sequence_hash(sequence)
 
-            logger.info(
+            logger.debug(
                 f"[MSA] Adding assignment "
                 f"entry={entry_id} "
                 f"| chain={chain_id} "
