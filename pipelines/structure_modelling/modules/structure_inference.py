@@ -29,7 +29,6 @@ from backends.intellifold import IntelliFoldBackend
 
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
-# from modules.utils.msas import generate_local_msa_for_sequence, sequence_hash
 from modules.utils.msas import generate_local_msas_batch, sequence_hash
 
 from pipeline.logger import setup_logger
