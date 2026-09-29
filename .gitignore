@@ -9,6 +9,9 @@
 *.sqlite
 *.jsonl
 *.xml
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
 maize_workflow_docking.log
 *.pyc
 **/projects/**
