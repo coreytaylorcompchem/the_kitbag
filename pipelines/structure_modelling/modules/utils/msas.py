@@ -326,3 +326,303 @@ def generate_local_msa_for_sequence(
     )
 
     return final_a3m
+
+def write_multi_fasta(sequence_jobs, fasta_path: Path):
+    """
+    Write multiple unique sequences to a single FASTA file.
+
+    Parameters
+    ----------
+    sequence_jobs
+        Iterable of dictionaries containing:
+            sequence_id
+            sequence
+    fasta_path
+        Output FASTA path.
+
+    Notes
+    -----
+    sequence_id should be filesystem-safe because ColabFold commonly uses
+    the FASTA identifier when naming the resulting A3M file.
+    """
+    fasta_path.parent.mkdir(parents=True, exist_ok=True)
+
+    seen_ids = set()
+
+    with open(fasta_path, "w") as f:
+        for job in sequence_jobs:
+            sequence_id = safe_name(job["sequence_id"])
+            sequence = job["sequence"].strip().upper()
+
+            if not sequence_id:
+                raise ValueError("Empty sequence_id in batch MSA input")
+
+            if sequence_id in seen_ids:
+                raise ValueError(
+                    f"Duplicate sequence_id in batch MSA input: {sequence_id}"
+                )
+
+            if not sequence:
+                raise ValueError(
+                    f"Empty protein sequence for sequence_id={sequence_id}"
+                )
+
+            seen_ids.add(sequence_id)
+
+            f.write(f">{sequence_id}\n")
+
+            for i in range(0, len(sequence), 80):
+                f.write(sequence[i:i + 80] + "\n")
+
+def generate_local_msas_batch(
+    sequence_jobs,
+    database_dir: Path,
+    cache_dir: Path,
+    command,
+    extra_args=None,
+    reuse_existing=True,
+    overwrite=False,
+):
+    """
+    Generate MSAs for multiple unique sequences in one colabfold_search call.
+
+    Parameters
+    ----------
+    sequence_jobs
+        Iterable of dictionaries containing:
+            sequence_id: stable filesystem-safe identifier
+            sequence: protein sequence
+
+        In this pipeline, sequence_id should be sequence_hash(sequence).
+
+    database_dir
+        Local ColabFold/MMseqs2 database directory.
+
+    cache_dir
+        Root MSA cache directory.
+
+    command
+        Command string or list, for example:
+            "colabfold_search"
+        or:
+            "conda run -n msa_tools colabfold_search"
+
+    extra_args
+        Additional arguments passed to colabfold_search.
+
+    reuse_existing
+        Reuse existing <cache_dir>/a3m/<sequence_hash>.a3m files.
+
+    overwrite
+        Regenerate MSAs even when cache files already exist.
+
+    Returns
+    -------
+    dict
+        Mapping from sequence_id to cached A3M Path.
+    """
+    sequence_jobs = list(sequence_jobs)
+
+    if not sequence_jobs:
+        logger.info("[MSA] No sequence jobs supplied to batch generator")
+        return {}
+
+    database_dir = Path(database_dir)
+    cache_dir = Path(cache_dir)
+
+    a3m_cache_dir = cache_dir / "a3m"
+    work_root = cache_dir / "work"
+    batch_work_dir = work_root / "batch"
+    search_out_dir = batch_work_dir / "search"
+    fasta_path = batch_work_dir / "queries.fasta"
+
+    a3m_cache_dir.mkdir(parents=True, exist_ok=True)
+    work_root.mkdir(parents=True, exist_ok=True)
+
+    if not database_dir.exists():
+        raise FileNotFoundError(
+            f"MSA database directory does not exist: {database_dir}"
+        )
+
+    # --------------------------------------------------------------
+    # Determine which MSAs can be reused and which require searching.
+    # --------------------------------------------------------------
+
+    msa_paths = {}
+    pending_jobs = []
+
+    seen_sequence_ids = set()
+
+    for job in sequence_jobs:
+        sequence_id = safe_name(job["sequence_id"])
+        sequence = job["sequence"].strip().upper()
+
+        if sequence_id in seen_sequence_ids:
+            raise ValueError(
+                f"Duplicate batch MSA sequence_id: {sequence_id}"
+            )
+
+        seen_sequence_ids.add(sequence_id)
+
+        expected_hash = sequence_hash(sequence)
+
+        if sequence_id != expected_hash:
+            raise ValueError(
+                f"Batch MSA sequence_id does not match sequence hash: "
+                f"sequence_id={sequence_id}, expected={expected_hash}"
+            )
+
+        final_a3m = a3m_cache_dir / f"{sequence_id}.a3m"
+
+        if (
+            final_a3m.exists()
+            and reuse_existing
+            and not overwrite
+        ):
+            logger.info(
+                f"[MSA] Reusing cached MSA for {sequence_id}: "
+                f"{final_a3m}"
+            )
+            msa_paths[sequence_id] = final_a3m
+        else:
+            pending_jobs.append({
+                "sequence_id": sequence_id,
+                "sequence": sequence,
+            })
+
+    logger.info(
+        f"[MSA] Batch cache lookup complete | "
+        f"total={len(sequence_jobs)} "
+        f"| cached={len(msa_paths)} "
+        f"| pending={len(pending_jobs)}"
+    )
+
+    if not pending_jobs:
+        logger.info("[MSA] All requested MSAs were found in cache")
+        return msa_paths
+
+    # --------------------------------------------------------------
+    # Use a clean batch work directory for the pending sequences.
+    #
+    # This prevents an old A3M from being mistaken for output from the
+    # current search.
+    # --------------------------------------------------------------
+
+    if batch_work_dir.exists():
+        shutil.rmtree(batch_work_dir)
+
+    search_out_dir.mkdir(parents=True, exist_ok=True)
+
+    write_multi_fasta(
+        sequence_jobs=pending_jobs,
+        fasta_path=fasta_path,
+    )
+
+    cmd = (
+        command_to_list(command)
+        + [
+            str(fasta_path),
+            str(database_dir),
+            str(search_out_dir),
+        ]
+        + [str(x) for x in (extra_args or [])]
+    )
+
+    if shutil.which(cmd[0]) is None:
+        raise FileNotFoundError(
+            f"MSA command not found: {cmd[0]}\n"
+            f"Full command was: {' '.join(cmd)}\n"
+            "If using a separate MSA environment, set for example:\n"
+            '  command: "conda run -n msa_tools colabfold_search"'
+        )
+
+    logger.debug(f"[MSA] command executable: {cmd[0]}")
+    logger.debug(f"[MSA] database_dir: {database_dir}")
+    logger.debug(f"[MSA] batch_work_dir: {batch_work_dir}")
+    logger.debug(f"[MSA] search_out_dir: {search_out_dir}")
+    logger.debug(f"[MSA] batch_fasta: {fasta_path}")
+
+    logger.info(
+        f"[MSA] Running one batched search for "
+        f"{len(pending_jobs)} unique sequences"
+    )
+
+    logger.info(
+        "[MSA] Running: " + " ".join(cmd)
+    )
+
+    run_subprocess_streaming(
+        cmd=cmd,
+        cwd=batch_work_dir,
+        monitor_dir=search_out_dir,
+        log_prefix="[MSA:BATCH]",
+    )
+
+    # --------------------------------------------------------------
+    # Discover and validate the generated A3M files.
+    # --------------------------------------------------------------
+
+    generated_a3ms = sorted(search_out_dir.rglob("*.a3m"))
+
+    generated_by_stem = {}
+
+    for path in generated_a3ms:
+        if path.stem in generated_by_stem:
+            raise RuntimeError(
+                f"Multiple A3M files generated with stem '{path.stem}': "
+                f"{generated_by_stem[path.stem]} and {path}"
+            )
+
+        generated_by_stem[path.stem] = path
+
+    missing_sequence_ids = []
+
+    for job in pending_jobs:
+        sequence_id = job["sequence_id"]
+        generated_a3m = generated_by_stem.get(sequence_id)
+
+        if generated_a3m is None:
+            missing_sequence_ids.append(sequence_id)
+            continue
+
+        final_a3m = a3m_cache_dir / f"{sequence_id}.a3m"
+
+        shutil.copy2(
+            generated_a3m,
+            final_a3m,
+        )
+
+        msa_paths[sequence_id] = final_a3m
+
+        logger.info(
+            f"[MSA] Cached batch MSA for {sequence_id}: "
+            f"{final_a3m}"
+        )
+
+    if missing_sequence_ids:
+        produced_files = [
+            str(path.relative_to(search_out_dir))
+            for path in generated_a3ms
+        ]
+
+        raise FileNotFoundError(
+            "The batched MSA search completed, but some expected A3M "
+            "files were not produced.\n"
+            f"Missing sequence IDs ({len(missing_sequence_ids)}):\n"
+            + "\n".join(missing_sequence_ids[:50])
+            + "\n\nGenerated A3M files:\n"
+            + "\n".join(produced_files[:100])
+        )
+
+    if len(msa_paths) != len(sequence_jobs):
+        raise RuntimeError(
+            f"MSA batch result count mismatch: "
+            f"requested={len(sequence_jobs)}, resolved={len(msa_paths)}"
+        )
+
+    logger.info(
+        f"[MSA] Batch MSA generation complete | "
+        f"resolved={len(msa_paths)}"
+    )
+
+    return msa_paths
