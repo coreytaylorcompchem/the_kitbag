@@ -4,7 +4,7 @@ import mlflow.pyfunc
 import pandas as pd
 import torch
 
-from models.adme.mlflow_inference import (
+from models.adme.mtl_adme.mlflow_inference import (
     ADMECheckpointPredictor,
 )
 
