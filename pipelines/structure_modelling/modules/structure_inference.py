@@ -24,15 +24,11 @@ parser = MMCIFParser(QUIET=True)
 
 from pipeline.task_registry import register_task
 
-# # from backends.structure_inference import StructureInferenceBackend
-# # from backends.chai import ChaiBackend
 from backends.boltz import BoltzBackend
 from backends.intellifold import IntelliFoldBackend
-# # from backends.openfold import OpenFoldBackend
 
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
-# from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
 from modules.utils.msas import generate_local_msa_for_sequence, sequence_hash
 
 from pipeline.logger import setup_logger
