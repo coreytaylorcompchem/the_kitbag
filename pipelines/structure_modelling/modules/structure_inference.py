@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 from collections import defaultdict
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+# from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scipy.cluster.hierarchy import linkage, fcluster
 
@@ -24,20 +24,16 @@ parser = MMCIFParser(QUIET=True)
 
 from pipeline.task_registry import register_task
 
-# # from backends.structure_inference import StructureInferenceBackend
-# # from backends.chai import ChaiBackend
 from backends.boltz import BoltzBackend
 from backends.intellifold import IntelliFoldBackend
-# # from backends.openfold import OpenFoldBackend
 
 from modules.utils.ranking import compute_scores
 from modules.utils.csv_loader import load_sequences
-# from modules.utils.plotting import plot_metric, plot_score, scatter_plot, plot_clusters
-from modules.utils.msas import generate_local_msa_for_sequence, sequence_hash
+from modules.utils.msas import generate_local_msas_batch, sequence_hash
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def has_metric(predictions, metric):
     return any(
@@ -101,6 +97,17 @@ def generate_msas(backend, config, **kwargs):
     csv_path = sp_cfg["input_csv"]
     entries = load_sequences(csv_path)
 
+    logger.info(
+        f"[MSA] Loaded {len(entries)} CSV entries from {csv_path}"
+    )
+
+    for entry in entries:
+        logger.info(
+            f"[MSA] Input entry={entry['id']} "
+            f"| protein_chains={list(entry.get('proteins', {}).keys())} "
+            f"| n_proteins={len(entry.get('proteins', {}))}"
+        )
+
     if not entries:
         raise ValueError("No entries found in CSV for MSA generation")
 
@@ -140,23 +147,33 @@ def generate_msas(backend, config, **kwargs):
     if n_jobs < 1:
         raise ValueError("msa.n_jobs must be >= 1")
 
+    if n_jobs != 1:
+        logger.warning(
+            "[MSA] msa.n_jobs no longer launches independent per-sequence "
+            "searches because MSA generation is batched. Control MMseqs2 "
+            "threading through msa.extra_args, for example "
+            "['--threads', '32']."
+        )
+
     if not database_dir.exists():
         raise FileNotFoundError(
             f"MSA database_dir does not exist: {database_dir}"
         )
 
     logger.info(
-        f"[MSA] Local MSA generation enabled | method={method} "
+        f"[MSA] Local batched MSA generation enabled | method={method} "
         f"| database_dir={database_dir} "
         f"| cache_dir={cache_dir} "
-        f"| n_jobs={n_jobs}"
+        f"| batch_subprocesses=1"
     )
 
     manifest = {
         "method": method,
+        "mode": "batched",
         "database_dir": str(database_dir),
         "cache_dir": str(cache_dir),
-        "n_jobs": n_jobs,
+        "batch_subprocesses": 1,
+        "unique_sequences": 0,
         "entries": {},
     }
 
@@ -177,6 +194,11 @@ def generate_msas(backend, config, **kwargs):
         entry.setdefault("msas", {})
         manifest["entries"][entry_id] = {}
 
+        logger.debug(
+            f"[MSA] Building jobs for entry={entry_id} "
+            f"| chains={list(proteins.keys())}"
+        )
+
         if not proteins:
             logger.info(
                 f"[MSA] {entry_id}: no protein chains; skipping."
@@ -184,8 +206,15 @@ def generate_msas(backend, config, **kwargs):
             continue
 
         for chain_id, sequence in proteins.items():
+            sequence = sequence.strip().upper()
             seq_hash = sequence_hash(sequence)
-            sequence_id = f"{entry_id}_{chain_id}"
+
+            logger.debug(
+                f"[MSA] Adding assignment "
+                f"entry={entry_id} "
+                f"| chain={chain_id} "
+                f"| hash={seq_hash}"
+            )
 
             assignments.append({
                 "entry_id": entry_id,
@@ -195,15 +224,11 @@ def generate_msas(backend, config, **kwargs):
 
             if seq_hash not in unique_jobs:
                 unique_jobs[seq_hash] = {
-                    "sequence_id": sequence_id,
+                    "sequence_id": seq_hash,
                     "sequence": sequence,
-                    "database_dir": database_dir,
-                    "cache_dir": cache_dir,
-                    "command": command,
-                    "extra_args": extra_args,
-                    "reuse_existing": reuse_existing,
-                    "overwrite": overwrite,
                 }
+
+    manifest["unique_sequences"] = len(unique_jobs)
 
     logger.info(
         f"[MSA] Total chain assignments: {len(assignments)}"
@@ -214,54 +239,28 @@ def generate_msas(backend, config, **kwargs):
     )
 
     # ------------------------------------------------------------------
-    # Run unique MSA jobs in parallel.
+    # Run one batched MSA search for all unique uncached sequences.
     # ------------------------------------------------------------------
 
-    msa_paths_by_hash = {}
+    logger.info(
+        f"[MSA] Preparing one batched search for "
+        f"{len(unique_jobs)} unique sequences"
+    )
 
-    if n_jobs == 1:
-        logger.info("[MSA] Running MSA jobs serially")
+    batch_paths = generate_local_msas_batch(
+        sequence_jobs=list(unique_jobs.values()),
+        database_dir=database_dir,
+        cache_dir=cache_dir,
+        command=command,
+        extra_args=extra_args,
+        reuse_existing=reuse_existing,
+        overwrite=overwrite,
+    )
 
-        for seq_hash, job in unique_jobs.items():
-            msa_path = generate_local_msa_for_sequence(**job)
-            msa_paths_by_hash[seq_hash] = str(msa_path)
-
-    else:
-        logger.info(
-            f"[MSA] Running MSA jobs in parallel with n_jobs={n_jobs}"
-        )
-
-        with ThreadPoolExecutor(max_workers=n_jobs) as executor:
-            future_to_hash = {}
-
-            for seq_hash, job in unique_jobs.items():
-                future = executor.submit(
-                    generate_local_msa_for_sequence,
-                    **job,
-                )
-                future_to_hash[future] = seq_hash
-
-            completed = 0
-            total = len(future_to_hash)
-
-            for future in as_completed(future_to_hash):
-                seq_hash = future_to_hash[future]
-
-                try:
-                    msa_path = future.result()
-                except Exception as e:
-                    logger.error(
-                        f"[MSA] Failed MSA generation for sequence hash {seq_hash}: {e}"
-                    )
-                    raise
-
-                msa_paths_by_hash[seq_hash] = str(msa_path)
-
-                completed += 1
-
-                logger.info(
-                    f"[MSA] Completed {completed}/{total} MSA jobs"
-                )
+    msa_paths_by_hash = {
+        seq_hash: str(msa_path)
+        for seq_hash, msa_path in batch_paths.items()
+    }
 
     # ------------------------------------------------------------------
     # Map MSA paths back onto entries.
