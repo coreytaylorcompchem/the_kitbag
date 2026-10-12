@@ -38,7 +38,11 @@ protein_resnames = {
     "TRP","TYR","VAL"
 }
 
+# Useful constants
+
 K_PARAM = "k"
+PRODUCTION_BACKBONE_K_PARAM = "production_backbone_k"
+PRODUCTION_BACKBONE_REFERENCE_FILE = "production_backbone_reference.json"
 
 class MDWorkflow:
     def __init__(self, backend, config):
@@ -817,6 +821,251 @@ class MDWorkflow:
 
         logger.info(f"Saved wrapped trajectory: {output_path}")
 
+    def get_production_backbone_atoms(self, restraint_cfg):
+        """
+        Return atom indices selected for production backbone restraints.
+        """
+        atom_names = set(
+            restraint_cfg.get(
+                "atom_names",
+                ["N", "CA", "C", "O"]
+            )
+        )
+
+        configured_chains = restraint_cfg.get("chains", [])
+        selected_chains = set(configured_chains) if configured_chains else None
+
+        backbone_atoms = []
+
+        for atom in self.topology.atoms():
+            is_protein = atom.residue.name in protein_resnames
+            is_backbone = atom.name in atom_names
+            chain_is_selected = (
+                selected_chains is None
+                or atom.residue.chain.id in selected_chains
+            )
+
+            if is_protein and is_backbone and chain_is_selected:
+                backbone_atoms.append(atom.index)
+
+        if not backbone_atoms:
+            raise ValueError(
+                "Production backbone restraints were enabled, but no matching "
+                "protein backbone atoms were found. Check chains and atom_names."
+            )
+
+        logger.info(
+            f"Selected {len(backbone_atoms)} backbone atoms for "
+            f"production restraints"
+        )
+
+        if selected_chains is not None:
+            logger.info(
+                "Restrained protein chains: "
+                + ", ".join(sorted(selected_chains))
+            )
+
+        logger.info(
+            "Restrained atom names: "
+            + ", ".join(sorted(atom_names))
+        )
+
+        return backbone_atoms
+
+    def save_production_restraint_reference(
+        self,
+        filepath,
+        backbone_atoms,
+        positions
+    ):
+        """
+        Save production-restraint reference coordinates in nanometers.
+        """
+        reference_data = {
+            "units": "nanometer",
+            "particle_indices": backbone_atoms,
+            "positions": [
+                [
+                    positions[idx].x,
+                    positions[idx].y,
+                    positions[idx].z,
+                ]
+                for idx in backbone_atoms
+            ],
+        }
+
+        with open(filepath, "w") as f:
+            json.dump(reference_data, f, indent=2)
+
+        logger.info(
+            f"Saved production restraint reference coordinates: {filepath}"
+        )
+
+    def load_production_restraint_reference(
+        self,
+        filepath,
+        expected_backbone_atoms
+    ):
+        """
+        Load and validate persisted production-restraint coordinates.
+        """
+        with open(filepath) as f:
+            reference_data = json.load(f)
+
+        stored_indices = reference_data["particle_indices"]
+
+        if stored_indices != expected_backbone_atoms:
+            raise ValueError(
+                "Stored production restraint atom indices do not match the "
+                "current topology. Refusing to use incompatible restraint "
+                "reference coordinates."
+            )
+
+        reference_positions = {
+            atom_idx: coordinates
+            for atom_idx, coordinates in zip(
+                stored_indices,
+                reference_data["positions"]
+            )
+        }
+
+        logger.info(
+            f"Loaded production restraint reference coordinates: {filepath}"
+        )
+
+        return reference_positions
+
+    def add_production_backbone_restraint(
+        self,
+        backbone_atoms,
+        reference_positions,
+        initial_k
+    ):
+        """
+        Add harmonic positional restraints to selected protein backbone atoms.
+
+        Energy:
+            U = k * periodicdistance(x, y, z, x0, y0, z0)^2
+        """
+        force = CustomExternalForce(
+            f"{PRODUCTION_BACKBONE_K_PARAM} * "
+            "periodicdistance(x, y, z, x0, y0, z0)^2"
+        )
+
+        force.addGlobalParameter(
+            PRODUCTION_BACKBONE_K_PARAM,
+            initial_k * kilojoule / (mole * nanometer**2)
+        )
+
+        force.addPerParticleParameter("x0")
+        force.addPerParticleParameter("y0")
+        force.addPerParticleParameter("z0")
+
+        for atom_idx in backbone_atoms:
+            x0, y0, z0 = reference_positions[atom_idx]
+            force.addParticle(atom_idx, [x0, y0, z0])
+
+        force_index = self.system.addForce(force)
+
+        logger.info(
+            f"Added production backbone restraint to "
+            f"{len(backbone_atoms)} atoms with initial k={initial_k} "
+            "kJ mol^-1 nm^-2"
+        )
+
+        return force_index
+
+    def prepare_production_restraint_schedule(
+        self,
+        restraint_cfg,
+        steps_per_ns
+    ):
+        """
+        Convert a duration-based YAML schedule into cumulative step boundaries.
+        """
+        raw_schedule = restraint_cfg.get("schedule", [])
+        final_k = float(restraint_cfg.get("final_k", 0.0))
+
+        if not raw_schedule:
+            raise ValueError(
+                "Production backbone restraints are enabled, but no schedule "
+                "was provided."
+            )
+
+        schedule = []
+        cumulative_steps = 0
+
+        for stage_idx, stage in enumerate(raw_schedule, start=1):
+            duration_ns = float(stage["duration_ns"])
+            k_value = float(stage["k"])
+
+            if duration_ns <= 0:
+                raise ValueError(
+                    f"Backbone restraint stage {stage_idx} has a non-positive "
+                    f"duration_ns: {duration_ns}"
+                )
+
+            if k_value < 0:
+                raise ValueError(
+                    f"Backbone restraint stage {stage_idx} has a negative "
+                    f"force constant: {k_value}"
+                )
+
+            duration_steps = int(round(duration_ns * steps_per_ns))
+
+            if duration_steps < 1:
+                raise ValueError(
+                    f"Backbone restraint stage {stage_idx} is shorter than "
+                    "one integration step."
+                )
+
+            cumulative_steps += duration_steps
+
+            schedule.append(
+                {
+                    "stage": stage_idx,
+                    "end_step": cumulative_steps,
+                    "duration_ns": duration_ns,
+                    "k": k_value,
+                }
+            )
+
+        logger.info("Production backbone restraint schedule:")
+
+        stage_start_step = 0
+        for stage in schedule:
+            logger.info(
+                f"  stage {stage['stage']}: "
+                f"steps {stage_start_step}-{stage['end_step']} | "
+                f"duration={stage['duration_ns']} ns | "
+                f"k={stage['k']} kJ mol^-1 nm^-2"
+            )
+            stage_start_step = stage["end_step"]
+
+        logger.info(
+            f"  after step {cumulative_steps}: "
+            f"k={final_k} kJ mol^-1 nm^-2"
+        )
+
+        return schedule, final_k
+
+    def get_production_restraint_state(
+        self,
+        production_step,
+        schedule,
+        final_k
+    ):
+        """
+        Return the active k and the next schedule boundary.
+
+        production_step is the number of completed production integration steps.
+        """
+        for stage in schedule:
+            if production_step < stage["end_step"]:
+                return stage["k"], stage["end_step"], stage["stage"]
+
+        return final_k, None, None
+
     @register_task("production", category='Molecular dynamics', description="Run production NPT simulation.")
     def production(self):
 
@@ -873,9 +1122,98 @@ class MDWorkflow:
         velocities = state.getVelocities()
         box_vectors = state.getPeriodicBoxVectors()
 
+        # latest_seg, latest_chk = find_latest_checkpoint(output_dir)
+
+        # # Update context
+        # if latest_chk is None:
+        #     self.simulation.context.setPositions(positions)
+        #     self.simulation.context.setVelocities(velocities)
+        #     self.simulation.context.setPeriodicBoxVectors(*box_vectors)
+        #     self.simulation.currentStep = 0
+
         latest_seg, latest_chk = find_latest_checkpoint(output_dir)
 
-        # Update context
+        # ---------------------------------------------------------
+        # Production backbone restraints
+        # ---------------------------------------------------------
+        backbone_restraint_cfg = cfg.get("backbone_restraints", {})
+        backbone_restraints_enabled = backbone_restraint_cfg.get(
+            "enabled",
+            False
+        )
+
+        production_restraint_schedule = None
+        production_restraint_final_k = 0.0
+        backbone_restraint_force_index = None
+
+        if backbone_restraints_enabled:
+            backbone_atoms = self.get_production_backbone_atoms(
+                backbone_restraint_cfg
+            )
+
+            production_restraint_schedule, production_restraint_final_k = (
+                self.prepare_production_restraint_schedule(
+                    backbone_restraint_cfg,
+                    steps_per_ns
+                )
+            )
+
+            reference_file = os.path.join(
+                output_dir,
+                PRODUCTION_BACKBONE_REFERENCE_FILE
+            )
+
+            if latest_chk is not None:
+                if not os.path.exists(reference_file):
+                    raise FileNotFoundError(
+                        f"Found production checkpoint {latest_chk}, but the "
+                        f"restraint reference file is missing: {reference_file}. "
+                        "The original restraint centres cannot be reconstructed "
+                        "safely."
+                    )
+
+                reference_positions = (
+                    self.load_production_restraint_reference(
+                        reference_file,
+                        backbone_atoms
+                    )
+                )
+
+            else:
+                # For a fresh run, use the equilibrated production-start positions.
+                reference_positions = {
+                    atom_idx: [
+                        positions[atom_idx].x,
+                        positions[atom_idx].y,
+                        positions[atom_idx].z,
+                    ]
+                    for atom_idx in backbone_atoms
+                }
+
+                self.save_production_restraint_reference(
+                    reference_file,
+                    backbone_atoms,
+                    positions
+                )
+
+            initial_k, _, _ = self.get_production_restraint_state(
+                production_step=0,
+                schedule=production_restraint_schedule,
+                final_k=production_restraint_final_k
+            )
+
+            backbone_restraint_force_index = (
+                self.add_production_backbone_restraint(
+                    backbone_atoms=backbone_atoms,
+                    reference_positions=reference_positions,
+                    initial_k=initial_k
+                )
+            )
+
+            # The System changed, so recreate the Context while preserving state.
+            self.simulation.context.reinitialize(preserveState=True)
+
+        # Update context for a fresh run.
         if latest_chk is None:
             self.simulation.context.setPositions(positions)
             self.simulation.context.setVelocities(velocities)
@@ -918,17 +1256,52 @@ class MDWorkflow:
         start_segment = 1
 
         if latest_chk is not None:
-            logger.info(f"Found checkpoint: {latest_chk} (segment {latest_seg})")
+            logger.info(
+                f"Found checkpoint: {latest_chk} "
+                f"(segment {latest_seg})"
+            )
 
             try:
                 self.simulation.loadCheckpoint(latest_chk)
                 start_segment = latest_seg + 1
-                logger.info(f"Resuming from segment {start_segment}")
+
+                logger.info(
+                    f"Resuming from segment {start_segment} at "
+                    f"simulation step {self.simulation.currentStep}"
+                )
+
+                if backbone_restraints_enabled:
+                    restart_k, _, restart_stage = (
+                        self.get_production_restraint_state(
+                            production_step=self.simulation.currentStep,
+                            schedule=production_restraint_schedule,
+                            final_k=production_restraint_final_k
+                        )
+                    )
+
+                    self.simulation.context.setParameter(
+                        PRODUCTION_BACKBONE_K_PARAM,
+                        restart_k * kilojoule / (mole * nanometer**2)
+                    )
+
+                    if restart_stage is None:
+                        logger.info(
+                            "Restart is beyond the restraint-release schedule; "
+                            f"using final k={restart_k}"
+                        )
+                    else:
+                        logger.info(
+                            f"Restarted in restraint stage {restart_stage}; "
+                            f"using k={restart_k}"
+                        )
+
             except Exception as e:
                 logger.warning(f"Failed to load checkpoint: {e}")
                 logger.warning("Starting from scratch instead")
-        else:
-            logger.info("No checkpoint found — starting fresh simulation")
+                start_segment = 1
+                self.simulation.currentStep = 0
+            else:
+                logger.info("No checkpoint found - starting fresh simulation")
             
 
         # set how often to output data to log
@@ -970,9 +1343,70 @@ class MDWorkflow:
             with tqdm(total=seg_steps, desc=f"Production seg {seg}", unit="steps") as pbar:
                 current_step = 0
                 diagnostic_freq = energy_log_freq  # diagnostics check frequency
+                active_restraint_k = None
+                active_restraint_stage = None
+
                 while current_step < seg_steps:
-                    n = min(output_freq, seg_steps - current_step)
+                    remaining_segment_steps = seg_steps - current_step
+                    n = min(output_freq, remaining_segment_steps)
+
+                    if backbone_restraints_enabled:
+                        production_step = self.simulation.currentStep
+
+                        restraint_k, next_boundary_step, restraint_stage = (
+                            self.get_production_restraint_state(
+                                production_step=production_step,
+                                schedule=production_restraint_schedule,
+                                final_k=production_restraint_final_k
+                            )
+                        )
+
+                        # Change k only when entering a new stage.
+                        if (
+                            restraint_k != active_restraint_k
+                            or restraint_stage != active_restraint_stage
+                        ):
+                            self.simulation.context.setParameter(
+                                PRODUCTION_BACKBONE_K_PARAM,
+                                restraint_k
+                                * kilojoule
+                                / (mole * nanometer**2)
+                            )
+
+                            elapsed_ns = production_step / steps_per_ns
+
+                            if restraint_stage is None:
+                                logger.info(
+                                    f"Production restraint schedule complete at "
+                                    f"{elapsed_ns:.3f} ns; "
+                                    f"setting k={restraint_k} "
+                                    "kJ mol^-1 nm^-2"
+                                )
+                            else:
+                                logger.info(
+                                    f"Entering production restraint stage "
+                                    f"{restraint_stage} at {elapsed_ns:.3f} ns; "
+                                    f"k={restraint_k} "
+                                    "kJ mol^-1 nm^-2"
+                                )
+
+                            active_restraint_k = restraint_k
+                            active_restraint_stage = restraint_stage
+
+                        # Do not step across a schedule boundary.
+                        if next_boundary_step is not None:
+                            steps_to_boundary = (
+                                next_boundary_step - production_step
+                            )
+
+                            if steps_to_boundary > 0:
+                                n = min(n, steps_to_boundary)
+
                     self.simulation.step(n)
+                    current_step += n
+                    pbar.update(n)
+
+                    # Existing diagnostics follow here.
                     current_step += n
                     pbar.update(n)
 
@@ -1043,7 +1477,20 @@ class MDWorkflow:
             },
             "system": {
                 "num_particles": self.system.getNumParticles()
-            }
+            },
+            "backbone_restraints": {
+            "enabled": backbone_restraints_enabled,
+            "configuration": (
+                backbone_restraint_cfg
+                if backbone_restraints_enabled
+                else None
+            ),
+            "reference_file": (
+                PRODUCTION_BACKBONE_REFERENCE_FILE
+                if backbone_restraints_enabled
+                else None
+            ),
+        },
         }
         with open(prov_file, "w") as f:
             json.dump(metadata, f, indent=2)
