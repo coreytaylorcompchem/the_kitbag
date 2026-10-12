@@ -341,10 +341,31 @@ class RMSDAnalysisTask:
 
         protein = self.u.select_atoms("protein")
 
-        self.u.trajectory.add_transformations(
-            unwrap(self.u.atoms),              # fix broken systems
-            center_in_box(protein, wrap=True)  # keep protein centered
-        )
+        if len(protein) == 0:
+            raise ValueError(
+                "No protein atoms found while preparing RMSD transformations."
+            )
+
+        if hasattr(self.u, "bonds") and len(self.u.bonds) > 0:
+            logger.info(
+                "Topology contains %d bonds; enabling trajectory unwrapping.",
+                len(self.u.bonds),
+            )
+
+            self.u.trajectory.add_transformations(
+                unwrap(self.u.atoms),
+                center_in_box(protein, wrap=True),
+            )
+
+        else:
+            logger.warning(
+                "Topology contains no bonds, so fragment-based unwrapping "
+                "cannot be applied. Continuing with protein centering only."
+            )
+
+            self.u.trajectory.add_transformations(
+                center_in_box(protein, wrap=True),
+            )
         
         # Detect system type automatically
         self.detector = ComponentDetector(
@@ -1491,20 +1512,24 @@ class ClusterAnalysisTask:
       - centroid structures (PDB)
     """
 
-    def __init__(self,
-                 topology: str,
-                 trajectory: str,
-                 selection: str = "protein and backbone",
-                 n_clusters: int = 5,
-                 start: int = 0,
-                 stop: int = -1,
-                 step: int = 1,
-                 output_dir: str = "output_clusters",
-                 context: Optional[Dict[str, Any]] = None):
+    def __init__(
+            self,
+            topology: str,
+            trajectory: str,
+            selection: str = "protein and backbone",
+            output_selection: str = "protein",
+            n_clusters: int = 5,
+            start: int = 0,
+            stop: int = -1,
+            step: int = 1,
+            output_dir: str = "output_clusters",
+            context: Optional[Dict[str, Any]] = None,
+        ):
 
         self.topology = topology
         self.trajectory = trajectory
         self.selection = selection
+        self.output_selection = output_selection
         self.n_clusters = n_clusters
         self.start = start
         self.stop = stop
@@ -1523,10 +1548,19 @@ class ClusterAnalysisTask:
         # Align trajectory
         # --------------------------------------------------
         logger.debug("Aligning trajectory...")
+
+        ref = mda.Universe(
+            self.topology,
+            self.trajectory,
+        )
+
+        ref.trajectory[0]
+
         align.AlignTraj(
-            self.u, self.u,
+            self.u,
+            ref,
             select=self.selection,
-            in_memory=True
+            in_memory=True,
         ).run()
 
         atoms = self.u.select_atoms(self.selection)
@@ -1611,7 +1645,23 @@ class ClusterAnalysisTask:
             centroid_idx_local = np.argmin(avg_dist)
             centroid_idx_global = cluster_frames[centroid_idx_local]
 
-            centroids[clust_id] = centroid_idx_global
+            centroids[clust_id] = frame_indices[centroid_idx_global]
+
+        centroid_atoms = self.u.select_atoms(
+            self.output_selection
+        )
+
+        if len(centroid_atoms) == 0:
+            raise ValueError(
+                "Cluster centroid output selection returned zero atoms: "
+                f"{self.output_selection!r}"
+            )
+
+        logger.info(
+            "Centroid output selection '%s' contains %d atoms.",
+            self.output_selection,
+            len(centroid_atoms),
+        )
 
         # --------------------------------------------------
         # Write centroid PDBs
@@ -1626,8 +1676,19 @@ class ClusterAnalysisTask:
                 f"cluster_{clust_id}_centroid.pdb"
             )
 
-            with mda.Writer(out_pdb, self.u.atoms.n_atoms) as W:
-                W.write(self.u.atoms)
+            positions = centroid_atoms.positions
+
+            logger.debug(
+                "Cluster %d centroid coordinate range: %.3f to %.3f Å",
+                clust_id,
+                positions.min(),
+                positions.max(),
+            )
+            with mda.Writer(
+                out_pdb,
+                centroid_atoms.n_atoms
+            ) as W:
+                W.write(centroid_atoms)
 
             logger.info(f"Saved centroid for cluster {clust_id} → {out_pdb}")
 
@@ -2171,10 +2232,31 @@ class HydrationSiteEnergyTask:
         protein = self.u.select_atoms("protein")
         solvent = self.u.select_atoms(f"resname {self.water_resname}")
 
-        self.u.trajectory.add_transformations(
-            unwrap(self.u.atoms),
-            wrap_like_vmd
-        )
+        if len(protein) == 0:
+            raise ValueError(
+                "No protein atoms found while preparing RMSD transformations."
+            )
+
+        if hasattr(self.u, "bonds") and len(self.u.bonds) > 0:
+            logger.info(
+                "Topology contains %d bonds; enabling trajectory unwrapping.",
+                len(self.u.bonds),
+            )
+
+            self.u.trajectory.add_transformations(
+                unwrap(self.u.atoms),
+                center_in_box(protein, wrap=True),
+            )
+
+        else:
+            logger.warning(
+                "Topology contains no bonds, so fragment-based unwrapping "
+                "cannot be applied. Continuing with protein centering only."
+            )
+
+            self.u.trajectory.add_transformations(
+                center_in_box(protein, wrap=True),
+            )
         
         # align once
         logger.info("Aligning trajectory...")
