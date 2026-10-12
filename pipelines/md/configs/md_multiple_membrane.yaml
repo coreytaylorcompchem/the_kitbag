@@ -92,6 +92,36 @@ production:
   output_trajectory: "output_multiple_membrane/trajectory.dcd"
   output_logfile: "output_multiple_membrane/log.txt"
 
+  # Add backbone constraints to simulation. Schedule applies them 
+  # oover specified number of ns with specified force constant.
+
+  backbone_restraints:
+      enabled: true
+
+      # Protein chains to restrain. Omit this field or use [] for all protein chains.
+      chains: ["A", "B"]
+
+      # Conventional protein backbone atoms.
+      atom_names: ["N", "CA", "C", "O"]
+
+      # kJ mol^-1 nm^-2
+      schedule:
+        - duration_ns: 5.0
+          k: 100.0
+        - duration_ns: 5.0
+          k: 50.0
+        - duration_ns: 5.0
+          k: 20.0
+        - duration_ns: 5.0
+          k: 10.0
+        - duration_ns: 5.0
+          k: 5.0
+        - duration_ns: 5.0
+          k: 1.0
+
+      # After the schedule has elapsed, k is set to this value.
+      final_k: 0.0
+
 # These steps can optionally be run after simulations or on any sim that's already done. 
 # Just comment out previous steps in the workflow above.
 
