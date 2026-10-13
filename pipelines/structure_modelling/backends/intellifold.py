@@ -122,6 +122,8 @@ class IntelliFoldBackend(BaseStructureTool):
         sequences: dict,
         ligands: list = None,
         templates: list = None,
+        msas: dict = None,
+        row_constraints: list = None,
     ):
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(device)
