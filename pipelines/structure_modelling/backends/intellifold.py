@@ -12,71 +12,47 @@ from pipeline.logger import setup_logger
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 
-def generate_intellifold_yaml(
+def validate_intellifold_msa_policy(
     sequences: dict,
-    ligands: list,
-    templates: list,
-    yaml_path: Path,
+    msas: dict,
+    use_msa_server: bool,
 ):
-    """
-    IntelliFold YAML schema is similar in spirit to Boltz:
-      sequences:
-        - protein:
-            id: A
-            sequence: ...
-        - ligand:
-            id: L1
-            smiles: ...
-    """
+    msas = msas or {}
 
-    data = {
-        "sequences": []
-    }
+    missing = [
+        chain_id
+        for chain_id in sequences
+        if chain_id not in msas
+    ]
 
-    # --- proteins ---
-    for chain_id, seq in sequences.items():
-        data["sequences"].append({
-            "protein": {
-                "id": chain_id,
-                "sequence": seq,
-            }
-        })
+    if missing and not use_msa_server:
+        raise ValueError(
+            "IntelliFold: use_msa_server=false, but no local MSA "
+            "was provided for protein chains: "
+            f"{', '.join(missing)}"
+        )
 
-    # --- ligands ---
-    for i, smiles in enumerate(ligands or []):
-        lig_id = f"L{i+1}"
+    for chain_id, msa_path in msas.items():
+        if chain_id not in sequences:
+            logger.warning(
+                f"[IntelliFold] Ignoring MSA for unknown chain "
+                f"{chain_id}: {msa_path}"
+            )
+            continue
 
-        data["sequences"].append({
-            "ligand": {
-                "id": lig_id,
-                "smiles": smiles,
-            }
-        })
+        msa_path = Path(msa_path).expanduser().resolve()
 
-    # --- templates ---
-    # IntelliFold supports template usage via CLI --use_template.
-    # For precomputed template paths, schema may differ slightly by version,
-    # so keep this simple for now and validate with one generated YAML.
-    if templates:
-        data["templates"] = []
+        if not msa_path.is_file():
+            raise FileNotFoundError(
+                f"IntelliFold MSA for chain {chain_id} "
+                f"does not exist: {msa_path}"
+            )
 
-        for t in templates:
-            ext = Path(t).suffix.lower()
-
-            if ext == ".cif":
-                data["templates"].append({"cif": str(t)})
-            elif ext == ".pdb":
-                data["templates"].append({"pdb": str(t)})
-            else:
-                raise ValueError(f"Unsupported template format: {t}")
-
-    if not data["sequences"]:
-        raise ValueError("No valid sequences or ligands provided for IntelliFold input")
-
-    yaml_path.write_text(
-        yaml.dump(data, sort_keys=False)
-    )
-
+        if msa_path.stat().st_size == 0:
+            raise ValueError(
+                f"IntelliFold MSA for chain {chain_id} "
+                f"is empty: {msa_path}"
+            )
 
 def log_parameters(params: dict, title="Parameters"):
     if not params:
@@ -106,6 +82,244 @@ def _first_present(*values):
             return v
     return None
 
+def build_intellifold_command(
+    yaml_file: Path,
+    out_dir: Path,
+    inf_cfg: dict,
+):
+    cmd = [
+        "intellifold",
+        "predict",
+        str(yaml_file),
+        "--out_dir",
+        str(out_dir),
+    ]
+
+    # ------------------------------------------------------------
+    # Generic pipeline names mapped to IntelliFold CLI names
+    # ------------------------------------------------------------
+    num_diffusion_samples = inf_cfg.get(
+        "num_diffusion_samples",
+        inf_cfg.get("diffusion_samples"),
+    )
+
+    recycling_iters = inf_cfg.get(
+        "recycling_iters",
+        inf_cfg.get("recycling_steps"),
+    )
+
+    sampling_steps = inf_cfg.get(
+        "sampling_steps"
+    )
+
+    if num_diffusion_samples is not None:
+        cmd += [
+            "--num_diffusion_samples",
+            str(num_diffusion_samples),
+        ]
+
+    if sampling_steps is not None:
+        cmd += [
+            "--sampling_steps",
+            str(sampling_steps),
+        ]
+
+    if recycling_iters is not None:
+        cmd += [
+            "--recycling_iters",
+            str(recycling_iters),
+        ]
+
+    # ------------------------------------------------------------
+    # Common scalar options
+    # ------------------------------------------------------------
+    scalar_options = {
+        "seed": "--seed",
+        "precision": "--precision",
+        "num_workers": "--num_workers",
+        "cache": "--cache",
+        "msa_pairing_strategy": "--msa_pairing_strategy",
+    }
+
+    for config_key, cli_flag in scalar_options.items():
+        value = inf_cfg.get(config_key)
+
+        if value is not None:
+            cmd += [
+                cli_flag,
+                str(value),
+            ]
+
+    # ------------------------------------------------------------
+    # Boolean flags
+    # ------------------------------------------------------------
+    boolean_options = {
+        "use_msa_server": "--use_msa_server",
+        "use_template": "--use_template",
+        "only_run_data_process": "--only_run_data_process",
+        "no_pairing": "--no_pairing",
+        "return_similar_seq": "--return_similar_seq",
+        "override": "--override",
+    }
+
+    for config_key, cli_flag in boolean_options.items():
+        if inf_cfg.get(config_key, False):
+            cmd.append(cli_flag)
+
+    # ------------------------------------------------------------
+    # Optional escape hatch for version-specific IntelliFold flags
+    # ------------------------------------------------------------
+    extra_args = inf_cfg.get(
+        "extra_args",
+        []
+    )
+
+    if not isinstance(extra_args, list):
+        raise TypeError(
+            "structure_prediction.inference.extra_args "
+            "must be a list"
+        )
+
+    cmd.extend(
+        str(arg)
+        for arg in extra_args
+    )
+
+    return cmd
+
+def generate_intellifold_yaml(
+    sequences: dict,
+    ligands: list,
+    templates: list,
+    msas: dict,
+    yaml_path: Path,
+):
+    """
+    Generate IntelliFold input YAML.
+
+    Protein entries contain:
+      - chain ID
+      - sequence
+      - precomputed MSA path, when available
+
+    Ligands are represented by SMILES.
+
+    Templates retain the existing backend behaviour for now.
+    """
+
+    data = {
+        "sequences": []
+    }
+
+    msas = msas or {}
+
+    # ------------------------------------------------------------
+    # Proteins
+    # ------------------------------------------------------------
+    for chain_id, seq in sequences.items():
+
+        protein_entry = {
+            "id": chain_id,
+            "sequence": seq,
+        }
+
+        # Add precomputed local MSA if available
+        if chain_id in msas:
+            msa_path = Path(
+                msas[chain_id]
+            ).expanduser().resolve()
+
+            if not msa_path.is_file():
+                raise FileNotFoundError(
+                    f"IntelliFold MSA for chain {chain_id} "
+                    f"does not exist: {msa_path}"
+                )
+
+            if msa_path.stat().st_size == 0:
+                raise ValueError(
+                    f"IntelliFold MSA for chain {chain_id} "
+                    f"is empty: {msa_path}"
+                )
+
+            protein_entry["msa"] = str(msa_path)
+
+            logger.info(
+                f"[IntelliFold] Chain {chain_id} "
+                f"using local MSA: {msa_path}"
+            )
+
+        data["sequences"].append({
+            "protein": protein_entry
+        })
+
+    # ------------------------------------------------------------
+    # Ligands
+    # ------------------------------------------------------------
+    for i, smiles in enumerate(
+        ligands or [],
+        start=1,
+    ):
+        data["sequences"].append({
+            "ligand": {
+                "id": f"L{i}",
+                "smiles": smiles,
+            }
+        })
+
+    # ------------------------------------------------------------
+    # Templates
+    # ------------------------------------------------------------
+    if templates:
+        data["templates"] = []
+
+        for template in templates:
+            template_path = Path(
+                template
+            ).expanduser().resolve()
+
+            if not template_path.is_file():
+                raise FileNotFoundError(
+                    f"IntelliFold template does not exist: "
+                    f"{template_path}"
+                )
+
+            ext = template_path.suffix.lower()
+
+            if ext in {".cif", ".mmcif"}:
+                data["templates"].append({
+                    "cif": str(template_path)
+                })
+
+            elif ext == ".pdb":
+                data["templates"].append({
+                    "pdb": str(template_path)
+                })
+
+            else:
+                raise ValueError(
+                    f"Unsupported IntelliFold template format: "
+                    f"{template_path}"
+                )
+
+    # ------------------------------------------------------------
+    # Final validation
+    # ------------------------------------------------------------
+    if not data["sequences"]:
+        raise ValueError(
+            "No valid sequences or ligands provided "
+            "for IntelliFold input"
+        )
+
+    yaml_path.write_text(
+        yaml.safe_dump(
+            data,
+            sort_keys=False,
+        )
+    )
+
+    logger.info(
+        f"[IntelliFold] Wrote input YAML: {yaml_path}"
+    )
 
 class IntelliFoldBackend(BaseStructureTool):
     name = "intellifold"
@@ -135,179 +349,108 @@ class IntelliFoldBackend(BaseStructureTool):
 
         out_dir = run_dir / "results"
 
-        sp_cfg = self.config.get("structure_prediction", {})
-        inf_cfg = sp_cfg.get("inference", {})
+        sp_cfg = self.config.get(
+            "structure_prediction",
+            {}
+        )
 
-        use_template = bool(inf_cfg.get("use_template", False))
+        inf_cfg = sp_cfg.get(
+            "inference",
+            {}
+        )
+
+        use_msa_server = bool(
+            inf_cfg.get(
+                "use_msa_server",
+                False,
+            )
+        )
+
+        use_template = bool(
+            inf_cfg.get(
+                "use_template",
+                False,
+            )
+        )
 
         available_templates = templates or []
-        effective_templates = available_templates
 
         if available_templates and not use_template:
             logger.info(
-                f"Templates were provided for run {run_id}, but use_template=false; "
-                "IntelliFold template usage will be disabled."
+                f"[IntelliFold] Templates were provided for run {run_id}, "
+                "but use_template=false; templates will not be included."
             )
+
             effective_templates = []
+
+        else:
+            effective_templates = available_templates
+
+        validate_intellifold_msa_policy(
+            sequences=sequences,
+            msas=msas or {},
+            use_msa_server=use_msa_server,
+        )
 
         generate_intellifold_yaml(
             sequences=sequences,
             ligands=ligands or [],
             templates=effective_templates,
+            msas=msas or {},
             yaml_path=yaml_file,
         )
 
-        cmd = [
-            "intellifold",
-            "predict",
-            str(yaml_file),
-            "--out_dir",
-            str(out_dir),
-        ]
-
-        # --- common IntelliFold options ---
-        if "model" in inf_cfg:
-            cmd += ["--model", str(inf_cfg["model"])]
-
-        if "seed" in inf_cfg:
-            cmd += ["--seed", str(inf_cfg["seed"])]
-
-        # Accept both IntelliFold-native and generic pipeline names
-        num_diffusion_samples = inf_cfg.get(
-            "num_diffusion_samples",
-            inf_cfg.get("diffusion_samples"),
+        cmd = build_intellifold_command(
+            yaml_file=yaml_file,
+            out_dir=out_dir,
+            inf_cfg=inf_cfg,
         )
 
-        recycling_iters = inf_cfg.get(
-            "recycling_iters",
-            inf_cfg.get("recycling_steps"),
+        logger.info(
+            "[IntelliFold] Command: "
+            + " ".join(
+                subprocess.list2cmdline([str(arg)])
+                for arg in cmd
+            )
         )
 
-        sampling_steps = inf_cfg.get("sampling_steps")
-
-        if num_diffusion_samples is not None:
-            cmd += [
-                "--num_diffusion_samples",
-                str(num_diffusion_samples),
-            ]
-
-        if sampling_steps is not None:
-            cmd += [
-                "--sampling_steps",
-                str(sampling_steps),
-            ]
-
-        if recycling_iters is not None:
-            cmd += [
-                "--recycling_iters",
-                str(recycling_iters),
-            ]
-
-        if "precision" in inf_cfg:
-            cmd += [
-                "--precision",
-                str(inf_cfg["precision"]),
-            ]
-
-        if "num_workers" in inf_cfg:
-            cmd += [
-                "--num_workers",
-                str(inf_cfg["num_workers"]),
-            ]
-
-        if "cache" in inf_cfg:
-            cmd += [
-                "--cache",
-                str(inf_cfg["cache"]),
-            ]
-
-        if inf_cfg.get("use_msa_server", False):
-            cmd.append("--use_msa_server")
-
-        if "msa_pairing_strategy" in inf_cfg:
-            cmd += [
-                "--msa_pairing_strategy",
-                str(inf_cfg["msa_pairing_strategy"]),
-            ]
-        
-        if use_template:
-            cmd.append("--use_template")
-
-
-        if inf_cfg.get("only_run_data_process", False):
-            cmd.append("--only_run_data_process")
-
-        runtime_params = {
-            "run_id": run_id,
-            "device": device,
-            "model": inf_cfg.get("model", "v2-flash"),
-            "precision": inf_cfg.get("precision"),
-            "seed": inf_cfg.get("seed"),
-            "num_workers": inf_cfg.get("num_workers"),
-            "cache": inf_cfg.get("cache"),
-        }
-
-        sampling_params = {
-            "num_diffusion_samples": num_diffusion_samples,
-            "sampling_steps": sampling_steps,
-            "recycling_iters": recycling_iters,
-        }
-
-        data_params = {
-            "use_msa_server": inf_cfg.get("use_msa_server", False),
-            "msa_pairing_strategy": inf_cfg.get("msa_pairing_strategy"),
-            "use_template": use_template,
-            "templates_available": len(available_templates),
-            "templates_used": len(effective_templates),
-            "only_run_data_process": inf_cfg.get("only_run_data_process", False),
-        }
-
-        runtime_params = {
-            k: v for k, v in runtime_params.items()
-            if v is not None
-        }
-
-        sampling_params = {
-            k: v for k, v in sampling_params.items()
-            if v is not None
-        }
-
-        data_params = {
-            k: v for k, v in data_params.items()
-            if v is not None
+        msa_params = {
+            "local_msa_chains": sorted(
+                (msas or {}).keys()
+            ),
+            "local_msa_count": len(
+                msas or {}
+            ),
+            "expected_protein_chains": len(
+                sequences
+            ),
+            "use_msa_server": use_msa_server,
+            "msa_pairing_strategy": inf_cfg.get(
+                "msa_pairing_strategy"
+            ),
         }
 
         log_parameters(
-            runtime_params,
-            title=f"IntelliFold run={run_id} device={device} | Runtime"
+            msa_params,
+            title=(
+                f"IntelliFold run={run_id} device={device} "
+                "| MSA"
+            ),
         )
 
-        log_parameters(
-            sampling_params,
-            title=f"IntelliFold run={run_id} device={device} | Sampling"
+        subprocess.run(
+            cmd,
+            check=True,
+            env=env,
         )
-
-        log_parameters(
-            data_params,
-            title=f"IntelliFold run={run_id} device={device} | Data/template options"
-        )
-
-        # runtime_params = {
-        #     k: v for k, v in runtime_params.items()
-        #     if v is not None
-        # }
-
-        log_parameters(
-            runtime_params,
-            title=f"IntelliFold run={run_id} device={device}"
-        )
-
-        subprocess.run(cmd, check=True, env=env)
 
         results = self._parse_results(out_dir)
 
         if not results:
-            logger.warning(f"[WARNING] No IntelliFold samples returned for run {run_id}")
+            logger.warning(
+                f"[WARNING] No IntelliFold samples returned "
+                f"for run {run_id}"
+            )
 
         return {
             "run_id": run_id,
@@ -315,7 +458,7 @@ class IntelliFoldBackend(BaseStructureTool):
             "results": results,
             "tool": self.name,
         }
-
+    
     def _parse_results(self, out_dir: Path):
         """
         Parse IntelliFold outputs.
