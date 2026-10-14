@@ -2,59 +2,74 @@ task: workflow
 workflow_name: structure_prediction
 
 workflow:
-  - predict_structures
-  - rank_predictions
-  - generate_alignment_sessions
+ - generate_msas
+ - predict_structures
+ - rank_predictions
+ - generate_alignment_sessions
 
 structure_prediction:
   tools:
     - intellifold
-
+  
   input_csv: input/prediction_input.csv
+  
+  msa:
+    enabled: true
+    method: colabfold_local
+    database_dir: /your/local/msa/database # ColabFold/whatever database lives here
+    cache_dir: msa_cache # where to store you generated .a3m files.
+    reuse_existing: true
+    overwrite: false
+    command: "conda run -n msa_tools colabfold_search"
+    # extra_args: # optional, if needed. Otherwise mmseqs2 just uses all available cores.
+    #   - --threads
+    #   - 6
+    use_env: true
+    use_templates: false
+    pairing_strategy: greedy
+    output_format: a3m
 
   inference:
-      accelerator: gpu
+    seed: 42
+    precision: bf16
+    num_workers: 4
 
-      diffusion_samples: 5
-      sampling_steps: 200
-      recycling_steps: 10
+    diffusion_samples: 5
+    sampling_steps: 200
+    recycling_steps: 10
 
-      # IntelliFold-specific options
-      model: v2-flash
-      seed: "42"
-      precision: bf16
-      use_msa_server: true
-      msa_pairing_strategy: greedy
-      
-      # only use if you want to condition inference on a known structure
-      use_template: false # if true, it will download ~300Gb of cif data - set false for now.
+    use_msa_server: false
+    msa_pairing_strategy: greedy
+    no_pairing: false
+
+    only_run_data_process: false
 
   ranking:
-    enabled: true        
-    select_structures:
-      enabled: true
-      mode: top_k        # or "threshold"
-      k: 10              # for top_k
-      iptm_threshold: 0.5  # for threshold mode
+   enabled: true
+   select_structures:
+     enabled: true
+     mode: top_k        # or "threshold" 
+     k: 10              # for top_k 
+     iptm_threshold: 0.5  # for threshold mode 
 
-    plotting:
-      enabled: false
+   plotting:
+     enabled: true
 
-    metrics:
-      plddt:
-        weight: 0.5
-        higher_is_better: true
-      ptm:
-        weight: 0.3
-        higher_is_better: true
-      iptm:
-        weight: 0.2
-        higher_is_better: true
+   metrics:
+     plddt:
+       weight: 0.5
+       higher_is_better: true
+     ptm:
+       weight: 0.3
+       higher_is_better: true
+     iptm:
+       weight: 0.2
+       higher_is_better: true
 
-    aggregation: weighted_sum
-    normalize: true
+   aggregation: weighted_sum
+   normalize: true
 
 backend:
-  name: structure_inference
+ name: structure_inference
 
 output_dir: outputs/structure_prediction
