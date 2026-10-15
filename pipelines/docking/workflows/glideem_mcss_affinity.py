@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from backends import get_backend
 from modules.glideem_tasks import (
     analyse_correlations,
@@ -341,19 +343,38 @@ def run(config_path: str):
         )
 
     # --------------------------------------------------
-    # Build ALL Glide grids first
+    # Build Glide grids in parallel
     # --------------------------------------------------
+
+    grid_cfg = config.get(
+        "grid",
+        {}
+    )
+
+    grid_max_parallel = int(
+        grid_cfg.get(
+            "max_parallel",
+            1,
+        )
+    )
+
+    grid_max_parallel = max(
+        1,
+        min(
+            grid_max_parallel,
+            len(complex_jobs),
+        ),
+    )
 
     logger.info(
         f"Building Glide grids for "
-        f"{len(complex_jobs)} GlideEM poses"
+        f"{len(complex_jobs)} GlideEM poses "
+        f"with up to {grid_max_parallel} concurrent jobs"
     )
 
-    for i, job in enumerate(complex_jobs, start=1):
-
+    def run_grid_job(job):
         logger.info(
-            f"[{job['name']}] Building Glide grid "
-            f"({i}/{len(complex_jobs)})"
+            f"[{job['name']}] Building Glide grid"
         )
 
         grid = grid_task(
@@ -363,9 +384,45 @@ def run(config_path: str):
             complex_job=job,
         )
 
-        logger.info(
-            f"[{job['name']}] Glide grid ready: {grid}"
-        )
+        return job["name"], grid
+
+    grids = {}
+
+    with ThreadPoolExecutor(
+        max_workers=grid_max_parallel
+    ) as executor:
+
+        futures = {
+            executor.submit(
+                run_grid_job,
+                job,
+            ): job
+            for job in complex_jobs
+        }
+
+        for future in as_completed(futures):
+
+            job = futures[future]
+
+            try:
+                name, grid = future.result()
+
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Glide grid generation failed for "
+                    f"{job['name']}"
+                ) from exc
+
+            grids[name] = grid
+
+            logger.info(
+                f"[{name}] Glide grid ready: {grid}"
+            )
+
+    logger.info(
+        f"All {len(grids)} Glide grids "
+        f"generated successfully."
+    )
 
 
     # --------------------------------------------------
@@ -374,16 +431,35 @@ def run(config_path: str):
 
     poseviewers = {}
 
-    logger.info(
-        f"Starting MCSS docking against "
-        f"{len(complex_jobs)} GlideEM poses"
+    mcss_cfg = config.get(
+        "mcss",
+        {}
     )
 
-    for i, job in enumerate(complex_jobs, start=1):
+    max_parallel = int(
+        mcss_cfg.get(
+            "max_parallel",
+            1,
+        )
+    )
 
+    max_parallel = max(
+        1,
+        min(
+            max_parallel,
+            len(complex_jobs),
+        ),
+    )
+
+    logger.info(
+        f"Starting MCSS docking against "
+        f"{len(complex_jobs)} GlideEM poses "
+        f"with up to {max_parallel} concurrent jobs"
+    )
+
+    def run_mcss_job(job):
         logger.info(
-            f"[{job['name']}] Starting MCSS docking "
-            f"({i}/{len(complex_jobs)})"
+            f"[{job['name']}] Starting MCSS docking"
         )
 
         pv = mcss_task(
@@ -395,11 +471,39 @@ def run(config_path: str):
             mcss_root=output / "mcss",
         )
 
-        poseviewers[job["name"]] = pv
+        return job["name"], pv
 
-        logger.info(
-            f"[{job['name']}] MCSS docking completed: {pv}"
-        )
+    with ThreadPoolExecutor(
+        max_workers=max_parallel
+    ) as executor:
+
+        futures = {
+            executor.submit(
+                run_mcss_job,
+                job,
+            ): job
+            for job in complex_jobs
+        }
+
+        for future in as_completed(futures):
+
+            job = futures[future]
+
+            try:
+                name, pv = future.result()
+
+            except Exception as exc:
+                raise RuntimeError(
+                    f"MCSS docking failed for "
+                    f"{job['name']}"
+                ) from exc
+
+            poseviewers[name] = pv
+
+            logger.info(
+                f"[{name}] MCSS docking completed: "
+                f"{pv}"
+            )
 
     # --------------------------------------------------
     # Docking/activity correlation

@@ -750,8 +750,17 @@ def extract_complexes(
                 "ligand_heavy_atoms": nheavy, "grid_center": xyz.mean(axis=0).tolist()
             }, indent=2))
         meta = json.loads(metadata.read_text())
-        jobs.append({"name": name, "dir": directory, "receptor": receptor, "reference": reference,
-                     "complex": complex_file, "grid": grid, "center": meta["grid_center"]})
+        jobs.append({
+            "name": name,
+            "source_name": source_name,
+            "pose_number": pose,
+            "dir": directory,
+            "receptor": receptor,
+            "reference": reference,
+            "complex": complex_file,
+            "grid": grid,
+            "center": meta["grid_center"],
+        })
     return jobs
 
 
@@ -927,24 +936,24 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
     if not activities:
         raise RuntimeError(f"No numeric values found for activity property '{activity_column}'")
 
-    by_name = {j["name"]: j for j in complex_jobs}
-    details = []
-    for name, pv in poseviewers.items():
-        best = {}
-        for st in structure.StructureReader(str(pv)):
-            cid = compound_id(st)
-            score = glide_score(st)
-            if cid in activities and score is not None and (cid not in best or score < best[cid]):
-                best[cid] = score
-        for cid, score in best.items():
-            details.append({"complex_pose": name, "compound_id": cid, "glide_score": score,
-                            "activity": activities[cid], "activity_column": activity_column,
-                            "poseviewer_path": str(Path(pv).resolve()),
-                            "reference_ligand_path": str(by_name[name]["reference"].resolve()),
-                            "grid_path": str(by_name[name]["grid"].resolve())})
-    activity_ids = set(
-        activities
-    )
+    # by_name = {j["name"]: j for j in complex_jobs}
+    # details = []
+    # for name, pv in poseviewers.items():
+    #     best = {}
+    #     for st in structure.StructureReader(str(pv)):
+    #         cid = compound_id(st)
+    #         score = glide_score(st)
+    #         if cid in activities and score is not None and (cid not in best or score < best[cid]):
+    #             best[cid] = score
+    #     for cid, score in best.items():
+    #         details.append({"complex_pose": name, "compound_id": cid, "glide_score": score,
+    #                         "activity": activities[cid], "activity_column": activity_column,
+    #                         "poseviewer_path": str(Path(pv).resolve()),
+    #                         "reference_ligand_path": str(by_name[name]["reference"].resolve()),
+    #                         "grid_path": str(by_name[name]["grid"].resolve())})
+    # activity_ids = set(
+    #     activities
+    # )
 
     docked_ids = set()
     scored_ids = set()
@@ -1004,6 +1013,8 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
             details.append(
                 {
                     "complex_pose": name,
+                    "source_name": by_name[name]["source_name"],
+                    "pose_number": by_name[name]["pose_number"],
                     "compound_id": cid,
                     "glide_score": score,
                     "activity": activities[cid],
@@ -1024,6 +1035,7 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
                 }
             )
 
+
     if not details:
         raise RuntimeError(
             "No matched docking score/activity pairs. "
@@ -1033,8 +1045,8 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
             f"matched IDs={len(matched_ids)}."
         )
     
-    if not details:
-        raise RuntimeError("No matched docking score/activity pairs")
+    # if not details:
+    #     raise RuntimeError("No matched docking score/activity pairs")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1069,6 +1081,26 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
                 len(group),
             )
             continue
+
+        source_name = group[
+                "source_name"
+            ].iloc[0]
+
+        pose_number = int(
+            group[
+                "pose_number"
+            ].iloc[0]
+        )
+
+        plot_dir = (
+            output_dir /
+            source_name
+        )
+
+        plot_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
         # Conventional experimental vs predicted orientation:
         # experimental values on X, predicted values on Y.
@@ -1174,8 +1206,11 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
         fig.tight_layout()
 
         fig.savefig(
-            output_dir /
-            f"{name}_score_vs_activity.png",
+            plot_dir /
+            (
+                f"pose{pose_number:02d}"
+                "_experimental_vs_predicted.png"
+            ),
             dpi=200,
         )
 
