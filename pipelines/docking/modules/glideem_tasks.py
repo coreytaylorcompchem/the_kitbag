@@ -1070,12 +1070,14 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
             )
             continue
 
+        # Conventional experimental vs predicted orientation:
+        # experimental values on X, predicted values on Y.
         x = group[
-            "glide_score"
+            "activity"
         ].to_numpy(float)
 
         y = group[
-            "activity"
+            "glide_score"
         ].to_numpy(float)
 
         # ---------------------------------------------
@@ -1132,11 +1134,11 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
         ax.set_title(name)
 
         ax.set_xlabel(
-            "Glide docking score"
+            activity_column
         )
 
         ax.set_ylabel(
-            activity_column
+            "Glide score"
         )
 
         # ---------------------------------------------
