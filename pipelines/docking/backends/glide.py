@@ -48,7 +48,7 @@ class SchrodingerGlideEMBackend(BaseBackend):
             raise RuntimeError(f"Command failed ({proc.returncode}): {shlex.join(cmd)}\n{tail}")
 
     def run_python(self, script: Path, args: list[Any], cwd: Path, log_path: Path) -> None:
-        self.run([self.exe("run"), "python", script, *args], cwd, log_path)
+        self.run([self.exe("run"), "python3", script, *args], cwd, log_path)
 
     def run_glide(self, input_file: Path, cwd: Path, log_path: Path) -> None:
         self.run([self.exe("glide"), "-WAIT", "-HOST", self.host, input_file.name], cwd, log_path)
@@ -76,6 +76,11 @@ class SchrodingerGlideEMBackend(BaseBackend):
         require_file(output, "GlideEM complex archive")
         return output
 
+    def dock(self, ligand: dict, config: dict, **kwargs):
+        raise NotImplementedError(
+            "SchrodingerGlideEMBackend does not support generic dock(). "
+            "Use the dock_mcss task."
+        )
 
 def require_file(path: Path, label: str) -> None:
     path = Path(path)
