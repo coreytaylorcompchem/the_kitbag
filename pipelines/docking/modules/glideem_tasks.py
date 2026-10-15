@@ -36,11 +36,63 @@ def property_value(st, requested):
 
 
 def compound_id(st):
-    for field in ID_FIELDS:
-        value = property_value(st, field)
-        if value is not None and str(value).strip():
-            return str(value).strip()
-    return st.title.strip()
+    """
+    Return a stable compound identifier from a Maestro structure.
+
+    Identifier matching is deliberately strict. In particular, generic
+    substring matching must not be used for 'ID', because properties such
+    as s_i_glide_gridfile also contain the letters 'id'.
+    """
+
+    # Exact Maestro property names in priority order.
+    exact_keys = (
+        "s_user_compound_id",
+        "s_sd_ID",
+        "s_sd_Compound ID",
+        "s_sd_Compound_ID",
+        "s_sd_Name",
+        "s_m_title",
+    )
+
+    for key in exact_keys:
+        value = st.property.get(key)
+
+        if value is not None:
+            value = str(value).strip()
+
+            if value:
+                return value
+
+    # Fallback using normalized property names, but only exact matches
+    # or suffix matches. Never use loose substring matching here.
+    wanted = (
+        "USER_COMPOUND_ID",
+        "COMPOUND_ID",
+        "ID",
+        "NAME",
+        "M_TITLE",
+    )
+
+    for wanted_name in wanted:
+
+        for key, value in st.property.items():
+
+            normalized_key = norm(key)
+
+            if (
+                normalized_key == wanted_name
+                or normalized_key.endswith(
+                    f"_{wanted_name}"
+                )
+            ):
+                value = str(value).strip()
+
+                if value:
+                    return value
+
+    title = st.title.strip()
+
+    return title or None
 
 
 def glide_score(st):
@@ -70,6 +122,94 @@ def is_protein_atom(atom):
 
 def heavy_atoms(st, indices):
     return sum(st.atom[i].atomic_number > 1 for i in indices)
+
+def annotate_ligprep_compound_ids(
+    input_sdf: Path,
+    ligprep_file: Path,
+) -> None:
+    """
+    Add a durable s_user_compound_id property to LigPrep structures.
+
+    Assumes one LigPrep output structure per input structure.
+    The assumption is explicitly validated before writing.
+    """
+
+    source_structures = list(
+        structure.StructureReader(
+            str(input_sdf)
+        )
+    )
+
+    prepared_structures = list(
+        structure.StructureReader(
+            str(ligprep_file)
+        )
+    )
+
+    if len(source_structures) != len(prepared_structures):
+        raise RuntimeError(
+            "Cannot safely transfer compound IDs from the "
+            "input SDF to LigPrep output: "
+            f"{len(source_structures)} input structures but "
+            f"{len(prepared_structures)} prepared structures. "
+            "A provenance-based mapping is required."
+        )
+
+    seen_ids = set()
+
+    for index, (source, prepared) in enumerate(
+        zip(
+            source_structures,
+            prepared_structures,
+        ),
+        start=1,
+    ):
+        cid = property_value(
+            source,
+            "ID",
+        )
+
+        if cid is None or not str(cid).strip():
+            raise RuntimeError(
+                f"Input ligand {index} has no "
+                f"'ID' property."
+            )
+
+        cid = str(cid).strip()
+
+        if cid in seen_ids:
+            raise RuntimeError(
+                f"Duplicate compound ID in input SDF: "
+                f"{cid}"
+            )
+
+        seen_ids.add(cid)
+
+        prepared.property[
+            "s_user_compound_id"
+        ] = cid
+
+    tmp_file = (
+        ligprep_file.parent /
+        f"{ligprep_file.stem}_annotated.maegz"
+    )
+
+    with structure.StructureWriter(
+        str(tmp_file)
+    ) as writer:
+
+        for prepared in prepared_structures:
+            writer.append(prepared)
+
+    tmp_file.replace(
+        ligprep_file
+    )
+
+    logger.info(
+        f"Annotated {len(prepared_structures)} "
+        f"LigPrep structures with "
+        f"s_user_compound_id"
+    )
 
 @register_task(
     "prepare_activity_ligands",
@@ -187,6 +327,11 @@ def prepare_activity_ligands(
             f"LigPrep did not produce expected output: "
             f"{output_file}"
         )
+
+    annotate_ligprep_compound_ids(
+        input_sdf=input_path,
+        ligprep_file=output_file,
+    )
 
     logger.info(
         f"LigPrep completed: {output_file}"
@@ -797,6 +942,97 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
                             "poseviewer_path": str(Path(pv).resolve()),
                             "reference_ligand_path": str(by_name[name]["reference"].resolve()),
                             "grid_path": str(by_name[name]["grid"].resolve())})
+    activity_ids = set(
+        activities
+    )
+
+    docked_ids = set()
+    scored_ids = set()
+    matched_ids = set()
+
+    by_name = {
+        j["name"]: j
+        for j in complex_jobs
+    }
+
+    details = []
+
+    docked_ids = set()
+    scored_ids = set()
+    matched_ids = set()
+
+    for name, pv in poseviewers.items():
+
+        best = {}
+
+        for st in structure.StructureReader(
+            str(pv)
+        ):
+            cid = compound_id(st)
+            score = glide_score(st)
+
+            if cid:
+                docked_ids.add(cid)
+
+            if cid and score is not None:
+                scored_ids.add(cid)
+
+            if (
+                cid in activities
+                and score is not None
+                and (
+                    cid not in best
+                    or score < best[cid]
+                )
+            ):
+                best[cid] = score
+                matched_ids.add(cid)
+
+        logger.info(
+            "[%s] Docked IDs with scores: %d; "
+            "matched to activity: %d",
+            name,
+            len(best),
+            sum(
+                cid in activities
+                for cid in best
+            ),
+        )
+
+        for cid, score in best.items():
+
+            details.append(
+                {
+                    "complex_pose": name,
+                    "compound_id": cid,
+                    "glide_score": score,
+                    "activity": activities[cid],
+                    "activity_column": activity_column,
+                    "poseviewer_path": str(
+                        Path(pv).resolve()
+                    ),
+                    "reference_ligand_path": str(
+                        by_name[name][
+                            "reference"
+                        ].resolve()
+                    ),
+                    "grid_path": str(
+                        by_name[name][
+                            "grid"
+                        ].resolve()
+                    ),
+                }
+            )
+
+    if not details:
+        raise RuntimeError(
+            "No matched docking score/activity pairs. "
+            f"Activity IDs={len(activities)}, "
+            f"docked IDs={len(docked_ids)}, "
+            f"scored IDs={len(scored_ids)}, "
+            f"matched IDs={len(matched_ids)}."
+        )
+    
     if not details:
         raise RuntimeError("No matched docking score/activity pairs")
 
@@ -824,10 +1060,124 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
     summary.to_csv(output_dir / "complex_pose_correlations.csv", index=False)
 
     for name, group in detail_df.groupby("complex_pose"):
-        fig, ax = plt.subplots(figsize=(6, 5))
-        ax.scatter(group["glide_score"], group["activity"])
-        ax.set(title=name, xlabel="Glide docking score", ylabel=activity_column)
-        fig.tight_layout(); fig.savefig(output_dir / f"{name}_score_vs_activity.png", dpi=200); plt.close(fig)
+
+        if len(group) < min_pairs:
+            logger.warning(
+                "%s has only %d matched pairs; "
+                "correlation plot skipped",
+                name,
+                len(group),
+            )
+            continue
+
+        x = group[
+            "glide_score"
+        ].to_numpy(float)
+
+        y = group[
+            "activity"
+        ].to_numpy(float)
+
+        # ---------------------------------------------
+        # Correlation statistics
+        # ---------------------------------------------
+
+        pearson = pearsonr(x, y)
+        spearman = spearmanr(x, y)
+        kendall = kendalltau(x, y)
+
+        # ---------------------------------------------
+        # Linear regression / best-fit line
+        # ---------------------------------------------
+
+        slope, intercept = np.polyfit(
+            x,
+            y,
+            1,
+        )
+
+        x_fit = np.linspace(
+            x.min(),
+            x.max(),
+            200,
+        )
+
+        y_fit = (
+            slope * x_fit
+            + intercept
+        )
+
+        # ---------------------------------------------
+        # Plot
+        # ---------------------------------------------
+
+        fig, ax = plt.subplots(
+            figsize=(7, 6)
+        )
+
+        ax.scatter(
+            x,
+            y,
+            alpha=0.8,
+            label="Compounds",
+        )
+
+        ax.plot(
+            x_fit,
+            y_fit,
+            linewidth=2,
+            label="Linear fit",
+        )
+
+        ax.set_title(name)
+
+        ax.set_xlabel(
+            "Glide docking score"
+        )
+
+        ax.set_ylabel(
+            activity_column
+        )
+
+        # ---------------------------------------------
+        # Statistics annotation
+        # ---------------------------------------------
+
+        stats_text = (
+            f"N = {len(group)}\n"
+            f"Pearson r = {pearson.statistic:.3f} "
+            f"(p = {pearson.pvalue:.2g})\n"
+            f"Spearman ρ = {spearman.statistic:.3f} "
+            f"(p = {spearman.pvalue:.2g})\n"
+            f"Kendall τ = {kendall.statistic:.3f} "
+            f"(p = {kendall.pvalue:.2g})"
+        )
+
+        ax.text(
+            0.03,
+            0.97,
+            stats_text,
+            transform=ax.transAxes,
+            verticalalignment="top",
+            horizontalalignment="left",
+            bbox={
+                "boxstyle": "round",
+                "facecolor": "white",
+                "alpha": 0.85,
+            },
+        )
+
+        ax.legend()
+
+        fig.tight_layout()
+
+        fig.savefig(
+            output_dir /
+            f"{name}_score_vs_activity.png",
+            dpi=200,
+        )
+
+        plt.close(fig)
     best = summary.iloc[0]
     (output_dir / "best_binding_pose.txt").write_text(
         f"Best complex pose: {best.complex_pose}\nN: {best.n}\nPearson r: {best.pearson_r:.6f}\n"

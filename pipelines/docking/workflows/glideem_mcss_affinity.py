@@ -401,20 +401,34 @@ def run(config_path: str):
             f"[{job['name']}] MCSS docking completed: {pv}"
         )
 
-    # # --------------------------------------------------
-    # # Docking/activity correlation
-    # # --------------------------------------------------
+    # --------------------------------------------------
+    # Docking/activity correlation
+    # --------------------------------------------------
 
-    # analyse_cfg = config.get(
-    #     "analysis",
-    #     {}
-    # )
+    analyse_cfg = config.get(
+        "analysis",
+        {}
+    )
 
-    # return analyse_correlations(
-    #     complex_jobs,
-    #     poseviewers,
-    #     ligand_file,
-    #     analyse_cfg["activity_column"],
-    #     output / "analysis",
-    #     analyse_cfg.get("min_pairs", 5),
-    # )
+    logger.info(
+        "Starting docking/activity correlation analysis "
+        f"for {len(poseviewers)} GlideEM poses"
+    )
+
+    summary = analyse_correlations(
+        complex_jobs=complex_jobs,
+        poseviewers=poseviewers,
+        ligand_file=ligand_file,
+        activity_column=analyse_cfg["activity_column"],
+        output_dir=output / "analysis",
+        min_pairs=analyse_cfg.get(
+            "min_pairs",
+            5,
+        ),
+    )
+
+    logger.info(
+        "Docking/activity correlation analysis completed"
+    )
+
+    return summary
