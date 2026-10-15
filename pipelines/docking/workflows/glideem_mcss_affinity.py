@@ -278,81 +278,128 @@ def run(config_path: str):
             f"[{row['job_name']}] Starting GlideEM"
         )
 
-        glideem_task(
+        archive = glideem_task(
             backend,
             None,
             config,
             job=row,
             work_dir=work,
             prepared_receptor=prepared,
-            reference_ligand=reference_ligand,
         )
 
         logger.info(
-            f"[{row['job_name']}] GlideEM completed."
+            f"[{row['job_name']}] GlideEM completed: "
+            f"{archive}"
         )
 
         logger.info(
-            f"[{row['job_name']}] GlideEM outputs written under: "
-            f"{work}"
+            f"[{row['job_name']}] Extracting GlideEM poses"
         )
 
-        return
-
-        # archive = glideem_task(
-        #     backend,
-        #     None,
-        #     config,
-        #     job=row,
-        #     work_dir=work,
-        #     prepared_receptor=prepared,
+        # generated_complexes = extract_complexes(
+        #     archive,
+        #     output / "complexes",
+        #     row["job_name"],
+        #     config.get("force", False),
         # )
 
-    #     logger.info(
-    #         f"[{row['job_name']}] GlideEM completed: "
-    #         f"{archive}"
-    #     )
+        generated_complexes = extract_complexes(
+            archive=archive,
+            out_root=output / "complexes",
+            source_name=row["job_name"],
+            ligand_resname=row["reference_ligand"],
+            force=config.get("force", False),
+        )
 
-    #     generated_complexes = extract_complexes(
-    #         archive,
-    #         output / "complexes",
-    #         row["job_name"],
-    #         config.get("force", False),
-    #     )
+        if not generated_complexes:
+            raise RuntimeError(
+                f"No usable GlideEM complexes were extracted "
+                f"from {archive}"
+            )
 
-    #     complex_jobs.extend(
-    #         generated_complexes
-    #     )
+        logger.info(
+            f"[{row['job_name']}] Extracted "
+            f"{len(generated_complexes)} GlideEM poses"
+        )
 
-    # if not complex_jobs:
-    #     raise RuntimeError(
-    #         "GlideEM did not produce any usable "
-    #         "protein-ligand complexes."
-    #     )
+        complex_jobs.extend(
+            generated_complexes
+        )
 
-    # # --------------------------------------------------
-    # # Grid generation and MCSS docking
-    # # --------------------------------------------------
+        # generated_complexes = extract_complexes(
+        #     archive,
+        #     output / "complexes",
+        #     row["job_name"],
+        #     row["reference_ligand"],
+        #     config.get("force", False),
+        # )
 
-    # poseviewers = {}
+    if not complex_jobs:
+        raise RuntimeError(
+            "GlideEM did not produce any usable "
+            "protein-ligand complexes."
+        )
 
-    # for job in complex_jobs:
+    # --------------------------------------------------
+    # Build ALL Glide grids first
+    # --------------------------------------------------
 
-    #     grid_task(
-    #         backend,
-    #         None,
-    #         config,
-    #         complex_job=job,
-    #     )
+    logger.info(
+        f"Building Glide grids for "
+        f"{len(complex_jobs)} GlideEM poses"
+    )
 
-    #     poseviewers[job["name"]] = mcss_task(
-    #         backend,
-    #         None,
-    #         config,
-    #         complex_job=job,
-    #         ligand_file=ligand_file,
-    #         mcss_root=output / "mcss",
-    #     )
+    for i, job in enumerate(complex_jobs, start=1):
+
+        logger.info(
+            f"[{job['name']}] Building Glide grid "
+            f"({i}/{len(complex_jobs)})"
+        )
+
+        grid = grid_task(
+            backend,
+            None,
+            config,
+            complex_job=job,
+        )
+
+        logger.info(
+            f"[{job['name']}] Glide grid ready: {grid}"
+        )
+
+
+    # --------------------------------------------------
+    # MCSS docking
+    # --------------------------------------------------
+
+    poseviewers = {}
+
+    logger.info(
+        f"Starting MCSS docking against "
+        f"{len(complex_jobs)} GlideEM poses"
+    )
+
+    for i, job in enumerate(complex_jobs, start=1):
+
+        logger.info(
+            f"[{job['name']}] Starting MCSS docking "
+            f"({i}/{len(complex_jobs)})"
+        )
+
+        pv = mcss_task(
+            backend,
+            None,
+            config,
+            complex_job=job,
+            ligand_file=ligand_file,
+            mcss_root=output / "mcss",
+        )
+
+        poseviewers[job["name"]] = pv
+
+        logger.info(
+            f"[{job['name']}] MCSS docking completed: {pv}"
+        )
 
     # # --------------------------------------------------
     # # Docking/activity correlation

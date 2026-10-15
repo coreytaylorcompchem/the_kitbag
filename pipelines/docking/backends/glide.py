@@ -92,6 +92,7 @@ class SchrodingerGlideEMBackend(BaseBackend):
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(cwd),
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -141,13 +142,6 @@ class SchrodingerGlideEMBackend(BaseBackend):
 
     def run_glide(self, input_file: Path, cwd: Path, log_path: Path) -> None:
         self.run([self.exe("glide"), "-WAIT", "-HOST", self.host, input_file.name], cwd, log_path)
-
-    # def run_ligprep(self, input_file: Path, output_file: Path, cwd: Path, ph: float, pht: float) -> None:
-    #     self.run([
-    #         self.exe("ligprep"), "-ismi", input_file, "-omae", output_file,
-    #         "-ph", ph, "-pht", pht, "-s", 1, "-WAIT"
-    #     ], cwd, cwd / "ligprep.log")
-    #     require_file(output_file, "LigPrep output")
 
     def run_glideem(
         self,

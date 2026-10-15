@@ -493,16 +493,44 @@ def run_glideem(
             f"Job log: {job_log}\n"
             f"Last 80 lines:\n{tail}"
         )
-    else:
-        logger.info(
-            f"GlideEM launcher completed for "
-            f"{job['job_name']}"
+    output_file = (
+        work /
+        f"{job_name}-out.maegz"
+    )
+
+    if not output_file.is_file():
+        raise RuntimeError(
+            f"GlideEM completed without producing the expected "
+            f"pose file: {output_file}"
         )
 
-    return work
+    if output_file.stat().st_size == 0:
+        raise RuntimeError(
+            f"GlideEM pose file is empty: {output_file}"
+        )
+
+    logger.info(
+        f"GlideEM completed successfully for "
+        f"{job['job_name']}: {output_file}"
+    )
+
+    return output_file
 
 
-def extract_complexes(archive: Path, out_root: Path, source_name: str, force: bool = False):
+def extract_complexes(
+    archive: Path,
+    out_root: Path,
+    source_name: str,
+    ligand_resname: str,
+    force: bool = False
+):
+
+    ligand_resname = (
+        ligand_resname
+        .strip()
+        .upper()
+    )
+
     jobs = []
     pose = 0
     for ct_number, st in enumerate(structure.StructureReader(str(archive)), 1):
@@ -517,10 +545,25 @@ def extract_complexes(archive: Path, out_root: Path, source_name: str, force: bo
             rn = (atom.pdbres or "").strip().upper()
             if rn not in IGNORE:
                 residues[((atom.chain or "").strip(), int(atom.resnum), rn)].append(atom.index)
-        candidates = [(heavy_atoms(st, idx), key, idx) for key, idx in residues.items() if heavy_atoms(st, idx) >= 6]
+        
+        candidates = [
+            (heavy_atoms(st, idx), key, idx)
+            for key, idx in residues.items()
+            if (
+                key[2] == ligand_resname
+                and heavy_atoms(st, idx) >= 6
+            )
+        ]
+
         if not candidates:
-            logger.warning("%s CT %d has no ligand; skipped", archive.name, ct_number)
+            logger.warning(
+                "%s CT %d has no '%s' ligand; skipped",
+                archive.name,
+                ct_number,
+                ligand_resname,
+            )
             continue
+
         pose += 1
         name = f"{source_name}_pose{pose:02d}"
         directory = out_root / name
@@ -530,7 +573,21 @@ def extract_complexes(archive: Path, out_root: Path, source_name: str, force: bo
         complex_file = directory / f"{name}_complex.maegz"
         grid = directory / f"{name}_grid.zip"
         metadata = directory / "complex_metadata.json"
+
         nheavy, residue, ligand_indices = max(candidates, key=lambda item: item[0])
+
+        logger.info(
+            "%s CT %d: found '%s' ligand "
+            "(chain=%s, resnum=%d, heavy_atoms=%d) -> pose %02d",
+            archive.name,
+            ct_number,
+            ligand_resname,
+            residue[0] or "-",
+            residue[1],
+            nheavy,
+            pose,
+        )
+
         xyz = np.array([[st.atom[i].x, st.atom[i].y, st.atom[i].z] for i in ligand_indices], dtype=float)
         if force or not all(p.exists() for p in (receptor, reference, complex_file, metadata)):
             lig = st.extract(ligand_indices)
@@ -573,26 +630,143 @@ def build_glide_grid(backend, ligand, config, **kwargs):
     return job["grid"]
 
 
-@register_task("dock_mcss", category="Glide", description="Core-constrained MCSS docking using GlideEM pose")
-def dock_mcss(backend, ligand, config, **kwargs):
+@register_task(
+    "dock_mcss",
+    category="Glide",
+    description="Core-constrained MCSS docking using GlideEM pose",
+)
+def dock_mcss(
+    backend,
+    ligand,
+    config,
+    **kwargs,
+):
     job = kwargs["complex_job"]
-    ligand_file = Path(kwargs["ligand_file"])
-    out_dir = Path(kwargs["mcss_root"]) / job["name"]
-    out_dir.mkdir(parents=True, exist_ok=True)
-    inp = out_dir / f"{job['name']}_mcss.in"
-    pv = out_dir / f"{job['name']}_mcss_pv.maegz"
-    mcss = config.get("mcss", {})
-    inp.write_text(
-        "CORECONS_FALLBACK True\nCORE_DEFINITION mcssmarts\nCORE_FILTER True\nCORE_RESTRAIN True\n"
-        f"GRIDFILE {job['grid']}\nLIGANDFILE {ligand_file}\n"
-        f"NREPORT {mcss.get('nreport', 10000)}\nPOSES_PER_LIG {mcss.get('poses_per_ligand', 1)}\n"
-        f"POSTDOCK_NPOSE {mcss.get('postdock_npose', 1)}\nPRECISION {mcss.get('precision', 'SP')}\n"
-        f"REF_LIGAND_FILE {job['reference']}\nUSE_REF_LIGAND True\n"
+
+    ligand_file = (
+        Path(kwargs["ligand_file"])
+        .expanduser()
+        .resolve()
     )
-    if not pv.exists() or config.get("force", False):
-        backend.run_glide(inp, out_dir, out_dir / f"{job['name']}_mcss.log")
+
+    out_dir = (
+        Path(kwargs["mcss_root"])
+        / job["name"]
+    )
+
+    out_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    inp = (
+        out_dir /
+        f"{job['name']}_mcss.in"
+    )
+
+    pv = (
+        out_dir /
+        f"{job['name']}_mcss_pv.maegz"
+    )
+
+    launcher_log = (
+        out_dir /
+        f"{job['name']}_mcss_launcher.log"
+    )
+
+    mcss = config.get(
+        "mcss",
+        {}
+    )
+
+    # --------------------------------------------------
+    # Validate inputs
+    # --------------------------------------------------
+
+    grid_file = (
+        Path(job["grid"])
+        .expanduser()
+        .resolve()
+    )
+
+    if not grid_file.is_file():
+        raise RuntimeError(
+            f"Cannot start MCSS docking for "
+            f"{job['name']}: Glide grid does not exist: "
+            f"{grid_file}"
+        )
+
+    if grid_file.stat().st_size == 0:
+        raise RuntimeError(
+            f"Cannot start MCSS docking for "
+            f"{job['name']}: Glide grid is empty: "
+            f"{grid_file}"
+        )
+
+    if not ligand_file.is_file():
+        raise FileNotFoundError(
+            f"Prepared ligand library not found: "
+            f"{ligand_file}"
+        )
+
+    reference = (
+        Path(job["reference"])
+        .expanduser()
+        .resolve()
+    )
+
+    if not reference.is_file():
+        raise FileNotFoundError(
+            f"Reference ligand not found: "
+            f"{reference}"
+        )
+
+    # --------------------------------------------------
+    # Write Glide docking input
+    # --------------------------------------------------
+
+    inp.write_text(
+        "CORECONS_FALLBACK True\n"
+        "CORE_DEFINITION mcssmarts\n"
+        "CORE_FILTER True\n"
+        "CORE_RESTRAIN True\n"
+        f"GRIDFILE {grid_file}\n"
+        f"LIGANDFILE {ligand_file}\n"
+        f"NREPORT {mcss.get('nreport', 10000)}\n"
+        f"POSES_PER_LIG "
+        f"{mcss.get('poses_per_ligand', 1)}\n"
+        f"POSTDOCK_NPOSE "
+        f"{mcss.get('postdock_npose', 1)}\n"
+        f"PRECISION {mcss.get('precision', 'SP')}\n"
+        f"REF_LIGAND_FILE {reference}\n"
+        "USE_REF_LIGAND True\n"
+    )
+
+    # --------------------------------------------------
+    # Run Glide
+    # --------------------------------------------------
+
+    if (
+        not pv.exists()
+        or config.get("force", False)
+    ):
+        logger.info(
+            f"[{job['name']}] Launching "
+            f"core-constrained Glide docking"
+        )
+
+        backend.run_glide(
+            inp,
+            out_dir,
+            launcher_log,
+        )
+
     if not pv.exists():
-        raise RuntimeError(f"MCSS PoseViewer missing: {pv}")
+        raise RuntimeError(
+            f"MCSS PoseViewer missing after Glide "
+            f"docking: {pv}"
+        )
+
     return pv
 
 
