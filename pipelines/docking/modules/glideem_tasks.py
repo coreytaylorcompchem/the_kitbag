@@ -71,6 +71,270 @@ def is_protein_atom(atom):
 def heavy_atoms(st, indices):
     return sum(st.atom[i].atomic_number > 1 for i in indices)
 
+@register_task(
+    "prepare_activity_ligands",
+    category="Ligand preparation",
+    description="Prepare experimental activity ligands using Schrodinger LigPrep."
+)
+def prepare_activity_ligands(
+    backend,
+    ligand,
+    config,
+    **kwargs
+):
+    """
+    Prepare the experimental ligand library for Glide docking.
+
+    Input:
+        config["inputs"]["activity_ligands"]
+
+    Output:
+        <output_dir>/ligprep/activity_ligands_ligprep.maegz
+    """
+
+    input_path = (
+        Path(config["inputs"]["activity_ligands"])
+        .expanduser()
+        .resolve()
+    )
+
+    if not input_path.is_file():
+        raise FileNotFoundError(
+            f"Activity ligand input not found: {input_path}"
+        )
+
+    output_root = Path(config["output_dir"]).expanduser().resolve()
+
+    output_dir = output_root / "ligprep"
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    output_file = (
+        output_dir /
+        "activity_ligands_ligprep.maegz"
+    )
+
+    # Reuse existing output unless explicitly forcing rerun
+    if (
+        output_file.is_file()
+        and output_file.stat().st_size > 0
+        and not config.get("force", False)
+    ):
+        logger.info(
+            f"Using existing LigPrep output: {output_file}"
+        )
+
+        return output_file
+
+    ligprep_cfg = config.get(
+        "ligprep",
+        {}
+    )
+
+    pH = ligprep_cfg.get(
+        "pH",
+        7.4
+    )
+
+    pH_tolerance = ligprep_cfg.get(
+        "pH_tolerance",
+        2.0
+    )
+
+    max_states = ligprep_cfg.get(
+        "max_states",
+        1
+    )
+
+    cmd = [
+        backend.exe("ligprep"),
+        "-isd",
+        str(input_path),
+        "-omae",
+        str(output_file),
+        "-ph",
+        str(pH),
+        "-pht",
+        str(pH_tolerance),
+        "-s",
+        str(max_states),
+        "-WAIT",
+    ]
+
+    log_file = (
+        output_dir /
+        "activity_ligands_ligprep.log"
+    )
+
+    logger.info(
+        f"Preparing activity ligand library with LigPrep: "
+        f"{input_path.name}"
+    )
+
+    backend.run(
+        cmd,
+        output_dir,
+        log_file
+    )
+
+    if (
+        not output_file.is_file()
+        or output_file.stat().st_size == 0
+    ):
+        raise RuntimeError(
+            f"LigPrep did not produce expected output: "
+            f"{output_file}"
+        )
+
+    logger.info(
+        f"LigPrep completed: {output_file}"
+    )
+
+    return output_file
+
+@register_task(
+    "extract_reference_ligand",
+    category="GlideEM",
+    description=(
+        "Extract the specified reference ligand "
+        "from the input protein-ligand PDB."
+    ),
+)
+def extract_reference_ligand(
+    backend,
+    ligand,
+    config,
+    **kwargs,
+):
+    """
+    Extract a bound ligand from an input PDB using
+    the residue name supplied in the GlideEM manifest.
+
+    Example manifest value:
+
+        reference_ligand = LIG
+
+    Output:
+
+        <work_dir>/<job_name>_reference_ligand.maegz
+    """
+
+    job = kwargs["job"]
+    work_dir = Path(kwargs["work_dir"])
+
+    pdb_path = (
+        Path(job["receptor"])
+        .expanduser()
+        .resolve()
+    )
+
+    ligand_resname = (
+        job["reference_ligand"]
+        .strip()
+        .upper()
+    )
+
+    if not pdb_path.is_file():
+        raise FileNotFoundError(
+            f"Input receptor PDB not found: "
+            f"{pdb_path}"
+        )
+
+    output_path = (
+        work_dir
+        / f"{job['job_name']}_reference_ligand.maegz"
+    )
+
+    # Reuse an existing extraction unless force=True.
+    if (
+        output_path.is_file()
+        and output_path.stat().st_size > 0
+        and not config.get("force", False)
+    ):
+        logger.info(
+            f"Using existing reference ligand: "
+            f"{output_path}"
+        )
+
+        return output_path
+
+    # Read the receptor/ligand complex.
+    entries = list(
+        structure.StructureReader(
+            str(pdb_path)
+        )
+    )
+
+    if not entries:
+        raise RuntimeError(
+            f"No structure found in PDB: "
+            f"{pdb_path}"
+        )
+
+    st = entries[0]
+
+    # Find atoms belonging to the requested
+    # PDB residue name.
+    ligand_atoms = [
+        atom.index
+        for atom in st.atom
+        if (atom.pdbres or "").strip().upper()
+        == ligand_resname
+    ]
+
+    if not ligand_atoms:
+        raise RuntimeError(
+            f"Reference ligand '{ligand_resname}' "
+            f"was not found in {pdb_path.name}."
+        )
+
+    n_heavy = heavy_atoms(
+        st,
+        ligand_atoms,
+    )
+
+    if n_heavy == 0:
+        raise RuntimeError(
+            f"Reference ligand '{ligand_resname}' "
+            f"in {pdb_path.name} contains no heavy atoms."
+        )
+
+    ligand_st = st.extract(
+        ligand_atoms
+    )
+
+    ligand_st.title = (
+        f"{job['job_name']}_reference_ligand"
+    )
+
+    ligand_st.property[
+        "s_user_reference_complex"
+    ] = job["job_name"]
+
+    ligand_st.property[
+        "s_user_reference_resname"
+    ] = ligand_resname
+
+    with structure.StructureWriter(
+        str(output_path)
+    ) as writer:
+        writer.append(ligand_st)
+
+    logger.info(
+        f"Extracted reference ligand "
+        f"'{ligand_resname}' from "
+        f"{pdb_path.name} "
+        f"({n_heavy} heavy atoms)."
+    )
+
+    logger.info(
+        f"Reference ligand saved: "
+        f"{output_path}"
+    )
+
+    return output_path
 
 @register_task("prepare_glideem_receptor", category="GlideEM", description="Prepare a receptor using Protein Preparation Wizard")
 def prepare_glideem_receptor(backend, ligand, config, **kwargs):
@@ -96,15 +360,29 @@ def run_glideem(backend, ligand, config, **kwargs):
     work = Path(kwargs["work_dir"])
     receptor = Path(kwargs["prepared_receptor"])
     output = work / f"{job['job_name']}_glideem_complexes.maegz"
+
+    reference_ligand = (
+        Path(kwargs["reference_ligand"])
+        .expanduser()
+        .resolve()
+    )
+
+    if not reference_ligand.is_file():
+        raise FileNotFoundError(
+            f"Extracted GlideEM reference ligand not found: "
+            f"{reference_ligand}"
+        )
+    
     values = {
         "schrodinger": backend.schrodinger_root,
         "host": backend.host,
         "job_name": job["job_name"],
         "receptor": receptor,
         "density_map": Path(job["density_map"]).expanduser().resolve(),
-        "ligand": Path(job["reference_ligand"]).expanduser().resolve(),
+        "ligand": reference_ligand,
         "output": output,
     }
+    
     if output.exists() and not config.get("force", False):
         return output
     return backend.run_glideem_template(values, config["glideem"], work)
