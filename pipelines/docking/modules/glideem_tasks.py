@@ -354,38 +354,152 @@ def prepare_glideem_receptor(backend, ligand, config, **kwargs):
     return output
 
 
-@register_task("run_glideem", category="GlideEM", description="Run configured GlideEM command")
-def run_glideem(backend, ligand, config, **kwargs):
+@register_task(
+    "run_glideem",
+    category="GlideEM",
+    description="Run Schrodinger GlideEM pose placement."
+)
+def run_glideem(
+    backend,
+    ligand,
+    config,
+    **kwargs,
+):
     job = kwargs["job"]
-    work = Path(kwargs["work_dir"])
-    receptor = Path(kwargs["prepared_receptor"])
-    output = work / f"{job['job_name']}_glideem_complexes.maegz"
 
-    reference_ligand = (
-        Path(kwargs["reference_ligand"])
+    work = Path(
+        kwargs["work_dir"]
+    )
+
+    receptor = (
+        Path(kwargs["prepared_receptor"])
         .expanduser()
         .resolve()
     )
 
-    if not reference_ligand.is_file():
+    density_map = (
+        Path(job["density_map"])
+        .expanduser()
+        .resolve()
+    )
+
+    if not receptor.is_file():
         raise FileNotFoundError(
-            f"Extracted GlideEM reference ligand not found: "
-            f"{reference_ligand}"
+            f"Prepared receptor not found: {receptor}"
         )
-    
-    values = {
-        "schrodinger": backend.schrodinger_root,
-        "host": backend.host,
-        "job_name": job["job_name"],
-        "receptor": receptor,
-        "density_map": Path(job["density_map"]).expanduser().resolve(),
-        "ligand": reference_ligand,
-        "output": output,
-    }
-    
-    if output.exists() and not config.get("force", False):
-        return output
-    return backend.run_glideem_template(values, config["glideem"], work)
+
+    if not density_map.is_file():
+        raise FileNotFoundError(
+            f"Density map not found: {density_map}"
+        )
+
+    # The manifest contains the PDB residue name,
+    # for example LIG.
+    ligand_resname = (
+        job["reference_ligand"]
+        .strip()
+        .upper()
+    )
+
+    if not ligand_resname:
+        raise ValueError(
+            f"Empty reference_ligand value for "
+            f"{job['job_name']}"
+        )
+
+    # GlideEM help uses this exact ASL style:
+    #
+    #     res.ptype 8PR
+    #
+    # so use the manifest residue name in the same way.
+    ligand_asl = (
+        f"res.ptype {ligand_resname}"
+    )
+
+    glideem_cfg = config.get(
+        "glideem",
+        {}
+    )
+
+    mode = glideem_cfg.get(
+        "mode",
+        "exhaustive",
+    )
+
+    nposes = int(
+        glideem_cfg.get(
+            "nposes",
+            5,
+        )
+    )
+
+    job_name = (
+        f"{job['job_name']}_glideem"
+    )
+
+    logger.info(
+        f"Starting GlideEM for {job['job_name']}: "
+        f"ligand_asl='{ligand_asl}', "
+        f"mode={mode}, nposes={nposes}"
+    )
+
+    backend.run_glideem(
+        receptor=receptor,
+        density_map=density_map,
+        ligand_asl=ligand_asl,
+        job_name=job_name,
+        cwd=work,
+        mode=mode,
+        nposes=nposes,
+    )
+
+    job_log = (
+        work /
+        f"{job_name}.log"
+    )
+
+    if not job_log.is_file():
+        raise RuntimeError(
+            f"GlideEM Job Control log was not created: "
+            f"{job_log}"
+        )
+
+    job_log_text = job_log.read_text(
+        errors="replace"
+    )
+
+    failure_markers = [
+        "Traceback (most recent call last)",
+        "RuntimeError:",
+        "ERROR:",
+    ]
+
+    detected_failures = [
+        marker
+        for marker in failure_markers
+        if marker in job_log_text
+    ]
+
+    if detected_failures:
+
+        tail = "\n".join(
+            job_log_text.splitlines()[-80:]
+        )
+
+        raise RuntimeError(
+            f"GlideEM job '{job_name}' failed. "
+            f"Detected markers: "
+            f"{', '.join(detected_failures)}\n"
+            f"Job log: {job_log}\n"
+            f"Last 80 lines:\n{tail}"
+        )
+    else:
+        logger.info(
+            f"GlideEM launcher completed for "
+            f"{job['job_name']}"
+        )
+
+    return work
 
 
 def extract_complexes(archive: Path, out_root: Path, source_name: str, force: bool = False):

@@ -58,15 +58,83 @@ class SchrodingerGlideEMBackend(BaseBackend):
             f"Searched:\n{searched}"
         )
 
-    def run(self, cmd: list[Any], cwd: Path, log_path: Path) -> None:
-        cwd.mkdir(parents=True, exist_ok=True)
-        cmd = [str(x) for x in cmd]
-        logger.info("Running: %s", shlex.join(cmd))
+    def run(
+        self,
+        cmd: list[Any],
+        cwd: Path,
+        log_path: Path,
+    ) -> None:
+
+        cwd.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        cmd = [
+            str(x)
+            for x in cmd
+        ]
+
+        command_text = shlex.join(cmd)
+
+        logger.info(
+            "Running: %s",
+            command_text,
+        )
+
+        logger.info(
+            "Log: %s",
+            log_path,
+        )
+
         with log_path.open("w") as log:
-            proc = subprocess.run(cmd, cwd=str(cwd), stdout=log, stderr=subprocess.STDOUT, text=True)
-        if proc.returncode:
-            tail = "\n".join(log_path.read_text(errors="replace").splitlines()[-50:])
-            raise RuntimeError(f"Command failed ({proc.returncode}): {shlex.join(cmd)}\n{tail}")
+
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            assert proc.stdout is not None
+
+            for line in proc.stdout:
+
+                line = line.rstrip()
+
+                # Always preserve raw subprocess output
+                # in the job log.
+                log.write(line + "\n")
+                log.flush()
+
+                # Also expose it while the workflow runs.
+                if line:
+                    logger.info(
+                        "[Schrodinger] %s",
+                        line,
+                    )
+
+            returncode = proc.wait()
+
+        if returncode:
+
+            tail = "\n".join(
+                log_path
+                .read_text(errors="replace")
+                .splitlines()[-50:]
+            )
+
+            raise RuntimeError(
+                f"Command failed ({returncode}): "
+                f"{command_text}\n"
+                f"{tail}"
+            )
+
+        logger.info(
+            "Command completed successfully."
+        )
 
     def run_python(self, script: Path, args: list[Any], cwd: Path, log_path: Path) -> None:
         self.run([self.exe("run"), "python3", script, *args], cwd, log_path)
@@ -81,21 +149,70 @@ class SchrodingerGlideEMBackend(BaseBackend):
     #     ], cwd, cwd / "ligprep.log")
     #     require_file(output_file, "LigPrep output")
 
-    def run_glideem_template(self, values: Mapping[str, Any], cfg: Mapping[str, Any], cwd: Path) -> Path:
-        """Run a site-specific GlideEM command template and validate its expected archive."""
-        template = cfg.get("command_template")
-        if not template:
-            raise RuntimeError(
-                "glideem.command_template is required. Copy the command emitted by your installed "
-                "Maestro GlideEM panel and replace paths with {receptor}, {density_map}, {ligand}, "
-                "{output}, {job_name}, {host}, and {schrodinger}."
-            )
-        rendered = template.format(**values)
-        cmd = shlex.split(rendered)
-        self.run(cmd, cwd, cwd / f"{values['job_name']}_glideem.log")
-        output = Path(str(values["output"]))
-        require_file(output, "GlideEM complex archive")
-        return output
+    def run_glideem(
+        self,
+        receptor: Path,
+        density_map: Path,
+        ligand_asl: str,
+        job_name: str,
+        cwd: Path,
+        mode: str = "exhaustive",
+        nposes: int = 5,
+    ) -> None:
+        """
+        Run GlideEM using a ligand already present in the prepared
+        receptor complex.
+
+        The ligand is selected from the prepared complex with an ASL,
+        for example:
+
+            res.ptype LIG
+        """
+
+        cmd = [
+            self.exe("run"),
+            "-FROM",
+            "psp",
+            "glideEM.py",
+
+            receptor,
+
+            "-map",
+            density_map,
+
+            "-ligand_asl",
+            ligand_asl,
+
+            "-mode",
+            mode,
+
+            "-nposes",
+            nposes,
+
+            "-jobname",
+            job_name,
+
+            "-HOST",
+            self.host,
+
+            "-WAIT",
+        ]
+
+        # This is Kitbag's launcher/captured-console log.
+        # Schrodinger Job Control separately creates:
+        #
+        #     <job_name>.log
+        #
+        launcher_log = (
+            cwd /
+            f"{job_name}_launcher.log"
+        )
+
+        self.run(
+            cmd,
+            cwd,
+            launcher_log,
+        )
 
     def dock(self, ligand: dict, config: dict, **kwargs):
         raise NotImplementedError(

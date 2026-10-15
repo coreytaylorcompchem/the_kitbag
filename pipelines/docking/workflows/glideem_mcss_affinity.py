@@ -13,6 +13,9 @@ from modules.glideem_tasks import (
 from pipeline.task_registry import get_task
 from workflows import register_workflow
 
+from pipeline.logger import setup_logger
+
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 def read_manifest(path: Path):
 
@@ -235,6 +238,10 @@ def run(config_path: str):
         # Extract bound ligand from original PDB
         # ---------------------------------------------
 
+        logger.info(
+            f"[{row['job_name']}] Extracting reference ligand"
+        )
+
         reference_ligand = extract_reference_task(
             backend,
             None,
@@ -243,9 +250,15 @@ def run(config_path: str):
             work_dir=work,
         )
 
-        # ---------------------------------------------
-        # Prepare receptor
-        # ---------------------------------------------
+        logger.info(
+            f"[{row['job_name']}] Reference ligand ready: "
+            f"{reference_ligand}"
+        )
+
+
+        logger.info(
+            f"[{row['job_name']}] Preparing receptor"
+        )
 
         prepared = prep_task(
             backend,
@@ -255,11 +268,17 @@ def run(config_path: str):
             work_dir=work,
         )
 
-        # ---------------------------------------------
-        # GlideEM
-        # ---------------------------------------------
+        logger.info(
+            f"[{row['job_name']}] Prepared receptor ready: "
+            f"{prepared}"
+        )
 
-        archive = glideem_task(
+
+        logger.info(
+            f"[{row['job_name']}] Starting GlideEM"
+        )
+
+        glideem_task(
             backend,
             None,
             config,
@@ -269,61 +288,86 @@ def run(config_path: str):
             reference_ligand=reference_ligand,
         )
 
-        generated_complexes = extract_complexes(
-            archive,
-            output / "complexes",
-            row["job_name"],
-            config.get("force", False),
+        logger.info(
+            f"[{row['job_name']}] GlideEM completed."
         )
 
-        complex_jobs.extend(
-            generated_complexes
+        logger.info(
+            f"[{row['job_name']}] GlideEM outputs written under: "
+            f"{work}"
         )
 
-    if not complex_jobs:
-        raise RuntimeError(
-            "GlideEM did not produce any usable "
-            "protein-ligand complexes."
-        )
+        return
 
-    # --------------------------------------------------
-    # Grid generation and MCSS docking
-    # --------------------------------------------------
+        # archive = glideem_task(
+        #     backend,
+        #     None,
+        #     config,
+        #     job=row,
+        #     work_dir=work,
+        #     prepared_receptor=prepared,
+        # )
 
-    poseviewers = {}
+    #     logger.info(
+    #         f"[{row['job_name']}] GlideEM completed: "
+    #         f"{archive}"
+    #     )
 
-    for job in complex_jobs:
+    #     generated_complexes = extract_complexes(
+    #         archive,
+    #         output / "complexes",
+    #         row["job_name"],
+    #         config.get("force", False),
+    #     )
 
-        grid_task(
-            backend,
-            None,
-            config,
-            complex_job=job,
-        )
+    #     complex_jobs.extend(
+    #         generated_complexes
+    #     )
 
-        poseviewers[job["name"]] = mcss_task(
-            backend,
-            None,
-            config,
-            complex_job=job,
-            ligand_file=ligand_file,
-            mcss_root=output / "mcss",
-        )
+    # if not complex_jobs:
+    #     raise RuntimeError(
+    #         "GlideEM did not produce any usable "
+    #         "protein-ligand complexes."
+    #     )
 
-    # --------------------------------------------------
-    # Docking/activity correlation
-    # --------------------------------------------------
+    # # --------------------------------------------------
+    # # Grid generation and MCSS docking
+    # # --------------------------------------------------
 
-    analyse_cfg = config.get(
-        "analysis",
-        {}
-    )
+    # poseviewers = {}
 
-    return analyse_correlations(
-        complex_jobs,
-        poseviewers,
-        ligand_file,
-        analyse_cfg["activity_column"],
-        output / "analysis",
-        analyse_cfg.get("min_pairs", 5),
-    )
+    # for job in complex_jobs:
+
+    #     grid_task(
+    #         backend,
+    #         None,
+    #         config,
+    #         complex_job=job,
+    #     )
+
+    #     poseviewers[job["name"]] = mcss_task(
+    #         backend,
+    #         None,
+    #         config,
+    #         complex_job=job,
+    #         ligand_file=ligand_file,
+    #         mcss_root=output / "mcss",
+    #     )
+
+    # # --------------------------------------------------
+    # # Docking/activity correlation
+    # # --------------------------------------------------
+
+    # analyse_cfg = config.get(
+    #     "analysis",
+    #     {}
+    # )
+
+    # return analyse_correlations(
+    #     complex_jobs,
+    #     poseviewers,
+    #     ligand_file,
+    #     analyse_cfg["activity_column"],
+    #     output / "analysis",
+    #     analyse_cfg.get("min_pairs", 5),
+    # )
