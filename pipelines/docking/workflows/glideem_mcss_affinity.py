@@ -204,12 +204,18 @@ def run(config_path: str):
         "dock_mcss"
     )
 
+    pymol_task = get_task(
+        "export_mcss_pymol"
+    )
+
+
     required_tasks = {
         "extract_reference_ligand": extract_reference_task,
         "prepare_glideem_receptor": prep_task,
         "run_glideem": glideem_task,
         "build_glide_grid": grid_task,
         "dock_mcss": mcss_task,
+        "export_mcss_pymol": pymol_task,
     }
 
     missing_tasks = [
@@ -366,14 +372,6 @@ def run(config_path: str):
             )
 
             continue
-
-        # generated_complexes = extract_complexes(
-        #     archive,
-        #     output / "complexes",
-        #     row["job_name"],
-        #     row["reference_ligand"],
-        #     config.get("force", False),
-        # )
 
     if not complex_jobs:
         logger.error(
@@ -656,6 +654,113 @@ def run(config_path: str):
         logger.info(
             "Docking/activity correlation analysis completed"
         )
+
+    # --------------------------------------------------
+    # Output pymol script
+    # --------------------------------------------------
+
+    pymol_cfg = config.get(
+        "pymol",
+        {}
+    )
+
+    if pymol_cfg.get(
+        "enabled",
+        False,
+    ):
+
+        top_n = int(
+            pymol_cfg.get(
+                "top_n",
+                5,
+            )
+        )
+
+        logger.info(
+            "Exporting top %d MCSS poses per job "
+            "for PyMOL visualisation",
+            top_n,
+        )
+
+        jobs_by_name = {
+            job["name"]: job
+            for job in grid_jobs
+        }
+
+        for name, pv in poseviewers.items():
+
+            try:
+                pymol_task(
+                    backend,
+                    None,
+                    config,
+                    complex_job=jobs_by_name[name],
+                    poseviewer=pv,
+                    top_n=top_n,
+                )
+
+            except Exception as exc:
+                logger.error(
+                    "[%s] PyMOL export failed; "
+                    "continuing workflow: %s",
+                    name,
+                    exc,
+                    exc_info=True,
+                )
+
+                failed_jobs.append(
+                    {
+                        "job_name": name,
+                        "stage": "pymol_export",
+                        "error": str(exc),
+                    }
+                )
+
+    else:
+        logger.info(
+            "PyMOL export not enabled; skipping"
+        )
+
+        top_n = int(
+            pymol_cfg.get(
+                "top_n",
+                5,
+            )
+        )
+
+        jobs_by_name = {
+            job["name"]: job
+            for job in grid_jobs
+        }
+
+        for name, pv in poseviewers.items():
+
+            try:
+                pymol_task(
+                    backend,
+                    None,
+                    config,
+                    complex_job=jobs_by_name[name],
+                    poseviewer=pv,
+                    top_n=top_n,
+                )
+
+            except Exception as exc:
+                logger.error(
+                    "[%s] PyMOL export failed; "
+                    "continuing workflow: %s",
+                    name,
+                    exc,
+                    exc_info=True,
+                )
+
+                failed_jobs.append(
+                    {
+                        "job_name": name,
+                        "stage": "pymol_export",
+                        "error": str(exc),
+                    }
+                )
 
     if failed_jobs:
         logger.warning(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import csv
 import json
 import math
@@ -16,7 +17,7 @@ from schrodinger import structure
 from pipeline.logger import setup_logger
 from pipeline.task_registry import register_task
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 AA = {"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE","LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL","MSE","HID","HIE","HIP","ASH","GLH","LYN","CYX"}
 IGNORE = {"HOH","WAT","SOL","DOD","NA","K","CL","CA","MG","ZN","MN","FE","SO4","PO4","GOL","EDO","PEG"}
@@ -1599,3 +1600,306 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
         f"Spearman rho: {best.spearman_rho:.6f}\nKendall tau: {best.kendall_tau:.6f}\n"
     )
     return summary
+
+@register_task(
+    "export_mcss_pymol",
+    category="GlideEM",
+    description=(
+        "Export top-scoring MCSS poses for PyMOL visualization."
+    ),
+)
+def export_mcss_pymol(
+    backend,
+    ligand,
+    config,
+    **kwargs,
+):
+    complex_job = kwargs["complex_job"]
+    poseviewer = Path(kwargs["poseviewer"])
+    top_n = int(kwargs.get("top_n", 5))
+
+    name = complex_job["name"]
+
+    out_dir = (
+        poseviewer.parent /
+        "pymol"
+    )
+
+    receptor = None
+    poses = []
+
+    for st in structure.StructureReader(
+        str(poseviewer)
+    ):
+        # Receptor CT in Glide PoseViewer
+        if st.property.get(
+            "b_glide_receptor",
+            False,
+        ):
+            receptor = st
+            continue
+
+        score = glide_score(st)
+
+        if score is None:
+            continue
+
+        cid = compound_id(st)
+
+        poses.append(
+            (
+                float(score),
+                cid,
+                st,
+            )
+        )
+
+    if receptor is None:
+        raise RuntimeError(
+            f"No receptor CT found in {poseviewer}"
+        )
+
+    if not poses:
+        raise RuntimeError(
+            f"No scored docked poses found in {poseviewer}"
+        )
+
+    out_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    # More-negative GlideScore is better.
+    poses.sort(
+        key=lambda item: item[0]
+    )
+
+    top = poses[:top_n]
+
+        # ---------------------------------------------
+    # Receptor
+    # ---------------------------------------------
+
+    receptor_file = (
+        out_dir /
+        "receptor.pdb"
+    )
+
+    with structure.StructureWriter(
+        str(receptor_file)
+    ) as writer:
+        writer.append(receptor)
+
+    # ---------------------------------------------
+    # Docked ligands
+    # ---------------------------------------------
+
+    exported = []
+
+    for rank, (
+        score,
+        cid,
+        st,
+    ) in enumerate(
+        top,
+        start=1,
+    ):
+        # Make compound ID safe for filenames/PyMOL object names.
+        safe_cid = re.sub(
+            r"[^A-Za-z0-9_]+",
+            "_",
+            str(cid),
+        ).strip("_")
+
+        if not safe_cid:
+            safe_cid = "unknown"
+
+        object_name = (
+            f"rank{rank:02d}_{safe_cid}"
+        )
+
+        pose_file = (
+            out_dir /
+            f"{object_name}.pdb"
+        )
+
+        with structure.StructureWriter(
+            str(pose_file)
+        ) as writer:
+            writer.append(st)
+
+        exported.append(
+            (
+                rank,
+                score,
+                cid,
+                object_name,
+                pose_file,
+            )
+        )
+
+    # ---------------------------------------------
+    # Write ranking table
+    # ---------------------------------------------
+
+    ranking_file = (
+        out_dir /
+        f"top{len(exported)}.csv"
+    )
+
+    with ranking_file.open(
+        "w",
+        newline="",
+    ) as handle:
+
+        writer = csv.writer(handle)
+
+        writer.writerow(
+            [
+                "rank",
+                "compound_id",
+                "glide_score",
+                "pymol_object",
+                "pose_file",
+            ]
+        )
+
+        for (
+            rank,
+            score,
+            cid,
+            object_name,
+            pose_file,
+        ) in exported:
+
+            writer.writerow(
+                [
+                    rank,
+                    cid,
+                    score,
+                    object_name,
+                    pose_file.name,
+                ]
+            )
+
+    # ---------------------------------------------
+    # PyMOL script
+    # ---------------------------------------------
+
+    script = [
+        "reinitialize",
+        "bg_color white",
+        "",
+        "load receptor.pdb, receptor",
+        "",
+        "hide everything",
+        "show cartoon, receptor",
+        "color gray80, receptor",
+        "",
+    ]
+
+    # Each ligand gets a different carbon colour.
+    # Heteroatoms are subsequently recoloured by element.
+    carbon_colours = [
+        "cyan",
+        "green",
+        "yellow",
+        "orange",
+        "magenta",
+    ]
+
+    ligand_objects = []
+
+    for (
+        rank,
+        score,
+        cid,
+        object_name,
+        pose_file,
+    ) in exported:
+
+        carbon_colour = carbon_colours[
+            (rank - 1) % len(carbon_colours)
+        ]
+
+        ligand_objects.append(
+            object_name
+        )
+
+        script.extend(
+            [
+                f"load {pose_file.name}, {object_name}",
+                f"show sticks, {object_name}",
+
+                # Carbon distinguishes individual ligands.
+                f"color {carbon_colour}, "
+                f"({object_name} and elem C)",
+
+                # Conventional element colours.
+                f"color blue, "
+                f"({object_name} and elem N)",
+
+                f"color red, "
+                f"({object_name} and elem O)",
+
+                f"color yellow, "
+                f"({object_name} and elem S)",
+
+                f"color orange, "
+                f"({object_name} and elem P)",
+
+                f"color white, "
+                f"({object_name} and elem H)",
+
+                # Halogens
+                f"color green, "
+                f"({object_name} and elem F)",
+
+                f"color green, "
+                f"({object_name} and elem Cl)",
+
+                f"color brown, "
+                f"({object_name} and elem Br)",
+
+                f"color purple, "
+                f"({object_name} and elem I)",
+
+                "",
+            ]
+        )
+
+    # Group the poses in the PyMOL object tree.
+    if ligand_objects:
+        script.append(
+            "group top_mcss_poses, "
+            + " ".join(ligand_objects)
+        )
+
+    script.extend(
+        [
+            "",
+            "orient top_mcss_poses",
+            "zoom top_mcss_poses, 8",
+            "",
+        ]
+    )
+
+    script_file = (
+        out_dir /
+        f"load_top{len(exported)}.pml"
+    )
+
+    script_file.write_text(
+        "\n".join(script)
+        + "\n"
+    )
+
+    logger.debug(
+        "[%s] Exported top %d MCSS poses "
+        "for PyMOL to %s",
+        name,
+        len(exported),
+        out_dir,
+    )
+
+    return script_file
