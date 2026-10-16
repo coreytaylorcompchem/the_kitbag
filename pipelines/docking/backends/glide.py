@@ -1,103 +1,263 @@
-import os
+from __future__ import annotations
 
-from pathlib import Path
+import os
+import shlex
 import subprocess
+from pathlib import Path
+from typing import Any, Mapping
+
 from backends.base import BaseBackend
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
-class GlideBackend(BaseBackend):
+class SchrodingerGlideEMBackend(BaseBackend):
+    """Schrodinger backend for GlideEM, grid generation, LigPrep and Glide MCSS."""
+
     supported_tasks = [
-        "standardise_ligand",
-        "protonate_ligand",
-        "prepare_ligand_glide",
-        "prepare_receptor_grid",
-        "dock",
-        "compute_rdkit_descriptors",
-        "adme_prediction",
+        "prepare_glideem_receptor",
+        "run_glideem",
+        "extract_glideem_complexes",
+        "prepare_activity_ligands",
+        "build_glide_grid",
+        "dock_mcss",
     ]
 
-    def __init__(self, executable_path: str, **kwargs):
-        if executable_path is None:
-            raise ValueError("Glide backend requires 'executable_path' in backend config.")
-        
-        super().__init__(executable_path=executable_path, **kwargs)
-        self.schrodinger_home = Path(executable_path).resolve()
-        if not self.schrodinger_home.exists():
-            raise EnvironmentError(f"Schrödinger path does not exist: {self.schrodinger_home}")
+    def __init__(self, schrodinger_root: str | None = None, host: str = "localhost:1", **kwargs):
+        root = schrodinger_root or os.environ.get("SCHRODINGER")
+        if not root:
+            raise RuntimeError("Set backend.schrodinger_root or the SCHRODINGER environment variable")
+        self.schrodinger_root = Path(root).expanduser().resolve()
+        self.host = host
+        super().__init__(executable_path=str(self.schrodinger_root / "glide"), use_gpu=False)
 
-        self.schrodinger_home = Path(executable_path).resolve()
-        if not self.schrodinger_home.exists():
-            raise EnvironmentError(f"Schrödinger path does not exist: {self.schrodinger_home}")
+    def exe(self, name: str) -> Path:
+        """
+        Resolve a Schrodinger executable.
 
-    def _exe(self, name):
-        # default: top-level executables
-        exe = os.path.join(self.executable_path, name)
-        
-        if name.lower() == "prepwizard":
-            exe = os.path.join(self.executable_path, "utilities", "prepwizard")
-        
-        if not os.path.exists(exe):
-            raise FileNotFoundError(f"{name} not found at {exe}")
-        return exe
+        Schrodinger exposes some applications directly under
+        $SCHRODINGER and others under $SCHRODINGER/utilities.
+        """
 
-    def dock(self, ligand: dict, config: dict, output_path=None, **kwargs):
-        """Dock a single ligand (may have multiple conformers). Always returns list of Path/str."""
-        grid_file = self.cache.get("receptor_grid")
-        ligand_input = ligand.get("glide_input")
-        if not grid_file or not ligand_input:
-            raise ValueError("Receptor grid or ligand input missing for Glide docking.")
+        candidates = [
+            self.schrodinger_root / name,
+            self.schrodinger_root / "utilities" / name,
+        ]
 
-        output_dir = Path(config["output_dir"])
-        output_dir.mkdir(parents=True, exist_ok=True)
+        for path in candidates:
+            if path.is_file():
+                return path
 
-        n_poses = config.get("docking", {}).get("n_output_binding_modes", 10)
+        searched = "\n".join(
+            f"  - {path}"
+            for path in candidates
+        )
 
-        # Ensure ligand_input is list
-        ligand_inputs = ligand_input if isinstance(ligand_input, (list, tuple)) else [ligand_input]
+        raise FileNotFoundError(
+            f"Schrodinger executable '{name}' not found.\n"
+            f"Searched:\n{searched}"
+        )
 
-        docked_outputs = []
+    def run(
+        self,
+        cmd: list[Any],
+        cwd: Path,
+        log_path: Path,
+    ) -> None:
 
-        for idx, ligand_file in enumerate(ligand_inputs):
-            # Generate unique output path per conformer
-            if output_path and len(ligand_inputs) == 1:
-                output_file = Path(output_path)
-            elif output_path:
-                output_file = Path(output_path).with_name(
-                    f"{Path(output_path).stem}_conf{idx}{Path(output_path).suffix}"
+        cwd.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        cmd = [
+            str(x)
+            for x in cmd
+        ]
+
+        command_text = shlex.join(cmd)
+
+        logger.info(
+            "Running: %s",
+            command_text,
+        )
+
+        logger.info(
+            "Log: %s",
+            log_path,
+        )
+
+        with log_path.open("w") as log:
+
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(cwd),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            assert proc.stdout is not None
+
+            for line in proc.stdout:
+
+                line = line.rstrip()
+
+                # Always preserve raw subprocess output
+                # in the job log.
+                log.write(line + "\n")
+                log.flush()
+
+                # Also expose it while the workflow runs.
+                if line:
+                    logger.info(
+                        "[Schrodinger] %s",
+                        line,
+                    )
+
+            returncode = proc.wait()
+
+        if returncode:
+
+            tail = "\n".join(
+                log_path
+                .read_text(errors="replace")
+                .splitlines()[-50:]
+            )
+
+            raise RuntimeError(
+                f"Command failed ({returncode}): "
+                f"{command_text}\n"
+                f"{tail}"
+            )
+
+        logger.info(
+            "Command completed successfully."
+        )
+
+    def run_python(self, script: Path, args: list[Any], cwd: Path, log_path: Path) -> None:
+        self.run([self.exe("run"), "python3", script, *args], cwd, log_path)
+
+    def run_glide(self, input_file: Path, cwd: Path, log_path: Path) -> None:
+        self.run([self.exe("glide"), "-WAIT", "-HOST", self.host, input_file.name], cwd, log_path)
+
+    def run_glideem(
+        self,
+        receptor: Path,
+        density_map: Path,
+        job_name: str,
+        cwd: Path,
+        mode: str = "exhaustive",
+        nposes: int = 5,
+        ligand_asl: str | None = None,
+        ligand_smiles: str | None = None,
+        docking_site_xyz: tuple[float, float, float] | None = None,
+    ) -> None:
+        """
+        Run GlideEM using either:
+
+        1. a prepared ligand already present in the receptor complex,
+        selected by ligand_asl; or
+
+        2. an authoritative ligand SMILES plus an experimental
+        docking-site center.
+        """
+
+        if bool(ligand_asl) == bool(ligand_smiles):
+            raise ValueError(
+                "Exactly one of ligand_asl or ligand_smiles "
+                "must be supplied."
+            )
+
+        cmd = [
+            self.exe("run"),
+            "-FROM",
+            "psp",
+            "glideEM.py",
+            receptor,
+            "-map",
+            density_map,
+            "-mode",
+            mode,
+            "-nposes",
+            nposes,
+        ]
+
+        if ligand_smiles:
+
+            if docking_site_xyz is None:
+                raise ValueError(
+                    "docking_site_xyz is required when "
+                    "ligand_smiles is supplied."
                 )
-            else:
-                output_file = output_dir / f"{ligand['name']}_conf{idx}_docked.maegz"
 
-            cmd = [
-                self._exe("glide"),
-                "-HOST", "localhost",
-                "-IN", str(ligand_file),
-                "-GRID", str(grid_file),
-                "-OUT", str(output_file),
-                "-POSES", str(n_poses),
+            x, y, z = docking_site_xyz
+
+            cmd.extend(
+                [
+                    "-ligand_smiles",
+                    ligand_smiles,
+                    "-docking_site_xyz",
+                    x,
+                    y,
+                    z,
+                ]
+            )
+
+        else:
+            cmd.extend(
+                [
+                    "-ligand_asl",
+                    ligand_asl,
+                ]
+            )
+
+        cmd.extend(
+            [
+                "-jobname",
+                job_name,
+                "-HOST",
+                self.host,
+                "-WAIT",
             ]
+        )
 
-            logger.info(f"[GlideBackend] Docking {ligand['name']} (conf {idx})...")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                logger.error(f"Glide docking failed:\n{result.stderr}")
-                continue
+        launcher_log = (
+            cwd /
+            f"{job_name}_launcher.log"
+        )
 
-            # Convert MAEGZ → SDF
-            output_sdf = output_file.with_suffix(".sdf")
-            convert_cmd = [self._exe("structconvert"), str(output_file), str(output_sdf)]
-            convert_result = subprocess.run(convert_cmd, capture_output=True, text=True)
-            if convert_result.returncode != 0:
-                logger.error(f"Structconvert failed:\n{convert_result.stderr}")
-                continue
+        self.run(
+            cmd,
+            cwd,
+            launcher_log,
+        )
 
-            docked_outputs.append(output_sdf)
+        # This is Kitbag's launcher/captured-console log.
+        # Schrodinger Job Control separately creates:
+        #
+        #     <job_name>.log
+        #
+        launcher_log = (
+            cwd /
+            f"{job_name}_launcher.log"
+        )
 
-        if not docked_outputs:
-            raise RuntimeError(f"Glide docking failed for {ligand['name']}")
+        self.run(
+            cmd,
+            cwd,
+            launcher_log,
+        )
 
-        # Store string paths for downstream tasks
-        ligand["docked_outputs"] = [str(p) for p in docked_outputs]
-        return {"docked_output": [str(p) for p in docked_outputs]}
+    def dock(self, ligand: dict, config: dict, **kwargs):
+        raise NotImplementedError(
+            "SchrodingerGlideEMBackend does not support generic dock(). "
+            "Use the dock_mcss task."
+        )
+
+def require_file(path: Path, label: str) -> None:
+    path = Path(path)
+    if not path.is_file() or path.stat().st_size == 0:
+        raise RuntimeError(f"{label} missing or empty: {path}")
