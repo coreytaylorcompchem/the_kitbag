@@ -73,6 +73,13 @@ def read_manifest(path: Path):
                 f"reference_ligand is empty for "
                 f"{row['job_name']}"
             )
+        
+        # Optional chemistry override. Empty CSV cells arrive
+        # as empty strings; normalize them here.
+        row["reference_smiles"] = (
+            row.get("reference_smiles", "")
+            or ""
+        ).strip()
 
     return rows
 
@@ -222,13 +229,16 @@ def run(config_path: str):
     # --------------------------------------------------
 
     complex_jobs = []
+    failed_jobs = []
 
     for row in rows:
+
+        job_name = row["job_name"]
 
         work = (
             output
             / "glideem"
-            / row["job_name"]
+            / job_name
         )
 
         work.mkdir(
@@ -236,97 +246,126 @@ def run(config_path: str):
             exist_ok=True,
         )
 
-        # ---------------------------------------------
-        # Extract bound ligand from original PDB
-        # ---------------------------------------------
+        try:
+            # ---------------------------------------------
+            # Extract bound ligand from original PDB
+            # ---------------------------------------------
 
-        logger.info(
-            f"[{row['job_name']}] Extracting reference ligand"
-        )
-
-        reference_ligand = extract_reference_task(
-            backend,
-            None,
-            config,
-            job=row,
-            work_dir=work,
-        )
-
-        logger.info(
-            f"[{row['job_name']}] Reference ligand ready: "
-            f"{reference_ligand}"
-        )
-
-
-        logger.info(
-            f"[{row['job_name']}] Preparing receptor"
-        )
-
-        prepared = prep_task(
-            backend,
-            None,
-            config,
-            job=row,
-            work_dir=work,
-        )
-
-        logger.info(
-            f"[{row['job_name']}] Prepared receptor ready: "
-            f"{prepared}"
-        )
-
-
-        logger.info(
-            f"[{row['job_name']}] Starting GlideEM"
-        )
-
-        archive = glideem_task(
-            backend,
-            None,
-            config,
-            job=row,
-            work_dir=work,
-            prepared_receptor=prepared,
-        )
-
-        logger.info(
-            f"[{row['job_name']}] GlideEM completed: "
-            f"{archive}"
-        )
-
-        logger.info(
-            f"[{row['job_name']}] Extracting GlideEM poses"
-        )
-
-        # generated_complexes = extract_complexes(
-        #     archive,
-        #     output / "complexes",
-        #     row["job_name"],
-        #     config.get("force", False),
-        # )
-
-        generated_complexes = extract_complexes(
-            archive=archive,
-            out_root=output / "complexes",
-            source_name=row["job_name"],
-            ligand_resname=row["reference_ligand"],
-            force=config.get("force", False),
-        )
-
-        if not generated_complexes:
-            raise RuntimeError(
-                f"No usable GlideEM complexes were extracted "
-                f"from {archive}"
+            logger.info(
+                f"[{job_name}] Extracting reference ligand"
             )
 
-        logger.info(
-            f"[{row['job_name']}] Extracted "
-            f"{len(generated_complexes)} GlideEM poses"
-        )
+            reference_ligand = extract_reference_task(
+                backend,
+                None,
+                config,
+                job=row,
+                work_dir=work,
+            )
 
-        complex_jobs.extend(
-            generated_complexes
-        )
+            logger.info(
+                f"[{job_name}] Reference ligand ready: "
+                f"{reference_ligand}"
+            )
+
+            # ---------------------------------------------
+            # Prepare receptor
+            # ---------------------------------------------
+
+            logger.info(
+                f"[{job_name}] Preparing receptor"
+            )
+
+            prepared = prep_task(
+                backend,
+                None,
+                config,
+                job=row,
+                work_dir=work,
+            )
+
+            logger.info(
+                f"[{job_name}] Prepared receptor ready: "
+                f"{prepared}"
+            )
+
+            # ---------------------------------------------
+            # GlideEM
+            # ---------------------------------------------
+
+            logger.info(
+                f"[{job_name}] Starting GlideEM"
+            )
+
+            archive = glideem_task(
+                backend,
+                None,
+                config,
+                job=row,
+                work_dir=work,
+                prepared_receptor=prepared,
+            )
+
+            logger.info(
+                f"[{job_name}] GlideEM completed: "
+                f"{archive}"
+            )
+
+            # ---------------------------------------------
+            # Extract GlideEM poses
+            # ---------------------------------------------
+
+            logger.info(
+                f"[{job_name}] Extracting GlideEM poses"
+            )
+
+            reference_smiles = (
+                row.get("reference_smiles", "")
+                or ""
+            ).strip()
+
+            generated_complexes = extract_complexes(
+                archive=archive,
+                out_root=output / "complexes",
+                source_name=job_name,
+                ligand_resname=row["reference_ligand"],
+                force=config.get("force", False),
+                ligand_from_smiles=bool(reference_smiles),
+            )
+
+            if not generated_complexes:
+                raise RuntimeError(
+                    f"No usable GlideEM complexes were "
+                    f"extracted from {archive}"
+                )
+
+            logger.info(
+                f"[{job_name}] Extracted "
+                f"{len(generated_complexes)} GlideEM poses"
+            )
+
+            complex_jobs.extend(
+                generated_complexes
+            )
+
+        except Exception as exc:
+            logger.error(
+                "[%s] GlideEM processing failed; "
+                "this structure will be skipped: %s",
+                job_name,
+                exc,
+                exc_info=True,
+            )
+
+            failed_jobs.append(
+                {
+                    "job_name": job_name,
+                    "stage": "glideem",
+                    "error": str(exc),
+                }
+            )
+
+            continue
 
         # generated_complexes = extract_complexes(
         #     archive,
@@ -337,10 +376,19 @@ def run(config_path: str):
         # )
 
     if not complex_jobs:
-        raise RuntimeError(
-            "GlideEM did not produce any usable "
-            "protein-ligand complexes."
+        logger.error(
+            "No GlideEM jobs produced usable "
+            "protein-ligand complexes. "
+            "Nothing remains to process."
         )
+
+        if failed_jobs:
+            logger.error(
+                "Failed/skipped jobs: %d",
+                len(failed_jobs),
+            )
+
+        return None
 
     # --------------------------------------------------
     # Build Glide grids in parallel
@@ -387,6 +435,7 @@ def run(config_path: str):
         return job["name"], grid
 
     grids = {}
+    grid_jobs = []
 
     with ThreadPoolExecutor(
         max_workers=grid_max_parallel
@@ -408,21 +457,47 @@ def run(config_path: str):
                 name, grid = future.result()
 
             except Exception as exc:
-                raise RuntimeError(
-                    f"Glide grid generation failed for "
-                    f"{job['name']}"
-                ) from exc
+                logger.error(
+                    "[%s] Glide grid generation failed; "
+                    "this pose will be skipped: %s",
+                    job["name"],
+                    exc,
+                    exc_info=True,
+                )
+
+                failed_jobs.append(
+                    {
+                        "job_name": job["name"],
+                        "stage": "grid",
+                        "error": str(exc),
+                    }
+                )
+
+                continue
 
             grids[name] = grid
+
+            grid_jobs.append(
+                job
+            )
 
             logger.info(
                 f"[{name}] Glide grid ready: {grid}"
             )
 
     logger.info(
-        f"All {len(grids)} Glide grids "
-        f"generated successfully."
+        "Glide grid generation finished: "
+        "%d succeeded, %d failed",
+        len(grid_jobs),
+        len(complex_jobs) - len(grid_jobs),
     )
+
+    if not grid_jobs:
+        logger.error(
+            "No Glide grids were generated successfully. "
+            "MCSS docking cannot be performed."
+        )
+        return None
 
 
     # --------------------------------------------------
@@ -447,14 +522,15 @@ def run(config_path: str):
         1,
         min(
             max_parallel,
-            len(complex_jobs),
+            len(grid_jobs),
         ),
     )
 
     logger.info(
         f"Starting MCSS docking against "
-        f"{len(complex_jobs)} GlideEM poses "
-        f"with up to {max_parallel} concurrent jobs"
+        f"{len(grid_jobs)} successfully gridded "
+        f"GlideEM poses with up to "
+        f"{max_parallel} concurrent jobs"
     )
 
     def run_mcss_job(job):
@@ -482,7 +558,7 @@ def run(config_path: str):
                 run_mcss_job,
                 job,
             ): job
-            for job in complex_jobs
+            for job in grid_jobs
         }
 
         for future in as_completed(futures):
@@ -493,10 +569,23 @@ def run(config_path: str):
                 name, pv = future.result()
 
             except Exception as exc:
-                raise RuntimeError(
-                    f"MCSS docking failed for "
-                    f"{job['name']}"
-                ) from exc
+                logger.error(
+                    "[%s] MCSS docking failed; "
+                    "this pose will be skipped: %s",
+                    job["name"],
+                    exc,
+                    exc_info=True,
+                )
+
+                failed_jobs.append(
+                    {
+                        "job_name": job["name"],
+                        "stage": "mcss",
+                        "error": str(exc),
+                    }
+                )
+
+                continue
 
             poseviewers[name] = pv
 
@@ -504,6 +593,20 @@ def run(config_path: str):
                 f"[{name}] MCSS docking completed: "
                 f"{pv}"
             )
+
+    logger.info(
+        "MCSS docking finished: "
+        "%d succeeded, %d failed",
+        len(poseviewers),
+        len(grid_jobs) - len(poseviewers),
+    )
+
+    if not poseviewers:
+        logger.error(
+            "No MCSS docking jobs completed successfully. "
+            "Skipping correlation analysis."
+        )
+        return None
 
     # --------------------------------------------------
     # Docking/activity correlation
@@ -519,20 +622,58 @@ def run(config_path: str):
         f"for {len(poseviewers)} GlideEM poses"
     )
 
-    summary = analyse_correlations(
-        complex_jobs=complex_jobs,
-        poseviewers=poseviewers,
-        ligand_file=ligand_file,
-        activity_column=analyse_cfg["activity_column"],
-        output_dir=output / "analysis",
-        min_pairs=analyse_cfg.get(
-            "min_pairs",
-            5,
-        ),
-    )
+    try:
+        summary = analyse_correlations(
+            complex_jobs=complex_jobs,
+            poseviewers=poseviewers,
+            ligand_file=ligand_file,
+            activity_column=analyse_cfg["activity_column"],
+            output_dir=output / "analysis",
+            min_pairs=analyse_cfg.get(
+                "min_pairs",
+                5,
+            ),
+        )
 
-    logger.info(
-        "Docking/activity correlation analysis completed"
-    )
+    except Exception as exc:
+        logger.error(
+            "Docking/activity correlation analysis failed: %s",
+            exc,
+            exc_info=True,
+        )
+
+        failed_jobs.append(
+            {
+                "job_name": "analysis",
+                "stage": "analysis",
+                "error": str(exc),
+            }
+        )
+
+        summary = None
+
+    if summary is not None:
+        logger.info(
+            "Docking/activity correlation analysis completed"
+        )
+
+    if failed_jobs:
+        logger.warning(
+            "Workflow completed with %d failed/skipped job(s):",
+            len(failed_jobs),
+        )
+
+        for failure in failed_jobs:
+            logger.warning(
+                "  [%s] stage=%s: %s",
+                failure["job_name"],
+                failure["stage"],
+                failure["error"],
+            )
+
+    else:
+        logger.info(
+            "Workflow completed with no failed jobs."
+        )
 
     return summary

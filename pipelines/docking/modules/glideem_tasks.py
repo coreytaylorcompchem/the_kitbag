@@ -211,6 +211,130 @@ def annotate_ligprep_compound_ids(
         f"s_user_compound_id"
     )
 
+def get_reference_ligand_atoms(
+    st,
+    ligand_resname: str,
+):
+    """
+    Return atom indices for the reference ligand residue.
+
+    Fails if no matching residue is found or if the residue name
+    identifies multiple separate residues.
+    """
+
+    ligand_resname = (
+        ligand_resname
+        .strip()
+        .upper()
+    )
+
+    residues = defaultdict(list)
+
+    for atom in st.atom:
+
+        resname = (
+            atom.pdbres or ""
+        ).strip().upper()
+
+        if resname != ligand_resname:
+            continue
+
+        key = (
+            (atom.chain or "").strip(),
+            int(atom.resnum),
+            resname,
+        )
+
+        residues[key].append(
+            atom.index
+        )
+
+    if not residues:
+        raise RuntimeError(
+            f"Reference ligand '{ligand_resname}' "
+            "was not found in the input structure."
+        )
+
+    if len(residues) > 1:
+        locations = ", ".join(
+            f"chain={chain or '-'} resnum={resnum}"
+            for chain, resnum, _ in residues
+        )
+
+        raise RuntimeError(
+            f"Reference ligand '{ligand_resname}' occurs "
+            f"multiple times: {locations}. "
+            "The manifest needs chain/residue-number selectors."
+        )
+
+    residue_key, atom_indices = next(
+        iter(residues.items())
+    )
+
+    return residue_key, atom_indices
+
+def get_reference_ligand_center(
+    structure_path: Path,
+    ligand_resname: str,
+) -> tuple[float, float, float]:
+    """
+    Calculate the geometric center of the reference ligand
+    from its experimental coordinates.
+    """
+
+    entries = list(
+        structure.StructureReader(
+            str(structure_path)
+        )
+    )
+
+    if len(entries) != 1:
+        raise RuntimeError(
+            f"Expected one structure in {structure_path}, "
+            f"found {len(entries)}"
+        )
+
+    st = entries[0]
+
+    _, ligand_atoms = get_reference_ligand_atoms(
+        st,
+        ligand_resname,
+    )
+
+    heavy_indices = [
+        index
+        for index in ligand_atoms
+        if st.atom[index].atomic_number > 1
+    ]
+
+    if not heavy_indices:
+        raise RuntimeError(
+            f"Reference ligand '{ligand_resname}' "
+            "contains no heavy atoms."
+        )
+
+    xyz = np.array(
+        [
+            [
+                st.atom[index].x,
+                st.atom[index].y,
+                st.atom[index].z,
+            ]
+            for index in heavy_indices
+        ],
+        dtype=float,
+    )
+
+    center = xyz.mean(
+        axis=0
+    )
+
+    return (
+        float(center[0]),
+        float(center[1]),
+        float(center[2]),
+    )
+
 @register_task(
     "prepare_activity_ligands",
     category="Ligand preparation",
@@ -481,23 +605,174 @@ def extract_reference_ligand(
 
     return output_path
 
-@register_task("prepare_glideem_receptor", category="GlideEM", description="Prepare a receptor using Protein Preparation Wizard")
-def prepare_glideem_receptor(backend, ligand, config, **kwargs):
+@register_task(
+    "prepare_glideem_receptor",
+    category="GlideEM",
+    description=(
+        "Prepare a receptor using Protein Preparation Wizard."
+    ),
+)
+def prepare_glideem_receptor(
+    backend,
+    ligand,
+    config,
+    **kwargs,
+):
     job = kwargs["job"]
     work = Path(kwargs["work_dir"])
-    source = Path(job["receptor"]).expanduser().resolve()
-    output = work / f"{job['job_name']}_prepared.maegz"
-    if output.exists() and not config.get("force", False):
-        return output
-    prep = config["glideem"].get("prepare_receptor", {})
-    cmd = [backend.exe("prepwizard"), source, output, "-WAIT", "-HOST", backend.host,
-           "-fillsidechains", "-disulfides", "-rehtreat", "-propka_pH", str(prep.get("pH", 7.4)),
-           "-rmsd", str(prep.get("rmsd", 0.3))]
-    backend.run(cmd, work, work / f"{job['job_name']}_prepwizard.log")
-    if not output.exists():
-        raise RuntimeError(f"PrepWizard did not create {output}")
-    return output
 
+    source = (
+        Path(job["receptor"])
+        .expanduser()
+        .resolve()
+    )
+
+    reference_smiles = (
+        job.get("reference_smiles", "")
+        or ""
+    ).strip()
+
+    output = (
+        work /
+        f"{job['job_name']}_prepared.maegz"
+    )
+
+    if (
+        output.is_file()
+        and output.stat().st_size > 0
+        and not config.get("force", False)
+    ):
+        logger.info(
+            f"Using existing prepared receptor: {output}"
+        )
+        return output
+
+    prep_input = source
+
+    # --------------------------------------------------
+    # SMILES route:
+    # remove the reference ligand before PrepWizard.
+    #
+    # GlideEM will prepare the ligand independently from
+    # the authoritative SMILES.
+    # --------------------------------------------------
+
+    if reference_smiles:
+
+        ligand_resname = (
+            job["reference_ligand"]
+            .strip()
+            .upper()
+        )
+
+        entries = list(
+            structure.StructureReader(
+                str(source)
+            )
+        )
+
+        if len(entries) != 1:
+            raise RuntimeError(
+                f"Expected one structure in {source}, "
+                f"found {len(entries)}"
+            )
+
+        input_st = entries[0]
+
+        _, ligand_atoms = get_reference_ligand_atoms(
+            input_st,
+            ligand_resname,
+        )
+
+        ligand_atom_set = set(
+            ligand_atoms
+        )
+
+        receptor_atoms = [
+            atom.index
+            for atom in input_st.atom
+            if atom.index not in ligand_atom_set
+        ]
+
+        if not receptor_atoms:
+            raise RuntimeError(
+                f"No receptor atoms remain after removing "
+                f"'{ligand_resname}' from {source}"
+            )
+
+        apo_st = input_st.extract(
+            receptor_atoms
+        )
+
+        prep_input = (
+            work /
+            f"{job['job_name']}_receptor_without_reference.maegz"
+        )
+
+        with structure.StructureWriter(
+            str(prep_input)
+        ) as writer:
+            writer.append(apo_st)
+
+        logger.info(
+            f"[{job['job_name']}] Reference SMILES supplied; "
+            f"removed '{ligand_resname}' from the receptor "
+            f"before PrepWizard"
+        )
+
+        logger.info(
+            f"[{job['job_name']}] Apo receptor saved: "
+            f"{prep_input}"
+        )
+
+    # --------------------------------------------------
+    # Normal route:
+    # retain the reference ligand in the complex.
+    # --------------------------------------------------
+
+    else:
+        logger.info(
+            f"[{job['job_name']}] No reference SMILES supplied; "
+            f"preparing the original receptor-ligand complex"
+        )
+
+    prep = (
+        config
+        .get("glideem", {})
+        .get("prepare_receptor", {})
+    )
+
+    cmd = [
+        backend.exe("prepwizard"),
+        prep_input,
+        output,
+        "-WAIT",
+        "-HOST",
+        backend.host,
+        "-fillsidechains",
+        "-disulfides",
+        "-rehtreat",
+        "-propka_pH",
+        str(prep.get("pH", 7.4)),
+        "-rmsd",
+        str(prep.get("rmsd", 0.3)),
+    ]
+
+    backend.run(
+        cmd,
+        work,
+        work / f"{job['job_name']}_prepwizard.log",
+    )
+
+    if (
+        not output.is_file()
+        or output.stat().st_size == 0
+    ):
+        raise RuntimeError(
+            f"PrepWizard did not create {output}"
+        )
+
+    return output
 
 @register_task(
     "run_glideem",
@@ -557,9 +832,50 @@ def run_glideem(
     #     res.ptype 8PR
     #
     # so use the manifest residue name in the same way.
-    ligand_asl = (
-        f"res.ptype {ligand_resname}"
-    )
+    reference_smiles = (
+        job.get("reference_smiles", "")
+        or ""
+    ).strip()
+
+    ligand_asl = None
+    docking_site_xyz = None
+
+    if reference_smiles:
+
+        source_structure = (
+            Path(job["receptor"])
+            .expanduser()
+            .resolve()
+        )
+
+        docking_site_xyz = get_reference_ligand_center(
+            source_structure,
+            ligand_resname,
+        )
+
+        logger.info(
+            f"[{job['job_name']}] Using "
+            f"reference SMILES for GlideEM ligand preparation"
+        )
+
+        logger.debug(
+            f"[{job['job_name']}] Experimental docking center: "
+            f"{docking_site_xyz[0]:.3f}, "
+            f"{docking_site_xyz[1]:.3f}, "
+            f"{docking_site_xyz[2]:.3f}"
+        )
+
+
+    else:
+
+        ligand_asl = (
+            f"res.ptype {ligand_resname}"
+        )
+
+        logger.info(
+            f"[{job['job_name']}] Using prepared complex "
+            f"ligand ASL: '{ligand_asl}'"
+        )
 
     glideem_cfg = config.get(
         "glideem",
@@ -582,20 +898,30 @@ def run_glideem(
         f"{job['job_name']}_glideem"
     )
 
+    ligand_source = (
+        "SMILES"
+        if reference_smiles
+        else f"ASL '{ligand_asl}'"
+    )
+
     logger.info(
         f"Starting GlideEM for {job['job_name']}: "
-        f"ligand_asl='{ligand_asl}', "
+        f"ligand_source={ligand_source}, "
         f"mode={mode}, nposes={nposes}"
     )
 
     backend.run_glideem(
         receptor=receptor,
         density_map=density_map,
-        ligand_asl=ligand_asl,
         job_name=job_name,
         cwd=work,
         mode=mode,
         nposes=nposes,
+        ligand_asl=ligand_asl,
+        ligand_smiles=(
+            reference_smiles or None
+        ),
+        docking_site_xyz=docking_site_xyz,
     )
 
     job_log = (
@@ -667,7 +993,8 @@ def extract_complexes(
     out_root: Path,
     source_name: str,
     ligand_resname: str,
-    force: bool = False
+    force: bool = False,
+    ligand_from_smiles: bool = False,
 ):
 
     ligand_resname = (
@@ -684,29 +1011,80 @@ def extract_complexes(
             logger.warning("%s CT %d has no protein; skipped", archive.name, ct_number)
             continue
         residues = defaultdict(list)
+
+        # First collect ALL non-protein residues in this CT.
         for atom in st.atom:
+
             if is_protein_atom(atom):
                 continue
-            rn = (atom.pdbres or "").strip().upper()
+
+            rn = (
+                atom.pdbres or ""
+            ).strip().upper()
+
             if rn not in IGNORE:
-                residues[((atom.chain or "").strip(), int(atom.resnum), rn)].append(atom.index)
-        
-        candidates = [
-            (heavy_atoms(st, idx), key, idx)
-            for key, idx in residues.items()
-            if (
-                key[2] == ligand_resname
-                and heavy_atoms(st, idx) >= 6
-            )
-        ]
+                residues[
+                    (
+                        (atom.chain or "").strip(),
+                        int(atom.resnum),
+                        rn,
+                    )
+                ].append(
+                    atom.index
+                )
+
+        # Only after the complete residue dictionary has been
+        # constructed should we look for the GlideEM ligand.
+        if ligand_from_smiles:
+
+            # GlideEM prepared the ligand from SMILES, so its
+            # output residue identity does not need to match
+            # the reference ligand in the original PDB.
+            candidates = [
+                (
+                    heavy_atoms(st, indices),
+                    key,
+                    indices,
+                )
+                for key, indices in residues.items()
+                if heavy_atoms(st, indices) >= 6
+            ]
+
+        else:
+
+            # Traditional route: GlideEM used the ligand already
+            # present in the prepared receptor.
+            candidates = [
+                (
+                    heavy_atoms(st, indices),
+                    key,
+                    indices,
+                )
+                for key, indices in residues.items()
+                if (
+                    key[2] == ligand_resname
+                    and heavy_atoms(st, indices) >= 6
+                )
+            ]
 
         if not candidates:
-            logger.warning(
-                "%s CT %d has no '%s' ligand; skipped",
-                archive.name,
-                ct_number,
-                ligand_resname,
-            )
+
+            if ligand_from_smiles:
+                logger.warning(
+                    "%s CT %d has no substantial "
+                    "non-protein ligand; skipped",
+                    archive.name,
+                    ct_number,
+                )
+
+            else:
+                logger.warning(
+                    "%s CT %d has no '%s' ligand; skipped",
+                    archive.name,
+                    ct_number,
+                    ligand_resname,
+                )
+
             continue
 
         pose += 1
@@ -721,12 +1099,12 @@ def extract_complexes(
 
         nheavy, residue, ligand_indices = max(candidates, key=lambda item: item[0])
 
-        logger.info(
+        logger.debug(
             "%s CT %d: found '%s' ligand "
             "(chain=%s, resnum=%d, heavy_atoms=%d) -> pose %02d",
             archive.name,
             ct_number,
-            ligand_resname,
+            residue[2] or "-",
             residue[0] or "-",
             residue[1],
             nheavy,
@@ -997,7 +1375,7 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
                 best[cid] = score
                 matched_ids.add(cid)
 
-        logger.info(
+        logger.debug(
             "[%s] Docked IDs with scores: %d; "
             "matched to activity: %d",
             name,

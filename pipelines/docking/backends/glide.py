@@ -147,50 +147,93 @@ class SchrodingerGlideEMBackend(BaseBackend):
         self,
         receptor: Path,
         density_map: Path,
-        ligand_asl: str,
         job_name: str,
         cwd: Path,
         mode: str = "exhaustive",
         nposes: int = 5,
+        ligand_asl: str | None = None,
+        ligand_smiles: str | None = None,
+        docking_site_xyz: tuple[float, float, float] | None = None,
     ) -> None:
         """
-        Run GlideEM using a ligand already present in the prepared
-        receptor complex.
+        Run GlideEM using either:
 
-        The ligand is selected from the prepared complex with an ASL,
-        for example:
+        1. a prepared ligand already present in the receptor complex,
+        selected by ligand_asl; or
 
-            res.ptype LIG
+        2. an authoritative ligand SMILES plus an experimental
+        docking-site center.
         """
+
+        if bool(ligand_asl) == bool(ligand_smiles):
+            raise ValueError(
+                "Exactly one of ligand_asl or ligand_smiles "
+                "must be supplied."
+            )
 
         cmd = [
             self.exe("run"),
             "-FROM",
             "psp",
             "glideEM.py",
-
             receptor,
-
             "-map",
             density_map,
-
-            "-ligand_asl",
-            ligand_asl,
-
             "-mode",
             mode,
-
             "-nposes",
             nposes,
-
-            "-jobname",
-            job_name,
-
-            "-HOST",
-            self.host,
-
-            "-WAIT",
         ]
+
+        if ligand_smiles:
+
+            if docking_site_xyz is None:
+                raise ValueError(
+                    "docking_site_xyz is required when "
+                    "ligand_smiles is supplied."
+                )
+
+            x, y, z = docking_site_xyz
+
+            cmd.extend(
+                [
+                    "-ligand_smiles",
+                    ligand_smiles,
+                    "-docking_site_xyz",
+                    x,
+                    y,
+                    z,
+                ]
+            )
+
+        else:
+            cmd.extend(
+                [
+                    "-ligand_asl",
+                    ligand_asl,
+                ]
+            )
+
+        cmd.extend(
+            [
+                "-jobname",
+                job_name,
+                "-HOST",
+                self.host,
+                "-WAIT",
+            ]
+        )
+
+        launcher_log = (
+            cwd /
+            f"{job_name}_launcher.log"
+        )
+
+        self.run(
+            cmd,
+            cwd,
+            launcher_log,
+        )
 
         # This is Kitbag's launcher/captured-console log.
         # Schrodinger Job Control separately creates:
