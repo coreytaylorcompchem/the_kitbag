@@ -625,12 +625,12 @@ def run(config_path: str):
             complex_jobs=complex_jobs,
             poseviewers=poseviewers,
             ligand_file=ligand_file,
+            source_ligand_file=Path(
+                config["inputs"]["activity_ligands"]
+            ).expanduser().resolve(),
             activity_column=analyse_cfg["activity_column"],
             output_dir=output / "analysis",
-            min_pairs=analyse_cfg.get(
-                "min_pairs",
-                5,
-            ),
+            min_pairs=analyse_cfg.get("min_pairs", 5),
         )
 
     except Exception as exc:
@@ -690,12 +690,22 @@ def run(config_path: str):
         for name, pv in poseviewers.items():
 
             try:
+                source_name = jobs_by_name[name]["source_name"]
+
+                cryoem_reference = (
+                    output
+                    / "glideem"
+                    / source_name
+                    / f"{source_name}_reference_ligand.maegz"
+                )
+
                 pymol_task(
                     backend,
                     None,
                     config,
                     complex_job=jobs_by_name[name],
                     poseviewer=pv,
+                    cryoem_reference=cryoem_reference,
                     top_n=top_n,
                 )
 
@@ -736,12 +746,22 @@ def run(config_path: str):
         for name, pv in poseviewers.items():
 
             try:
+                source_name = jobs_by_name[name]["source_name"]
+
+                cryoem_reference = (
+                    output
+                    / "glideem"
+                    / source_name
+                    / f"{source_name}_reference_ligand.maegz"
+                )
+
                 pymol_task(
                     backend,
                     None,
                     config,
                     complex_job=jobs_by_name[name],
                     poseviewer=pv,
+                    cryoem_reference=cryoem_reference,
                     top_n=top_n,
                 )
 

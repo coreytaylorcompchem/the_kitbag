@@ -4,7 +4,6 @@ import re
 import csv
 import json
 import math
-import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -17,7 +16,7 @@ from schrodinger import structure
 from pipeline.logger import setup_logger
 from pipeline.task_registry import register_task
 
-logger = setup_logger(__name__, debug_mode=True, simple_format=True)
+logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 
 AA = {"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE","LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL","MSE","HID","HIE","HIP","ASH","GLH","LYN","CYX"}
 IGNORE = {"HOH","WAT","SOL","DOD","NA","K","CL","CA","MG","ZN","MN","FE","SO4","PO4","GOL","EDO","PEG"}
@@ -111,6 +110,31 @@ def glide_score(st):
                 return float(value)
             except (TypeError, ValueError):
                 pass
+    return None
+
+def smiles_value(st):
+    """
+    Retrieve SMILES from a docked Maestro structure.
+    """
+
+    preferred = (
+        "s_sd_SMILES",
+        "s_m_smiles",
+        "SMILES",
+    )
+
+    for key in preferred:
+        value = st.property.get(key)
+
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    # Fallback for variant property naming
+    for key, value in st.property.items():
+        if "SMILES" in key.upper():
+            if value is not None and str(value).strip():
+                return str(value).strip()
+
     return None
 
 
@@ -472,6 +496,7 @@ def prepare_activity_ligands(
         "from the input protein-ligand PDB."
     ),
 )
+
 def extract_reference_ligand(
     backend,
     ligand,
@@ -605,6 +630,57 @@ def extract_reference_ligand(
     )
 
     return output_path
+
+def glide_smiles_by_lignum(poseviewer: Path):
+    """
+    Read the Glide CSV corresponding to a PoseViewer and map
+    Glide ligand number -> SMILES.
+    """
+
+    poseviewer = Path(poseviewer)
+
+    # Example:
+    # structure_51052_pose01_mcss_pv.maegz
+    # ->
+    # structure_51052_pose01_mcss.csv
+
+    suffix = "_pv.maegz"
+
+    if not poseviewer.name.endswith(suffix):
+        return {}
+
+    csv_file = poseviewer.with_name(
+        poseviewer.name[:-len(suffix)] + ".csv"
+    )
+
+    if not csv_file.is_file():
+        logger.warning(
+            "Glide CSV not found for PoseViewer: %s",
+            csv_file,
+        )
+        return {}
+
+    df = pd.read_csv(
+        csv_file,
+        usecols=[
+            "SMILES",
+            "i_i_glide_lignum",
+        ],
+    )
+
+    result = {}
+
+    for _, row in df.iterrows():
+
+        lignum = row["i_i_glide_lignum"]
+        smiles = row["SMILES"]
+
+        if pd.isna(lignum) or pd.isna(smiles):
+            continue
+
+        result[int(lignum)] = str(smiles)
+
+    return result
 
 @register_task(
     "prepare_glideem_receptor",
@@ -1302,37 +1378,91 @@ def dock_mcss(
 
     return pv
 
+def glide_score_components(st):
+    """
+    Extract useful Glide score components from a docked structure.
+    """
 
-def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column, output_dir, min_pairs=5):
-    activities = {}
-    for st in structure.StructureReader(str(ligand_file)):
+    fields = {
+        "glide_gscore": "r_i_glide_gscore",
+        "docking_score": "r_i_docking_score",
+        "glide_emodel": "r_i_glide_emodel",
+        "glide_energy": "r_i_glide_energy",
+        "glide_evdw": "r_i_glide_evdw",
+        "glide_ecoul": "r_i_glide_ecoul",
+        "glide_lipo": "r_i_glide_lipo",
+        "glide_hbond": "r_i_glide_hbond",
+        "glide_erotb": "r_i_glide_erotb",
+        "glide_esite": "r_i_glide_esite",
+        "glide_einternal": "r_i_glide_einternal",
+    }
+
+    result = {}
+
+    for output_name, property_name in fields.items():
+
+        value = st.property.get(
+            property_name
+        )
+
         try:
-            value = float(property_value(st, activity_column))
+            result[output_name] = (
+                float(value)
+                if value is not None
+                else None
+            )
+
+        except (TypeError, ValueError):
+            result[output_name] = None
+
+    return result
+
+def analyse_correlations(
+    complex_jobs,
+    poseviewers,
+    ligand_file,
+    source_ligand_file,
+    activity_column,
+    output_dir,
+    min_pairs=5,
+):
+    activities = {}
+    ligand_metadata = {}
+
+    for st in structure.StructureReader(
+        str(ligand_file)
+    ):
+        cid = compound_id(st)
+
+        if not cid:
+            continue
+
+        try:
+            value = float(
+                property_value(
+                    st,
+                    activity_column,
+                )
+            )
         except (TypeError, ValueError):
             continue
-        if math.isfinite(value):
-            activities.setdefault(compound_id(st), value)
+
+        if not math.isfinite(value):
+            continue
+
+        activities.setdefault(
+            cid,
+            value,
+        )
+
+        ligand_metadata.setdefault(
+            cid,
+            {
+                "smiles": smiles_value(st),
+            },
+        )
     if not activities:
         raise RuntimeError(f"No numeric values found for activity property '{activity_column}'")
-
-    # by_name = {j["name"]: j for j in complex_jobs}
-    # details = []
-    # for name, pv in poseviewers.items():
-    #     best = {}
-    #     for st in structure.StructureReader(str(pv)):
-    #         cid = compound_id(st)
-    #         score = glide_score(st)
-    #         if cid in activities and score is not None and (cid not in best or score < best[cid]):
-    #             best[cid] = score
-    #     for cid, score in best.items():
-    #         details.append({"complex_pose": name, "compound_id": cid, "glide_score": score,
-    #                         "activity": activities[cid], "activity_column": activity_column,
-    #                         "poseviewer_path": str(Path(pv).resolve()),
-    #                         "reference_ligand_path": str(by_name[name]["reference"].resolve()),
-    #                         "grid_path": str(by_name[name]["grid"].resolve())})
-    # activity_ids = set(
-    #     activities
-    # )
 
     docked_ids = set()
     scored_ids = set()
@@ -1353,11 +1483,24 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
 
         best = {}
 
+        smiles_by_lignum = glide_smiles_by_lignum(
+            pv
+        )
+
         for st in structure.StructureReader(
             str(pv)
         ):
             cid = compound_id(st)
             score = glide_score(st)
+
+            lignum = st.property.get(
+                "i_i_glide_lignum"
+            )
+
+            try:
+                lignum = int(lignum)
+            except (TypeError, ValueError):
+                lignum = None
 
             if cid:
                 docked_ids.add(cid)
@@ -1370,10 +1513,15 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
                 and score is not None
                 and (
                     cid not in best
-                    or score < best[cid]
+                    or score < best[cid]["score"]
                 )
             ):
-                best[cid] = score
+                best[cid] = {
+                    "score": score,
+                    "structure": st,
+                    "lignum": lignum,
+                }
+
                 matched_ids.add(cid)
 
         logger.debug(
@@ -1387,25 +1535,54 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
             ),
         )
 
-        for cid, score in best.items():
+        for cid, result in best.items():
+
+            score = result["score"]
+            docked_st = result["structure"]
+
+            lignum = result["lignum"]
+
+            smiles = (
+                smiles_by_lignum.get(lignum)
+                if lignum is not None
+                else None
+            )
+
+            components = glide_score_components(
+                docked_st
+            )
+
+            metadata = ligand_metadata.get(
+                cid,
+                {}
+            )
 
             details.append(
                 {
                     "complex_pose": name,
                     "source_name": by_name[name]["source_name"],
                     "pose_number": by_name[name]["pose_number"],
+
                     "compound_id": cid,
-                    "glide_score": score,
-                    "activity": activities[cid],
+                    "smiles": smiles,
+
+                    "experimental_potency": activities[cid],
                     "activity_column": activity_column,
+
+                    "glide_score": score,
+
+                    **components,
+
                     "poseviewer_path": str(
                         Path(pv).resolve()
                     ),
+
                     "reference_ligand_path": str(
                         by_name[name][
                             "reference"
                         ].resolve()
                     ),
+
                     "grid_path": str(
                         by_name[name][
                             "grid"
@@ -1437,7 +1614,7 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
             logger.warning("%s has only %d matched pairs; excluded", name, len(group))
             continue
         x = group["glide_score"].to_numpy(float)
-        y = group["activity"].to_numpy(float)
+        y = group["experimental_potency"].to_numpy(float)
         p, s, k = pearsonr(x, y), spearmanr(x, y), kendalltau(x, y)
         # pActivity should normally anticorrelate with docking score, hence larger -(rP+rS) is better.
         summaries.append({"complex_pose": name, "n": len(group), "pearson_r": p.statistic, "pearson_p": p.pvalue,
@@ -1481,10 +1658,43 @@ def analyse_correlations(complex_jobs, poseviewers, ligand_file, activity_column
             exist_ok=True,
         )
 
+        pose_table = group[
+            [
+                "compound_id",
+                "smiles",
+                "experimental_potency",
+                "glide_score",
+                "docking_score",
+                "glide_emodel",
+                "glide_energy",
+                "glide_evdw",
+                "glide_ecoul",
+                "glide_lipo",
+                "glide_hbond",
+                "glide_erotb",
+                "glide_esite",
+                "glide_einternal",
+            ]
+        ].copy()
+
+        pose_table = pose_table.sort_values(
+            "experimental_potency",
+            ascending=False,
+        )
+
+        pose_table.to_csv(
+            plot_dir /
+            (
+                f"pose{pose_number:02d}"
+                "_docking_vs_affinity.csv"
+            ),
+            index=False,
+        )
+
         # Conventional experimental vs predicted orientation:
         # experimental values on X, predicted values on Y.
         x = group[
-            "activity"
+            "experimental_potency"
         ].to_numpy(float)
 
         y = group[
@@ -1618,6 +1828,38 @@ def export_mcss_pymol(
     poseviewer = Path(kwargs["poseviewer"])
     top_n = int(kwargs.get("top_n", 5))
 
+    cryoem_reference = Path(
+        kwargs["cryoem_reference"]
+    )
+
+    glideem_reference = Path(
+        complex_job["reference"]
+    )
+
+    pymol_cfg = config.get(
+        "pymol",
+        {}
+    )
+    
+    binding_site_cutoff = float(
+        pymol_cfg.get(
+            "binding_site_cutoff",
+            5.0,
+        )
+    )
+
+    if not cryoem_reference.is_file():
+        raise RuntimeError(
+            f"Original cryo-EM reference ligand not found: "
+            f"{cryoem_reference}"
+        )
+
+    if not glideem_reference.is_file():
+        raise RuntimeError(
+            f"GlideEM reference pose not found: "
+            f"{glideem_reference}"
+        )
+
     name = complex_job["name"]
 
     out_dir = (
@@ -1669,14 +1911,13 @@ def export_mcss_pymol(
         exist_ok=True,
     )
 
-    # More-negative GlideScore is better.
     poses.sort(
         key=lambda item: item[0]
     )
 
     top = poses[:top_n]
 
-        # ---------------------------------------------
+    # ---------------------------------------------
     # Receptor
     # ---------------------------------------------
 
@@ -1689,6 +1930,58 @@ def export_mcss_pymol(
         str(receptor_file)
     ) as writer:
         writer.append(receptor)
+
+    # ---------------------------------------------
+    # Structural reference ligands
+    # ---------------------------------------------
+
+    cryoem_structure_file = (
+        out_dir /
+        "cryoem_structure.pdb"
+    )
+
+    cryoem_structures = list(
+        structure.StructureReader(
+            str(cryoem_reference)
+        )
+    )
+
+    if not cryoem_structures:
+        raise RuntimeError(
+            f"No structure found in "
+            f"{cryoem_reference}"
+        )
+
+    with structure.StructureWriter(
+        str(cryoem_structure_file)
+    ) as writer:
+        writer.append(
+            cryoem_structures[0]
+        )
+
+    glideem_reference_file = (
+        out_dir /
+        "glideem_reference_pose.pdb"
+    )
+
+    glideem_structures = list(
+        structure.StructureReader(
+            str(glideem_reference)
+        )
+    )
+
+    if not glideem_structures:
+        raise RuntimeError(
+            f"No structure found in "
+            f"{glideem_reference}"
+        )
+
+    with structure.StructureWriter(
+        str(glideem_reference_file)
+    ) as writer:
+        writer.append(
+            glideem_structures[0]
+        )
 
     # ---------------------------------------------
     # Docked ligands
@@ -1794,9 +2087,74 @@ def export_mcss_pymol(
         "",
         "hide everything",
         "show cartoon, receptor",
+
+        # Receptor carbons/backbone remain neutral grey.
         "color gray80, receptor",
+
+        # Protein atoms by element.
+        "color blue, (receptor and elem N)",
+        "color red, (receptor and elem O)",
+        "color yellow, (receptor and elem S)",
+        "color orange, (receptor and elem P)",
+        "color white, (receptor and elem H)",
+
         "",
     ]
+
+    script.extend(
+        [
+            # Original experimental/cryo-EM ligand
+            "load cryoem_structure.pdb, cryoem_structure",
+            "show sticks, cryoem_structure",
+            "color marine, "
+            "(cryoem_structure and elem C)",
+            "color blue, "
+            "(cryoem_structure and elem N)",
+            "color red, "
+            "(cryoem_structure and elem O)",
+            "color yellow, "
+            "(cryoem_structure and elem S)",
+            "color orange, "
+            "(cryoem_structure and elem P)",
+            "color white, "
+            "(cryoem_structure and elem H)",
+            "color green, "
+            "(cryoem_structure and elem F)",
+            "color green, "
+            "(cryoem_structure and elem Cl)",
+            "color brown, "
+            "(cryoem_structure and elem Br)",
+            "color purple, "
+            "(cryoem_structure and elem I)",
+            "",
+
+            # GlideEM hypothesis used as the MCSS reference
+            "load glideem_reference_pose.pdb, "
+            "glideem_reference_pose",
+            "show sticks, glideem_reference_pose",
+            "color salmon, "
+            "(glideem_reference_pose and elem C)",
+            "color blue, "
+            "(glideem_reference_pose and elem N)",
+            "color red, "
+            "(glideem_reference_pose and elem O)",
+            "color yellow, "
+            "(glideem_reference_pose and elem S)",
+            "color orange, "
+            "(glideem_reference_pose and elem P)",
+            "color white, "
+            "(glideem_reference_pose and elem H)",
+            "color green, "
+            "(glideem_reference_pose and elem F)",
+            "color green, "
+            "(glideem_reference_pose and elem Cl)",
+            "color brown, "
+            "(glideem_reference_pose and elem Br)",
+            "color purple, "
+            "(glideem_reference_pose and elem I)",
+            "",
+        ]
+    )
 
     # Each ligand gets a different carbon colour.
     # Heteroatoms are subsequently recoloured by element.
@@ -1875,6 +2233,52 @@ def export_mcss_pymol(
             + " ".join(ligand_objects)
         )
 
+    # ---------------------------------------------
+    # Binding-site protein residues
+    # ---------------------------------------------
+
+    ligand_selection = (
+        "cryoem_structure or "
+        "glideem_reference_pose or "
+        "top_mcss_poses"
+    )
+
+    script.extend(
+        [
+            "",
+            "# Protein residues surrounding the displayed ligands",
+            (
+                "select binding_site, "
+                f"byres (receptor within "
+                f"{binding_site_cutoff:.1f} of "
+                f"({ligand_selection}))"
+            ),
+            "show sticks, binding_site",
+
+            # Protein carbon remains neutral grey.
+            "color gray80, "
+            "(binding_site and elem C)",
+
+            # Standard heteroatom colouring.
+            "color blue, "
+            "(binding_site and elem N)",
+
+            "color red, "
+            "(binding_site and elem O)",
+
+            "color yellow, "
+            "(binding_site and elem S)",
+
+            "color orange, "
+            "(binding_site and elem P)",
+
+            "color white, "
+            "(binding_site and elem H)",
+
+            "",
+        ]
+    )
+
     script.extend(
         [
             "",
@@ -1886,7 +2290,7 @@ def export_mcss_pymol(
 
     script_file = (
         out_dir /
-        f"load_top{len(exported)}.pml"
+        f"pymol_all_mcss_poses_cryo_glideem_ref.pml"
     )
 
     script_file.write_text(
