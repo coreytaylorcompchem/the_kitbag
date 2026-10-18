@@ -196,6 +196,19 @@ def run(config_path: str):
         "run_glideem"
     )
 
+    glideem_analysis_task = get_task(
+        "analyse_glideem_poses"
+    )
+
+    glideem_summary_task = get_task(
+        "summarise_glideem_ensembles"
+    )
+
+    glideem_analysis_cfg = config.get(
+        "glideem_analysis",
+        {}
+    )
+
     grid_task = get_task(
         "build_glide_grid"
     )
@@ -236,6 +249,7 @@ def run(config_path: str):
 
     complex_jobs = []
     failed_jobs = []
+    glideem_analysis_results = []
 
     for row in rows:
 
@@ -317,6 +331,62 @@ def run(config_path: str):
                 f"{archive}"
             )
 
+            # --------------------------------------------------
+            # GlideEM pose analysis
+            # --------------------------------------------------
+
+            glideem_analysis_cfg = config.get(
+                "glideem_analysis",
+                {}
+            )
+
+            if glideem_analysis_cfg.get(
+                "enabled",
+                False,
+            ):
+                glideem_csv = (
+                    work /
+                    f"{job_name}_glideem-out.csv"
+                )
+
+                try:
+                    analysis_result = glideem_analysis_task(
+                        backend,
+                        None,
+                        config,
+                        archive=archive,
+                        glideem_csv=glideem_csv,
+                        job=row,
+                        cryoem_reference=reference_ligand,
+                        output_dir=(
+                            output
+                            / "analysis"
+                            / "glideem"
+                            / job_name
+                        ),
+                    )
+
+                    glideem_analysis_results.append(
+                        analysis_result
+                    )
+
+                except Exception as exc:
+                    logger.error(
+                        "[%s] GlideEM pose analysis failed; "
+                        "continuing workflow: %s",
+                        job_name,
+                        exc,
+                        exc_info=True,
+                    )
+
+                    failed_jobs.append(
+                        {
+                            "job_name": job_name,
+                            "stage": "glideem_analysis",
+                            "error": str(exc),
+                        }
+                    )
+
             # ---------------------------------------------
             # Extract GlideEM poses
             # ---------------------------------------------
@@ -372,6 +442,64 @@ def run(config_path: str):
             )
 
             continue
+
+    # --------------------------------------------------
+    # Cross-structure GlideEM ensemble summary
+    # --------------------------------------------------
+
+    logger.info(
+        "Collected %d successful GlideEM ensemble "
+        "analyses for campaign summary",
+        len(glideem_analysis_results),
+    )
+
+    if (
+        glideem_analysis_cfg.get(
+            "enabled",
+            False,
+        )
+        and glideem_analysis_results
+    ):
+
+        logger.info(
+            "Generating cross-structure GlideEM "
+            "ensemble summary"
+        )
+
+        try:
+            glideem_summary_task(
+                backend,
+                None,
+                config,
+                analysis_results=(
+                    glideem_analysis_results
+                ),
+                output_dir=(
+                    output
+                    / "analysis"
+                    / "glideem"
+                ),
+            )
+
+        except Exception as exc:
+            logger.error(
+                "Cross-structure GlideEM ensemble "
+                "summary failed; continuing workflow: %s",
+                exc,
+                exc_info=True,
+            )
+
+            failed_jobs.append(
+                {
+                    "job_name": (
+                        "glideem_campaign_summary"
+                    ),
+                    "stage": (
+                        "glideem_analysis"
+                    ),
+                    "error": str(exc),
+                }
+            )
 
     if not complex_jobs:
         logger.error(
@@ -731,56 +859,56 @@ def run(config_path: str):
             "PyMOL export not enabled; skipping"
         )
 
-        top_n = int(
-            pymol_cfg.get(
-                "top_n",
-                5,
-            )
-        )
+        # top_n = int(
+        #     pymol_cfg.get(
+        #         "top_n",
+        #         5,
+        #     )
+        # )
 
-        jobs_by_name = {
-            job["name"]: job
-            for job in grid_jobs
-        }
+        # jobs_by_name = {
+        #     job["name"]: job
+        #     for job in grid_jobs
+        # }
 
-        for name, pv in poseviewers.items():
+        # for name, pv in poseviewers.items():
 
-            try:
-                source_name = jobs_by_name[name]["source_name"]
+        #     try:
+        #         source_name = jobs_by_name[name]["source_name"]
 
-                cryoem_reference = (
-                    output
-                    / "glideem"
-                    / source_name
-                    / f"{source_name}_reference_ligand.maegz"
-                )
+        #         cryoem_reference = (
+        #             output
+        #             / "glideem"
+        #             / source_name
+        #             / f"{source_name}_reference_ligand.maegz"
+        #         )
 
-                pymol_task(
-                    backend,
-                    None,
-                    config,
-                    complex_job=jobs_by_name[name],
-                    poseviewer=pv,
-                    cryoem_reference=cryoem_reference,
-                    top_n=top_n,
-                )
+        #         pymol_task(
+        #             backend,
+        #             None,
+        #             config,
+        #             complex_job=jobs_by_name[name],
+        #             poseviewer=pv,
+        #             cryoem_reference=cryoem_reference,
+        #             top_n=top_n,
+        #         )
 
-            except Exception as exc:
-                logger.error(
-                    "[%s] PyMOL export failed; "
-                    "continuing workflow: %s",
-                    name,
-                    exc,
-                    exc_info=True,
-                )
+        #     except Exception as exc:
+        #         logger.error(
+        #             "[%s] PyMOL export failed; "
+        #             "continuing workflow: %s",
+        #             name,
+        #             exc,
+        #             exc_info=True,
+        #         )
 
-                failed_jobs.append(
-                    {
-                        "job_name": name,
-                        "stage": "pymol_export",
-                        "error": str(exc),
-                    }
-                )
+        #         failed_jobs.append(
+        #             {
+        #                 "job_name": name,
+        #                 "stage": "pymol_export",
+        #                 "error": str(exc),
+        #             }
+        #         )
 
     if failed_jobs:
         logger.warning(
