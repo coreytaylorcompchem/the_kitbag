@@ -226,6 +226,116 @@ def annotate_ligprep_compound_ids(
         f"s_user_compound_id"
     )
 
+def annotate_ligprep_csv_metadata(
+    ligprep_file: Path,
+    metadata_by_id: dict,
+    activity_column: str,
+) -> None:
+    """
+    Restore compound ID, SMILES and experimental activity
+    onto LigPrep output structures produced from CSV/SMILES input.
+    """
+
+    prepared_structures = list(
+        structure.StructureReader(
+            str(ligprep_file)
+        )
+    )
+
+    if not prepared_structures:
+        raise RuntimeError(
+            "LigPrep produced no structures: "
+            f"{ligprep_file}"
+        )
+
+    annotated = 0
+    unmatched = []
+
+    for prepared in prepared_structures:
+
+        cid = (
+            prepared.title
+            or ""
+        ).strip()
+
+        if not cid:
+            unmatched.append(
+                "<missing title>"
+            )
+            continue
+
+        metadata = metadata_by_id.get(
+            cid
+        )
+
+        if metadata is None:
+            unmatched.append(
+                cid
+            )
+            continue
+
+        prepared.property[
+            "s_user_compound_id"
+        ] = cid
+
+        prepared.property[
+            "s_user_input_smiles"
+        ] = metadata[
+            "smiles"
+        ]
+
+        activity = metadata[
+            "activity"
+        ]
+
+        if activity is not None:
+            prepared.property[
+                f"r_user_{norm(activity_column).lower()}"
+            ] = float(
+                activity
+            )
+
+        annotated += 1
+
+    if unmatched:
+        examples = ", ".join(
+            unmatched[:10]
+        )
+
+        raise RuntimeError(
+            "Could not map some LigPrep output structures "
+            "back to the activity CSV using their titles. "
+            f"Examples: {examples}"
+        )
+
+    tmp_file = (
+        ligprep_file.parent
+        / (
+            f"{ligprep_file.stem}"
+            "_annotated.maegz"
+        )
+    )
+
+    with structure.StructureWriter(
+        str(tmp_file)
+    ) as writer:
+        for prepared in (
+            prepared_structures
+        ):
+            writer.append(
+                prepared
+            )
+
+    tmp_file.replace(
+        ligprep_file
+    )
+
+    logger.info(
+        "Annotated %d LigPrep structures with "
+        "CSV compound metadata",
+        annotated,
+    )
+
 def get_reference_ligand_atoms(
     st,
     ligand_resname: str,
@@ -907,3 +1017,142 @@ def export_glideem_pymol_ensemble(
 
     return script_file
 
+def prepare_activity_csv_for_ligprep(
+    input_csv: Path,
+    work_dir: Path,
+    smiles_column: str,
+    id_column: str,
+    activity_column: str,
+) -> tuple[Path, dict]:
+    """
+    Validate an activity CSV and create a SMILES file for LigPrep.
+
+    Returns:
+        smiles_file
+        metadata_by_id
+
+    metadata_by_id preserves the original compound ID and
+    experimental activity so they can be restored after LigPrep.
+    """
+
+    df = pd.read_csv(
+        input_csv
+    )
+
+    required_columns = {
+        smiles_column,
+        id_column,
+        activity_column,
+    }
+
+    missing = (
+        required_columns
+        - set(df.columns)
+    )
+
+    if missing:
+        raise ValueError(
+            "Activity ligand CSV is missing required "
+            f"columns: {sorted(missing)}"
+        )
+
+    if df.empty:
+        raise ValueError(
+            f"Activity ligand CSV is empty: {input_csv}"
+        )
+
+    metadata_by_id = {}
+
+    smiles_lines = []
+
+    for row_number, row in df.iterrows():
+
+        cid = row[
+            id_column
+        ]
+
+        smiles = row[
+            smiles_column
+        ]
+
+        activity = row[
+            activity_column
+        ]
+
+        if pd.isna(cid) or not str(
+            cid
+        ).strip():
+            raise ValueError(
+                "Missing compound ID in activity CSV "
+                f"at row {row_number + 2}"
+            )
+
+        if pd.isna(smiles) or not str(
+            smiles
+        ).strip():
+            raise ValueError(
+                "Missing SMILES in activity CSV "
+                f"at row {row_number + 2}"
+            )
+
+        cid = str(
+            cid
+        ).strip()
+
+        smiles = str(
+            smiles
+        ).strip()
+
+        if cid in metadata_by_id:
+            raise ValueError(
+                "Duplicate compound ID in activity CSV: "
+                f"{cid}"
+            )
+
+        if pd.isna(activity):
+            activity_value = None
+
+        else:
+            try:
+                activity_value = float(
+                    activity
+                )
+
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "Non-numeric activity for compound "
+                    f"{cid}: {activity!r}"
+                )
+
+        metadata_by_id[
+            cid
+        ] = {
+            "activity": activity_value,
+            "smiles": smiles,
+        }
+
+        # Standard SMILES file:
+        #
+        # SMILES <whitespace> title
+        #
+        # The title becomes our stable compound identifier.
+        smiles_lines.append(
+            f"{smiles}\t{cid}"
+        )
+
+    smiles_file = (
+        work_dir
+        / "activity_ligands_input.smi"
+    )
+
+    smiles_file.write_text(
+        "\n".join(
+            smiles_lines
+        )
+        + "\n"
+    )
+
+    return (
+        smiles_file,
+        metadata_by_id,
+    )

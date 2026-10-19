@@ -27,6 +27,8 @@ from scipy.spatial.distance import squareform
 from scipy.stats import spearmanr
 
 from modules.utils.glideem_helpers import(
+    prepare_activity_csv_for_ligprep,
+    annotate_ligprep_csv_metadata,
     heavy_atoms,
     glide_score,
     compound_id,
@@ -50,7 +52,6 @@ from modules.utils.glideem_plotting import (
 )
 
 from modules.utils.pymol_export import (
-    export_glideem_pose_ensemble,
     export_mcss_pose_bundle,
 )
 
@@ -91,6 +92,21 @@ def prepare_activity_ligands(
             f"Activity ligand input not found: {input_path}"
         )
 
+    input_suffix = (
+        input_path.suffix
+        .lower()
+    )
+
+    if input_suffix not in {
+        ".sdf",
+        ".sd",
+        ".csv",
+    }:
+        raise ValueError(
+            "activity_ligands must be an SDF or CSV file; "
+            f"received: {input_path}"
+        )
+
     output_root = Path(config["output_dir"]).expanduser().resolve()
 
     output_dir = output_root / "ligprep"
@@ -99,22 +115,98 @@ def prepare_activity_ligands(
         exist_ok=True
     )
 
+    ligprep_cfg = config.get(
+        "ligprep",
+        {}
+    )
+
+    activity_column = (
+        config
+        .get("analysis", {})
+        .get("activity_column")
+    )
+
+    ligprep_input = input_path
+    csv_metadata = None
+
+    if input_suffix == ".csv":
+
+        if not activity_column:
+            raise ValueError(
+                "CSV activity ligand input requires "
+                "analysis.activity_column in the YAML."
+            )
+
+        smiles_column = ligprep_cfg.get(
+            "smiles_column",
+            "SMILES",
+        )
+
+        id_column = ligprep_cfg.get(
+            "id_column",
+            "ID",
+        )
+
+        (
+            ligprep_input,
+            csv_metadata,
+        ) = prepare_activity_csv_for_ligprep(
+            input_csv=input_path,
+            work_dir=output_dir,
+            smiles_column=smiles_column,
+            id_column=id_column,
+            activity_column=activity_column,
+        )
+
+        logger.info(
+            "Converted activity CSV to LigPrep "
+            "SMILES input: %s",
+            ligprep_input,
+        )
+
     output_file = (
         output_dir /
         "activity_ligands_ligprep.maegz"
     )
 
     # Reuse existing output unless explicitly forcing rerun
-    if (
+
+    source_record = (
+        output_dir
+        / "activity_ligands_source.txt"
+    )
+
+    can_reuse = (
         output_file.is_file()
         and output_file.stat().st_size > 0
-        and not config.get("force", False)
-    ):
+        and source_record.is_file()
+        and source_record.read_text().strip()
+        == str(input_path)
+        and not config.get(
+            "force",
+            False,
+        )
+    )
+
+    if can_reuse:
         logger.info(
-            f"Using existing LigPrep output: {output_file}"
+            "Using existing LigPrep output: %s",
+            output_file,
         )
 
         return output_file
+
+        
+    # if (
+    #     output_file.is_file()
+    #     and output_file.stat().st_size > 0
+    #     and not config.get("force", False)
+    # ):
+    #     logger.info(
+    #         f"Using existing LigPrep output: {output_file}"
+    #     )
+
+    #     return output_file
 
     ligprep_cfg = config.get(
         "ligprep",
@@ -136,10 +228,21 @@ def prepare_activity_ligands(
         1
     )
 
+    if input_suffix == ".csv":
+        input_args = [
+            "-ismi",
+            str(ligprep_input),
+        ]
+
+    else:
+        input_args = [
+            "-isd",
+            str(ligprep_input),
+        ]
+
     cmd = [
         backend.exe("ligprep"),
-        "-isd",
-        str(input_path),
+        *input_args,
         "-omae",
         str(output_file),
         "-ph",
@@ -176,10 +279,20 @@ def prepare_activity_ligands(
             f"{output_file}"
         )
 
-    annotate_ligprep_compound_ids(
-        input_sdf=input_path,
-        ligprep_file=output_file,
-    )
+    if input_suffix == ".csv":
+
+        annotate_ligprep_csv_metadata(
+            ligprep_file=output_file,
+            metadata_by_id=csv_metadata,
+            activity_column=activity_column,
+        )
+
+    else:
+
+        annotate_ligprep_compound_ids(
+            input_sdf=input_path,
+            ligprep_file=output_file,
+        )
 
     logger.info(
         f"LigPrep completed: {output_file}"
