@@ -384,9 +384,50 @@ def run(config_path: str):
     failed_jobs = []
     glideem_analysis_results = []
 
-    for row in rows:
+    glideem_cfg = config.get(
+        "glideem",
+        {},
+    )
 
-        job_name = row["job_name"]
+    glideem_max_parallel = int(
+        glideem_cfg.get(
+            "max_parallel",
+            1,
+        )
+    )
+
+    glideem_max_parallel = max(
+        1,
+        min(
+            glideem_max_parallel,
+            len(rows),
+        ),
+    )
+
+    logger.info(
+        "Processing %d GlideEM structures "
+        "with up to %d concurrent structure jobs",
+        len(rows),
+        glideem_max_parallel,
+    )
+
+    def run_glideem_structure(
+        row,
+    ):
+        """
+        Process one manifest structure through all enabled
+        per-structure GlideEM stages.
+
+        This function deliberately keeps dependent operations
+        serial within a structure while allowing independent
+        structures to run concurrently.
+        """
+        
+        structure_failures = []
+
+        job_name = row[
+            "job_name"
+        ]
 
         work = (
             output
@@ -401,7 +442,10 @@ def run(config_path: str):
 
         reference_ligand = (
             work
-            / f"{job_name}_reference_ligand.maegz"
+            / (
+                f"{job_name}"
+                "_reference_ligand.maegz"
+            )
         )
 
         prepared = (
@@ -419,210 +463,211 @@ def run(config_path: str):
             / f"{job_name}_glideem-out.csv"
         )
 
-        try:
+        analysis_result = None
+        generated_complexes = []
 
-            # ------------------------------------------
-            # Extract reference ligand
-            # ------------------------------------------
+        # ------------------------------------------
+        # Extract reference ligand
+        # ------------------------------------------
 
-            if (
-                "extract_reference_ligand"
-                in enabled_tasks
-            ):
-                logger.info(
-                    f"[{job_name}] "
-                    f"Extracting reference ligand"
-                )
+        if (
+            "extract_reference_ligand"
+            in enabled_tasks
+        ):
+            logger.info(
+                "[%s] Extracting reference ligand",
+                job_name,
+            )
 
-                reference_ligand = extract_reference_task(
+            reference_ligand = (
+                extract_reference_task(
                     backend,
                     None,
                     config,
                     job=row,
                     work_dir=work,
                 )
+            )
 
-                reference_ligand = Path(
-                    reference_ligand
-                ).resolve()
+            reference_ligand = Path(
+                reference_ligand
+            ).resolve()
 
-                logger.info(
-                    f"[{job_name}] Reference ligand ready: "
-                    f"{reference_ligand}"
+            logger.info(
+                "[%s] Reference ligand ready: %s",
+                job_name,
+                reference_ligand,
+            )
+
+        # ------------------------------------------
+        # Prepare receptor
+        # ------------------------------------------
+
+        if (
+            "prepare_glideem_receptor"
+            in enabled_tasks
+        ):
+            logger.info(
+                "[%s] Preparing receptor",
+                job_name,
+            )
+
+            prepared = prep_task(
+                backend,
+                None,
+                config,
+                job=row,
+                work_dir=work,
+            )
+
+            prepared = Path(
+                prepared
+            ).resolve()
+
+            logger.info(
+                "[%s] Prepared receptor ready: %s",
+                job_name,
+                prepared,
+            )
+
+        # ------------------------------------------
+        # Run GlideEM
+        # ------------------------------------------
+
+        if (
+            "run_glideem"
+            in enabled_tasks
+        ):
+            if not prepared.is_file():
+                raise FileNotFoundError(
+                    f"[{job_name}] GlideEM requires "
+                    f"a prepared receptor, but it was "
+                    f"not found: {prepared}"
                 )
 
-            # ------------------------------------------
-            # Prepare receptor
-            # ------------------------------------------
+            logger.info(
+                "[%s] Starting GlideEM",
+                job_name,
+            )
 
-            if (
-                "prepare_glideem_receptor"
-                in enabled_tasks
-            ):
-                logger.info(
-                    f"[{job_name}] Preparing receptor"
-                )
+            archive = glideem_task(
+                backend,
+                None,
+                config,
+                job=row,
+                work_dir=work,
+                prepared_receptor=prepared,
+            )
 
-                prepared = prep_task(
-                    backend,
-                    None,
-                    config,
-                    job=row,
-                    work_dir=work,
-                )
+            archive = Path(
+                archive
+            ).resolve()
 
-                prepared = Path(
-                    prepared
-                ).resolve()
+            logger.info(
+                "[%s] GlideEM completed: %s",
+                job_name,
+                archive,
+            )
 
-                logger.info(
-                    f"[{job_name}] Prepared receptor ready: "
-                    f"{prepared}"
-                )
+        # ------------------------------------------
+        # Per-job GlideEM analysis
+        # ------------------------------------------
 
-            # ------------------------------------------
-            # Run GlideEM
-            # ------------------------------------------
-
-            if (
-                "run_glideem"
-                in enabled_tasks
-            ):
-
-                if not prepared.is_file():
-                    raise FileNotFoundError(
-                        f"[{job_name}] GlideEM requires "
-                        f"a prepared receptor, but it was "
-                        f"not found: {prepared}"
-                    )
-
-                logger.info(
-                    f"[{job_name}] Starting GlideEM"
-                )
-
-                archive = glideem_task(
-                    backend,
-                    None,
-                    config,
-                    job=row,
-                    work_dir=work,
-                    prepared_receptor=prepared,
-                )
-
-                archive = Path(
-                    archive
-                ).resolve()
-
-                logger.info(
-                    f"[{job_name}] GlideEM completed: "
+        if (
+            "analyse_glideem_poses"
+            in enabled_tasks
+        ):
+            if not archive.is_file():
+                raise FileNotFoundError(
+                    f"[{job_name}] GlideEM pose analysis "
+                    f"requires an existing GlideEM archive: "
                     f"{archive}"
                 )
 
-            # ------------------------------------------
-            # Per-job GlideEM analysis
-            # ------------------------------------------
-
-            if (
-                "analyse_glideem_poses"
-                in enabled_tasks
-            ):
-
-                if not archive.is_file():
-                    raise FileNotFoundError(
-                        f"[{job_name}] GlideEM pose analysis "
-                        f"requires an existing GlideEM archive: "
-                        f"{archive}"
-                    )
-
-                if not glideem_csv.is_file():
-                    raise FileNotFoundError(
-                        f"[{job_name}] GlideEM pose analysis "
-                        f"requires the GlideEM CSV: "
-                        f"{glideem_csv}"
-                    )
-
-                if not reference_ligand.is_file():
-                    raise FileNotFoundError(
-                        f"[{job_name}] GlideEM pose analysis "
-                        f"requires the original reference "
-                        f"ligand: {reference_ligand}"
-                    )
-
-                logger.info(
-                    f"[{job_name}] "
-                    f"Analysing GlideEM pose ensemble"
+            if not glideem_csv.is_file():
+                raise FileNotFoundError(
+                    f"[{job_name}] GlideEM pose analysis "
+                    f"requires the GlideEM CSV: "
+                    f"{glideem_csv}"
                 )
 
-                try:
-                    analysis_result = (
-                        glideem_analysis_task(
-                            backend,
-                            None,
-                            config,
-                            archive=archive,
-                            glideem_csv=glideem_csv,
-                            job=row,
-                            cryoem_reference=(
-                                reference_ligand
-                            ),
-                            output_dir=(
-                                output
-                                / "analysis"
-                                / "glideem"
-                                / job_name
-                            ),
-                        )
-                    )
-
-                    glideem_analysis_results.append(
-                        analysis_result
-                    )
-
-                except Exception as exc:
-                    logger.error(
-                        "[%s] GlideEM pose analysis failed; "
-                        "continuing workflow: %s",
-                        job_name,
-                        exc,
-                        exc_info=True,
-                    )
-
-                    failed_jobs.append(
-                        {
-                            "job_name": job_name,
-                            "stage": "glideem_analysis",
-                            "error": str(exc),
-                        }
-                    )
-
-            # ------------------------------------------
-            # Reconstruct pose jobs when downstream
-            # stages need them
-            # ------------------------------------------
-
-            if needs_complex_jobs:
-
-                if not archive.is_file():
-                    raise FileNotFoundError(
-                        f"[{job_name}] Downstream workflow "
-                        f"requires a GlideEM archive, but "
-                        f"none exists: {archive}"
-                    )
-
-                reference_smiles = (
-                    row.get(
-                        "reference_smiles",
-                        "",
-                    )
-                    or ""
-                ).strip()
-
-                logger.info(
-                    f"[{job_name}] "
-                    f"Loading GlideEM pose jobs"
+            if not reference_ligand.is_file():
+                raise FileNotFoundError(
+                    f"[{job_name}] GlideEM pose analysis "
+                    f"requires the original reference "
+                    f"ligand: {reference_ligand}"
                 )
 
-                generated_complexes = extract_complexes(
+            logger.info(
+                "[%s] Analysing GlideEM pose ensemble",
+                job_name,
+            )
+
+            try:
+                analysis_result = (
+                    glideem_analysis_task(
+                        backend,
+                        None,
+                        config,
+                        archive=archive,
+                        glideem_csv=glideem_csv,
+                        job=row,
+                        cryoem_reference=(
+                            reference_ligand
+                        ),
+                        output_dir=(
+                            output
+                            / "analysis"
+                            / "glideem"
+                            / job_name
+                        ),
+                    )
+                )
+
+            except Exception as exc:
+                logger.error(
+                    "[%s] GlideEM pose analysis failed; "
+                    "continuing with downstream processing: %s",
+                    job_name,
+                    exc,
+                    exc_info=True,
+                )
+
+                structure_failures.append(
+                    {
+                        "job_name": job_name,
+                        "stage": "glideem_analysis",
+                        "error": str(exc),
+                    }
+                )
+
+        # ------------------------------------------
+        # Reconstruct downstream pose jobs
+        # ------------------------------------------
+
+        if needs_complex_jobs:
+            if not archive.is_file():
+                raise FileNotFoundError(
+                    f"[{job_name}] Downstream workflow "
+                    f"requires a GlideEM archive, but "
+                    f"none exists: {archive}"
+                )
+
+            reference_smiles = (
+                row.get(
+                    "reference_smiles",
+                    "",
+                )
+                or ""
+            ).strip()
+
+            logger.info(
+                "[%s] Loading GlideEM pose jobs",
+                job_name,
+            )
+
+            generated_complexes = (
+                extract_complexes(
                     archive=archive,
                     out_root=(
                         output
@@ -642,41 +687,123 @@ def run(config_path: str):
                         reference_smiles
                     ),
                 )
+            )
 
-                if not generated_complexes:
-                    raise RuntimeError(
-                        f"No usable GlideEM complexes "
-                        f"were extracted from {archive}"
-                    )
-
-                complex_jobs.extend(
-                    generated_complexes
+            if not generated_complexes:
+                raise RuntimeError(
+                    f"No usable GlideEM complexes "
+                    f"were extracted from {archive}"
                 )
 
-                logger.info(
-                    f"[{job_name}] Loaded "
-                    f"{len(generated_complexes)} "
-                    f"GlideEM pose jobs"
-                )
-
-        except Exception as exc:
-            logger.error(
-                "[%s] Structure processing failed; "
-                "this structure will be skipped: %s",
+            logger.info(
+                "[%s] Loaded %d GlideEM pose jobs",
                 job_name,
-                exc,
-                exc_info=True,
+                len(
+                    generated_complexes
+                ),
             )
 
-            failed_jobs.append(
-                {
-                    "job_name": job_name,
-                    "stage": "structure",
-                    "error": str(exc),
-                }
+        return {
+            "job_name": job_name,
+            "complex_jobs": (
+                generated_complexes
+            ),
+            "analysis_result": (
+                analysis_result
+            ),
+            "failures": structure_failures,
+        }
+
+    # --------------------------------------------------
+    # Execute structures in parallel
+    # --------------------------------------------------
+
+    with ThreadPoolExecutor(
+        max_workers=glideem_max_parallel
+    ) as executor:
+
+        futures = {
+            executor.submit(
+                run_glideem_structure,
+                row,
+            ): row
+            for row in rows
+        }
+
+        for future in as_completed(
+            futures
+        ):
+            row = futures[
+                future
+            ]
+
+            job_name = row[
+                "job_name"
+            ]
+
+            try:
+                result = future.result()
+
+            except Exception as exc:
+                logger.error(
+                    "[%s] GlideEM structure processing "
+                    "failed; this structure will be "
+                    "skipped: %s",
+                    job_name,
+                    exc,
+                    exc_info=True,
+                )
+
+                failed_jobs.append(
+                    {
+                        "job_name": job_name,
+                        "stage": "glideem",
+                        "error": str(exc),
+                    }
+                )
+
+                continue
+
+            complex_jobs.extend(
+                result[
+                    "complex_jobs"
+                ]
             )
 
-            continue
+            analysis_result = result[
+                "analysis_result"
+            ]
+
+            if analysis_result is not None:
+                glideem_analysis_results.append(
+                    analysis_result
+                )
+
+            failed_jobs.extend(
+                result[
+                    "failures"
+                ]
+            )
+
+    logger.info(
+        "GlideEM structure processing finished: "
+        "%d succeeded, %d failed",
+        (
+            len(rows)
+            - sum(
+                failure[
+                    "stage"
+                ] == "glideem"
+                for failure in failed_jobs
+            )
+        ),
+        sum(
+            failure[
+                "stage"
+            ] == "glideem"
+            for failure in failed_jobs
+        ),
+    )
 
     # --------------------------------------------------
     # Cross-structure GlideEM summary
@@ -871,7 +998,7 @@ def run(config_path: str):
                     job
                 )
 
-                logger.info(
+                logger.debug(
                     f"[{name}] Glide grid ready: "
                     f"{grid}"
                 )
@@ -962,6 +1089,25 @@ def run(config_path: str):
             "%d concurrent jobs",
             len(grid_jobs),
             max_parallel,
+        )
+        #debug
+        mcss_host = mcss_cfg.get(
+            "host",
+            backend.host,
+        )
+
+        logger.debug(
+            "MCSS concurrency: requested=%d, available_jobs=%d, "
+            "effective_workers=%d, job_host=%s",
+            int(
+                mcss_cfg.get(
+                    "max_parallel",
+                    1,
+                )
+            ),
+            len(grid_jobs),
+            max_parallel,
+            mcss_host,
         )
 
         def run_mcss_job(job):

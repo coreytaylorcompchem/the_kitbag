@@ -140,8 +140,29 @@ class SchrodingerGlideEMBackend(BaseBackend):
     def run_python(self, script: Path, args: list[Any], cwd: Path, log_path: Path) -> None:
         self.run([self.exe("run"), "python3", script, *args], cwd, log_path)
 
-    def run_glide(self, input_file: Path, cwd: Path, log_path: Path) -> None:
-        self.run([self.exe("glide"), "-WAIT", "-HOST", self.host, input_file.name], cwd, log_path)
+    def run_glide(
+        self,
+        input_file: Path,
+        cwd: Path,
+        log_path: Path,
+        host: str | None = None,
+    ) -> None:
+
+        effective_host = (
+            host or self.host
+        )
+
+        self.run(
+            [
+                self.exe("glide"),
+                "-WAIT",
+                "-HOST",
+                effective_host,
+                input_file.name,
+            ],
+            cwd,
+            log_path,
+        )
 
     def run_glideem(
         self,
@@ -153,7 +174,12 @@ class SchrodingerGlideEMBackend(BaseBackend):
         nposes: int = 5,
         ligand_asl: str | None = None,
         ligand_smiles: str | None = None,
-        docking_site_xyz: tuple[float, float, float] | None = None,
+        docking_site_xyz: tuple[
+            float,
+            float,
+            float,
+        ] | None = None,
+        host: str | None = None,
     ) -> None:
         """
         Run GlideEM using either:
@@ -222,17 +248,6 @@ class SchrodingerGlideEMBackend(BaseBackend):
                 self.host,
                 "-WAIT",
             ]
-        )
-
-        launcher_log = (
-            cwd /
-            f"{job_name}_launcher.log"
-        )
-
-        self.run(
-            cmd,
-            cwd,
-            launcher_log,
         )
 
         # This is Kitbag's launcher/captured-console log.

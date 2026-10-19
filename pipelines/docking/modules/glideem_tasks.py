@@ -647,6 +647,10 @@ def run_glideem(
             reference_smiles or None
         ),
         docking_site_xyz=docking_site_xyz,
+        host=glideem_cfg.get(
+            "host",
+            backend.host,
+        ),
     )
 
     job_log = (
@@ -1637,7 +1641,15 @@ def build_glide_grid(backend, ligand, config, **kwargs):
         f"INNERBOX {grid_cfg.get('innerbox', 10)},{grid_cfg.get('innerbox', 10)},{grid_cfg.get('innerbox', 10)}\n"
         f"OUTERBOX {grid_cfg.get('outerbox', 30)},{grid_cfg.get('outerbox', 30)},{grid_cfg.get('outerbox', 30)}\n"
     )
-    backend.run_glide(inp, job["dir"], job["dir"] / f"{job['name']}_grid.log")
+    backend.run_glide(
+        inp,
+        job["dir"],
+        job["dir"] / f"{job['name']}_grid.log",
+        host=grid_cfg.get(
+            "host",
+            backend.host,
+        ),
+    )
     if not job["grid"].exists():
         raise RuntimeError(f"Grid missing: {job['grid']}")
     return job["grid"]
@@ -1772,6 +1784,10 @@ def dock_mcss(
             inp,
             out_dir,
             launcher_log,
+            host=mcss.get(
+                "host",
+                backend.host,
+            ),
         )
 
     if not pv.exists():
