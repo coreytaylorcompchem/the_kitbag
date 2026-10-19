@@ -39,6 +39,21 @@ from modules.utils.glideem_helpers import(
     export_glideem_pymol_ensemble,
 )
 
+from modules.utils.glideem_plotting import (
+    save_cluster_composition,
+    save_cluster_dendrogram,
+    save_clustered_score_vs_rmsd,
+    save_density_rmsd_small_multiples,
+    save_pose_ambiguity_map,
+    save_reference_rmsd_distributions,
+    save_rmsd_heatmap,
+)
+
+from modules.utils.pymol_export import (
+    export_glideem_pose_ensemble,
+    export_mcss_pose_bundle,
+)
+
 from pipeline.logger import setup_logger
 from pipeline.task_registry import register_task
 
@@ -1032,186 +1047,64 @@ def analyse_glideem_poses(
     )
 
     # --------------------------------------------------
-    # Density score versus reference RMSD
+    # Plots
     # --------------------------------------------------
 
-    fig, ax = plt.subplots(
-        figsize=(7, 6)
+    save_clustered_score_vs_rmsd(
+        metrics=metrics,
+        score_column="Glide Density Score",
+        output_file=(
+            output_dir /
+            "density_score_vs_rmsd.png"
+        ),
+        title=(
+            f"{job['job_name']}: "
+            "density score vs RMSD"
+        ),
+        y_label="Glide Density Score",
     )
 
-    scatter = ax.scatter(
-        metrics["Ligand RMSD"],
-        metrics["Glide Density Score"],
-        c=metrics["cluster_id"],
-        alpha=0.85,
+    save_clustered_score_vs_rmsd(
+        metrics=metrics,
+        score_column="Glide Docking Score",
+        output_file=(
+            output_dir /
+            "docking_score_vs_rmsd.png"
+        ),
+        title=(
+            f"{job['job_name']}: "
+            "docking score vs RMSD"
+        ),
+        y_label="Glide Docking Score",
     )
 
-    ax.set_xlabel(
-        "RMSD from input cryo-EM ligand pose (Å)"
+    save_rmsd_heatmap(
+        rmsd_matrix=rmsd_matrix,
+        pose_labels=pose_labels,
+        output_file=(
+            output_dir /
+            "pose_rmsd_heatmap.png"
+        ),
+        title=(
+            f"{job['job_name']}: "
+            "pose-to-pose RMSD"
+        ),
     )
-
-    ax.set_ylabel(
-        "Glide Density Score"
-    )
-
-    ax.set_title(
-        f"{job['job_name']}: density score vs RMSD"
-    )
-
-    fig.colorbar(
-        scatter,
-        ax=ax,
-        label="Pose cluster",
-    )
-
-    fig.tight_layout()
-
-    fig.savefig(
-        output_dir /
-        "density_score_vs_rmsd.png",
-        dpi=200,
-    )
-
-    plt.close(fig)
-
-    # --------------------------------------------------
-    # Docking score versus reference RMSD
-    # --------------------------------------------------
-
-    fig, ax = plt.subplots(
-        figsize=(7, 6)
-    )
-
-    scatter = ax.scatter(
-        metrics["Ligand RMSD"],
-        metrics["Glide Docking Score"],
-        c=metrics["cluster_id"],
-        alpha=0.85,
-    )
-
-    ax.set_xlabel(
-        "RMSD from input cryo-EM ligand pose (Å)"
-    )
-
-    ax.set_ylabel(
-        "Glide Docking Score"
-    )
-
-    ax.set_title(
-        f"{job['job_name']}: docking score vs RMSD"
-    )
-
-    fig.colorbar(
-        scatter,
-        ax=ax,
-        label="Pose cluster",
-    )
-
-    fig.tight_layout()
-
-    fig.savefig(
-        output_dir /
-        "docking_score_vs_rmsd.png",
-        dpi=200,
-    )
-
-    plt.close(fig)
-
-    # --------------------------------------------------
-    # RMSD heatmap
-    # --------------------------------------------------
-
-    fig, ax = plt.subplots(
-        figsize=(8, 7)
-    )
-
-    image = ax.imshow(
-        rmsd_matrix,
-        interpolation="nearest",
-        aspect="auto",
-    )
-
-    ax.set_xticks(
-        np.arange(nposes)
-    )
-
-    ax.set_yticks(
-        np.arange(nposes)
-    )
-
-    ax.set_xticklabels(
-        pose_labels,
-        rotation=90,
-    )
-
-    ax.set_yticklabels(
-        pose_labels,
-    )
-
-    ax.set_title(
-        f"{job['job_name']}: pose-to-pose RMSD"
-    )
-
-    fig.colorbar(
-        image,
-        ax=ax,
-        label="Heavy-atom RMSD (Å)",
-    )
-
-    fig.tight_layout()
-
-    fig.savefig(
-        output_dir /
-        "pose_rmsd_heatmap.png",
-        dpi=200,
-    )
-
-    plt.close(fig)
-
-    # --------------------------------------------------
-    # Dendrogram
-    # --------------------------------------------------
 
     if linkage_matrix is not None:
-
-        fig, ax = plt.subplots(
-            figsize=(9, 5)
-        )
-
-        dendrogram(
-            linkage_matrix,
-            labels=pose_labels,
-            ax=ax,
-        )
-
-        ax.axhline(
-            cluster_cutoff,
-            linestyle="--",
-            label=(
-                f"Cluster cutoff "
-                f"{cluster_cutoff:.2f} Å"
+        save_cluster_dendrogram(
+            linkage_matrix=linkage_matrix,
+            pose_labels=pose_labels,
+            cluster_cutoff=cluster_cutoff,
+            output_file=(
+                output_dir /
+                "pose_cluster_dendrogram.png"
+            ),
+            title=(
+                f"{job['job_name']}: "
+                "GlideEM pose clustering"
             ),
         )
-
-        ax.set_ylabel(
-            "Pose RMSD (Å)"
-        )
-
-        ax.set_title(
-            f"{job['job_name']}: GlideEM pose clustering"
-        )
-
-        ax.legend()
-
-        fig.tight_layout()
-
-        fig.savefig(
-            output_dir /
-            "pose_cluster_dendrogram.png",
-            dpi=200,
-        )
-
-        plt.close(fig)
 
     # --------------------------------------------------
     # PyMOL export
@@ -1675,617 +1568,52 @@ def summarise_glideem_ensembles(
     )
 
     # --------------------------------------------------
-    # Plot 1: pose ambiguity map
-    # --------------------------------------------------
-
-    fig, ax = plt.subplots(
-        figsize=(9, 7)
-    )
-
-    point_sizes = (
-        60
-        + 18
-        * summary_df[
-            "returned_nposes"
-        ].to_numpy(float)
-    )
-
-    scatter = ax.scatter(
-        summary_df[
-            "median_pairwise_rmsd"
-        ],
-        summary_df[
-            "cluster_entropy"
-        ],
-        s=point_sizes,
-        c=summary_df[
-            "dominant_cluster_fraction"
-        ],
-        alpha=0.85,
-        vmin=0.0,
-        vmax=1.0,
-    )
-
-    for _, row in summary_df.iterrows():
-
-        ax.annotate(
-            row["source_name"],
-            (
-                row[
-                    "median_pairwise_rmsd"
-                ],
-                row[
-                    "cluster_entropy"
-                ],
-            ),
-            xytext=(5, 5),
-            textcoords="offset points",
-            fontsize=8,
-        )
-
-    ax.set_xlabel(
-        "Median pairwise pose RMSD (Å)"
-    )
-
-    ax.set_ylabel(
-        "Normalised cluster entropy"
-    )
-
-    ax.set_title(
-        "GlideEM pose-space ambiguity"
-    )
-
-    colour_bar = fig.colorbar(
-        scatter,
-        ax=ax,
-    )
-
-    colour_bar.set_label(
-        "Dominant-cluster fraction"
-    )
-
-    ax.text(
-        0.02,
-        0.02,
-        "Point size = returned GlideEM poses",
-        transform=ax.transAxes,
-        fontsize=9,
-        verticalalignment="bottom",
-    )
-
-    fig.tight_layout()
-
-    fig.savefig(
-        output_dir /
-        "pose_ambiguity_map.png",
-        dpi=200,
-    )
-
-    plt.close(fig)
-
-    # --------------------------------------------------
-    # Plot 2: reference RMSD distributions
+    # Campaign plots
     # --------------------------------------------------
 
     job_order = (
-        summary_df["source_name"]
+        summary_df[
+            "source_name"
+        ]
         .tolist()
     )
 
-    rmsd_distributions = [
-        all_metrics_df.loc[
-            all_metrics_df[
-                "source_name"
-            ] == job_name,
-            "Ligand RMSD",
-        ].to_numpy(float)
-        for job_name in job_order
-    ]
-
-    fig_height = max(
-        5,
-        0.6 * len(job_order) + 2,
-    )
-
-    fig, ax = plt.subplots(
-        figsize=(9, fig_height)
-    )
-
-    positions = np.arange(
-        1,
-        len(job_order) + 1,
-    )
-
-    violin_parts = ax.violinplot(
-        rmsd_distributions,
-        positions=positions,
-        vert=False,
-        showmeans=False,
-        showmedians=True,
-        showextrema=True,
-    )
-
-    for body in violin_parts[
-        "bodies"
-    ]:
-        body.set_alpha(
-            0.65
-        )
-
-    ax.set_yticks(
-        positions
-    )
-
-    ax.set_yticklabels(
-        job_order
-    )
-
-    ax.set_xlabel(
-        "RMSD from input cryo-EM ligand pose (Å)"
-    )
-
-    ax.set_ylabel(
-        "GlideEM job"
-    )
-
-    ax.set_title(
-        "GlideEM reference-pose RMSD distributions"
-    )
-
-    fig.tight_layout()
-
-    fig.savefig(
-        output_dir /
-        "rmsd_distribution_by_structure.png",
-        dpi=200,
-    )
-
-    plt.close(fig)
-
-    # --------------------------------------------------
-    # Plot 3: cluster composition
-    # --------------------------------------------------
-
-    cluster_ids = sorted(
-        composition_df[
-            "cluster_id"
-        ].unique()
-    )
-
-    composition_pivot = (
-        composition_df
-        .pivot(
-            index="source_name",
-            columns="cluster_id",
-            values="cluster_fraction",
-        )
-        .fillna(0.0)
-        .reindex(job_order)
-    )
-
-    clusters_per_job = {
-        row["source_name"]: int(row["n_clusters"])
-        for _, row in summary_df.iterrows()
-    }
-
-    ylabels = [
-        f"{job_name}  (k={clusters_per_job[job_name]})"
-        for job_name in composition_pivot.index
-    ]
-
-    fig_height = max(
-        5,
-        0.55 * len(job_order) + 2,
-    )
-
-    fig, ax = plt.subplots(
-        figsize=(10, fig_height)
-    )
-
-    left = np.zeros(
-        len(composition_pivot),
-        dtype=float,
-    )
-
-    for cluster_id in cluster_ids:
-
-        if cluster_id in composition_pivot.columns:
-            values = (
-                composition_pivot[
-                    cluster_id
-                ].to_numpy(float)
-            )
-        else:
-            values = np.zeros(
-                len(composition_pivot),
-                dtype=float,
-            )
-
-        bars = ax.barh(
-            composition_pivot.index,
-            values,
-            left=left,
-        )
-
-        # Label sufficiently large segments directly.
-        for bar, value, start in zip(
-            bars,
-            values,
-            left,
-        ):
-            if value >= 0.07:
-                ax.text(
-                    start + value / 2,
-                    bar.get_y() + bar.get_height() / 2,
-                    f"C{cluster_id}",
-                    ha="center",
-                    va="center",
-                    fontsize=8,
-                )
-
-        left += values
-
-    ax.set_yticks(
-        np.arange(
-            len(composition_pivot)
-        )
-    )
-
-    ax.set_yticklabels(
-        ylabels
-    )
-
-    ax.set_xlim(
-        0.0,
-        1.0,
-    )
-
-    ax.set_xlabel(
-        "Fraction of returned GlideEM poses"
-    )
-
-    ax.set_ylabel(
-        "GlideEM job"
-    )
-
-    ax.set_title(
-        "GlideEM pose-cluster composition"
-    )
-
-    fig.tight_layout()
-
-    fig.savefig(
-        output_dir /
-        "cluster_composition_by_structure.png",
-        dpi=200,
-    )
-
-    plt.close(fig)
-
-    # --------------------------------------------------
-    # Plot 4: density score vs RMSD small multiples
-    # --------------------------------------------------
-
-    n_jobs = len(
-        job_order
-    )
-
-    n_columns = min(
-        2,
-        n_jobs,
-    )
-
-    n_rows = int(
-        math.ceil(
-            n_jobs / n_columns
-        )
-    )
-
-    fig, axes = plt.subplots(
-        n_rows,
-        n_columns,
-        figsize=(
-            7 * n_columns,
-            5.5 * n_rows,
+    save_pose_ambiguity_map(
+        summary_df=summary_df,
+        output_file=(
+            output_dir /
+            "pose_ambiguity_map.png"
         ),
-        squeeze=False,
     )
 
-    for axis, job_name in zip(
-        axes.flat,
-        job_order,
-    ):
-
-        job_metrics = (
-            all_metrics_df[
-                all_metrics_df[
-                    "source_name"
-                ] == job_name
-            ]
-            .copy()
-        )
-
-        # ---------------------------------------------
-        # Keep the 10 most populous clusters.
-        # Everything else becomes "Other".
-        # ---------------------------------------------
-
-        cluster_counts = (
-            job_metrics[
-                "cluster_id"
-            ]
-            .dropna()
-            .astype(int)
-            .value_counts()
-        )
-
-        top_cluster_ids = (
-            cluster_counts
-            .head(10)
-            .index
-            .tolist()
-        )
-
-        other_cluster_ids = [
-            cluster_id
-            for cluster_id in cluster_counts.index
-            if cluster_id not in top_cluster_ids
-        ]
-
-        has_other = bool(
-            other_cluster_ids
-        )
-
-        # Reserve category 0 for the aggregated "Other" group.
-        #
-        # Top individual clusters then occupy categories 1...N,
-        # ordered from most to least populous.
-        other_index = 0
-
-        cluster_to_colour_index = {
-            cluster_id: index
-            for index, cluster_id
-            in enumerate(
-                top_cluster_ids,
-                start=1,
-            )
-        }
-
-        def cluster_colour_index(
-            cluster_id
-        ):
-            if pd.isna(cluster_id):
-                return (
-                    other_index
-                    if other_index is not None
-                    else 0
-                )
-
-            cluster_id = int(
-                cluster_id
-            )
-
-            if cluster_id in cluster_to_colour_index:
-                return cluster_to_colour_index[
-                    cluster_id
-                ]
-
-            return (
-                other_index
-                if other_index is not None
-                else 0
-            )
-
-        colour_indices = (
-            job_metrics[
-                "cluster_id"
-            ]
-            .map(
-                cluster_colour_index
-            )
-            .to_numpy(int)
-        )
-
-        # ---------------------------------------------
-        # Colours
-        # ---------------------------------------------
-
-        n_top = len(
-            top_cluster_ids
-        )
-
-        n_categories = (
-            n_top
-            + int(has_other)
-        )
-
-        base_cmap = plt.get_cmap(
-            "tab10"
-        )
-
-        if has_other:
-
-            other_index = 0
-
-            cluster_to_colour_index = {
-                cluster_id: index
-                for index, cluster_id
-                in enumerate(
-                    top_cluster_ids,
-                    start=1,
-                )
-            }
-
-        else:
-
-            cluster_to_colour_index = {
-                cluster_id: index
-                for index, cluster_id
-                in enumerate(
-                    top_cluster_ids
-                )
-            }
-
-            other_index = None
-        
-        if has_other:
-            # Other is category 0 and deliberately neutral grey.
-            colours = [
-                "#bdbdbd"
-            ]
-
-            colours.extend(
-                base_cmap(i)
-                for i in range(n_top)
-            )
-
-        else:
-            colours = [
-                base_cmap(i)
-                for i in range(n_top)
-            ]
-
-
-        cmap = ListedColormap(
-            colours
-        )
-
-        boundaries = np.arange(
-            -0.5,
-            n_categories + 0.5,
-            1.0,
-        )
-
-        norm = BoundaryNorm(
-            boundaries,
-            cmap.N,
-        )
-
-        # ---------------------------------------------
-        # Scatter
-        # ---------------------------------------------
-
-        scatter = axis.scatter(
-            job_metrics[
-                "Ligand RMSD"
-            ],
-            job_metrics[
-                "Glide Density Score"
-            ],
-            c=colour_indices,
-            cmap=cmap,
-            norm=norm,
-            alpha=0.85,
-        )
-
-        axis.set_title(
-            job_name
-        )
-
-        axis.set_xlabel(
-            "Reference RMSD (Å)"
-        )
-
-        axis.set_ylabel(
-            "Glide Density Score"
-        )
-
-        # ---------------------------------------------
-        # Discrete cluster legend
-        # ---------------------------------------------
-
-        legend_handles = []
-
-        # Largest cluster first.
-        for cluster_id in top_cluster_ids:
-
-            colour_index = (
-                cluster_to_colour_index[
-                    cluster_id
-                ]
-            )
-
-            count = int(
-                cluster_counts.loc[
-                    cluster_id
-                ]
-            )
-
-            legend_handles.append(
-                Patch(
-                    facecolor=cmap(
-                        norm(colour_index)
-                    ),
-                    edgecolor="none",
-                    label=(
-                        f"C{cluster_id}: "
-                        f"{count} poses"
-                    ),
-                )
-            )
-
-        # Other always appears last.
-        if has_other:
-
-            other_pose_count = int(
-                cluster_counts.loc[
-                    other_cluster_ids
-                ].sum()
-            )
-
-            legend_handles.append(
-                Patch(
-                    facecolor="#bdbdbd",
-                    edgecolor="none",
-                    label=(
-                        f"Other: {other_pose_count} poses "
-                        f"({len(other_cluster_ids)} clusters)"
-                    ),
-                )
-            )
-
-        axis.legend(
-            handles=legend_handles,
-            title="Pose clusters",
-            loc="upper center",
-            bbox_to_anchor=(
-                0.5,
-                -0.20,
-            ),
-            ncol=2,
-            frameon=False,
-            fontsize=8,
-            title_fontsize=9,
-        )
-
-    # Hide unused subplot axes.
-    for axis in axes.flat[n_jobs:]:
-        axis.set_visible(
-            False
-        )
-
-    fig.suptitle(
-        "Clustered GlideEM density-score x RMSD",
-        y=1.02,
+    save_reference_rmsd_distributions(
+        all_metrics_df=all_metrics_df,
+        job_order=job_order,
+        output_file=(
+            output_dir /
+            "rmsd_distribution_by_structure.png"
+        ),
     )
 
-    fig.tight_layout(
-        rect=[
-            0.02,
-            0.02,
-            0.98,
-            0.94,
-        ]
+    save_cluster_composition(
+        composition_df=composition_df,
+        summary_df=summary_df,
+        job_order=job_order,
+        output_file=(
+            output_dir /
+            "cluster_composition_by_structure.png"
+        ),
     )
 
-    fig.savefig(
-        output_dir /
-        "density_rmsd_small_multiples.png",
-        dpi=200,
-        bbox_inches="tight",
+    save_density_rmsd_small_multiples(
+        all_metrics_df=all_metrics_df,
+        job_order=job_order,
+        output_file=(
+            output_dir /
+            "density_rmsd_small_multiples.png"
+        ),
+        top_n_clusters=10,
     )
-
-    plt.close(fig)
 
     logger.info(
         "Generated GlideEM ensemble summary for "
@@ -2458,7 +1786,8 @@ def dock_mcss(
     "export_mcss_pymol",
     category="GlideEM",
     description=(
-        "Export top-scoring MCSS poses for PyMOL visualization."
+        "Export top-scoring MCSS poses "
+        "for PyMOL visualization."
     ),
 )
 def export_mcss_pymol(
@@ -2468,22 +1797,37 @@ def export_mcss_pymol(
     **kwargs,
 ):
     complex_job = kwargs["complex_job"]
-    poseviewer = Path(kwargs["poseviewer"])
-    top_n = int(kwargs.get("top_n", 5))
 
-    cryoem_reference = Path(
-        kwargs["cryoem_reference"]
+    poseviewer = (
+        Path(kwargs["poseviewer"])
+        .expanduser()
+        .resolve()
     )
 
-    glideem_reference = Path(
-        complex_job["reference"]
+    top_n = int(
+        kwargs.get(
+            "top_n",
+            5,
+        )
+    )
+
+    cryoem_reference = (
+        Path(kwargs["cryoem_reference"])
+        .expanduser()
+        .resolve()
+    )
+
+    glideem_reference = (
+        Path(complex_job["reference"])
+        .expanduser()
+        .resolve()
     )
 
     pymol_cfg = config.get(
         "pymol",
-        {}
+        {},
     )
-    
+
     binding_site_cutoff = float(
         pymol_cfg.get(
             "binding_site_cutoff",
@@ -2491,23 +1835,33 @@ def export_mcss_pymol(
         )
     )
 
+    if not poseviewer.is_file():
+        raise FileNotFoundError(
+            f"MCSS PoseViewer not found: {poseviewer}"
+        )
+
     if not cryoem_reference.is_file():
-        raise RuntimeError(
-            f"Original cryo-EM reference ligand not found: "
-            f"{cryoem_reference}"
+        raise FileNotFoundError(
+            "Original cryo-EM reference ligand "
+            f"not found: {cryoem_reference}"
         )
 
     if not glideem_reference.is_file():
-        raise RuntimeError(
-            f"GlideEM reference pose not found: "
+        raise FileNotFoundError(
+            "GlideEM reference pose not found: "
             f"{glideem_reference}"
+        )
+
+    if top_n < 1:
+        raise ValueError(
+            "PyMOL top_n must be at least 1."
         )
 
     name = complex_job["name"]
 
     out_dir = (
-        poseviewer.parent /
-        "pymol"
+        poseviewer.parent
+        / "pymol"
     )
 
     receptor = None
@@ -2516,7 +1870,6 @@ def export_mcss_pymol(
     for st in structure.StructureReader(
         str(poseviewer)
     ):
-        # Receptor CT in Glide PoseViewer
         if st.property.get(
             "b_glide_receptor",
             False,
@@ -2524,12 +1877,16 @@ def export_mcss_pymol(
             receptor = st
             continue
 
-        score = glide_score(st)
+        score = glide_score(
+            st
+        )
 
         if score is None:
             continue
 
-        cid = compound_id(st)
+        cid = compound_id(
+            st
+        )
 
         poses.append(
             (
@@ -2546,406 +1903,52 @@ def export_mcss_pymol(
 
     if not poses:
         raise RuntimeError(
-            f"No scored docked poses found in {poseviewer}"
+            "No scored docked poses found in "
+            f"{poseviewer}"
         )
 
-    out_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
+    # More-negative GlideScore is better.
     poses.sort(
         key=lambda item: item[0]
     )
 
-    top = poses[:top_n]
+    top_poses = poses[
+        :top_n
+    ]
 
-    # ---------------------------------------------
-    # Receptor
-    # ---------------------------------------------
-
-    receptor_file = (
-        out_dir /
-        "receptor.pdb"
-    )
-
-    with structure.StructureWriter(
-        str(receptor_file)
-    ) as writer:
-        writer.append(receptor)
-
-    # ---------------------------------------------
-    # Structural reference ligands
-    # ---------------------------------------------
-
-    cryoem_structure_file = (
-        out_dir /
-        "cryoem_structure.pdb"
-    )
-
-    cryoem_structures = list(
-        structure.StructureReader(
-            str(cryoem_reference)
-        )
-    )
-
-    if not cryoem_structures:
-        raise RuntimeError(
-            f"No structure found in "
-            f"{cryoem_reference}"
-        )
-
-    with structure.StructureWriter(
-        str(cryoem_structure_file)
-    ) as writer:
-        writer.append(
-            cryoem_structures[0]
-        )
-
-    glideem_reference_file = (
-        out_dir /
-        "glideem_reference_pose.pdb"
-    )
-
-    glideem_structures = list(
-        structure.StructureReader(
-            str(glideem_reference)
-        )
-    )
-
-    if not glideem_structures:
-        raise RuntimeError(
-            f"No structure found in "
-            f"{glideem_reference}"
-        )
-
-    with structure.StructureWriter(
-        str(glideem_reference_file)
-    ) as writer:
-        writer.append(
-            glideem_structures[0]
-        )
-
-    # ---------------------------------------------
-    # Docked ligands
-    # ---------------------------------------------
-
-    exported = []
-
-    for rank, (
-        score,
-        cid,
-        st,
-    ) in enumerate(
-        top,
-        start=1,
-    ):
-        # Make compound ID safe for filenames/PyMOL object names.
-        safe_cid = re.sub(
-            r"[^A-Za-z0-9_]+",
-            "_",
-            str(cid),
-        ).strip("_")
-
-        if not safe_cid:
-            safe_cid = "unknown"
-
-        object_name = (
-            f"rank{rank:02d}_{safe_cid}"
-        )
-
-        pose_file = (
-            out_dir /
-            f"{object_name}.pdb"
-        )
-
-        with structure.StructureWriter(
-            str(pose_file)
-        ) as writer:
-            writer.append(st)
-
-        exported.append(
-            (
-                rank,
-                score,
-                cid,
-                object_name,
-                pose_file,
-            )
-        )
-
-    # ---------------------------------------------
-    # Write ranking table
-    # ---------------------------------------------
-
-    ranking_file = (
-        out_dir /
-        f"top{len(exported)}.csv"
-    )
-
-    with ranking_file.open(
-        "w",
-        newline="",
-    ) as handle:
-
-        writer = csv.writer(handle)
-
-        writer.writerow(
-            [
-                "rank",
-                "compound_id",
-                "glide_score",
-                "pymol_object",
-                "pose_file",
-            ]
-        )
-
-        for (
-            rank,
+    ranked_poses = [
+        {
+            "rank": rank,
+            "score": score,
+            "compound_id": cid,
+            "structure": st,
+        }
+        for rank, (
             score,
             cid,
-            object_name,
-            pose_file,
-        ) in exported:
-
-            writer.writerow(
-                [
-                    rank,
-                    cid,
-                    score,
-                    object_name,
-                    pose_file.name,
-                ]
-            )
-
-    # ---------------------------------------------
-    # PyMOL script
-    # ---------------------------------------------
-
-    script = [
-        "reinitialize",
-        "bg_color white",
-        "",
-        "load receptor.pdb, receptor",
-        "",
-        "hide everything",
-        "show cartoon, receptor",
-
-        # Receptor carbons/backbone remain neutral grey.
-        "color gray80, receptor",
-
-        # Protein atoms by element.
-        "color blue, (receptor and elem N)",
-        "color red, (receptor and elem O)",
-        "color yellow, (receptor and elem S)",
-        "color orange, (receptor and elem P)",
-        "color white, (receptor and elem H)",
-
-        "",
+            st,
+        ) in enumerate(
+            top_poses,
+            start=1,
+        )
     ]
 
-    script.extend(
-        [
-            # Original experimental/cryo-EM ligand
-            "load cryoem_structure.pdb, cryoem_structure",
-            "show sticks, cryoem_structure",
-            "color marine, "
-            "(cryoem_structure and elem C)",
-            "color blue, "
-            "(cryoem_structure and elem N)",
-            "color red, "
-            "(cryoem_structure and elem O)",
-            "color yellow, "
-            "(cryoem_structure and elem S)",
-            "color orange, "
-            "(cryoem_structure and elem P)",
-            "color white, "
-            "(cryoem_structure and elem H)",
-            "color green, "
-            "(cryoem_structure and elem F)",
-            "color green, "
-            "(cryoem_structure and elem Cl)",
-            "color brown, "
-            "(cryoem_structure and elem Br)",
-            "color purple, "
-            "(cryoem_structure and elem I)",
-            "",
-
-            # GlideEM hypothesis used as the MCSS reference
-            "load glideem_reference_pose.pdb, "
-            "glideem_reference_pose",
-            "show sticks, glideem_reference_pose",
-            "color salmon, "
-            "(glideem_reference_pose and elem C)",
-            "color blue, "
-            "(glideem_reference_pose and elem N)",
-            "color red, "
-            "(glideem_reference_pose and elem O)",
-            "color yellow, "
-            "(glideem_reference_pose and elem S)",
-            "color orange, "
-            "(glideem_reference_pose and elem P)",
-            "color white, "
-            "(glideem_reference_pose and elem H)",
-            "color green, "
-            "(glideem_reference_pose and elem F)",
-            "color green, "
-            "(glideem_reference_pose and elem Cl)",
-            "color brown, "
-            "(glideem_reference_pose and elem Br)",
-            "color purple, "
-            "(glideem_reference_pose and elem I)",
-            "",
-        ]
-    )
-
-    # Each ligand gets a different carbon colour.
-    # Heteroatoms are subsequently recoloured by element.
-    carbon_colours = [
-        "cyan",
-        "green",
-        "yellow",
-        "orange",
-        "magenta",
-    ]
-
-    ligand_objects = []
-
-    for (
-        rank,
-        score,
-        cid,
-        object_name,
-        pose_file,
-    ) in exported:
-
-        carbon_colour = carbon_colours[
-            (rank - 1) % len(carbon_colours)
-        ]
-
-        ligand_objects.append(
-            object_name
-        )
-
-        script.extend(
-            [
-                f"load {pose_file.name}, {object_name}",
-                f"show sticks, {object_name}",
-
-                # Carbon distinguishes individual ligands.
-                f"color {carbon_colour}, "
-                f"({object_name} and elem C)",
-
-                # Conventional element colours.
-                f"color blue, "
-                f"({object_name} and elem N)",
-
-                f"color red, "
-                f"({object_name} and elem O)",
-
-                f"color yellow, "
-                f"({object_name} and elem S)",
-
-                f"color orange, "
-                f"({object_name} and elem P)",
-
-                f"color white, "
-                f"({object_name} and elem H)",
-
-                # Halogens
-                f"color green, "
-                f"({object_name} and elem F)",
-
-                f"color green, "
-                f"({object_name} and elem Cl)",
-
-                f"color brown, "
-                f"({object_name} and elem Br)",
-
-                f"color purple, "
-                f"({object_name} and elem I)",
-
-                "",
-            ]
-        )
-
-    # Group the poses in the PyMOL object tree.
-    if ligand_objects:
-        script.append(
-            "group top_mcss_poses, "
-            + " ".join(ligand_objects)
-        )
-
-    # ---------------------------------------------
-    # Binding-site protein residues
-    # ---------------------------------------------
-
-    ligand_selection = (
-        "cryoem_structure or "
-        "glideem_reference_pose or "
-        "top_mcss_poses"
-    )
-
-    script.extend(
-        [
-            "",
-            "# Protein residues surrounding the displayed ligands",
-            (
-                "select binding_site, "
-                f"byres (receptor within "
-                f"{binding_site_cutoff:.1f} of "
-                f"({ligand_selection}))"
-            ),
-            "show sticks, binding_site",
-
-            # Protein carbon remains neutral grey.
-            "color gray80, "
-            "(binding_site and elem C)",
-
-            # Standard heteroatom colouring.
-            "color blue, "
-            "(binding_site and elem N)",
-
-            "color red, "
-            "(binding_site and elem O)",
-
-            "color yellow, "
-            "(binding_site and elem S)",
-
-            "color orange, "
-            "(binding_site and elem P)",
-
-            "color white, "
-            "(binding_site and elem H)",
-
-            "",
-        ]
-    )
-
-    script.extend(
-        [
-            "",
-            "orient top_mcss_poses",
-            "zoom top_mcss_poses, 8",
-            "",
-        ]
-    )
-
-    script_file = (
-        out_dir /
-        f"pymol_all_mcss_poses_cryo_glideem_ref.pml"
-    )
-
-    script_file.write_text(
-        "\n".join(script)
-        + "\n"
+    script_file = export_mcss_pose_bundle(
+        receptor=receptor,
+        ranked_poses=ranked_poses,
+        cryoem_reference=cryoem_reference,
+        glideem_reference=glideem_reference,
+        output_dir=out_dir,
+        binding_site_cutoff=(
+            binding_site_cutoff
+        ),
     )
 
     logger.debug(
         "[%s] Exported top %d MCSS poses "
         "for PyMOL to %s",
         name,
-        len(exported),
+        len(ranked_poses),
         out_dir,
     )
 
