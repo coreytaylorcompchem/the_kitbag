@@ -615,6 +615,7 @@ def run(config_path: str):
                         cryoem_reference=(
                             reference_ligand
                         ),
+                        prepared_receptor=prepared,
                         output_dir=(
                             output
                             / "analysis"
@@ -1278,6 +1279,7 @@ def run(config_path: str):
                 output_dir=(
                     output
                     / "analysis"
+                    / "mcss"
                 ),
                 min_pairs=analyse_cfg.get(
                     "min_pairs",

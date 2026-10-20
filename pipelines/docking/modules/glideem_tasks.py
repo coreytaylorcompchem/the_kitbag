@@ -876,6 +876,19 @@ def analyse_glideem_poses(
         .upper()
     )
 
+    prepared_receptor = (
+        Path(kwargs["prepared_receptor"])
+        .expanduser()
+        .resolve()
+    )
+
+    density_map = (
+        Path(job["density_map"])
+        .expanduser()
+        .resolve()
+    )
+
+
     reference_smiles = (
         job.get("reference_smiles", "")
         or ""
@@ -1235,6 +1248,8 @@ def analyse_glideem_poses(
             pose_structures=pose_structures,
             cluster_by_pose=cluster_by_pose,
             cryoem_reference=cryoem_reference,
+            receptor=prepared_receptor,
+            density_map=density_map,
             output_dir=output_dir / "pymol",
             job_name=job["job_name"],
         )

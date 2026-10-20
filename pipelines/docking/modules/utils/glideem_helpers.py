@@ -1,5 +1,6 @@
 import re
 import json
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -851,13 +852,66 @@ def export_glideem_pymol_ensemble(
     pose_structures,
     cluster_by_pose,
     cryoem_reference: Path,
+    receptor: Path,
+    density_map: Path,
     output_dir: Path,
     job_name: str,
 ):
+
     output_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
+
+    receptor = (
+        Path(receptor)
+        .expanduser()
+        .resolve()
+    )
+
+    density_map = (
+        Path(density_map)
+        .expanduser()
+        .resolve()
+    )
+
+    if not receptor.is_file():
+        raise FileNotFoundError(
+            f"Prepared GlideEM receptor not found: "
+            f"{receptor}"
+        )
+
+    if not density_map.is_file():
+        raise FileNotFoundError(
+            f"GlideEM density map not found: "
+            f"{density_map}"
+        )
+
+    receptor_structures = list(
+        structure.StructureReader(
+            str(receptor)
+        )
+    )
+
+    if not receptor_structures:
+        raise RuntimeError(
+            f"No structure found in prepared receptor: "
+            f"{receptor}"
+        )
+
+    receptor_st = receptor_structures[0]
+
+    receptor_file = (
+        output_dir /
+        "glideem_receptor.pdb"
+    )
+
+    with structure.StructureWriter(
+        str(receptor_file)
+    ) as writer:
+        writer.append(
+            receptor_st
+        )
 
     cryoem_st = next(
         structure.StructureReader(
@@ -874,6 +928,22 @@ def export_glideem_pymol_ensemble(
         str(cryoem_file)
     ) as writer:
         writer.append(cryoem_st)
+
+    # Only bundle CCP4 density with the PyMOL session.
+    # Full MRC maps can be too large for practical PyMOL use.
+    density_file = None
+
+    if density_map.suffix.lower() == ".ccp4":
+
+        density_file = (
+            output_dir /
+            "glideem_density.ccp4"
+        )
+
+        shutil.copy2(
+            density_map,
+            density_file,
+        )
 
     exported = []
 
@@ -928,6 +998,15 @@ def export_glideem_pymol_ensemble(
         "reinitialize",
         "bg_color white",
         "",
+
+        # Prepared protein used for GlideEM.
+        "load glideem_receptor.pdb, receptor",
+        "hide everything, receptor",
+        "show cartoon, receptor",
+        "color gray80, receptor",
+        "",
+
+        # Original experimental ligand position.
         "load cryoem_structure.pdb, cryoem_structure",
         "show sticks, cryoem_structure",
         "color gray50, (cryoem_structure and elem C)",
@@ -937,6 +1016,70 @@ def export_glideem_pymol_ensemble(
         "color white, (cryoem_structure and elem H)",
         "",
     ]
+
+    if density_file is not None:
+
+        script.extend(
+            [
+                "# Experimental density used for GlideEM.",
+                (
+                    f"load {density_file.name}, "
+                    "cryoem_density"
+                ),
+                "",
+                "# Cryo-EM density surface",
+                (
+                    "isosurface cryoem_density_surface, "
+                    "cryoem_density, 1.0"
+                ),
+                "color wheat, cryoem_density_surface",
+                (
+                    "set transparency, 0.70, "
+                    "cryoem_density_surface"
+                ),
+                "",
+            ]
+        )
+
+    else:
+        logger.info(
+            "[%s] Density map is not .ccp4 (%s); not bundling it "
+            "with the PyMOL session",
+            job_name,
+            density_map.suffix,
+        )
+
+    # script.extend(
+    #     [
+    #         "# Original experimental ligand position.",
+    #         (
+    #             "load cryoem_structure.pdb, "
+    #             "cryoem_structure"
+    #         ),
+    #         "show sticks, cryoem_structure",
+    #         (
+    #             "color gray50, "
+    #             "(cryoem_structure and elem C)"
+    #         ),
+    #         (
+    #             "color blue, "
+    #             "(cryoem_structure and elem N)"
+    #         ),
+    #         (
+    #             "color red, "
+    #             "(cryoem_structure and elem O)"
+    #         ),
+    #         (
+    #             "color yellow, "
+    #             "(cryoem_structure and elem S)"
+    #         ),
+    #         (
+    #             "color white, "
+    #             "(cryoem_structure and elem H)"
+    #         ),
+    #         "",
+    #     ]
+    # )
 
     cluster_objects = defaultdict(list)
 
@@ -983,6 +1126,26 @@ def export_glideem_pymol_ensemble(
             ]
         )
 
+    #     script.extend(
+    #     [
+    #         "",
+    #         (
+    #             "select binding_site, "
+    #             "byres (receptor within 5.0 of "
+    #             "(cryoem_structure or "
+    #             "glideem_pose_clusters))"
+    #         ),
+    #         "show sticks, binding_site",
+    #         "color gray80, (binding_site and elem C)",
+    #         "color blue, (binding_site and elem N)",
+    #         "color red, (binding_site and elem O)",
+    #         "color yellow, (binding_site and elem S)",
+    #         "color orange, (binding_site and elem P)",
+    #         "color white, (binding_site and elem H)",
+    #         "",
+    #     ]
+    # )
+
     for cluster_name, objects in sorted(
         cluster_objects.items()
     ):
@@ -991,20 +1154,91 @@ def export_glideem_pymol_ensemble(
             + " ".join(objects)
         )
 
+    # script.extend(
+    #     [
+    #         "",
+    #         # Group all GlideEM cluster groups.
+    #         "group glideem_pose_clusters, "
+    #         + " ".join(
+    #             sorted(cluster_objects)
+    #         ),
+    #         "",
+
+    #         # Consistent thin-stick representation.
+    #         "set stick_radius, 0.15, glideem_pose_clusters",
+    #         "set stick_radius, 0.15, cryoem_structure",
+    #         "",
+
+    #         # Initial view centred on the ligand ensemble,
+    #         # rather than the full cryo-EM density map.
+    #         "orient glideem_pose_clusters",
+    #         "zoom glideem_pose_clusters, 8",
+    #         "",
+    #     ]
+    # )
+
+    all_pose_objects = [
+        object_name
+        for objects in cluster_objects.values()
+        for object_name in objects
+    ]
+
+    if not all_pose_objects:
+        raise RuntimeError(
+            f"No GlideEM pose objects were exported "
+            f"for {job_name}"
+        )
+
     script.extend(
         [
             "",
-            "group glideem_pose_clusters, "
-            + " ".join(
-                sorted(cluster_objects)
+            "# Selection containing every GlideEM pose.",
+            (
+                "select glideem_pose_ensemble, "
+                + " or ".join(
+                    all_pose_objects
+                )
             ),
-            "",
-            "orient glideem_pose_clusters",
-            "zoom glideem_pose_clusters, 6",
             "",
         ]
     )
 
+    script.extend(
+        [
+            "# Protein residues surrounding the ligand ensemble.",
+            (
+                "select binding_site, "
+                "byres (receptor within 5.0 of "
+                "(cryoem_structure or "
+                "glideem_pose_ensemble))"
+            ),
+            "show sticks, binding_site",
+            "color gray80, (binding_site and elem C)",
+            "color blue, (binding_site and elem N)",
+            "color red, (binding_site and elem O)",
+            "color yellow, (binding_site and elem S)",
+            "color orange, (binding_site and elem P)",
+            "color white, (binding_site and elem H)",
+            "",
+        ]
+    )
+
+
+    script.extend(
+        [
+            "# Consistent thin-stick representation.",
+            "set stick_radius, 0.15, glideem_pose_ensemble",
+            "set stick_radius, 0.15, cryoem_structure",
+            "set stick_radius, 0.15, binding_site",
+            "",
+
+            "# Initial view centred on the ligand ensemble.",
+            "orient glideem_pose_ensemble",
+            "zoom glideem_pose_ensemble, 8",
+            "",
+        ]
+    )
+    
     script_file = (
         output_dir /
         "load_glideem_ensemble.pml"
