@@ -1,0 +1,24 @@
+name: schrodinger
+channels:
+  - conda-forge
+channel_priority: strict
+
+dependencies:
+  - python=3.11
+  - pip
+
+  # Core Kitbag / configuration
+  - pyyaml
+  - tqdm
+
+  # Data handling and analysis
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+
+  # Cheminformatics used by the existing docking_tasks.py
+  - rdkit
+
+  # Useful for parallel / numerical packages to behave predictably
+  - threadpoolctl

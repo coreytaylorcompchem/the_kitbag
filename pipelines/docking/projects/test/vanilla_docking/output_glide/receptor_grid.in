@@ -1,0 +1,3 @@
+GRIDFILE /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/receptor_grid.zip
+    RECEPTOR /home/corey.taylor/Documents/ghrepos/the_kitbag/pipelines/docking/projects/test/vanilla_docking/output_glide/receptor_prep.mae
+    LIGAND NONE
