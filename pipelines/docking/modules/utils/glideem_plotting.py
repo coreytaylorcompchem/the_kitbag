@@ -32,6 +32,7 @@ logger = setup_logger(__name__, debug_mode=False, simple_format=True)
 def analyse_correlations(
     complex_jobs,
     poseviewers,
+    mmgbsa_results,
     ligand_file,
     source_ligand_file,
     activity_column,
@@ -95,15 +96,131 @@ def analyse_correlations(
 
         best = {}
 
+        # ---------------------------------------------
+        # Load MM-GBSA results for this MCSS dock
+        # ---------------------------------------------
+
+        mmgbsa_by_pose = {}
+
+        mmgbsa_file = mmgbsa_results.get(
+            name
+        )
+
+        if (
+            mmgbsa_file is not None
+            and Path(mmgbsa_file).is_file()
+        ):
+            mmgbsa_df = pd.read_csv(
+                mmgbsa_file
+            )
+
+            required_mmgbsa_columns = {
+                "compound_id",
+                "mcss_pose_rank",
+                "mmgbsa_dg_bind",
+            }
+
+            missing = (
+                required_mmgbsa_columns
+                - set(
+                    mmgbsa_df.columns
+                )
+            )
+
+            if missing:
+                raise RuntimeError(
+                    f"[{name}] MM-GBSA results "
+                    f"are missing columns: "
+                    f"{sorted(missing)}"
+                )
+
+            for _, row in (
+                mmgbsa_df.iterrows()
+            ):
+                cid = str(
+                    row[
+                        "compound_id"
+                    ]
+                )
+
+                pose_rank = int(
+                    row[
+                        "mcss_pose_rank"
+                    ]
+                )
+
+                value = row[
+                    "mmgbsa_dg_bind"
+                ]
+
+                if pd.isna(
+                    value
+                ):
+                    continue
+
+                mmgbsa_by_pose[
+                    (
+                        cid,
+                        pose_rank,
+                    )
+                ] = float(
+                    value
+                )
+
+            logger.debug(
+                "[%s] Loaded %d MM-GBSA "
+                "pose scores",
+                name,
+                len(mmgbsa_by_pose),
+            )
+
+        else:
+            logger.debug(
+                "[%s] No MM-GBSA results "
+                "available",
+                name,
+            )
+
         smiles_by_lignum = glide_smiles_by_lignum(
             pv
         )
 
+        pose_count_by_compound = {}
+
         for st in structure.StructureReader(
             str(pv)
         ):
-            cid = compound_id(st)
-            score = glide_score(st)
+            cid = compound_id(
+                st
+            )
+
+            score = glide_score(
+                st
+            )
+
+            if cid:
+                cid = str(
+                    cid
+                )
+
+                pose_count_by_compound[
+                    cid
+                ] = (
+                    pose_count_by_compound.get(
+                        cid,
+                        0,
+                    )
+                    + 1
+                )
+
+                mcss_pose_rank = (
+                    pose_count_by_compound[
+                        cid
+                    ]
+                )
+
+            else:
+                mcss_pose_rank = None
 
             lignum = st.property.get(
                 "i_i_glide_lignum"
@@ -132,6 +249,9 @@ def analyse_correlations(
                     "score": score,
                     "structure": st,
                     "lignum": lignum,
+                    "mcss_pose_rank": (
+                        mcss_pose_rank
+                    ),
                 }
 
                 matched_ids.add(cid)
@@ -152,7 +272,24 @@ def analyse_correlations(
             score = result["score"]
             docked_st = result["structure"]
 
-            lignum = result["lignum"]
+            lignum = result[
+                "lignum"
+            ]
+
+            mcss_pose_rank = result[
+                "mcss_pose_rank"
+            ]
+
+            mmgbsa_dg_bind = (
+                mmgbsa_by_pose.get(
+                    (
+                        str(cid),
+                        int(
+                            mcss_pose_rank
+                        ),
+                    )
+                )
+            )
 
             smiles = (
                 smiles_by_lignum.get(lignum)
@@ -182,6 +319,14 @@ def analyse_correlations(
                     "activity_column": activity_column,
 
                     "glide_score": score,
+
+                    "mcss_pose_rank": (
+                        mcss_pose_rank
+                    ),
+
+                    "mmgbsa_dg_bind": (
+                        mmgbsa_dg_bind
+                    ),
 
                     **components,
 
@@ -225,13 +370,147 @@ def analyse_correlations(
         if len(group) < min_pairs:
             logger.warning("%s has only %d matched pairs; excluded", name, len(group))
             continue
-        x = group["glide_score"].to_numpy(float)
-        y = group["experimental_potency"].to_numpy(float)
-        p, s, k = pearsonr(x, y), spearmanr(x, y), kendalltau(x, y)
-        # pActivity should normally anticorrelate with docking score, hence larger -(rP+rS) is better.
-        summaries.append({"complex_pose": name, "n": len(group), "pearson_r": p.statistic, "pearson_p": p.pvalue,
-                          "spearman_rho": s.statistic, "spearman_p": s.pvalue, "kendall_tau": k.statistic,
-                          "kendall_p": k.pvalue, "rank_score": -(p.statistic + s.statistic)})
+        x = group[
+            "glide_score"
+        ].to_numpy(float)
+
+        y = group[
+            "experimental_potency"
+        ].to_numpy(float)
+
+        p = pearsonr(
+            x,
+            y,
+        )
+
+        s = spearmanr(
+            x,
+            y,
+        )
+
+        k = kendalltau(
+            x,
+            y,
+        )
+
+        summary_row = {
+            "complex_pose": name,
+            "n": len(group),
+
+            "pearson_r": (
+                p.statistic
+            ),
+            "pearson_p": (
+                p.pvalue
+            ),
+
+            "spearman_rho": (
+                s.statistic
+            ),
+            "spearman_p": (
+                s.pvalue
+            ),
+
+            "kendall_tau": (
+                k.statistic
+            ),
+            "kendall_p": (
+                k.pvalue
+            ),
+
+            # Preserve existing Glide-based ranking.
+            "rank_score": -(
+                p.statistic
+                + s.statistic
+            ),
+        }
+
+        # ---------------------------------------------
+        # MM-GBSA correlations
+        # ---------------------------------------------
+
+        mmgbsa_group = (
+            group[
+                [
+                    "experimental_potency",
+                    "mmgbsa_dg_bind",
+                ]
+            ]
+            .dropna()
+        )
+
+        summary_row[
+            "mmgbsa_n"
+        ] = len(
+            mmgbsa_group
+        )
+
+        if len(
+            mmgbsa_group
+        ) >= min_pairs:
+
+            mm_x = mmgbsa_group[
+                "mmgbsa_dg_bind"
+            ].to_numpy(float)
+
+            mm_y = mmgbsa_group[
+                "experimental_potency"
+            ].to_numpy(float)
+
+            mm_p = pearsonr(
+                mm_x,
+                mm_y,
+            )
+
+            mm_s = spearmanr(
+                mm_x,
+                mm_y,
+            )
+
+            mm_k = kendalltau(
+                mm_x,
+                mm_y,
+            )
+
+            summary_row.update(
+                {
+                    "mmgbsa_pearson_r": (
+                        mm_p.statistic
+                    ),
+                    "mmgbsa_pearson_p": (
+                        mm_p.pvalue
+                    ),
+                    "mmgbsa_spearman_rho": (
+                        mm_s.statistic
+                    ),
+                    "mmgbsa_spearman_p": (
+                        mm_s.pvalue
+                    ),
+                    "mmgbsa_kendall_tau": (
+                        mm_k.statistic
+                    ),
+                    "mmgbsa_kendall_p": (
+                        mm_k.pvalue
+                    ),
+                }
+            )
+
+        else:
+            summary_row.update(
+                {
+                    "mmgbsa_pearson_r": np.nan,
+                    "mmgbsa_pearson_p": np.nan,
+                    "mmgbsa_spearman_rho": np.nan,
+                    "mmgbsa_spearman_p": np.nan,
+                    "mmgbsa_kendall_tau": np.nan,
+                    "mmgbsa_kendall_p": np.nan,
+                }
+            )
+
+        summaries.append(
+            summary_row
+        )
+
     summary = pd.DataFrame(summaries)
     if summary.empty:
         raise RuntimeError("No complex had enough matched pairs for correlation analysis")
@@ -276,6 +555,7 @@ def analyse_correlations(
                 "smiles",
                 "experimental_potency",
                 "glide_score",
+                "mmgbsa_dg_bind",
                 "docking_score",
                 "glide_emodel",
                 "glide_energy",
@@ -288,6 +568,58 @@ def analyse_correlations(
                 "glide_einternal",
             ]
         ].copy()
+
+        # mmgbsa_file = mmgbsa_results.get(
+        #     job_name
+        # )
+
+        # if (
+        #     mmgbsa_file is not None
+        #     and Path(mmgbsa_file).is_file()
+        # ):
+        #     mmgbsa_df = pd.read_csv(
+        #         mmgbsa_file
+        #     )
+
+        #     required_mmgbsa_columns = {
+        #         "compound_id",
+        #         "mcss_pose_rank",
+        #         "mmgbsa_dg_bind",
+        #     }
+
+        #     missing_mmgbsa_columns = (
+        #         required_mmgbsa_columns
+        #         - set(mmgbsa_df.columns)
+        #     )
+
+        #     if missing_mmgbsa_columns:
+        #         raise RuntimeError(
+        #             f"[{job_name}] MM-GBSA results "
+        #             f"are missing columns: "
+        #             f"{sorted(missing_mmgbsa_columns)}"
+        #         )
+
+        #     results_df = results_df.merge(
+        #         mmgbsa_df[
+        #             [
+        #                 "compound_id",
+        #                 "mcss_pose_rank",
+        #                 "mmgbsa_pose_key",
+        #                 "mmgbsa_dg_bind",
+        #             ]
+        #         ],
+        #         on=[
+        #             "compound_id",
+        #             "mcss_pose_rank",
+        #         ],
+        #         how="left",
+        #         validate="one_to_one",
+        #     )
+
+        # else:
+        #     results_df[
+        #         "mmgbsa_dg_bind"
+        #     ] = np.nan
 
         pose_table = pose_table.sort_values(
             "experimental_potency",
@@ -416,6 +748,171 @@ def analyse_correlations(
         )
 
         plt.close(fig)
+        
+        # ---------------------------------------------
+        # Experimental potency vs Prime MM-GBSA
+        # ---------------------------------------------
+
+        mmgbsa_group = (
+            group[
+                [
+                    "experimental_potency",
+                    "mmgbsa_dg_bind",
+                ]
+            ]
+            .dropna()
+            .copy()
+        )
+
+        if len(
+            mmgbsa_group
+        ) >= min_pairs:
+
+            x_mmgbsa = mmgbsa_group[
+                "experimental_potency"
+            ].to_numpy(
+                float
+            )
+
+            y_mmgbsa = mmgbsa_group[
+                "mmgbsa_dg_bind"
+            ].to_numpy(
+                float
+            )
+
+            # -----------------------------------------
+            # Correlation statistics
+            # -----------------------------------------
+
+            pearson_mmgbsa = pearsonr(
+                x_mmgbsa,
+                y_mmgbsa,
+            )
+
+            spearman_mmgbsa = spearmanr(
+                x_mmgbsa,
+                y_mmgbsa,
+            )
+
+            kendall_mmgbsa = kendalltau(
+                x_mmgbsa,
+                y_mmgbsa,
+            )
+
+            # -----------------------------------------
+            # Linear regression
+            # -----------------------------------------
+
+            slope_mmgbsa, intercept_mmgbsa = (
+                np.polyfit(
+                    x_mmgbsa,
+                    y_mmgbsa,
+                    1,
+                )
+            )
+
+            x_fit_mmgbsa = np.linspace(
+                x_mmgbsa.min(),
+                x_mmgbsa.max(),
+                200,
+            )
+
+            y_fit_mmgbsa = (
+                slope_mmgbsa
+                * x_fit_mmgbsa
+                + intercept_mmgbsa
+            )
+
+            # -----------------------------------------
+            # Plot
+            # -----------------------------------------
+
+            fig, ax = plt.subplots(
+                figsize=(7, 6)
+            )
+
+            ax.scatter(
+                x_mmgbsa,
+                y_mmgbsa,
+                alpha=0.8,
+                label="Compounds",
+            )
+
+            ax.plot(
+                x_fit_mmgbsa,
+                y_fit_mmgbsa,
+                linewidth=2,
+                label="Linear fit",
+            )
+
+            ax.set_title(
+                f"{name} - Prime MM-GBSA"
+            )
+
+            ax.set_xlabel(
+                activity_column
+            )
+
+            ax.set_ylabel(
+                "MM-GBSA dG Bind "
+                "(kcal/mol)"
+            )
+
+            stats_text = (
+                f"N = {len(mmgbsa_group)}\n"
+                f"Pearson r = "
+                f"{pearson_mmgbsa.statistic:.3f} "
+                f"(p = "
+                f"{pearson_mmgbsa.pvalue:.2g})\n"
+                f"Spearman ρ = "
+                f"{spearman_mmgbsa.statistic:.3f} "
+                f"(p = "
+                f"{spearman_mmgbsa.pvalue:.2g})\n"
+                f"Kendall τ = "
+                f"{kendall_mmgbsa.statistic:.3f} "
+                f"(p = "
+                f"{kendall_mmgbsa.pvalue:.2g})"
+            )
+
+            ax.text(
+                0.03,
+                0.97,
+                stats_text,
+                transform=ax.transAxes,
+                verticalalignment="top",
+                horizontalalignment="left",
+                bbox={
+                    "boxstyle": "round",
+                    "facecolor": "white",
+                    "alpha": 0.85,
+                },
+            )
+
+            ax.legend()
+
+            fig.tight_layout()
+
+            fig.savefig(
+                plot_dir
+                / (
+                    f"pose{pose_number:02d}"
+                    "_experimental_vs_mmgbsa.png"
+                ),
+                dpi=200,
+            )
+
+            plt.close(
+                fig
+            )
+
+        else:
+            logger.warning(
+                "%s has only %d matched MM-GBSA/"
+                "activity pairs; MM-GBSA correlation "
+                "plot skipped",
+                name,
+                len(mmgbsa_group),
+            )        
     best = summary.iloc[0]
     (output_dir / "best_binding_pose.txt").write_text(
         f"Best complex pose: {best.complex_pose}\nN: {best.n}\nPearson r: {best.pearson_r:.6f}\n"

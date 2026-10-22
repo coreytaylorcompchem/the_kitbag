@@ -21,6 +21,7 @@ class SchrodingerGlideEMBackend(BaseBackend):
         "prepare_activity_ligands",
         "build_glide_grid",
         "dock_mcss",
+        "calculate_mmgbsa",
     ]
 
     def __init__(self, schrodinger_root: str | None = None, host: str = "localhost:1", **kwargs):
@@ -160,6 +161,75 @@ class SchrodingerGlideEMBackend(BaseBackend):
                 effective_host,
                 input_file.name,
             ],
+            cwd,
+            log_path,
+        )
+
+    def run_mmgbsa(
+        self,
+        input_file: Path,
+        cwd: Path,
+        log_path: Path,
+        job_name: str,
+        host: str | None = None,
+        # forcefield: str | None = None,
+    ) -> None:
+        """
+        Run Prime MM-GBSA on a Glide PoseViewer file.
+
+        The input PoseViewer must contain:
+            1. receptor CT
+            2. one or more docked ligand CTs
+        """
+
+        input_file = (
+            Path(input_file)
+            .expanduser()
+            .resolve()
+        )
+
+        cwd = (
+            Path(cwd)
+            .expanduser()
+            .resolve()
+        )
+
+        if not input_file.is_file():
+            raise FileNotFoundError(
+                f"Prime MM-GBSA input not found: "
+                f"{input_file}"
+            )
+
+        if input_file.stat().st_size == 0:
+            raise RuntimeError(
+                f"Prime MM-GBSA input is empty: "
+                f"{input_file}"
+            )
+
+        effective_host = (
+            host or self.host
+        )
+
+        cmd = [
+            self.exe("prime_mmgbsa"),
+            input_file,
+            "-JOBNAME",
+            job_name,
+            "-HOST",
+            effective_host,
+            "-WAIT",
+        ]
+
+        # if forcefield:
+        #     cmd.extend(
+        #         [
+        #             "-ff",
+        #             forcefield,
+        #         ]
+        #     )
+
+        self.run(
+            cmd,
             cwd,
             log_path,
         )

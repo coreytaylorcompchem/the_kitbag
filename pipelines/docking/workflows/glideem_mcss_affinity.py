@@ -241,6 +241,10 @@ def run(config_path: str):
         "dock_mcss"
     )
 
+    mmgbsa_task = get_task(
+        "calculate_mmgbsa"
+    )
+
     pymol_task = get_task(
         "export_mcss_pymol"
     )
@@ -254,6 +258,7 @@ def run(config_path: str):
         "summarise_glideem_ensembles": glideem_summary_task,
         "build_glide_grid": grid_task,
         "dock_mcss": mcss_task,
+        "calculate_mmgbsa": mmgbsa_task,
         "export_mcss_pymol": pymol_task,
     }
 
@@ -299,6 +304,7 @@ def run(config_path: str):
     pose_dependent_tasks = {
         "build_glide_grid",
         "dock_mcss",
+        "calculate_mmgbsa",
         "analyse_correlations",
         "export_mcss_pymol",
     }
@@ -311,6 +317,7 @@ def run(config_path: str):
     needs_grids = bool(
         {
             "dock_mcss",
+            "calculate_mmgbsa",
             "analyse_correlations",
             "export_mcss_pymol",
         }
@@ -319,6 +326,7 @@ def run(config_path: str):
 
     needs_poseviewers = bool(
         {
+            "calculate_mmgbsa",
             "analyse_correlations",
             "export_mcss_pymol",
         }
@@ -1231,6 +1239,168 @@ def run(config_path: str):
         return None
 
     # --------------------------------------------------
+    # Prime MM-GBSA rescoring
+    # --------------------------------------------------
+
+    mmgbsa_results = {}
+
+    if (
+        "calculate_mmgbsa"
+        in enabled_tasks
+    ):
+        mmgbsa_cfg = config.get(
+            "mmgbsa",
+            {},
+        )
+
+        mmgbsa_max_parallel = int(
+            mmgbsa_cfg.get(
+                "max_parallel",
+                1,
+            )
+        )
+
+        mmgbsa_max_parallel = max(
+            1,
+            min(
+                mmgbsa_max_parallel,
+                len(poseviewers),
+            ),
+        )
+
+        logger.info(
+            "Starting Prime MM-GBSA for "
+            "%d MCSS docking jobs with up to "
+            "%d concurrent jobs",
+            len(poseviewers),
+            mmgbsa_max_parallel,
+        )
+
+        jobs_by_name = {
+            job["name"]: job
+            for job in grid_jobs
+        }
+
+        def run_mmgbsa_job(
+            name,
+            poseviewer,
+        ):
+            job = jobs_by_name[
+                name
+            ]
+
+            logger.info(
+                "[%s] Starting Prime MM-GBSA",
+                name,
+            )
+
+            results_file = mmgbsa_task(
+                backend,
+                None,
+                config,
+                complex_job=job,
+                poseviewer=poseviewer,
+                mmgbsa_root=(
+                    output
+                    / "mmgbsa"
+                ),
+            )
+
+            return (
+                name,
+                Path(
+                    results_file
+                ).resolve(),
+            )
+
+        with ThreadPoolExecutor(
+            max_workers=mmgbsa_max_parallel
+        ) as executor:
+            futures = {
+                executor.submit(
+                    run_mmgbsa_job,
+                    name,
+                    poseviewer,
+                ): name
+                for name, poseviewer in (
+                    poseviewers.items()
+                )
+            }
+
+            for future in as_completed(
+                futures
+            ):
+                name = futures[
+                    future
+                ]
+
+                try:
+                    (
+                        result_name,
+                        results_file,
+                    ) = future.result()
+
+                except Exception as exc:
+                    logger.error(
+                        "[%s] Prime MM-GBSA failed; "
+                        "docking analysis can continue "
+                        "without MM-GBSA values: %s",
+                        name,
+                        exc,
+                        exc_info=True,
+                    )
+
+                    failed_jobs.append(
+                        {
+                            "job_name": name,
+                            "stage": "mmgbsa",
+                            "error": str(exc),
+                        }
+                    )
+
+                    continue
+
+                mmgbsa_results[
+                    result_name
+                ] = results_file
+
+                logger.info(
+                    "[%s] Prime MM-GBSA "
+                    "completed: %s",
+                    result_name,
+                    results_file,
+                )
+
+    elif (
+        "analyse_correlations"
+        in enabled_tasks
+    ):
+        logger.info(
+            "Prime MM-GBSA calculation is disabled; "
+            "loading existing MM-GBSA results where present"
+        )
+
+        for job in grid_jobs:
+            name = job[
+                "name"
+            ]
+
+            results_file = (
+                output
+                / "mmgbsa"
+                / name
+                / (
+                    f"{name}"
+                    "_mmgbsa_results.csv"
+                )
+            )
+
+            if results_file.is_file():
+                mmgbsa_results[
+                    name
+                ] = results_file
+
+    # --------------------------------------------------
     # Docking/activity correlation
     # --------------------------------------------------
 
@@ -1265,6 +1435,7 @@ def run(config_path: str):
             summary = analyse_correlations(
                 complex_jobs=complex_jobs,
                 poseviewers=poseviewers,
+                mmgbsa_results=mmgbsa_results,
                 ligand_file=ligand_file,
                 source_ligand_file=Path(
                     config[
