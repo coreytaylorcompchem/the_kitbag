@@ -9,13 +9,11 @@ from pathlib import Path
 
 from schrodinger import structure
 
+from modules.utils.constants import AA, IGNORE, element_colour_commands
+
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
-
-AA = {"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE","LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL","MSE","HID","HIE","HIP","ASH","GLH","LYN","CYX"}
-IGNORE = {"HOH","WAT","SOL","DOD","NA","K","CL","CA","MG","ZN","MN","FE","SO4","PO4","GOL","EDO","PEG"}
-ID_FIELDS = ("s_user_compound_id", "Compound ID", "Compound_ID", "ID", "Name", "s_m_title")
 
 def is_protein_atom(atom):
     try:
@@ -1009,11 +1007,10 @@ def export_glideem_pymol_ensemble(
         # Original experimental ligand position.
         "load cryoem_structure.pdb, cryoem_structure",
         "show sticks, cryoem_structure",
-        "color gray50, (cryoem_structure and elem C)",
-        "color blue, (cryoem_structure and elem N)",
-        "color red, (cryoem_structure and elem O)",
-        "color yellow, (cryoem_structure and elem S)",
-        "color white, (cryoem_structure and elem H)",
+        *element_colour_commands(
+            "cryoem_structure",
+            "gray50",
+        ),
         "",
     ]
 
@@ -1049,38 +1046,6 @@ def export_glideem_pymol_ensemble(
             density_map.suffix,
         )
 
-    # script.extend(
-    #     [
-    #         "# Original experimental ligand position.",
-    #         (
-    #             "load cryoem_structure.pdb, "
-    #             "cryoem_structure"
-    #         ),
-    #         "show sticks, cryoem_structure",
-    #         (
-    #             "color gray50, "
-    #             "(cryoem_structure and elem C)"
-    #         ),
-    #         (
-    #             "color blue, "
-    #             "(cryoem_structure and elem N)"
-    #         ),
-    #         (
-    #             "color red, "
-    #             "(cryoem_structure and elem O)"
-    #         ),
-    #         (
-    #             "color yellow, "
-    #             "(cryoem_structure and elem S)"
-    #         ),
-    #         (
-    #             "color white, "
-    #             "(cryoem_structure and elem H)"
-    #         ),
-    #         "",
-    #     ]
-    # )
-
     cluster_objects = defaultdict(list)
 
     for (
@@ -1109,42 +1074,13 @@ def export_glideem_pymol_ensemble(
             [
                 f"load {pose_file.name}, {object_name}",
                 f"show sticks, {object_name}",
-                (
-                    f"color {carbon_colour}, "
-                    f"({object_name} and elem C)"
+                *element_colour_commands(
+                    object_name,
+                    carbon_colour,
                 ),
-                f"color blue, ({object_name} and elem N)",
-                f"color red, ({object_name} and elem O)",
-                f"color yellow, ({object_name} and elem S)",
-                f"color orange, ({object_name} and elem P)",
-                f"color white, ({object_name} and elem H)",
-                f"color green, ({object_name} and elem F)",
-                f"color green, ({object_name} and elem Cl)",
-                f"color brown, ({object_name} and elem Br)",
-                f"color purple, ({object_name} and elem I)",
                 "",
             ]
         )
-
-    #     script.extend(
-    #     [
-    #         "",
-    #         (
-    #             "select binding_site, "
-    #             "byres (receptor within 5.0 of "
-    #             "(cryoem_structure or "
-    #             "glideem_pose_clusters))"
-    #         ),
-    #         "show sticks, binding_site",
-    #         "color gray80, (binding_site and elem C)",
-    #         "color blue, (binding_site and elem N)",
-    #         "color red, (binding_site and elem O)",
-    #         "color yellow, (binding_site and elem S)",
-    #         "color orange, (binding_site and elem P)",
-    #         "color white, (binding_site and elem H)",
-    #         "",
-    #     ]
-    # )
 
     for cluster_name, objects in sorted(
         cluster_objects.items()
@@ -1153,29 +1089,6 @@ def export_glideem_pymol_ensemble(
             f"group {cluster_name}, "
             + " ".join(objects)
         )
-
-    # script.extend(
-    #     [
-    #         "",
-    #         # Group all GlideEM cluster groups.
-    #         "group glideem_pose_clusters, "
-    #         + " ".join(
-    #             sorted(cluster_objects)
-    #         ),
-    #         "",
-
-    #         # Consistent thin-stick representation.
-    #         "set stick_radius, 0.15, glideem_pose_clusters",
-    #         "set stick_radius, 0.15, cryoem_structure",
-    #         "",
-
-    #         # Initial view centred on the ligand ensemble,
-    #         # rather than the full cryo-EM density map.
-    #         "orient glideem_pose_clusters",
-    #         "zoom glideem_pose_clusters, 8",
-    #         "",
-    #     ]
-    # )
 
     all_pose_objects = [
         object_name
@@ -1213,12 +1126,10 @@ def export_glideem_pymol_ensemble(
                 "glideem_pose_ensemble))"
             ),
             "show sticks, binding_site",
-            "color gray80, (binding_site and elem C)",
-            "color blue, (binding_site and elem N)",
-            "color red, (binding_site and elem O)",
-            "color yellow, (binding_site and elem S)",
-            "color orange, (binding_site and elem P)",
-            "color white, (binding_site and elem H)",
+            *element_colour_commands(
+                "binding_site",
+                "gray80",
+            ),
             "",
         ]
     )

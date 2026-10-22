@@ -3,24 +3,12 @@ from __future__ import annotations
 import csv
 import re
 
-from collections import defaultdict
+# from collections import defaultdict
 from pathlib import Path
 
+from modules.utils.constants import element_colour_commands
+
 from schrodinger import structure
-
-
-ELEMENT_COLOURS = {
-    "N": "blue",
-    "O": "red",
-    "S": "yellow",
-    "P": "orange",
-    "H": "white",
-    "F": "green",
-    "Cl": "green",
-    "Br": "brown",
-    "I": "purple",
-}
-
 
 def safe_pymol_name(
     value,
@@ -82,34 +70,6 @@ def read_first_structure(
 
     return structures[0]
 
-
-def element_colour_commands(
-    object_name: str,
-    carbon_colour: str,
-) -> list[str]:
-    """
-    Return PyMOL commands that colour carbon atoms using
-    the object-specific colour and other atoms by element.
-    """
-
-    commands = [
-        (
-            f"color {carbon_colour}, "
-            f"({object_name} and elem C)"
-        ),
-    ]
-
-    for element, colour in (
-        ELEMENT_COLOURS.items()
-    ):
-        commands.append(
-            f"color {colour}, "
-            f"({object_name} and elem {element})"
-        )
-
-    return commands
-
-
 def write_pymol_script(
     commands: list[str],
     output_file: Path,
@@ -133,167 +93,167 @@ def write_pymol_script(
     return output_file
 
 
-def export_glideem_pose_ensemble(
-    pose_structures,
-    cluster_by_pose,
-    cryoem_reference: Path,
-    output_dir: Path,
-    job_name: str,
-) -> Path:
-    output_dir = (
-        Path(output_dir)
-        .expanduser()
-        .resolve()
-    )
+# def export_glideem_pose_ensemble(
+#     pose_structures,
+#     cluster_by_pose,
+#     cryoem_reference: Path,
+#     output_dir: Path,
+#     job_name: str,
+# ) -> Path:
+#     output_dir = (
+#         Path(output_dir)
+#         .expanduser()
+#         .resolve()
+#     )
 
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+#     output_dir.mkdir(
+#         parents=True,
+#         exist_ok=True,
+#     )
 
-    cryoem_structure = read_first_structure(
-        cryoem_reference
-    )
+#     cryoem_structure = read_first_structure(
+#         cryoem_reference
+#     )
 
-    write_structure(
-        cryoem_structure,
-        output_dir /
-        "cryoem_structure.pdb",
-    )
+#     write_structure(
+#         cryoem_structure,
+#         output_dir /
+#         "cryoem_structure.pdb",
+#     )
 
-    exported = []
+#     exported = []
 
-    for record in pose_structures:
-        pose_number = int(
-            record["pose_number"]
-        )
+#     for record in pose_structures:
+#         pose_number = int(
+#             record["pose_number"]
+#         )
 
-        cluster_id = int(
-            cluster_by_pose[
-                pose_number
-            ]
-        )
+#         cluster_id = int(
+#             cluster_by_pose[
+#                 pose_number
+#             ]
+#         )
 
-        object_name = (
-            f"pose{pose_number:02d}"
-            f"_cluster{cluster_id:02d}"
-        )
+#         object_name = (
+#             f"pose{pose_number:02d}"
+#             f"_cluster{cluster_id:02d}"
+#         )
 
-        pose_file = write_structure(
-            record["structure"],
-            output_dir /
-            f"{object_name}.pdb",
-        )
+#         pose_file = write_structure(
+#             record["structure"],
+#             output_dir /
+#             f"{object_name}.pdb",
+#         )
 
-        exported.append(
-            {
-                "pose_number": pose_number,
-                "cluster_id": cluster_id,
-                "object_name": object_name,
-                "pose_file": pose_file,
-            }
-        )
+#         exported.append(
+#             {
+#                 "pose_number": pose_number,
+#                 "cluster_id": cluster_id,
+#                 "object_name": object_name,
+#                 "pose_file": pose_file,
+#             }
+#         )
 
-    carbon_colours = [
-        "cyan",
-        "green",
-        "yellow",
-        "orange",
-        "magenta",
-        "marine",
-        "salmon",
-        "violet",
-    ]
+#     carbon_colours = [
+#         "cyan",
+#         "green",
+#         "yellow",
+#         "orange",
+#         "magenta",
+#         "marine",
+#         "salmon",
+#         "violet",
+#     ]
 
-    commands = [
-        "reinitialize",
-        "bg_color white",
-        "",
-        "load cryoem_structure.pdb, cryoem_structure",
-        "show sticks, cryoem_structure",
-        *element_colour_commands(
-            "cryoem_structure",
-            "gray50",
-        ),
-        "",
-    ]
+#     commands = [
+#         "reinitialize",
+#         "bg_color white",
+#         "",
+#         "load cryoem_structure.pdb, cryoem_structure",
+#         "show sticks, cryoem_structure",
+#         *element_colour_commands(
+#             "cryoem_structure",
+#             "gray50",
+#         ),
+#         "",
+#     ]
 
-    cluster_objects = defaultdict(
-        list
-    )
+#     cluster_objects = defaultdict(
+#         list
+#     )
 
-    for record in exported:
-        cluster_id = record[
-            "cluster_id"
-        ]
+#     for record in exported:
+#         cluster_id = record[
+#             "cluster_id"
+#         ]
 
-        object_name = record[
-            "object_name"
-        ]
+#         object_name = record[
+#             "object_name"
+#         ]
 
-        pose_file = record[
-            "pose_file"
-        ]
+#         pose_file = record[
+#             "pose_file"
+#         ]
 
-        carbon_colour = carbon_colours[
-            (cluster_id - 1)
-            % len(carbon_colours)
-        ]
+#         carbon_colour = carbon_colours[
+#             (cluster_id - 1)
+#             % len(carbon_colours)
+#         ]
 
-        cluster_name = (
-            f"cluster{cluster_id:02d}"
-        )
+#         cluster_name = (
+#             f"cluster{cluster_id:02d}"
+#         )
 
-        cluster_objects[
-            cluster_name
-        ].append(
-            object_name
-        )
+#         cluster_objects[
+#             cluster_name
+#         ].append(
+#             object_name
+#         )
 
-        commands.extend(
-            [
-                (
-                    f"load {pose_file.name}, "
-                    f"{object_name}"
-                ),
-                f"show sticks, {object_name}",
-                *element_colour_commands(
-                    object_name,
-                    carbon_colour,
-                ),
-                "",
-            ]
-        )
+#         commands.extend(
+#             [
+#                 (
+#                     f"load {pose_file.name}, "
+#                     f"{object_name}"
+#                 ),
+#                 f"show sticks, {object_name}",
+#                 *element_colour_commands(
+#                     object_name,
+#                     carbon_colour,
+#                 ),
+#                 "",
+#             ]
+#         )
 
-    for cluster_name, objects in sorted(
-        cluster_objects.items()
-    ):
-        commands.append(
-            f"group {cluster_name}, "
-            + " ".join(objects)
-        )
+#     for cluster_name, objects in sorted(
+#         cluster_objects.items()
+#     ):
+#         commands.append(
+#             f"group {cluster_name}, "
+#             + " ".join(objects)
+#         )
 
-    commands.extend(
-        [
-            "",
-            "group glideem_pose_clusters, "
-            + " ".join(
-                sorted(
-                    cluster_objects
-                )
-            ),
-            "",
-            "orient glideem_pose_clusters",
-            "zoom glideem_pose_clusters, 6",
-            "",
-        ]
-    )
+#     commands.extend(
+#         [
+#             "",
+#             "group glideem_pose_clusters, "
+#             + " ".join(
+#                 sorted(
+#                     cluster_objects
+#                 )
+#             ),
+#             "",
+#             "orient glideem_pose_clusters",
+#             "zoom glideem_pose_clusters, 6",
+#             "",
+#         ]
+#     )
 
-    return write_pymol_script(
-        commands,
-        output_dir /
-        "load_glideem_ensemble.pml",
-    )
+#     return write_pymol_script(
+#         commands,
+#         output_dir /
+#         "load_glideem_ensemble.pml",
+#     )
 
 
 def export_mcss_pose_bundle(
@@ -490,23 +450,45 @@ def export_mcss_pose_bundle(
             ]
         )
 
-    if ligand_objects:
-        commands.append(
-            "group top_mcss_poses, "
-            + " ".join(
-                ligand_objects
-            )
+    if not ligand_objects:
+        raise RuntimeError(
+            "No MCSS ligand objects were exported."
         )
+
+    # Keep the individual docked ligands inside an expandable
+    # top-level group.
+    commands.append(
+        "group top_mcss_poses, "
+        + " ".join(
+            ligand_objects
+        )
+    )
+
+    # Use a separate aggregate selection for display commands.
+    # This avoids relying on the group itself as a selection.
+    commands.extend(
+        [
+            "",
+            (
+                "select mcss_pose_ensemble, "
+                + " or ".join(
+                    ligand_objects
+                )
+            ),
+            "",
+        ]
+    )
 
     ligand_selection = (
         "cryoem_structure or "
         "glideem_reference_pose or "
-        "top_mcss_poses"
+        "mcss_pose_ensemble"
     )
 
     commands.extend(
         [
             "",
+            "# Protein residues surrounding all displayed ligands.",
             (
                 "select binding_site, "
                 f"byres (receptor within "
@@ -519,8 +501,17 @@ def export_mcss_pose_bundle(
                 "gray80",
             ),
             "",
-            "orient top_mcss_poses",
-            "zoom top_mcss_poses, 8",
+
+            "# Consistent thin-stick representation.",
+            "set stick_radius, 0.15, mcss_pose_ensemble",
+            "set stick_radius, 0.15, cryoem_structure",
+            "set stick_radius, 0.15, glideem_reference_pose",
+            "set stick_radius, 0.15, binding_site",
+            "",
+
+            "# Initial view centred on the docked MCSS ligands.",
+            "orient mcss_pose_ensemble",
+            "zoom mcss_pose_ensemble, 8",
             "",
         ]
     )

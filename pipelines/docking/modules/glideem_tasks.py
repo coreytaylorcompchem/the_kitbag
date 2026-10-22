@@ -51,7 +51,7 @@ from modules.utils.glideem_plotting import (
     save_rmsd_heatmap,
 )
 
-from modules.utils.pymol_export import (
+from modules.utils.mcss_docking_helpers import (
     export_mcss_pose_bundle,
 )
 
