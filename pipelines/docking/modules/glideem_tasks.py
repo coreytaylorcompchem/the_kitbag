@@ -55,6 +55,11 @@ from modules.utils.pymol_export import (
     export_mcss_pose_bundle,
 )
 
+from modules.utils.prime_mmgbsa_helpers import (
+    _write_mmgbsa_input,
+    _parse_mmgbsa_output,
+)
+
 from pipeline.logger import setup_logger
 from pipeline.task_registry import register_task
 
@@ -1925,6 +1930,202 @@ def dock_mcss(
         )
 
     return pv
+
+@register_task(
+    "calculate_mmgbsa",
+    category="Prime",
+    description=(
+        "Rescore MCSS-constrained Glide poses "
+        "using Prime MM-GBSA."
+    ),
+)
+def calculate_mmgbsa(
+    backend,
+    ligand,
+    config,
+    **kwargs,
+):
+    complex_job = kwargs[
+        "complex_job"
+    ]
+
+    poseviewer = (
+        Path(kwargs["poseviewer"])
+        .expanduser()
+        .resolve()
+    )
+
+    if not poseviewer.is_file():
+        raise FileNotFoundError(
+            f"MCSS PoseViewer not found: "
+            f"{poseviewer}"
+        )
+
+    if poseviewer.stat().st_size == 0:
+        raise RuntimeError(
+            f"MCSS PoseViewer is empty: "
+            f"{poseviewer}"
+        )
+
+    mmgbsa_cfg = config.get(
+        "mmgbsa",
+        {},
+    )
+
+    job_name = (
+        f"{complex_job['name']}"
+        "_mmgbsa"
+    )
+
+    output_dir = (
+        Path(kwargs["mmgbsa_root"])
+        .expanduser()
+        .resolve()
+        / complex_job["name"]
+    )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    input_file = (
+        output_dir
+        / f"{job_name}_input.maegz"
+    )
+
+    input_manifest_file = (
+        output_dir
+        / f"{job_name}_input_poses.csv"
+    )
+
+    results_csv = (
+        output_dir
+        / f"{job_name}_results.csv"
+    )
+
+    output_file = (
+        output_dir
+        / f"{job_name}-out.maegz"
+    )
+
+    launcher_log = (
+        output_dir
+        / f"{job_name}_launcher.log"
+    )
+
+    can_reuse = (
+        results_csv.is_file()
+        and results_csv.stat().st_size > 0
+        and not config.get(
+            "force",
+            False,
+        )
+    )
+
+    if can_reuse:
+        logger.info(
+            "[%s] Using existing MM-GBSA "
+            "results: %s",
+            complex_job["name"],
+            results_csv,
+        )
+
+        return results_csv
+
+    input_manifest = (
+        _write_mmgbsa_input(
+            poseviewer=poseviewer,
+            output_file=input_file,
+        )
+    )
+
+    input_manifest.to_csv(
+        input_manifest_file,
+        index=False,
+    )
+
+    logger.info(
+        "[%s] Running Prime MM-GBSA for "
+        "%d MCSS poses",
+        complex_job["name"],
+        len(input_manifest),
+    )
+
+    backend.run_mmgbsa(
+        input_file=input_file,
+        cwd=output_dir,
+        log_path=launcher_log,
+        job_name=job_name,
+        host=mmgbsa_cfg.get(
+            "host",
+            backend.host,
+        ),
+    )
+
+    if not output_file.is_file():
+        candidates = sorted(
+            output_dir.glob(
+                f"{job_name}*out*.maegz"
+            )
+        )
+
+        if len(candidates) == 1:
+            output_file = candidates[
+                0
+            ]
+
+        else:
+            raise RuntimeError(
+                "Prime MM-GBSA completed but the "
+                "expected output structure file was "
+                f"not found: {output_file}. "
+                f"Candidates: {candidates}"
+            )
+
+    if output_file.stat().st_size == 0:
+        raise RuntimeError(
+            "Prime MM-GBSA output is empty: "
+            f"{output_file}"
+        )
+
+    results = _parse_mmgbsa_output(
+        output_file=output_file,
+        input_manifest=input_manifest,
+    )
+
+    results.insert(
+        0,
+        "dock_name",
+        complex_job["name"],
+    )
+
+    results.insert(
+        1,
+        "source_name",
+        complex_job[
+            "source_name"
+        ],
+    )
+
+    results.to_csv(
+        results_csv,
+        index=False,
+    )
+
+    logger.info(
+        "[%s] Prime MM-GBSA completed: "
+        "%d/%d poses have dG Bind values",
+        complex_job["name"],
+        int(
+            results[
+                "mmgbsa_dg_bind"
+            ].notna().sum()
+        ),
+        len(results),
+    )
+
+    return results_csv
 
 @register_task(
     "export_mcss_pymol",
