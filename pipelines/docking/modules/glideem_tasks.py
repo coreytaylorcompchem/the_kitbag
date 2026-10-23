@@ -60,6 +60,52 @@ from modules.utils.prime_mmgbsa_helpers import (
     _parse_mmgbsa_output,
 )
 
+from modules.utils.glideem_campaign_analysis import (
+    cluster_global_pose_families,
+    centroid_dispersion_summary,
+    density_difference,
+    density_variability,
+    family_medoid_indices,
+    family_support_summary,
+    load_aligned_glideem_poses,
+    make_common_grid,
+    pooled_probability_density,
+    pose_probability_density,
+    read_first_structure,
+    read_reference_ligand_coordinates,
+    save_global_family_dendrogram,
+    save_grid_metadata,
+    save_numpy_density,
+    save_structure_family_heatmap,
+    save_structure_js_heatmap,
+    structure_ambiguity_summary,
+    structure_family_composition,
+    structure_js_distance_matrix,
+    write_aligned_pose_archive,
+    transform_structure_copy,
+    extract_ca_chains,
+    select_best_sequence_matched_chain_pair,
+    sequence_mapped_pocket_coordinates,
+    robust_kabsch_transform,
+    pairwise_centroid_distance_matrix,
+    build_mobile_to_reference_position_map,
+    receptor_contact_atoms,
+    assign_second_level_subfamilies,
+    pose_contact_fingerprint,
+    ligand_orientation_descriptors,
+    export_second_level_pymol,
+    save_second_level_family_heatmap,
+    second_level_contact_summary,
+)
+
+from modules.utils.glideem_ensemble_support import (
+    run_ensemble_support_analysis,
+)
+
+from modules.utils.glideem_pocket_evidence import (
+    run_pocket_evidence_analysis,
+)
+
 from pipeline.logger import setup_logger
 from pipeline.task_registry import register_task
 
@@ -1291,6 +1337,12 @@ def analyse_glideem_poses(
             "pose_pairwise_rmsd.csv"
         ),
         "pymol_script": pymol_script,
+        # Required by campaign-level landscape analysis
+        "archive": archive,
+        "prepared_receptor": prepared_receptor,
+        "cryoem_reference": cryoem_reference,
+        "reference_ligand_resname": ligand_resname,
+        "ligand_from_smiles": ligand_from_smiles,
     }
 
 @register_task(
@@ -2298,3 +2350,2147 @@ def export_mcss_pymol(
     )
 
     return script_file
+
+@register_task(
+    "analyse_glideem_campaign_landscape",
+    category="GlideEM",
+    description=(
+        "Align all GlideEM ensembles into a common receptor frame "
+        "and analyse the campaign-level 3D pose landscape."
+    ),
+)
+def analyse_glideem_campaign_landscape(
+    backend,
+    ligand,
+    config,
+    **kwargs,
+):
+    analysis_results = list(
+        kwargs["analysis_results"]
+    )
+
+    output_dir = (
+        Path(
+            kwargs["output_dir"]
+        )
+        .expanduser()
+        .resolve()
+    )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    if not analysis_results:
+        raise RuntimeError(
+            "No per-structure GlideEM analyses were supplied "
+            "to campaign landscape analysis."
+        )
+
+    campaign_cfg = config.get(
+        "glideem_campaign_analysis",
+        {},
+    )
+
+    alignment_cfg = campaign_cfg.get(
+        "alignment",
+        {},
+    )
+
+    density_cfg = campaign_cfg.get(
+        "density",
+        {},
+    )
+
+    clustering_cfg = campaign_cfg.get(
+        "clustering",
+        {},
+    )
+
+    export_cfg = campaign_cfg.get(
+        "export",
+        {},
+    )
+
+    ensemble_support_cfg = campaign_cfg.get(
+        "ensemble_support",
+        {},
+    )
+
+    ensemble_support_enabled = bool(
+        ensemble_support_cfg.get(
+            "enabled",
+            True,
+        )
+    )
+
+    second_level_cfg = campaign_cfg.get(
+        "second_level",
+        {},
+    )    
+
+    pocket_cutoff = float(
+        alignment_cfg.get(
+            "pocket_cutoff",
+            10.0,
+        )
+    )
+
+    alignment_atom_name = str(
+        alignment_cfg.get(
+            "atom_name",
+            "CA",
+        )
+    ).strip().upper()
+
+    minimum_common_atoms = int(
+        alignment_cfg.get(
+            "minimum_common_atoms",
+            20,
+        )
+    )
+
+    minimum_chain_length = int(
+        alignment_cfg.get(
+            "minimum_chain_length",
+            100,
+        )
+    )
+
+    minimum_sequence_identity = float(
+        alignment_cfg.get(
+            "minimum_sequence_identity",
+            0.70,
+        )
+    )
+
+    minimum_reference_coverage = float(
+        alignment_cfg.get(
+            "minimum_reference_coverage",
+            0.70,
+        )
+    )
+
+    coordinate_outlier_cutoff = float(
+        alignment_cfg.get(
+            "coordinate_outlier_cutoff",
+            3.0,
+        )
+    )
+
+    requested_reference_name = (
+        alignment_cfg.get(
+            "reference_structure"
+        )
+    )
+
+    spacing = float(
+        density_cfg.get(
+            "spacing",
+            0.75,
+        )
+    )
+
+    padding = float(
+        density_cfg.get(
+            "padding",
+            4.0,
+        )
+    )
+
+    gaussian_sigma = float(
+        density_cfg.get(
+            "gaussian_sigma",
+            2.0,
+        )
+    )
+
+    # distance_metric = str(
+    #     clustering_cfg.get(
+    #         "distance_metric",
+    #         "jensenshannon",
+    #     )
+    # ).strip().lower()
+
+    linkage_method = str(
+        clustering_cfg.get(
+            "linkage_method",
+            "average",
+        )
+    ).strip().lower()
+
+    centroid_distance_cutoff = float(
+        clustering_cfg.get(
+            "centroid_distance_cutoff",
+            2.5,
+        )
+    )
+
+    if centroid_distance_cutoff <= 0.0:
+        raise ValueError(
+            "glideem_campaign_analysis.clustering."
+            "centroid_distance_cutoff must be positive."
+        )
+
+    contact_cutoff = float(
+        second_level_cfg.get(
+            "contact_cutoff",
+            4.5,
+        )
+    )
+
+    polar_contact_cutoff = float(
+        second_level_cfg.get(
+            "polar_contact_cutoff",
+            3.5,
+        )
+    )
+
+    orientation_weight = float(
+        second_level_cfg.get(
+            "orientation_weight",
+            0.40,
+        )
+    )
+
+    contact_weight = float(
+        second_level_cfg.get(
+            "contact_weight",
+            0.60,
+        )
+    )
+
+    subfamily_distance_cutoff = float(
+        second_level_cfg.get(
+            "subfamily_distance_cutoff",
+            0.45,
+        )
+    )
+
+    minimum_axis_anisotropy = float(
+        second_level_cfg.get(
+            "minimum_axis_anisotropy",
+            0.15,
+        )
+    )
+
+    export_second_level_pymol_enabled = bool(
+        second_level_cfg.get(
+            "export_pymol",
+            True,
+        )
+    )
+
+    if contact_cutoff <= 0.0:
+        raise ValueError(
+            "second_level.contact_cutoff must be positive."
+        )
+
+    if (
+        polar_contact_cutoff <= 0.0
+        or polar_contact_cutoff > contact_cutoff
+    ):
+        raise ValueError(
+            "second_level.polar_contact_cutoff must be positive "
+            "and no greater than contact_cutoff."
+        )
+
+    if (
+        orientation_weight < 0.0
+        or contact_weight < 0.0
+        or (
+            orientation_weight
+            + contact_weight
+        ) <= 0.0
+    ):
+        raise ValueError(
+            "Second-level weights must be non-negative and "
+            "must have a positive sum."
+        )
+
+    if spacing <= 0.0:
+        raise ValueError(
+            "glideem_campaign_analysis.density.spacing "
+            "must be positive."
+        )
+
+    if gaussian_sigma < 0.0:
+        raise ValueError(
+            "glideem_campaign_analysis.density.gaussian_sigma "
+            "cannot be negative."
+        )
+
+    pocket_evidence_cfg = campaign_cfg.get(
+        "pocket_evidence",
+        {},
+    )
+
+    pocket_evidence_enabled = bool(
+        pocket_evidence_cfg.get(
+            "enabled",
+            True,
+        )
+    )
+
+    # --------------------------------------------------
+    # Validate and index source analyses
+    # --------------------------------------------------
+
+    valid_results = []
+
+    for result in analysis_results:
+        required_fields = {
+            "job_name",
+            "archive",
+            "prepared_receptor",
+            "cryoem_reference",
+            "reference_ligand_resname",
+            "ligand_from_smiles",
+            "metrics",
+        }
+
+        missing_fields = (
+            required_fields
+            - set(
+                result
+            )
+        )
+
+        if missing_fields:
+            logger.warning(
+                "[%s] Excluded from campaign landscape because "
+                "analysis result fields are missing: %s",
+                result.get(
+                    "job_name",
+                    "unknown",
+                ),
+                sorted(
+                    missing_fields
+                ),
+            )
+            continue
+
+        archive = Path(
+            result[
+                "archive"
+            ]
+        )
+
+        receptor_file = Path(
+            result[
+                "prepared_receptor"
+            ]
+        )
+
+        reference_file = Path(
+            result[
+                "cryoem_reference"
+            ]
+        )
+
+        metrics_file = Path(
+            result[
+                "metrics"
+            ]
+        )
+
+        missing_files = [
+            path
+            for path in (
+                archive,
+                receptor_file,
+                reference_file,
+                metrics_file,
+            )
+            if not path.is_file()
+        ]
+
+        if missing_files:
+            logger.warning(
+                "[%s] Excluded from campaign landscape because "
+                "files are missing: %s",
+                result[
+                    "job_name"
+                ],
+                missing_files,
+            )
+            continue
+
+        valid_results.append(
+            result
+        )
+
+    if len(
+        valid_results
+    ) < 2:
+        raise RuntimeError(
+            "Campaign landscape analysis requires at least "
+            "two valid GlideEM structures."
+        )
+
+    # --------------------------------------------------
+    # Choose common coordinate frame
+    # --------------------------------------------------
+
+    if requested_reference_name:
+        matching = [
+            result
+            for result in valid_results
+            if result[
+                "job_name"
+            ] == requested_reference_name
+        ]
+
+        if not matching:
+            raise ValueError(
+                "Requested campaign alignment reference was "
+                f"not found: {requested_reference_name}"
+            )
+
+        reference_result = matching[
+            0
+        ]
+
+    else:
+        reference_result = valid_results[
+            0
+        ]
+
+    reference_name = reference_result[
+        "job_name"
+    ]
+
+    reference_receptor = (
+        read_first_structure(
+            Path(
+                reference_result[
+                    "prepared_receptor"
+                ]
+            )
+        )
+    )
+
+    reference_ligand_coordinates = (
+        read_reference_ligand_coordinates(
+            Path(
+                reference_result[
+                    "cryoem_reference"
+                ]
+            )
+        )
+    )
+
+    # reference_pocket_atoms = (
+    #     pocket_alignment_coordinates(
+    #         receptor_st=reference_receptor,
+    #         reference_ligand_coordinates=(
+    #             reference_ligand_coordinates
+    #         ),
+    #         pocket_cutoff=pocket_cutoff,
+    #         atom_name=alignment_atom_name,
+    #     )
+    # )
+
+    # if (
+    #     len(
+    #         reference_pocket_atoms
+    #     )
+    #     < minimum_common_atoms
+    # ):
+    #     raise RuntimeError(
+    #         f"Reference structure {reference_name} contains only "
+    #         f"{len(reference_pocket_atoms)} pocket alignment atoms; "
+    #         f"at least {minimum_common_atoms} are required."
+    #     )
+
+    reference_chains = extract_ca_chains(
+        receptor_st=reference_receptor,
+        atom_name=alignment_atom_name,
+        minimum_chain_length=minimum_chain_length,
+    )
+
+    if not reference_chains:
+        raise RuntimeError(
+            f"No plausible receptor chains were found in "
+            f"reference structure {reference_name}."
+        )
+
+    logger.info(
+        "Campaign alignment reference: %s with %d "
+        "candidate protein chains",
+        reference_name,
+        len(
+            reference_chains
+        ),
+    )
+    # --------------------------------------------------
+    # Align every structure and load all poses
+    # --------------------------------------------------
+
+    all_pose_records = []
+    alignment_rows = []
+    accepted_results = []
+
+    # Aligned receptor structures used for visual QC of the
+    # campaign coordinate-frame transformation.
+    aligned_receptor_records = []
+
+    contact_receptor_atoms_by_source = {}
+    campaign_reference_chain_id = None
+
+    for result in valid_results:
+        source_name = result[
+            "job_name"
+        ]
+
+        receptor_st = read_first_structure(
+            Path(
+                result[
+                    "prepared_receptor"
+                ]
+            )
+        )
+
+        # source_reference_coordinates = (
+        #     read_reference_ligand_coordinates(
+        #         Path(
+        #             result[
+        #                 "cryoem_reference"
+        #             ]
+        #         )
+        #     )
+        # )
+
+        # source_pocket_atoms = (
+        #     pocket_alignment_coordinates(
+        #         receptor_st=receptor_st,
+        #         reference_ligand_coordinates=(
+        #             source_reference_coordinates
+        #         ),
+        #         pocket_cutoff=pocket_cutoff,
+        #         atom_name=alignment_atom_name,
+        #     )
+        # )
+
+        # common_keys = sorted(
+        #     set(
+        #         reference_pocket_atoms
+        #     )
+        #     & set(
+        #         source_pocket_atoms
+        #     )
+        # )
+
+        # if (
+        #     len(
+        #         common_keys
+        #     )
+        #     < minimum_common_atoms
+        # ):
+        #     logger.warning(
+        #         "[%s] Excluded from campaign analysis: only %d "
+        #         "common pocket alignment atoms were found",
+        #         source_name,
+        #         len(
+        #             common_keys
+        #         ),
+        #     )
+        #     continue
+
+        # mobile_coordinates = np.asarray(
+        #     [
+        #         source_pocket_atoms[
+        #             key
+        #         ]
+        #         for key in common_keys
+        #     ],
+        #     dtype=float,
+        # )
+
+        # target_coordinates = np.asarray(
+        #     [
+        #         reference_pocket_atoms[
+        #             key
+        #         ]
+        #         for key in common_keys
+        #     ],
+        #     dtype=float,
+        # )
+
+        # rotation, translation = (
+        #     kabsch_transform(
+        #         mobile_coordinates,
+        #         target_coordinates,
+        #     )
+        # )
+
+        # fit_rmsd = alignment_rmsd(
+        #     mobile_coordinates=mobile_coordinates,
+        #     reference_coordinates=target_coordinates,
+        #     rotation=rotation,
+        #     translation=translation,
+        # )
+
+        mobile_chains = extract_ca_chains(
+            receptor_st=receptor_st,
+            atom_name=alignment_atom_name,
+            minimum_chain_length=minimum_chain_length,
+        )
+
+        if not mobile_chains:
+            logger.warning(
+                "[%s] Excluded from campaign analysis: "
+                "no plausible protein chains were found",
+                source_name,
+            )
+            continue
+
+        try:
+            chain_match = (
+                select_best_sequence_matched_chain_pair(
+                    reference_chains=reference_chains,
+                    mobile_chains=mobile_chains,
+                    minimum_identity=(
+                        minimum_sequence_identity
+                    ),
+                    minimum_reference_coverage=(
+                        minimum_reference_coverage
+                    ),
+                )
+            )
+
+            pocket_mapping = (
+                sequence_mapped_pocket_coordinates(
+                    chain_match=chain_match,
+                    reference_ligand_coordinates=(
+                        reference_ligand_coordinates
+                    ),
+                    pocket_cutoff=pocket_cutoff,
+                )
+            )
+
+            robust_fit = robust_kabsch_transform(
+                mobile_coordinates=(
+                    pocket_mapping[
+                        "mobile_coordinates"
+                    ]
+                ),
+                reference_coordinates=(
+                    pocket_mapping[
+                        "reference_coordinates"
+                    ]
+                ),
+                minimum_atoms=minimum_common_atoms,
+                outlier_cutoff=(
+                    coordinate_outlier_cutoff
+                ),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "[%s] Excluded from campaign alignment: %s",
+                source_name,
+                exc,
+            )
+            continue
+
+        rotation = robust_fit[
+            "rotation"
+        ]
+
+        translation = robust_fit[
+            "translation"
+        ]
+
+        fit_rmsd = robust_fit[
+            "fit_rmsd"
+        ]
+
+        if source_name == reference_name:
+            campaign_reference_chain_id = (
+                chain_match[
+                    "reference_chain_id"
+                ]
+            )
+
+        retained_mask = robust_fit[
+            "retained_mask"
+        ]
+
+        retained_residue_pairs = [
+            residue_pair
+            for residue_pair, retained in zip(
+                pocket_mapping[
+                    "residue_pairs"
+                ],
+                retained_mask,
+            )
+            if retained
+        ]
+
+        # ----------------------------------------------
+        # Apply exactly the same rigid transformation to
+        # the complete receptor for alignment QC.
+        # ----------------------------------------------
+
+        receptor_for_export = receptor_st
+
+        if not bool(
+            result["ligand_from_smiles"]
+        ):
+            ligand_indices = find_glideem_ligand_indices(
+                receptor_st,
+                ligand_resname=(
+                    result[
+                        "reference_ligand_resname"
+                    ]
+                ),
+                ligand_from_smiles=False,
+            )
+
+            if ligand_indices:
+                ligand_index_set = set(
+                    ligand_indices
+                )
+
+                receptor_atom_indices = [
+                    atom.index
+                    for atom in receptor_st.atom
+                    if atom.index not in ligand_index_set
+                ]
+
+                receptor_for_export = (
+                    receptor_st.extract(
+                        receptor_atom_indices
+                    )
+                )
+
+        aligned_receptor = transform_structure_copy(
+            input_structure=receptor_for_export,
+            rotation=rotation,
+            translation=translation,
+        )
+
+
+        aligned_receptor.title = (
+            f"{source_name}_aligned_to_{reference_name}"
+        )
+
+        aligned_receptor.property[
+            "s_user_source_name"
+        ] = source_name
+
+        aligned_receptor.property[
+            "s_user_alignment_reference"
+        ] = reference_name
+
+        aligned_receptor.property[
+            "i_user_common_alignment_atoms"
+        ] = int(
+            robust_fit["n_retained_atoms"]
+        )
+
+        aligned_receptor.property[
+            "r_user_pocket_alignment_rmsd"
+        ] = float(
+            fit_rmsd
+        )
+
+        aligned_receptor_records.append(
+            {
+                "source_name": source_name,
+                "structure": aligned_receptor,
+            }
+        )
+
+        mobile_to_reference_position = (
+            build_mobile_to_reference_position_map(
+                chain_match
+            )
+        )
+
+        contact_receptor_atoms_by_source[
+            source_name
+        ] = receptor_contact_atoms(
+            aligned_receptor=aligned_receptor,
+            mobile_to_reference_position=(
+                mobile_to_reference_position
+            ),
+        )
+
+        if not contact_receptor_atoms_by_source[
+            source_name
+        ]:
+            raise RuntimeError(
+                f"[{source_name}] No sequence-mapped receptor "
+                "contact atoms were generated."
+            )        
+
+        aligned_poses = (
+            load_aligned_glideem_poses(
+                archive=Path(
+                    result[
+                        "archive"
+                    ]
+                ),
+                ligand_resname=result[
+                    "reference_ligand_resname"
+                ],
+                ligand_from_smiles=bool(
+                    result[
+                        "ligand_from_smiles"
+                    ]
+                ),
+                rotation=rotation,
+                translation=translation,
+            )
+        )
+
+        if not aligned_poses:
+            logger.warning(
+                "[%s] No usable aligned ligand poses; excluded",
+                source_name,
+            )
+            continue
+
+        metrics = pd.read_csv(
+            result[
+                "metrics"
+            ]
+        )
+
+        metrics_by_pose = (
+            metrics
+            .set_index(
+                "pose_number"
+            )
+            .to_dict(
+                orient="index"
+            )
+        )
+
+        accepted_results.append(
+            result
+        )
+
+        alignment_rows.append(
+            {
+                "source_name": source_name,
+                "alignment_reference": reference_name,
+                "reference_chain": (
+                    chain_match[
+                        "reference_chain_id"
+                    ]
+                ),
+                "mobile_chain": (
+                    chain_match[
+                        "mobile_chain_id"
+                    ]
+                ),
+                "reference_chain_length": len(
+                    chain_match[
+                        "reference_residues"
+                    ]
+                ),
+                "mobile_chain_length": len(
+                    chain_match[
+                        "mobile_residues"
+                    ]
+                ),
+                "sequence_identity": float(
+                    chain_match[
+                        "alignment"
+                    ][
+                        "identity"
+                    ]
+                ),
+                "reference_sequence_coverage": float(
+                    chain_match[
+                        "alignment"
+                    ][
+                        "first_coverage"
+                    ]
+                ),
+                "mobile_sequence_coverage": float(
+                    chain_match[
+                        "alignment"
+                    ][
+                        "second_coverage"
+                    ]
+                ),
+                "n_sequence_aligned_residues": int(
+                    chain_match[
+                        "alignment"
+                    ][
+                        "aligned_pair_count"
+                    ]
+                ),
+                "n_initial_pocket_atoms": int(
+                    robust_fit[
+                        "n_initial_atoms"
+                    ]
+                ),
+                "n_retained_pocket_atoms": int(
+                    robust_fit[
+                        "n_retained_atoms"
+                    ]
+                ),
+                "n_rejected_pocket_atoms": int(
+                    robust_fit[
+                        "n_initial_atoms"
+                    ]
+                    - robust_fit[
+                        "n_retained_atoms"
+                    ]
+                ),
+                "pocket_alignment_rmsd": float(
+                    fit_rmsd
+                ),
+                "median_final_pocket_residual": float(
+                    np.median(
+                        robust_fit[
+                            "final_all_residuals"
+                        ][
+                            retained_mask
+                        ]
+                    )
+                ),
+                "max_retained_pocket_residual": float(
+                    np.max(
+                        robust_fit[
+                            "final_all_residuals"
+                        ][
+                            retained_mask
+                        ]
+                    )
+                ),
+                "n_aligned_poses": len(
+                    aligned_poses
+                ),
+            }
+        )
+
+        for pose in aligned_poses:
+            pose_number = int(
+                pose[
+                    "pose_number"
+                ]
+            )
+
+            metric_record = metrics_by_pose.get(
+                pose_number,
+                {},
+            )
+
+            all_pose_records.append(
+                {
+                    "source_name": source_name,
+                    "pose_number": pose_number,
+                    "coordinates": pose[
+                        "coordinates"
+                    ],
+                    "elements": pose[
+                        "elements"
+                    ],
+                    "structure": pose[
+                        "structure"
+                    ],
+                    "centroid": pose[
+                        "centroid"
+                    ],
+                    "local_cluster_id": metric_record.get(
+                        "cluster_id",
+                        np.nan,
+                    ),
+                    "reference_rmsd": metric_record.get(
+                        "Ligand RMSD",
+                        np.nan,
+                    ),
+                    "density_score": metric_record.get(
+                        "Glide Density Score",
+                        np.nan,
+                    ),
+                    "docking_score": metric_record.get(
+                        "Glide Docking Score",
+                        np.nan,
+                    ),
+                }
+            )
+
+        logger.info(
+            "[%s] Aligned %d poses using sequence-matched "
+            "chains %r -> %r; identity=%.3f, coverage=%.3f, "
+            "pocket atoms=%d/%d, RMSD=%.3f A",
+            source_name,
+            len(
+                aligned_poses
+            ),
+            chain_match[
+                "reference_chain_id"
+            ],
+            chain_match[
+                "mobile_chain_id"
+            ],
+            chain_match[
+                "alignment"
+            ][
+                "identity"
+            ],
+            chain_match[
+                "alignment"
+            ][
+                "first_coverage"
+            ],
+            robust_fit[
+                "n_retained_atoms"
+            ],
+            robust_fit[
+                "n_initial_atoms"
+            ],
+            fit_rmsd,
+        )
+
+    if len(
+        accepted_results
+    ) < 2:
+        raise RuntimeError(
+            "Fewer than two structures passed campaign alignment."
+        )
+
+    if len(
+        all_pose_records
+    ) < 2:
+        raise RuntimeError(
+            "Fewer than two aligned poses are available."
+        )
+
+    if campaign_reference_chain_id is None:
+        raise RuntimeError(
+            "The selected reference receptor chain was not recorded "
+            f"for campaign reference '{reference_name}'."
+        )    
+
+    alignment_df = pd.DataFrame(
+        alignment_rows
+    )
+
+    alignment_df.to_csv(
+        output_dir
+        / "receptor_pocket_alignment.csv",
+        index=False,
+    )
+
+    # --------------------------------------------------
+    # Export aligned receptors for visual alignment QC
+    # --------------------------------------------------
+
+    aligned_receptor_file = (
+        output_dir
+        / "all_aligned_receptors.maegz"
+    )
+
+    with structure.StructureWriter(
+        str(
+            aligned_receptor_file
+        )
+    ) as writer:
+        for record in aligned_receptor_records:
+            writer.append(
+                record[
+                    "structure"
+                ]
+            )
+
+    logger.info(
+        "Exported %d aligned receptors for coordinate-frame "
+        "QC: %s",
+        len(
+            aligned_receptor_records
+        ),
+        aligned_receptor_file,
+    )
+
+    # --------------------------------------------------
+    # Build one common grid
+    # --------------------------------------------------
+
+    common_grid = make_common_grid(
+        all_coordinates=[
+            record[
+                "coordinates"
+            ]
+            for record in all_pose_records
+        ],
+        spacing=spacing,
+        padding=padding,
+    )
+
+    save_grid_metadata(
+        common_grid,
+        output_dir
+        / "campaign_density_grid.json",
+    )
+
+    logger.info(
+        "Campaign density grid: shape=%s, spacing=%.3f A",
+        common_grid[
+            "shape"
+        ],
+        common_grid[
+            "spacing"
+        ],
+    )
+
+        # --------------------------------------------------
+    # One normalized 3D density per pose
+    #
+    # These densities are retained for:
+    #   - structure-level spatial probability fields
+    #   - family-level spatial probability fields
+    #   - structure-to-structure JS comparisons
+    #
+    # They are no longer used to define the first-level
+    # global pose families.
+    # --------------------------------------------------
+
+    pose_densities = []
+
+    for record in all_pose_records:
+        density = pose_probability_density(
+            coordinates=record[
+                "coordinates"
+            ],
+            grid=common_grid,
+            gaussian_sigma_angstrom=(
+                gaussian_sigma
+            ),
+        )
+
+        record[
+            "density"
+        ] = density
+
+        pose_densities.append(
+            density
+        )
+
+    # --------------------------------------------------
+    # First-level global spatial pose families
+    #
+    # These families describe which broad region of the
+    # aligned orthosteric pocket each ligand pose occupies.
+    #
+    # Distances are Euclidean distances between aligned
+    # ligand centroids, expressed in Angstrom.
+    # --------------------------------------------------
+
+    global_distance_matrix = (
+        pairwise_centroid_distance_matrix(
+            pose_records=all_pose_records
+        )
+    )
+
+    family_ids, linkage_matrix = (
+        cluster_global_pose_families(
+            distance_matrix=(
+                global_distance_matrix
+            ),
+            distance_cutoff=(
+                centroid_distance_cutoff
+            ),
+            linkage_method=linkage_method,
+        )
+    )
+
+    # Attach global spatial-family assignments to every pose.
+    for record, family_id in zip(
+        all_pose_records,
+        family_ids,
+    ):
+        record[
+            "global_family_id"
+        ] = int(
+            family_id
+        )
+
+        # Explicit alias for the scientific meaning of this level.
+        record[
+            "global_spatial_family_id"
+        ] = int(
+            family_id
+        )
+
+    # Select the pose whose centroid has the lowest average distance
+    # to the other members of each spatial family.
+    medoid_indices = family_medoid_indices(
+        distance_matrix=(
+            global_distance_matrix
+        ),
+        family_ids=family_ids,
+    )
+
+    for record in all_pose_records:
+        record[
+            "is_family_medoid"
+        ] = False
+
+    for family_id, medoid_index in (
+        medoid_indices.items()
+    ):
+        all_pose_records[
+            medoid_index
+        ][
+            "is_family_medoid"
+        ] = True
+
+    # Persist the pairwise centroid-distance matrix.
+    pose_labels = [
+        (
+            f"{record['source_name']}:"
+            f"pose{record['pose_number']:03d}"
+        )
+        for record in all_pose_records
+    ]
+
+    pd.DataFrame(
+        global_distance_matrix,
+        index=pose_labels,
+        columns=pose_labels,
+    ).to_csv(
+        output_dir
+        / "global_pose_centroid_distances.csv"
+    )
+
+    # Persist the corresponding hierarchical clustering.
+    save_global_family_dendrogram(
+        linkage_matrix=linkage_matrix,
+        labels=pose_labels,
+        cutoff=centroid_distance_cutoff,
+        output_file=(
+            output_dir
+            / "global_spatial_family_dendrogram.png"
+        ),
+        distance_label=(
+            "Aligned ligand-centroid distance (A)"
+        ),
+        title=(
+            "Global GlideEM spatial-family clustering"
+        ),
+    )
+
+    logger.info(
+        "Assigned %d aligned poses to %d global spatial families "
+        "using a centroid-distance cutoff of %.2f A",
+        len(
+            all_pose_records
+        ),
+        len(
+            set(
+                family_ids.tolist()
+            )
+        ),
+        centroid_distance_cutoff,
+    )
+
+    # --------------------------------------------------
+    # Second-level orientation/contact descriptors
+    # --------------------------------------------------
+
+    for record in all_pose_records:
+        orientation = ligand_orientation_descriptors(
+            record[
+                "coordinates"
+            ]
+        )
+
+        record[
+            "principal_axis"
+        ] = orientation[
+            "principal_axis"
+        ]
+
+        record[
+            "axis_anisotropy"
+        ] = orientation[
+            "axis_anisotropy"
+        ]
+
+        record[
+            "radius_of_gyration"
+        ] = orientation[
+            "radius_of_gyration"
+        ]
+
+        receptor_atoms = (
+            contact_receptor_atoms_by_source[
+                record[
+                    "source_name"
+                ]
+            ]
+        )
+
+        record[
+            "contact_fingerprint"
+        ] = pose_contact_fingerprint(
+            ligand_coordinates=record[
+                "coordinates"
+            ],
+            ligand_elements=record[
+                "elements"
+            ],
+            receptor_atoms=receptor_atoms,
+            contact_cutoff=contact_cutoff,
+            polar_contact_cutoff=(
+                polar_contact_cutoff
+            ),
+        )
+
+    second_level_matrices = (
+        assign_second_level_subfamilies(
+            all_pose_records=all_pose_records,
+            distance_cutoff=(
+                subfamily_distance_cutoff
+            ),
+            orientation_weight=orientation_weight,
+            contact_weight=contact_weight,
+            minimum_axis_anisotropy=(
+                minimum_axis_anisotropy
+            ),
+            linkage_method=linkage_method,
+        )
+    )
+
+    logger.info(
+        "Assigned orientation/contact subfamilies inside "
+        "%d global spatial families",
+        len(
+            second_level_matrices
+        ),
+    )
+
+    # --------------------------------------------------
+    # Flat pose table
+    # --------------------------------------------------
+
+    pose_rows = []
+
+    for record in all_pose_records:
+        centroid = record[
+            "centroid"
+        ]
+
+        pose_rows.append(
+            {
+                "source_name": record[
+                    "source_name"
+                ],
+                "pose_number": record[
+                    "pose_number"
+                ],
+                "local_cluster_id": record[
+                    "local_cluster_id"
+                ],
+                "global_family_id": record[
+                    "global_family_id"
+                ],
+                "global_spatial_family_id": record[
+                    "global_spatial_family_id"
+                ],
+                "orientation_contact_subfamily_id": record[
+                    "orientation_contact_subfamily_id"
+                ],
+                "is_family_medoid": record[
+                    "is_family_medoid"
+                ],
+                "centroid_x": float(
+                    centroid[
+                        0
+                    ]
+                ),
+                "centroid_y": float(
+                    centroid[
+                        1
+                    ]
+                ),
+                "centroid_z": float(
+                    centroid[
+                        2
+                    ]
+                ),
+                "principal_axis_x": float(
+                    record[
+                        "principal_axis"
+                    ][
+                        0
+                    ]
+                ),
+                "principal_axis_y": float(
+                    record[
+                        "principal_axis"
+                    ][
+                        1
+                    ]
+                ),
+                "principal_axis_z": float(
+                    record[
+                        "principal_axis"
+                    ][
+                        2
+                    ]
+                ),
+                "axis_anisotropy": float(
+                    record[
+                        "axis_anisotropy"
+                    ]
+                ),
+                "radius_of_gyration": float(
+                    record[
+                        "radius_of_gyration"
+                    ]
+                ),
+                "n_contact_features": int(
+                    len(
+                        record[
+                            "contact_fingerprint"
+                        ]
+                    )
+                ),
+                "contact_fingerprint": ";".join(
+                    sorted(
+                        record[
+                            "contact_fingerprint"
+                        ]
+                    )
+                ),                
+                "n_heavy_atoms": int(
+                    len(
+                        record[
+                            "coordinates"
+                        ]
+                    )
+                ),
+                "reference_rmsd": record[
+                    "reference_rmsd"
+                ],
+                "density_score": record[
+                    "density_score"
+                ],
+                "docking_score": record[
+                    "docking_score"
+                ],
+            }
+        )
+
+    pose_table = pd.DataFrame(
+        pose_rows
+    )
+
+    pose_table.to_csv(
+        output_dir
+        / "campaign_aligned_pose_table.csv",
+        index=False,
+    )
+
+    # --------------------------------------------------
+    # Posterior ensemble-support analysis
+    # --------------------------------------------------
+
+    ensemble_support_results = None
+
+    if ensemble_support_enabled:
+        logger.info(
+            "Running posterior ensemble-support analysis "
+            "from objectively inferred spatial and "
+            "orientation/contact modes"
+        )
+
+        ensemble_support_results = (
+            run_ensemble_support_analysis(
+                pose_table=pose_table,
+                output_dir=(
+                    output_dir
+                    / "ensemble_support"
+                ),
+                config=ensemble_support_cfg,
+            )
+        )
+
+        logger.info(
+            "Posterior ensemble-support analysis completed: %s",
+            output_dir
+            / "ensemble_support",
+        )
+
+    pocket_evidence_results = None
+
+    if pocket_evidence_enabled:
+        if ensemble_support_results is None:
+            raise RuntimeError(
+                "Pocket-evidence analysis requires the "
+                "ensemble-support analysis."
+            )
+
+        joint_adjusted_summary = (
+            ensemble_support_results.get(
+                "_joint_adjusted_summary_df"
+            )
+        )
+
+        if joint_adjusted_summary is None:
+            raise RuntimeError(
+                "Ensemble-support analysis did not return the "
+                "joint adjusted posterior summary."
+            )
+
+        # Export one reference receptor PDB into the pocket-evidence
+        # directory so its PML remains portable.
+        pocket_output_dir = (
+            output_dir
+            / "pocket_evidence"
+        )
+
+        pocket_output_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        # ----------------------------------------------
+        # Retrieve the receptor-only aligned copy of the
+        # campaign reference structure.
+        # ----------------------------------------------
+
+        reference_receptor_for_pocket = None
+
+        for receptor_record in aligned_receptor_records:
+            if (
+                receptor_record[
+                    "source_name"
+                ]
+                == reference_name
+            ):
+                reference_receptor_for_pocket = (
+                    receptor_record[
+                        "structure"
+                    ]
+                )
+
+                break
+
+        if reference_receptor_for_pocket is None:
+            raise RuntimeError(
+                "Could not locate the aligned receptor-only "
+                f"reference structure '{reference_name}' for "
+                "pocket-evidence analysis."
+            )
+
+        receptor_pdb = (
+            pocket_output_dir
+            / "reference_receptor.pdb"
+        )
+
+        with structure.StructureWriter(
+            str(
+                receptor_pdb
+            )
+        ) as writer:
+            writer.append(
+                reference_receptor_for_pocket
+            )
+
+        pocket_evidence_results = (
+            run_pocket_evidence_analysis(
+                pose_table=pose_table,
+                joint_summary=(
+                    joint_adjusted_summary
+                ),
+                reference_receptor=(
+                    reference_receptor_for_pocket
+                ),
+                reference_chain_id=(
+                    campaign_reference_chain_id
+                ),
+                reference_receptor_pdb_name=(
+                    receptor_pdb.name
+                ),
+                output_dir=(
+                    pocket_output_dir
+                ),
+                config=pocket_evidence_cfg,
+            )
+        )
+
+        logger.info(
+            "Generated posterior-weighted pocket evidence "
+            "analysis: %s",
+            pocket_output_dir,
+        )
+
+    contact_summary = (
+        second_level_contact_summary(
+            pose_table
+        )
+    )
+
+    contact_summary.to_csv(
+        output_dir
+        / "second_level_contact_summary.csv",
+        index=False,
+    )    
+
+    second_level_composition = (
+        pose_table
+        .groupby(
+            [
+                "global_spatial_family_id",
+                "orientation_contact_subfamily_id",
+                "source_name",
+            ],
+            dropna=False,
+        )
+        .size()
+        .rename(
+            "n_poses"
+        )
+        .reset_index()
+    )
+
+    save_second_level_family_heatmap(
+        pose_table=pose_table,
+        output_file=(
+            output_dir
+            / "second_level_family_heatmap.png"
+        ),
+    )    
+
+    second_level_totals = (
+        second_level_composition
+        .groupby(
+            [
+                "global_spatial_family_id",
+                "source_name",
+            ]
+        )[
+            "n_poses"
+        ]
+        .transform(
+            "sum"
+        )
+    )
+
+    second_level_composition[
+        "fraction_within_spatial_family"
+    ] = (
+        second_level_composition[
+            "n_poses"
+        ]
+        / second_level_totals
+    )
+
+    second_level_composition.to_csv(
+        output_dir
+        / "second_level_subfamily_composition.csv",
+        index=False,
+    )
+
+    second_level_support = (
+        pose_table
+        .groupby(
+            [
+                "global_spatial_family_id",
+                "orientation_contact_subfamily_id",
+            ],
+            dropna=False,
+        )
+        .agg(
+            n_poses=(
+                "pose_number",
+                "size",
+            ),
+            n_supporting_structures=(
+                "source_name",
+                "nunique",
+            ),
+            mean_axis_anisotropy=(
+                "axis_anisotropy",
+                "mean",
+            ),
+            mean_contact_features=(
+                "n_contact_features",
+                "mean",
+            ),
+        )
+        .reset_index()
+        .sort_values(
+            [
+                "n_supporting_structures",
+                "n_poses",
+            ],
+            ascending=[
+                False,
+                False,
+            ],
+        )
+    )
+
+    second_level_support.to_csv(
+        output_dir
+        / "second_level_subfamily_support.csv",
+        index=False,
+    )
+
+    # --------------------------------------------------
+    # Family composition and support
+    # --------------------------------------------------
+
+    composition = (
+        structure_family_composition(
+            pose_table
+        )
+    )
+
+    composition.to_csv(
+        output_dir
+        / "structure_global_family_composition.csv",
+        index=False,
+    )
+
+    ambiguity = (
+        structure_ambiguity_summary(
+            composition
+        )
+    )
+
+    ambiguity.to_csv(
+        output_dir
+        / "structure_global_family_ambiguity.csv",
+        index=False,
+    )
+
+    family_support = (
+        family_support_summary(
+            pose_table
+        )
+    )
+
+    family_support.to_csv(
+        output_dir
+        / "global_family_support.csv",
+        index=False,
+    )
+
+    save_structure_family_heatmap(
+        composition=composition,
+        ambiguity=ambiguity,
+        output_file=(
+            output_dir
+            / "structure_global_family_heatmap.png"
+        ),
+    )
+
+    # --------------------------------------------------
+    # Target, structure and family probability densities
+    #
+    # Construct one normalized mean density per structure first.
+    # The campaign consensus then gives every structure equal total
+    # weight, irrespective of whether GlideEM returned 6 or 93 poses.
+    # --------------------------------------------------
+
+    structure_densities = {}
+    structure_pose_variabilities = {}
+
+    source_names = sorted(
+        pose_table[
+            "source_name"
+        ].unique()
+    )
+
+    for source_name in source_names:
+        source_pose_densities = [
+            record[
+                "density"
+            ]
+            for record in all_pose_records
+            if record[
+                "source_name"
+            ] == source_name
+        ]
+
+        if not source_pose_densities:
+            raise RuntimeError(
+                f"No pose densities were found for "
+                f"{source_name}."
+            )
+
+        # Mean probability field for this structure.
+        structure_densities[
+            source_name
+        ] = pooled_probability_density(
+            source_pose_densities
+        )
+
+        # Voxelwise spread among this structure's generated poses.
+        structure_pose_variabilities[
+            source_name
+        ] = density_variability(
+            source_pose_densities
+        )
+
+    # Equal-structure campaign consensus.
+    target_density = pooled_probability_density(
+        list(
+            structure_densities.values()
+        )
+    )
+
+    # Voxelwise variation between structure-level mean landscapes.
+    between_structure_variability = density_variability(
+        list(
+            structure_densities.values()
+        )
+    )
+
+    # Typical voxelwise variation within an individual structure.
+    mean_within_structure_variability = np.mean(
+        np.stack(
+            list(
+                structure_pose_variabilities.values()
+            ),
+            axis=0,
+        ),
+        axis=0,
+    ).astype(
+        np.float32
+    )
+
+    save_numpy_density(
+        target_density,
+        output_dir
+        / "target_consensus_probability.npy",
+    )
+
+    save_numpy_density(
+        between_structure_variability,
+        output_dir
+        / "between_structure_variability.npy",
+    )
+
+    save_numpy_density(
+        mean_within_structure_variability,
+        output_dir
+        / "mean_within_structure_variability.npy",
+    )
+
+    logger.info(
+        "Generated equal-structure campaign density from "
+        "%d structure-level probability fields",
+        len(
+            structure_densities
+        ),
+    )
+
+    family_densities = {}
+
+    for source_name in source_names:
+        source_density = structure_densities[
+            source_name
+        ]
+
+        save_numpy_density(
+            source_density,
+            output_dir
+            / (
+                f"structure_{source_name}"
+                "_probability.npy"
+            ),
+        )
+
+        if export_cfg.get(
+            "difference_maps",
+            True,
+        ):
+            difference = density_difference(
+                source_density,
+                target_density,
+            )
+
+            save_numpy_density(
+                difference,
+                output_dir
+                / (
+                    f"structure_{source_name}"
+                    "_minus_target.npy"
+                ),
+            )
+
+        # if export_cfg.get(
+        #     "difference_maps",
+        #     True,
+        # ):
+        #     difference = density_difference(
+        #         source_density,
+        #         target_density,
+        #     )
+
+        #     save_numpy_density(
+        #         difference,
+        #         output_dir
+        #         / (
+        #             f"structure_{source_name}"
+        #             "_minus_target.npy"
+        #         ),
+        #     )
+
+        # if export_cfg.get(
+        #     "per_structure_maps",
+        #     True,
+        # ):
+        #     try:
+        #         write_ccp4_map(
+        #             source_density,
+        #             common_grid,
+        #             output_dir
+        #             / (
+        #                 f"structure_{source_name}"
+        #                 "_probability.ccp4"
+        #             ),
+        #         )
+
+        #     except Exception as exc:
+        #         logger.warning(
+        #             "[%s] Could not export structure CCP4 map: %s",
+        #             source_name,
+        #             exc,
+        #         )
+
+    for family_id in sorted(
+        pose_table[
+            "global_family_id"
+        ].unique()
+    ):
+        family_indices = [
+            index
+            for index, record in enumerate(
+                all_pose_records
+            )
+            if record[
+                "global_family_id"
+            ] == family_id
+        ]
+
+        family_density = (
+            pooled_probability_density(
+                [
+                    pose_densities[
+                        index
+                    ]
+                    for index in family_indices
+                ]
+            )
+        )
+
+        family_densities[
+            int(
+                family_id
+            )
+        ] = family_density
+
+        save_numpy_density(
+            family_density,
+            output_dir
+            / (
+                f"global_family_{int(family_id):03d}"
+                "_probability.npy"
+            ),
+        )
+
+        # if export_cfg.get(
+        #     "per_family_maps",
+        #     True,
+        # ):
+        #     try:
+        #         write_ccp4_map(
+        #             family_density,
+        #             common_grid,
+        #             output_dir
+        #             / (
+        #                 f"global_family_{int(family_id):03d}"
+        #                 "_probability.ccp4"
+        #             ),
+        #         )
+
+        #     except Exception as exc:
+        #         logger.warning(
+        #             "[Family %d] Could not export CCP4 map: %s",
+        #             int(
+        #                 family_id
+        #             ),
+        #             exc,
+        #         )
+
+    # --------------------------------------------------
+    # Between-structure Jensen-Shannon divergence
+    # --------------------------------------------------
+
+    js_matrix = structure_js_distance_matrix(
+        structure_densities
+    )
+
+    js_matrix.to_csv(
+        output_dir
+        / "structure_landscape_js_distances.csv"
+    )
+
+    save_structure_js_heatmap(
+        js_matrix=js_matrix,
+        output_file=(
+            output_dir
+            / "structure_landscape_js_heatmap.png"
+        ),
+    )
+
+    # --------------------------------------------------
+    # Within vs between structure spatial dispersion
+    # --------------------------------------------------
+
+    (
+        structure_dispersion,
+        overall_dispersion,
+    ) = centroid_dispersion_summary(
+        pose_table
+    )
+
+    structure_dispersion.to_csv(
+        output_dir
+        / "structure_centroid_dispersion.csv",
+        index=False,
+    )
+
+    overall_dispersion.to_csv(
+        output_dir
+        / "campaign_centroid_variance_decomposition.csv",
+        index=False,
+    )
+
+    # --------------------------------------------------
+    # Export all aligned poses
+    # --------------------------------------------------
+
+    if export_cfg.get(
+        "aligned_poses",
+        True,
+    ):
+        write_aligned_pose_archive(
+            pose_records=all_pose_records,
+            output_file=(
+                output_dir
+                / "all_aligned_glideem_poses.maegz"
+            ),
+        )
+
+    second_level_pymol_script = None
+
+    if export_second_level_pymol_enabled:
+        second_level_pymol_script = (
+            export_second_level_pymol(
+                pose_records=all_pose_records,
+                aligned_receptor_file=(
+                    aligned_receptor_file
+                ),
+                alignment_reference_name=(
+                    reference_name
+                ),
+                output_dir=(
+                    output_dir
+                    / "second_level_pymol"
+                ),
+            )
+        )
+
+        logger.info(
+            "Second-level PyMOL landscape exported: %s",
+            second_level_pymol_script,
+        )
+
+    logger.info(
+        "Campaign GlideEM landscape complete: "
+        "%d poses, %d structures, %d global families",
+        len(
+            pose_table
+        ),
+        pose_table[
+            "source_name"
+        ].nunique(),
+        pose_table[
+            "global_family_id"
+        ].nunique(),
+    )
+
+    return {
+        "pose_table": (
+            output_dir
+            / "campaign_aligned_pose_table.csv"
+        ),
+        "aligned_receptors": (
+            output_dir
+            / "all_aligned_receptors.maegz"
+        ),
+        "family_composition": (
+            output_dir
+            / "structure_global_family_composition.csv"
+        ),
+        "family_support": (
+            output_dir
+            / "global_family_support.csv"
+        ),
+        "ambiguity": (
+            output_dir
+            / "structure_global_family_ambiguity.csv"
+        ),
+        "alignment": (
+            output_dir
+            / "receptor_pocket_alignment.csv"
+        ),
+        "target_density": (
+            output_dir
+            / "target_consensus_probability.npy"
+        ),
+        "between_structure_variability": (
+            output_dir
+            / "between_structure_variability.npy"
+        ),
+        "mean_within_structure_variability": (
+            output_dir
+            / "mean_within_structure_variability.npy"
+        ),
+        "js_distances": (
+            output_dir
+            / "structure_landscape_js_distances.csv"
+        ),
+        "variance_decomposition": (
+            output_dir
+            / "campaign_centroid_variance_decomposition.csv"
+        ),
+        "second_level_composition": (
+            output_dir
+            / "second_level_subfamily_composition.csv"
+        ),
+        "second_level_support": (
+            output_dir
+            / "second_level_subfamily_support.csv"
+        ),
+        "alternative_pose_comparison": (
+            output_dir
+            / "alternative_pose_mode_comparison.csv"
+        ),
+        "second_level_pymol": (
+            second_level_pymol_script
+        ),        
+        "ensemble_support": (
+            ensemble_support_results
+        ),
+        "pocket_evidence": (
+            pocket_evidence_results
+        ),
+    }
+    

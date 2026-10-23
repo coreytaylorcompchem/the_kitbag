@@ -233,6 +233,10 @@ def run(config_path: str):
         "summarise_glideem_ensembles"
     )
 
+    glideem_campaign_task = get_task(
+        "analyse_glideem_campaign_landscape"
+    )
+
     grid_task = get_task(
         "build_glide_grid"
     )
@@ -256,6 +260,9 @@ def run(config_path: str):
         "run_glideem": glideem_task,
         "analyse_glideem_poses": glideem_analysis_task,
         "summarise_glideem_ensembles": glideem_summary_task,
+        "analyse_glideem_campaign_landscape": (
+            glideem_campaign_task
+        ),
         "build_glide_grid": grid_task,
         "dock_mcss": mcss_task,
         "calculate_mmgbsa": mmgbsa_task,
@@ -611,6 +618,126 @@ def run(config_path: str):
                 job_name,
             )
 
+        # ------------------------------------------
+        # Load existing per-job GlideEM analysis
+        # when campaign analysis requires it
+        # ------------------------------------------
+
+        elif (
+            "analyse_glideem_campaign_landscape"
+            in enabled_tasks
+        ):
+            analysis_output_dir = (
+                output
+                / "analysis"
+                / "glideem"
+                / job_name
+            )
+
+            metrics_file = (
+                analysis_output_dir
+                / "glideem_pose_metrics.csv"
+            )
+
+            clusters_file = (
+                analysis_output_dir
+                / "pose_clusters.csv"
+            )
+
+            pairwise_file = (
+                analysis_output_dir
+                / "pose_pairwise_rmsd.csv"
+            )
+
+            required_files = [
+                archive,
+                prepared,
+                reference_ligand,
+                metrics_file,
+                clusters_file,
+                pairwise_file,
+            ]
+
+            missing_files = [
+                path
+                for path in required_files
+                if not Path(path).is_file()
+            ]
+
+            if missing_files:
+                logger.warning(
+                    "[%s] Existing GlideEM analysis is "
+                    "incomplete; unavailable for campaign "
+                    "analysis. Missing: %s",
+                    job_name,
+                    ", ".join(
+                        str(path)
+                        for path in missing_files
+                    ),
+                )
+
+            else:
+                reference_smiles = (
+                    row.get(
+                        "reference_smiles",
+                        "",
+                    )
+                    or ""
+                ).strip()
+
+                analysis_result = {
+                    "job_name": job_name,
+
+                    "requested_nposes": int(
+                        config.get(
+                            "glideem",
+                            {},
+                        ).get(
+                            "nposes",
+                            5,
+                        )
+                    ),
+
+                    "cluster_rmsd_cutoff": float(
+                        config.get(
+                            "glideem_analysis",
+                            {},
+                        ).get(
+                            "cluster_rmsd_cutoff",
+                            2.0,
+                        )
+                    ),
+
+                    "metrics": metrics_file,
+                    "clusters": clusters_file,
+                    "pairwise_rmsd": pairwise_file,
+
+                    "archive": archive,
+                    "prepared_receptor": prepared,
+                    "cryoem_reference": (
+                        reference_ligand
+                    ),
+
+                    "reference_ligand_resname": (
+                        row[
+                            "reference_ligand"
+                        ]
+                        .strip()
+                        .upper()
+                    ),
+
+                    "ligand_from_smiles": bool(
+                        reference_smiles
+                    ),
+                }
+
+                logger.info(
+                    "[%s] Loaded existing GlideEM analysis "
+                    "for campaign landscape analysis",
+                    job_name,
+                )
+
+
             try:
                 analysis_result = (
                     glideem_analysis_task(
@@ -870,6 +997,67 @@ def run(config_path: str):
                 "Cross-structure GlideEM summary was enabled, "
                 "but no per-structure analysis results are "
                 "available in this run; skipping."
+            )
+
+    # --------------------------------------------------
+    # Campaign-level aligned 3D GlideEM landscape
+    # --------------------------------------------------
+
+    if (
+        "analyse_glideem_campaign_landscape"
+        in enabled_tasks
+    ):
+        if len(
+            glideem_analysis_results
+        ) >= 2:
+            logger.info(
+                "Generating aligned campaign-level "
+                "GlideEM pose landscape"
+            )
+
+            try:
+                glideem_campaign_task(
+                    backend,
+                    None,
+                    config,
+                    analysis_results=(
+                        glideem_analysis_results
+                    ),
+                    output_dir=(
+                        output
+                        / "analysis"
+                        / "glideem"
+                        / "campaign_landscape"
+                    ),
+                )
+
+            except Exception as exc:
+                logger.error(
+                    "Campaign GlideEM landscape analysis "
+                    "failed; continuing workflow: %s",
+                    exc,
+                    exc_info=True,
+                )
+
+                failed_jobs.append(
+                    {
+                        "job_name": (
+                            "glideem_campaign_landscape"
+                        ),
+                        "stage": (
+                            "glideem_campaign_analysis"
+                        ),
+                        "error": str(
+                            exc
+                        ),
+                    }
+                )
+
+        else:
+            logger.warning(
+                "Campaign GlideEM landscape analysis was "
+                "enabled, but fewer than two successful "
+                "per-structure analyses are available."
             )
 
     # --------------------------------------------------
