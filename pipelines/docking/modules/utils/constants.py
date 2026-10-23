@@ -1,3 +1,5 @@
+import re
+
 ELEMENT_COLOURS = {
     "N": "blue",
     "O": "red",
@@ -52,3 +54,66 @@ def element_colour_commands(
         )
 
     return commands
+
+THREE_TO_ONE = {
+    # Standard residues
+    "ALA": "A",
+    "ARG": "R",
+    "ASN": "N",
+    "ASP": "D",
+    "CYS": "C",
+    "GLN": "Q",
+    "GLU": "E",
+    "GLY": "G",
+    "HIS": "H",
+    "ILE": "I",
+    "LEU": "L",
+    "LYS": "K",
+    "MET": "M",
+    "PHE": "F",
+    "PRO": "P",
+    "SER": "S",
+    "THR": "T",
+    "TRP": "W",
+    "TYR": "Y",
+    "VAL": "V",
+
+    # Common prepared/protonation variants
+    "ASH": "D",
+    "GLH": "E",
+    "HID": "H",
+    "HIE": "H",
+    "HIP": "H",
+    "LYN": "K",
+    "CYM": "C",
+    "CYX": "C",
+
+    # Common modified residue interpreted as parent residue
+    "MSE": "M",
+}
+
+PYMOL_COLOURS = [
+    "marine",
+    "orange",
+    "green",
+    "magenta",
+    "cyan",
+    "salmon",
+    "yellow",
+    "violet",
+    "teal",
+    "wheat",
+]
+
+def _safe_object_name(
+    value: str,
+) -> str:
+    value = re.sub(
+        r"[^A-Za-z0-9_]+",
+        "_",
+        value,
+    )
+
+    return value.strip(
+        "_"
+    )
