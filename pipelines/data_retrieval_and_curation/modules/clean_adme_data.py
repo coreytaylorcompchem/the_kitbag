@@ -275,9 +275,11 @@ def harmonise_units(config, enriched=None):
 
                 rec["clint_scale"] = clint_scale
                 rec["is_scaled_clint"] = clint_scale == "scaled_L_h_kg"
+                rec["is_scaled_clint"] = clint_scale == "body_normalised"
                 rec["is_derived_scaled_clint"] = (
-                    derived and clint_scale == "scaled_L_h_kg"
+                    derived and clint_scale == "body_normalised"
                 )
+
                 rec["is_derived_clint"] = derived
 
                 rec["source_clint_value"] = source_value
@@ -453,7 +455,7 @@ def harmonise_units(config, enriched=None):
                             source_record=r,
                             value=liver_val,
                             unit=liver_unit,
-                            clint_scale="liver_normalised_mL_min_g_liver",
+                            clint_scale="liver_normalised",
                             species=species,
                             system=system,
                             matrix=matrix,
@@ -482,7 +484,7 @@ def harmonise_units(config, enriched=None):
                             source_record=r,
                             value=body_val,
                             unit=body_unit,
-                            clint_scale="body_normalised_L_h_kg",
+                            clint_scale="body_normalised",
                             species=species,
                             system=system,
                             matrix=matrix,
@@ -491,7 +493,7 @@ def harmonise_units(config, enriched=None):
                             derived=True,
                             source_value=liver_val,
                             source_units=liver_unit,
-                            parent_scale="liver_normalised_mL_min_g_liver",
+                            parent_scale="liver_normalised",
                         )
 
                         new_records.append(body_record)
@@ -791,9 +793,9 @@ def harmonise_units(config, enriched=None):
 
                 if scale in {
                     "unscaled_in_vitro",
-                    "liver_normalised_mL_min_g_liver",
-                    "body_normalised_L_h_kg",
-                    "absolute_mL_min",
+                    "liver_normalised",
+                    "body_normalised",
+                    "absolute",
                 }:
                     validation_counter[f"kept_{scale}"] += 1
                 else:
@@ -1578,6 +1580,9 @@ def build_multitask_dataset(config, cleaned=None):
         add_group_col("metstab_endpoint_family")
         add_group_col("clint_scale")
 
+        # Include canonical units explicitly in every Type-A output column.
+        add_group_col("standard_units")
+
         add_group_col("permeability_system")
 
         if (
@@ -1676,6 +1681,20 @@ def build_multitask_dataset(config, cleaned=None):
     # Merge all assay tables
     
     mtl_df = reduce(lambda l, r: pd.merge(l, r, on="smiles", how="outer"), dfs)
+    
+    duplicate_columns = (
+        pd.Index(mtl_df.columns)
+        [pd.Index(mtl_df.columns).duplicated()]
+        .unique()
+        .tolist()
+    )
+
+    if duplicate_columns:
+        raise ValueError(
+            "Duplicate multitask output columns were generated after "
+            f"flattening/sanitisation: {duplicate_columns}"
+        )
+    
     mtl_df.to_csv(output_path, index=False)
     logger.debug(f"Saved multi-task dataset CSV to: {output_path}")
 

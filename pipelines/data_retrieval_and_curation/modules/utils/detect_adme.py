@@ -257,6 +257,47 @@ def classify_permeability_system(record):
 
     return None, None
 
+def normalise_column_token(value):
+    """
+    Convert a grouping value or unit into a stable CSV column token.
+
+    Examples:
+        uL/min/mg protein  -> uL_min_mg_protein
+        uL/min/10^6 cells -> uL_min_1e6_cells
+        mL/min/g liver    -> mL_min_g_liver
+        L/h/kg            -> L_h_kg
+        10^-6 cm/s        -> 1e-6_cm_s
+    """
+    if value is None:
+        return "unknown"
+
+    token = str(value).strip()
+
+    replacements = {
+        "µ": "u",
+        "μ": "u",
+        "10^6": "1e6",
+        "10^-6": "1e-6",
+        "%": "percent",
+        "/": "_",
+        "\\": "_",
+        " ": "_",
+        ".": "_",
+        "-": "_",
+        "(": "",
+        ")": "",
+        "[": "",
+        "]": "",
+    }
+
+    for old, new in replacements.items():
+        token = token.replace(old, new)
+
+    token = re.sub(r"_+", "_", token)
+    token = token.strip("_")
+
+    return token or "unknown"
+
 def flatten_pivot_columns(df_pivot, assay_name):
     """
     Flatten MultiIndex columns from grouped assay pivots.
@@ -265,13 +306,39 @@ def flatten_pivot_columns(df_pivot, assay_name):
         (stat, group1, group2, ...)
 
     Produces:
-        assay_group1_group2_stat
+        assay_group1_group2_..._unit_stat
 
-    Example:
-        ("mean", "caco2", "AB")
-    ->
-        Caco-2_caco2_AB_mean
+    Importantly, if standard_units is included in group_cols,
+    the harmonised unit is retained explicitly in the final
+    multitask column name.
     """
+
+    def clean_token(x):
+        if x is None:
+            return None
+
+        x = str(x).strip()
+
+        if x in {"", "nan", "None"}:
+            return None
+
+        # Make units/model endpoint names column-safe.
+        x = (
+            x
+            .replace("µ", "u")
+            .replace("μ", "u")
+            .replace("10^6", "1e6")
+            .replace("10^-6", "1e-6")
+            .replace("/", "_")
+            .replace(" ", "_")
+        )
+
+        while "__" in x:
+            x = x.replace("__", "_")
+
+        return x.strip("_")
+
+    assay_token = clean_token(assay_name) or str(assay_name)
 
     new_cols = []
 
@@ -279,16 +346,34 @@ def flatten_pivot_columns(df_pivot, assay_name):
 
         # Non-MultiIndex fallback
         if not isinstance(col, tuple):
-            new_cols.append(f"{assay_name}_{col}")
+            token = clean_token(col)
+            new_cols.append(
+                f"{assay_token}_{token}"
+                if token
+                else assay_token
+            )
             continue
 
-        stat = col[0]
-        groups = [str(x) for x in col[1:] if x not in [None, "", "nan"]]
+        stat = clean_token(col[0])
 
-        label = "_".join([assay_name] + groups + [stat])
+        groups = [
+            token
+            for token in (
+                clean_token(x)
+                for x in col[1:]
+            )
+            if token is not None
+        ]
 
-        # cleanup accidental duplicates
-        label = label.replace("__", "_")
+        parts = [assay_token] + groups
+
+        if stat is not None:
+            parts.append(stat)
+
+        label = "_".join(parts)
+
+        while "__" in label:
+            label = label.replace("__", "_")
 
         new_cols.append(label)
 
