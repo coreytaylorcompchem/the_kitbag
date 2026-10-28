@@ -409,6 +409,262 @@ def convert_met_stab(value, unit):
     return None, None, None
 
 
+# def scale_clint_to_l_h_kg(
+#     value,
+#     canonical_unit,
+#     matrix,
+#     species,
+#     scaling_cfg,
+# ):
+#     if value is None:
+#         return None, None
+
+#     try:
+#         val = float(value)
+#     except (TypeError, ValueError):
+#         return None, None
+
+#     if canonical_unit == "L/h/kg":
+#         return val, "L/h/kg"
+
+#     if not scaling_cfg or not scaling_cfg.get("enabled", False):
+#         return None, None
+
+#     species_params = scaling_cfg.get("species_parameters", {})
+#     default_species = scaling_cfg.get("default_species")
+
+#     species_lookup = {
+#         str(k).lower(): k
+#         for k in species_params.keys()
+#     }
+
+#     use_species = species
+
+#     if use_species not in species_params:
+#         species_key = species_lookup.get(str(use_species).lower())
+
+#         if species_key is not None:
+#             use_species = species_key
+
+#         elif default_species is not None:
+#             default_key = species_lookup.get(str(default_species).lower())
+
+#             if default_key is not None:
+#                 use_species = default_key
+
+#             else:
+#                 return None, None
+
+#         else:
+#             return None, None
+
+#     params = species_params.get(use_species, {})
+#     liver_weight = params.get("liver_weight_g_per_kg")
+
+#     if liver_weight is None:
+#         return None, None
+
+#     if canonical_unit == "uL/min/mg protein":
+#         mppgl = params.get("mppgl_mg_per_g_liver")
+#         if mppgl is None:
+#             return None, None
+
+#         scaled = val * mppgl * liver_weight * 60.0 / 1_000_000.0
+#         return scaled, "L/h/kg"
+
+#     if canonical_unit == "uL/min/10^6 cells":
+#         hpgl = params.get("hpgl_million_cells_per_g_liver")
+#         if hpgl is None:
+#             return None, None
+
+#         scaled = val * hpgl * liver_weight * 60.0 / 1_000_000.0
+#         return scaled, "L/h/kg"
+
+#     if canonical_unit == "mL/min/g liver":
+#         scaled = val * liver_weight * 60.0 / 1000.0
+#         return scaled, "L/h/kg"
+
+#     return None, None
+
+def _resolve_clint_species_parameters(species, scaling_cfg):
+    """
+    Resolve species-specific Clint scaling parameters.
+
+    Returns:
+        (resolved_species, params)
+
+    or:
+        (None, None)
+    """
+    if not scaling_cfg or not scaling_cfg.get("enabled", False):
+        return None, None
+
+    species_params = scaling_cfg.get("species_parameters", {})
+    default_species = scaling_cfg.get("default_species")
+
+    species_lookup = {
+        str(k).strip().lower(): k
+        for k in species_params
+    }
+
+    requested = str(species or "").strip()
+
+    if requested in species_params:
+        resolved_species = requested
+    else:
+        resolved_species = species_lookup.get(requested.lower())
+
+    if resolved_species is None and default_species is not None:
+        resolved_species = species_lookup.get(
+            str(default_species).strip().lower()
+        )
+
+    if resolved_species is None:
+        return None, None
+
+    params = species_params.get(resolved_species)
+
+    if not isinstance(params, dict):
+        return None, None
+
+    return resolved_species, params
+
+
+def scale_clint_to_liver_normalised(
+    value,
+    canonical_unit,
+    matrix,
+    species,
+    scaling_cfg,
+):
+    """
+    Convert Clint to liver-normalised intrinsic clearance.
+
+    Input units:
+      - microsomes:   uL/min/mg protein
+      - hepatocytes:  uL/min/10^6 cells
+      - liver level:  mL/min/g liver
+
+    Output:
+      - mL/min/g liver
+
+    Returns:
+      (value, unit) or (None, None)
+    """
+    if value is None:
+        return None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None
+
+    if not np.isfinite(val) or val < 0:
+        return None, None
+
+    if canonical_unit == "mL/min/g liver":
+        return val, "mL/min/g liver"
+
+    _, params = _resolve_clint_species_parameters(
+        species=species,
+        scaling_cfg=scaling_cfg,
+    )
+
+    if params is None:
+        return None, None
+
+    if canonical_unit == "uL/min/mg protein":
+        if matrix != "microsome":
+            return None, None
+
+        mppgl = params.get("mppgl_mg_per_g_liver")
+
+        try:
+            mppgl = float(mppgl)
+        except (TypeError, ValueError):
+            return None, None
+
+        if not np.isfinite(mppgl) or mppgl <= 0:
+            return None, None
+
+        # uL/min/mg × mg/g × 1 mL/1000 uL
+        liver_normalised = val * mppgl / 1000.0
+
+        return liver_normalised, "mL/min/g liver"
+
+    if canonical_unit == "uL/min/10^6 cells":
+        if matrix != "hepatocyte":
+            return None, None
+
+        hpgl = params.get("hpgl_million_cells_per_g_liver")
+
+        try:
+            hpgl = float(hpgl)
+        except (TypeError, ValueError):
+            return None, None
+
+        if not np.isfinite(hpgl) or hpgl <= 0:
+            return None, None
+
+        # uL/min/(10^6 cells) × (10^6 cells)/g × 1 mL/1000 uL
+        liver_normalised = val * hpgl / 1000.0
+
+        return liver_normalised, "mL/min/g liver"
+
+    return None, None
+
+
+def scale_liver_clint_to_l_h_kg(
+    value,
+    canonical_unit,
+    species,
+    scaling_cfg,
+):
+    """
+    Convert liver-normalised Clint to body-weight-normalised Clint.
+
+    Input:
+      mL/min/g liver
+
+    Output:
+      L/h/kg
+    """
+    if value is None or canonical_unit != "mL/min/g liver":
+        return None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None
+
+    if not np.isfinite(val) or val < 0:
+        return None, None
+
+    _, params = _resolve_clint_species_parameters(
+        species=species,
+        scaling_cfg=scaling_cfg,
+    )
+
+    if params is None:
+        return None, None
+
+    liver_weight = params.get("liver_weight_g_per_kg")
+
+    try:
+        liver_weight = float(liver_weight)
+    except (TypeError, ValueError):
+        return None, None
+
+    if not np.isfinite(liver_weight) or liver_weight <= 0:
+        return None, None
+
+    # mL/min/g × g/kg = mL/min/kg
+    # × 60 min/h × 1 L/1000 mL = L/h/kg
+    scaled = val * liver_weight * 60.0 / 1000.0
+
+    return scaled, "L/h/kg"
+
+
 def scale_clint_to_l_h_kg(
     value,
     canonical_unit,
@@ -416,6 +672,17 @@ def scale_clint_to_l_h_kg(
     species,
     scaling_cfg,
 ):
+    """
+    Backward-compatible wrapper.
+
+    Converts either:
+      - uL/min/mg protein
+      - uL/min/10^6 cells
+      - mL/min/g liver
+
+    to:
+      - L/h/kg
+    """
     if value is None:
         return None, None
 
@@ -427,64 +694,23 @@ def scale_clint_to_l_h_kg(
     if canonical_unit == "L/h/kg":
         return val, "L/h/kg"
 
-    if not scaling_cfg or not scaling_cfg.get("enabled", False):
+    liver_val, liver_unit = scale_clint_to_liver_normalised(
+        value=val,
+        canonical_unit=canonical_unit,
+        matrix=matrix,
+        species=species,
+        scaling_cfg=scaling_cfg,
+    )
+
+    if liver_val is None:
         return None, None
 
-    species_params = scaling_cfg.get("species_parameters", {})
-    default_species = scaling_cfg.get("default_species")
-
-    species_lookup = {
-        str(k).lower(): k
-        for k in species_params.keys()
-    }
-
-    use_species = species
-
-    if use_species not in species_params:
-        species_key = species_lookup.get(str(use_species).lower())
-
-        if species_key is not None:
-            use_species = species_key
-
-        elif default_species is not None:
-            default_key = species_lookup.get(str(default_species).lower())
-
-            if default_key is not None:
-                use_species = default_key
-
-            else:
-                return None, None
-
-        else:
-            return None, None
-
-    params = species_params.get(use_species, {})
-    liver_weight = params.get("liver_weight_g_per_kg")
-
-    if liver_weight is None:
-        return None, None
-
-    if canonical_unit == "uL/min/mg protein":
-        mppgl = params.get("mppgl_mg_per_g_liver")
-        if mppgl is None:
-            return None, None
-
-        scaled = val * mppgl * liver_weight * 60.0 / 1_000_000.0
-        return scaled, "L/h/kg"
-
-    if canonical_unit == "uL/min/10^6 cells":
-        hpgl = params.get("hpgl_million_cells_per_g_liver")
-        if hpgl is None:
-            return None, None
-
-        scaled = val * hpgl * liver_weight * 60.0 / 1_000_000.0
-        return scaled, "L/h/kg"
-
-    if canonical_unit == "mL/min/g liver":
-        scaled = val * liver_weight * 60.0 / 1000.0
-        return scaled, "L/h/kg"
-
-    return None, None
+    return scale_liver_clint_to_l_h_kg(
+        value=liver_val,
+        canonical_unit=liver_unit,
+        species=species,
+        scaling_cfg=scaling_cfg,
+    )
 
 
 def convert_metstab_half_life(value, unit):
