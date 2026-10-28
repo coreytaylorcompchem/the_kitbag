@@ -263,6 +263,34 @@ def harmonise_units(config, enriched=None):
                 source_units=None,
                 parent_scale=None,
             ):
+                scale_aliases = {
+                    "unscaled": "unscaled_in_vitro",
+                    "unscaled_in_vitro": "unscaled_in_vitro",
+
+                    "liver_normalised_mL_min_g_liver": "liver_normalised",
+                    "liver_normalised": "liver_normalised",
+
+                    "scaled_L_h_kg": "body_normalised",
+                    "body_normalised_L_h_kg": "body_normalised",
+                    "body_normalised": "body_normalised",
+
+                    "absolute_mL_min": "absolute",
+                    "absolute": "absolute",
+                }
+
+                if clint_scale not in scale_aliases:
+                    raise ValueError(
+                        f"Unsupported Clint scale label: {clint_scale!r}"
+                    )
+
+                clint_scale = scale_aliases[clint_scale]
+
+                if parent_scale is not None:
+                    parent_scale = scale_aliases.get(
+                        parent_scale,
+                        parent_scale,
+                    )
+
                 rec = source_record.copy()
 
                 rec["standard_value"] = value
@@ -274,12 +302,10 @@ def harmonise_units(config, enriched=None):
                 rec["raw_metstab_endpoint_family"] = raw_endpoint_family
 
                 rec["clint_scale"] = clint_scale
-                rec["is_scaled_clint"] = clint_scale == "scaled_L_h_kg"
                 rec["is_scaled_clint"] = clint_scale == "body_normalised"
                 rec["is_derived_scaled_clint"] = (
                     derived and clint_scale == "body_normalised"
                 )
-
                 rec["is_derived_clint"] = derived
 
                 rec["source_clint_value"] = source_value
@@ -507,7 +533,7 @@ def harmonise_units(config, enriched=None):
                             source_record=r,
                             value=new_val,
                             unit=new_unit,
-                            clint_scale="liver_normalised_mL_min_g_liver",
+                            clint_scale="liver_normalised",
                             species=species,
                             system=system,
                             matrix=matrix,
@@ -536,7 +562,7 @@ def harmonise_units(config, enriched=None):
                             source_record=r,
                             value=body_val,
                             unit=body_unit,
-                            clint_scale="body_normalised_L_h_kg",
+                            clint_scale="body_normalised",
                             species=species,
                             system=system,
                             matrix=matrix,
@@ -545,7 +571,7 @@ def harmonise_units(config, enriched=None):
                             derived=True,
                             source_value=new_val,
                             source_units=new_unit,
-                            parent_scale="liver_normalised_mL_min_g_liver",
+                            parent_scale="liver_normalised",
                         )
 
                         new_records.append(body_record)
@@ -559,7 +585,7 @@ def harmonise_units(config, enriched=None):
                             source_record=r,
                             value=new_val,
                             unit=new_unit,
-                            clint_scale="body_normalised_L_h_kg",
+                            clint_scale="body_normalised",
                             species=species,
                             system=system,
                             matrix=matrix,
@@ -582,7 +608,7 @@ def harmonise_units(config, enriched=None):
                             source_record=r,
                             value=new_val,
                             unit=new_unit,
-                            clint_scale="absolute_mL_min",
+                            clint_scale="absolute",
                             species=species,
                             system=system,
                             matrix=matrix,
@@ -781,25 +807,65 @@ def harmonise_units(config, enriched=None):
             #     f"{dict(reconciliation_counter)}"
             # )
 
+            allowed_clint_scales = {
+                "unscaled_in_vitro",
+                "liver_normalised",
+                "body_normalised",
+                "absolute",
+            }
+
+            expected_clint_units = {
+                ("microsome", "unscaled_in_vitro"): "uL/min/mg protein",
+                ("hepatocyte", "unscaled_in_vitro"): "uL/min/10^6 cells",
+                ("microsome", "liver_normalised"): "mL/min/g liver",
+                ("hepatocyte", "liver_normalised"): "mL/min/g liver",
+                ("microsome", "body_normalised"): "L/h/kg",
+                ("hepatocyte", "body_normalised"): "L/h/kg",
+                ("microsome", "absolute"): "mL/min",
+                ("hepatocyte", "absolute"): "mL/min",
+            }
+
             validation_counter = Counter()
+            validation_errors = []
 
             for rec in new_records:
                 endpoint = rec.get("metstab_endpoint_family")
-                scale = rec.get("clint_scale")
 
                 if endpoint != "clint":
                     validation_counter["related_endpoint"] += 1
                     continue
 
-                if scale in {
-                    "unscaled_in_vitro",
-                    "liver_normalised",
-                    "body_normalised",
-                    "absolute",
-                }:
-                    validation_counter[f"kept_{scale}"] += 1
-                else:
-                    validation_counter[f"unexpected_{scale}"] += 1
+                scale = rec.get("clint_scale")
+                matrix_name = rec.get("metstab_matrix")
+                observed_unit = rec.get("standard_units")
+
+                if scale not in allowed_clint_scales:
+                    validation_errors.append(
+                        f"unexpected clint_scale={scale!r}"
+                    )
+                    continue
+
+                expected_unit = expected_clint_units.get(
+                    (matrix_name, scale)
+                )
+
+                if expected_unit is not None and observed_unit != expected_unit:
+                    validation_errors.append(
+                        f"matrix={matrix_name!r}, "
+                        f"scale={scale!r}: expected unit "
+                        f"{expected_unit!r}, observed {observed_unit!r}"
+                    )
+                    continue
+
+                validation_counter[f"kept_{scale}"] += 1
+
+            if validation_errors:
+                examples = validation_errors[:20]
+
+                raise ValueError(
+                    f"{assay_name}: invalid Clint records detected before "
+                    f"dataset construction. Examples: {examples}"
+                )
 
             logger.debug(
                 f"{assay_name}: Clint validation counts = "
@@ -1348,6 +1414,34 @@ def build_multitask_dataset(config, cleaned=None):
             continue
 
         df = pd.DataFrame(records)
+
+        if (
+            "metstab_endpoint_family" in df.columns
+            and "clint_scale" in df.columns
+        ):
+            clint_mask = df["metstab_endpoint_family"].eq("clint")
+
+            invalid_scale_mask = (
+                clint_mask
+                & ~df["clint_scale"].isin({
+                    "unscaled_in_vitro",
+                    "liver_normalised",
+                    "body_normalised",
+                    "absolute",
+                })
+            )
+
+            if invalid_scale_mask.any():
+                bad_values = (
+                    df.loc[invalid_scale_mask, "clint_scale"]
+                    .value_counts(dropna=False)
+                    .to_dict()
+                )
+
+                raise ValueError(
+                    f"{assay_name}: non-canonical Clint scale labels "
+                    f"reached dataset construction: {bad_values}"
+                )
 
         # debug checks of assay data
 
