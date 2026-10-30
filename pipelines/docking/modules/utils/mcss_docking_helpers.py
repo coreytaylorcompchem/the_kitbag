@@ -10,6 +10,20 @@ from modules.utils.constants import element_colour_commands
 
 from schrodinger import structure
 
+
+ELEMENT_COLOURS = {
+    "N": "blue",
+    "O": "red",
+    "S": "yellow",
+    "P": "orange",
+    "H": "white",
+    "F": "palecyan",
+    "Cl": "green",
+    "Br": "brown",
+    "I": "purple",
+}
+
+
 def safe_pymol_name(
     value,
     fallback: str = "unknown",
@@ -501,17 +515,17 @@ def export_mcss_pose_bundle(
                 "gray80",
             ),
             "",
-
             "# Consistent thin-stick representation.",
-            "set stick_radius, 0.15, mcss_pose_ensemble",
             "set stick_radius, 0.15, cryoem_structure",
-            "set stick_radius, 0.15, glideem_reference_pose",
+            (
+                "set stick_radius, 0.15, "
+                "glideem_reference_pose"
+            ),
+            "set stick_radius, 0.15, top_mcss_poses",
             "set stick_radius, 0.15, binding_site",
             "",
-
-            "# Initial view centred on the docked MCSS ligands.",
-            "orient mcss_pose_ensemble",
-            "zoom mcss_pose_ensemble, 8",
+            "orient top_mcss_poses",
+            "zoom top_mcss_poses, 8",
             "",
         ]
     )

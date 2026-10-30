@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-import csv
+import shutil
 import math
 from collections import defaultdict
 from pathlib import Path
@@ -19,7 +18,6 @@ from matplotlib.patches import Patch
 from schrodinger import structure
 
 from scipy.cluster.hierarchy import (
-    dendrogram,
     fcluster,
     linkage,
 )
@@ -53,6 +51,7 @@ from modules.utils.glideem_plotting import (
 
 from modules.utils.mcss_docking_helpers import (
     export_mcss_pose_bundle,
+    safe_pymol_name
 )
 
 from modules.utils.prime_mmgbsa_helpers import (
@@ -148,23 +147,163 @@ def prepare_activity_ligands(
         .lower()
     )
 
-    if input_suffix not in {
+    output_root = (
+        Path(
+            config[
+                "output_dir"
+            ]
+        )
+        .expanduser()
+        .resolve()
+    )
+
+    output_dir = (
+        output_root
+        / "ligprep"
+    )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    ligprep_cfg = config.get(
+        "ligprep",
+        {},
+    )
+
+    already_prepared = bool(
+        ligprep_cfg.get(
+            "already_prepared",
+            False,
+        )
+    )
+
+    output_file = (
+        output_dir
+        / "activity_ligands_ligprep.maegz"
+    )
+
+    source_record = (
+        output_dir
+        / "activity_ligands_source.txt"
+    )
+
+    # --------------------------------------------------
+    # Already-prepared ligand library
+    #
+    # Copy it into the canonical pipeline location without
+    # running LigPrep. Downstream tasks therefore continue
+    # to consume exactly the same filename regardless of
+    # preparation route.
+    # --------------------------------------------------
+
+    if already_prepared:
+        allowed_prepared_suffixes = {
+            ".mae",
+            ".maegz",
+        }
+
+        if (
+            input_suffix
+            not in allowed_prepared_suffixes
+        ):
+            raise ValueError(
+                "ligprep.already_prepared=true requires "
+                "a prepared Maestro ligand library "
+                "(.mae or .maegz); received: "
+                f"{input_path}"
+            )
+
+        can_reuse = (
+            output_file.is_file()
+            and output_file.stat().st_size > 0
+            and source_record.is_file()
+            and source_record.read_text().strip()
+            == str(
+                input_path
+            )
+            and not config.get(
+                "force",
+                False,
+            )
+        )
+
+        if can_reuse:
+            logger.info(
+                "Using existing copied prepared ligand "
+                "library: %s",
+                output_file,
+            )
+
+            return output_file
+
+        logger.info(
+            "Using pre-prepared activity ligand library; "
+            "LigPrep will not be run: %s",
+            input_path,
+        )
+
+        if (
+            input_path
+            == output_file
+        ):
+            logger.info(
+                "Prepared ligand library is already at "
+                "the canonical pipeline location: %s",
+                output_file,
+            )
+
+        else:
+            shutil.copy2(
+                input_path,
+                output_file,
+            )
+
+            logger.info(
+                "Copied prepared ligand library: "
+                "%s -> %s",
+                input_path,
+                output_file,
+            )
+
+        if (
+            not output_file.is_file()
+            or output_file.stat().st_size == 0
+        ):
+            raise RuntimeError(
+                "Failed to copy prepared activity ligand "
+                f"library to: {output_file}"
+            )
+
+        source_record.write_text(
+            str(
+                input_path
+            )
+            + "\n"
+        )
+
+        return output_file
+
+    # --------------------------------------------------
+    # Normal LigPrep route
+    # --------------------------------------------------
+
+    allowed_unprepared_suffixes = {
         ".sdf",
         ".sd",
         ".csv",
-    }:
+    }
+
+    if (
+        input_suffix
+        not in allowed_unprepared_suffixes
+    ):
         raise ValueError(
-            "activity_ligands must be an SDF or CSV file; "
+            "activity_ligands must be an SDF/SD or CSV "
+            "when LigPrep preparation is enabled; "
             f"received: {input_path}"
         )
-
-    output_root = Path(config["output_dir"]).expanduser().resolve()
-
-    output_dir = output_root / "ligprep"
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
 
     ligprep_cfg = config.get(
         "ligprep",
@@ -215,17 +354,17 @@ def prepare_activity_ligands(
             ligprep_input,
         )
 
-    output_file = (
-        output_dir /
-        "activity_ligands_ligprep.maegz"
-    )
+    # output_file = (
+    #     output_dir /
+    #     "activity_ligands_ligprep.maegz"
+    # )
 
-    # Reuse existing output unless explicitly forcing rerun
+    # # Reuse existing output unless explicitly forcing rerun
 
-    source_record = (
-        output_dir
-        / "activity_ligands_source.txt"
-    )
+    # source_record = (
+    #     output_dir
+    #     / "activity_ligands_source.txt"
+    # )
 
     can_reuse = (
         output_file.is_file()
@@ -259,10 +398,10 @@ def prepare_activity_ligands(
 
     #     return output_file
 
-    ligprep_cfg = config.get(
-        "ligprep",
-        {}
-    )
+    # ligprep_cfg = config.get(
+    #     "ligprep",
+    #     {}
+    # )
 
     pH = ligprep_cfg.get(
         "pH",
@@ -344,6 +483,13 @@ def prepare_activity_ligands(
             input_sdf=input_path,
             ligprep_file=output_file,
         )
+
+    source_record.write_text(
+        str(
+            input_path
+        )
+        + "\n"
+    )
 
     logger.info(
         f"LigPrep completed: {output_file}"
@@ -2208,6 +2354,16 @@ def export_mcss_pymol(
         )
     )
 
+    output_root = (
+        Path(
+            kwargs[
+                "output_dir"
+            ]
+        )
+        .expanduser()
+        .resolve()
+    )
+
     cryoem_reference = (
         Path(kwargs["cryoem_reference"])
         .expanduser()
@@ -2254,11 +2410,68 @@ def export_mcss_pymol(
             "PyMOL top_n must be at least 1."
         )
 
-    name = complex_job["name"]
+    name = str(
+        complex_job[
+            "name"
+        ]
+    )
+
+    source_name = str(
+        complex_job[
+            "source_name"
+        ]
+    )
+
+    # complex_job["name"] is expected to look like:
+    #
+    #     structure_51052_pose01
+    #
+    # while source_name is:
+    #
+    #     structure_51052
+    #
+    # Remove the source prefix to obtain:
+    #
+    #     pose01
+    prefix = (
+        source_name
+        + "_"
+    )
+
+    if name.startswith(
+        prefix
+    ):
+        pose_name = name[
+            len(
+                prefix
+            ):
+        ]
+
+    else:
+        # Defensive fallback in case a future complex-job naming
+        # convention does not begin with the source structure name.
+        pose_name = name
+
+    pose_name = safe_pymol_name(
+        pose_name,
+        fallback="pose",
+    )
 
     out_dir = (
-        poseviewer.parent
-        / "pymol"
+        output_root
+        / source_name
+        / f"{pose_name}_pymol"
+    )
+
+    out_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    logger.debug(
+        "[%s] MCSS PyMOL bundle directory: %s",
+        name,
+        out_dir,
     )
 
     receptor = None
