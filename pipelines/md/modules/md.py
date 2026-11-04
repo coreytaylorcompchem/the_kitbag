@@ -27,16 +27,12 @@ from MDAnalysis.transformations import unwrap, center_in_box, wrap
 
 from modules.utils.plotting import save_plot
 
+from modules.utils.constants import protein_resnames
+
 from pipeline.task_registry import register_task
 from pipeline.logger import setup_logger
 
 logger = setup_logger(__name__, debug_mode=False, simple_format=True)
-
-protein_resnames = {
-    "ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS",
-    "ILE","LEU","LYS","MET","PHE","PRO","SER","THR",
-    "TRP","TYR","VAL"
-}
 
 # Useful constants
 
@@ -237,12 +233,6 @@ class MDWorkflow:
         # -------------------------
         # Staged minimisation
         # -------------------------
-        # stages = [
-        #     {"desc": "Relaxing lipids (protein + lig restrained)", "k_prot": 1000, "k_lig": 1000, "iter": 2000, "tolerance": 100},
-        #     {"desc": "Relaxing headgroups (protein restrained)", "k_prot": 100, "k_lig": 0, "iter": 5000, "tolerance": 10},
-        #     {"desc": "Global relaxation (weak restraints)", "k_prot": 10, "k_lig": 0, "iter": 2000, "tolerance": 5},
-        #     {"desc": "Final unrestrained minimisation", "k_prot": 0, "k_lig": 0, "iter": 1000, "tolerance": 1},
-        # ]
 
         for i, stage in enumerate(stages, 1):
             logger.info(f"Stage {i}: {stage['description']}")
@@ -668,7 +658,6 @@ class MDWorkflow:
                     else:
                         apl = float("nan")
 
-                    # mass = sum([self.system.getParticleMass(i) for i in range(self.system.getNumParticles())])
                     mass = sum([
                         self.system.getParticleMass(i)
                         for i in range(self.system.getNumParticles())
@@ -1145,15 +1134,6 @@ class MDWorkflow:
         velocities = state.getVelocities()
         box_vectors = state.getPeriodicBoxVectors()
 
-        # latest_seg, latest_chk = find_latest_checkpoint(output_dir)
-
-        # # Update context
-        # if latest_chk is None:
-        #     self.simulation.context.setPositions(positions)
-        #     self.simulation.context.setVelocities(velocities)
-        #     self.simulation.context.setPeriodicBoxVectors(*box_vectors)
-        #     self.simulation.currentStep = 0
-
         latest_seg, latest_chk = find_latest_checkpoint(output_dir)
 
         # ---------------------------------------------------------
@@ -1357,16 +1337,6 @@ class MDWorkflow:
         logger.info(f"Writing frames every {output_freq} steps.")
 
         # Rolling diagnostic averages to check simulation is running smoothly
-        # rolling_window = 10  # number of diagnostic points to average over
-        # temp_history = []
-        # density_history = []
-        # energy_history = []
-
-        # Segment loop
-        # for seg in range(start_segment, n_segments + 1):
-        #     seg_start_step = self.simulation.currentStep
-        #     seg_end_step = min(seg_start_step + split_steps, total_steps)
-        #     seg_steps = seg_end_step - seg_start_step
 
         seg = start_segment
 
@@ -1576,135 +1546,6 @@ class MDWorkflow:
             )
 
             seg += 1        
-
-            # traj_file = os.path.join(output_dir, f"trajectory_{seg:03d}.dcd")
-            # log_file = os.path.join(output_dir, f"log_{seg:03d}.txt")
-            # chk_file = os.path.join(output_dir, f"restart_{seg:03d}.chk")
-
-            # # Attach reporters
-            # self.simulation.reporters.clear()
-            # self.simulation.reporters.append(DCDReporter(traj_file, output_freq, enforcePeriodicBox=False))
-            # self.simulation.reporters.append(StateDataReporter(
-            #     log_file, energy_log_freq,
-            #     step=True, temperature=True, potentialEnergy=True, totalEnergy=True,
-            #     density=True, progress=True, remainingTime=True, speed=True,
-            #     totalSteps=seg_steps, separator='\t'
-            # ))
-
-            # logger.info(f"Segment {seg}/{n_segments}: {seg_steps} steps → {traj_file}")
-
-            # with tqdm(total=seg_steps, desc=f"Production seg {seg}", unit="steps") as pbar:
-            #     current_step = 0
-            #     diagnostic_freq = energy_log_freq  # diagnostics check frequency
-            #     active_restraint_k = None
-            #     active_restraint_stage = None
-
-            #     while current_step < seg_steps:
-            #         remaining_segment_steps = seg_steps - current_step
-            #         n = min(output_freq, remaining_segment_steps)
-
-            #         if backbone_restraints_enabled:
-            #             production_step = self.simulation.currentStep
-
-            #             restraint_k, next_boundary_step, restraint_stage = (
-            #                 self.get_production_restraint_state(
-            #                     production_step=production_step,
-            #                     schedule=production_restraint_schedule,
-            #                     final_k=production_restraint_final_k
-            #                 )
-            #             )
-
-            #             # Change k only when entering a new stage.
-            #             if (
-            #                 restraint_k != active_restraint_k
-            #                 or restraint_stage != active_restraint_stage
-            #             ):
-            #                 self.simulation.context.setParameter(
-            #                     PRODUCTION_BACKBONE_K_PARAM,
-            #                     restraint_k
-            #                     * kilojoule
-            #                     / (mole * nanometer**2)
-            #                 )
-
-            #                 elapsed_ns = production_step / steps_per_ns
-
-            #                 if restraint_stage is None:
-            #                     logger.info(
-            #                         f"Production restraint schedule complete at "
-            #                         f"{elapsed_ns:.3f} ns; "
-            #                         f"setting k={restraint_k} "
-            #                         "kJ mol^-1 nm^-2"
-            #                     )
-            #                 else:
-            #                     logger.info(
-            #                         f"Entering production restraint stage "
-            #                         f"{restraint_stage} at {elapsed_ns:.3f} ns; "
-            #                         f"k={restraint_k} "
-            #                         "kJ mol^-1 nm^-2"
-            #                     )
-
-            #                 active_restraint_k = restraint_k
-            #                 active_restraint_stage = restraint_stage
-
-            #             # Do not step across a schedule boundary.
-            #             if next_boundary_step is not None:
-            #                 steps_to_boundary = (
-            #                     next_boundary_step - production_step
-            #                 )
-
-            #                 if steps_to_boundary > 0:
-            #                     n = min(n, steps_to_boundary)
-
-            #         self.simulation.step(n)
-            #         current_step += n
-            #         pbar.update(n)
-
-            #         # # Existing diagnostics follow here.
-            #         # current_step += n
-            #         # pbar.update(n)
-
-            #         # Diagnostics only at intervals
-            #         if current_step % diagnostic_freq == 0:
-            #             state = self.simulation.context.getState(getEnergy=True)
-
-            #             # Potential energy check
-            #             potential_energy = state.getPotentialEnergy().value_in_unit(kilojoule/mole)
-            #             if potential_energy > 1e6:  # adjust threshold as needed
-            #                 logger.warning(f"High potential energy detected: {potential_energy:.1f} kJ/mol at step {self.simulation.currentStep}")
-
-            #             # Temperature and density
-            #             kinetic_energy = state.getKineticEnergy().value_in_unit(kilojoule/mole)
-            #             dof = 3 * self.system.getNumParticles() - self.system.getNumConstraints()
-            #             dof -= 3  # remove com
-            #             kB = 0.00831446261815324
-            #             temp_inst = 2 * kinetic_energy / (dof * kB)
-            #             box_vectors = state.getPeriodicBoxVectors()
-            #             lx, ly, lz = [box_vectors[i][i].value_in_unit(nanometer) for i in range(3)]
-            #             volume = lx * ly * lz
-            #             mass = sum([self.system.getParticleMass(i) for i in range(self.system.getNumParticles())]).value_in_unit(dalton) * 1.66054e-24
-            #             density = mass / (volume * 1e-21)
-
-            #             if abs(temp_inst - target_temp) > max_temp_dev:
-            #                 logger.warning(f"Temperature deviation: {temp_inst:.1f} K (target={target_temp} K)")
-            #             if abs(density - 1.0) > max_density_dev:
-            #                 logger.warning(f"Density deviation: {density:.2f} g/mL")
-
-            # # Save checkpoint at end of segment
-            # self.simulation.saveCheckpoint(chk_file)
-            # logger.info(f"Checkpoint saved: {chk_file}")
-
-            # # Re-image trajectory after writing
-            # wrapped_traj = traj_file.replace(".dcd", "_wrapped.xtc")
-
-            # try:
-            #     self.reimage_trajectory(
-            #         traj_path=traj_file,
-            #         top_path=os.path.join(output_dir, "equilibrated_system.pdb"),
-            #         output_path=wrapped_traj
-            #     )
-            #     logger.info(f"Wrapped trajectory written: {wrapped_traj}")
-            # except Exception as e:
-            #     logger.warning(f"Re-imaging failed for {traj_file}: {e}")
 
         # ---------------------------------------------------------
         # Verify the actual completed production duration.
