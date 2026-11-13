@@ -1,13 +1,14 @@
 workflow_name: run_pipeline
 
 workflow:
-  # - load_building_blocks
-  # - process_building_blocks
-  # - save_building_block_database
+  - load_building_blocks
+  - process_building_blocks
+  - save_building_block_database
   - validate_building_block_database
   - plot_building_block_database
   - classify_building_blocks
   - annotate_building_block_reactivity
+  - validate_reactivity_annotations
   - build_building_block_search_index
 
 
@@ -106,6 +107,14 @@ annotate_building_block_reactivity:
     enabled: true
     n_workers: 16
     chunk_size: 10000
+
+validate_reactivity_annotations:
+  input_file: outputs/commercial_bbs/mcule_retrosynthesis_building_blocks_reactivity.parquet
+
+  output_dir: outputs/commercial_bbs/validation/reactivity
+
+  sample_size: 25
+  random_state: 42
 
 build_building_block_search_index:
   input_file: outputs/commercial_bbs/mcule_retrosynthesis_building_blocks_reactivity.parquet
