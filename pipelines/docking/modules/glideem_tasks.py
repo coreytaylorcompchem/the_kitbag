@@ -3043,6 +3043,7 @@ def analyse_glideem_campaign_landscape(
 
     all_pose_records = []
     alignment_rows = []
+    alignment_transform_rows = []
     accepted_results = []
 
     # Aligned receptor structures used for visual QC of the
@@ -3219,6 +3220,132 @@ def analyse_glideem_campaign_landscape(
         fit_rmsd = robust_fit[
             "fit_rmsd"
         ]
+
+        rotation_array = np.asarray(
+            rotation,
+            dtype=float,
+        )
+
+        translation_array = np.asarray(
+            translation,
+            dtype=float,
+        ).reshape(
+            3
+        )
+
+        if rotation_array.shape != (
+            3,
+            3,
+        ):
+            raise RuntimeError(
+                f"[{source_name}] Campaign alignment rotation "
+                f"has invalid shape: {rotation_array.shape}"
+            )
+
+        if not (
+            np.all(
+                np.isfinite(
+                    rotation_array
+                )
+            )
+            and np.all(
+                np.isfinite(
+                    translation_array
+                )
+            )
+        ):
+            raise RuntimeError(
+                f"[{source_name}] Campaign alignment transform "
+                "contains non-finite values."
+            )
+
+        alignment_transform_rows.append(
+            {
+                "source_name": source_name,
+                "alignment_reference": reference_name,
+
+                "rotation_00": float(
+                    rotation_array[
+                        0,
+                        0,
+                    ]
+                ),
+                "rotation_01": float(
+                    rotation_array[
+                        0,
+                        1,
+                    ]
+                ),
+                "rotation_02": float(
+                    rotation_array[
+                        0,
+                        2,
+                    ]
+                ),
+                "rotation_10": float(
+                    rotation_array[
+                        1,
+                        0,
+                    ]
+                ),
+                "rotation_11": float(
+                    rotation_array[
+                        1,
+                        1,
+                    ]
+                ),
+                "rotation_12": float(
+                    rotation_array[
+                        1,
+                        2,
+                    ]
+                ),
+                "rotation_20": float(
+                    rotation_array[
+                        2,
+                        0,
+                    ]
+                ),
+                "rotation_21": float(
+                    rotation_array[
+                        2,
+                        1,
+                    ]
+                ),
+                "rotation_22": float(
+                    rotation_array[
+                        2,
+                        2,
+                    ]
+                ),
+
+                "translation_x": float(
+                    translation_array[
+                        0
+                    ]
+                ),
+                "translation_y": float(
+                    translation_array[
+                        1
+                    ]
+                ),
+                "translation_z": float(
+                    translation_array[
+                        2
+                    ]
+                ),
+
+                "fit_rmsd": float(
+                    fit_rmsd
+                ),
+
+                "n_retained_pocket_atoms": int(
+                    robust_fit[
+                        "n_retained_atoms"
+                    ]
+                ),
+            }
+        )        
 
         if source_name == reference_name:
             campaign_reference_chain_id = (
@@ -3583,6 +3710,82 @@ def analyse_glideem_campaign_landscape(
             "The selected reference receptor chain was not recorded "
             f"for campaign reference '{reference_name}'."
         )    
+
+    alignment_transforms_df = pd.DataFrame(
+        alignment_transform_rows
+    )
+
+    required_transform_columns = {
+        "source_name",
+        "alignment_reference",
+        "rotation_00",
+        "rotation_01",
+        "rotation_02",
+        "rotation_10",
+        "rotation_11",
+        "rotation_12",
+        "rotation_20",
+        "rotation_21",
+        "rotation_22",
+        "translation_x",
+        "translation_y",
+        "translation_z",
+    }
+
+    missing_transform_columns = (
+        required_transform_columns
+        - set(
+            alignment_transforms_df.columns
+        )
+    )
+
+    if missing_transform_columns:
+        raise RuntimeError(
+            "Campaign alignment-transform table is missing "
+            f"columns: {sorted(missing_transform_columns)}"
+        )
+
+    if alignment_transforms_df[
+        "source_name"
+    ].duplicated().any():
+        duplicate_sources = (
+            alignment_transforms_df.loc[
+                alignment_transforms_df[
+                    "source_name"
+                ].duplicated(
+                    keep=False
+                ),
+                "source_name",
+            ]
+            .astype(
+                str
+            )
+            .tolist()
+        )
+
+        raise RuntimeError(
+            "Campaign alignment-transform table contains "
+            "duplicate source structures: "
+            f"{duplicate_sources}"
+        )
+
+    alignment_transforms_file = (
+        output_dir
+        / "receptor_alignment_transforms.csv"
+    )
+
+    alignment_transforms_df.to_csv(
+        alignment_transforms_file,
+        index=False,
+    )
+
+    logger.info(
+        "Saved %d receptor alignment transforms: %s",
+        len(
+            alignment_transforms_df
+        ),
+        alignment_transforms_file,
+    )    
 
     alignment_df = pd.DataFrame(
         alignment_rows
@@ -4436,46 +4639,6 @@ def analyse_glideem_campaign_landscape(
                 ),
             )
 
-        # if export_cfg.get(
-        #     "difference_maps",
-        #     True,
-        # ):
-        #     difference = density_difference(
-        #         source_density,
-        #         target_density,
-        #     )
-
-        #     save_numpy_density(
-        #         difference,
-        #         output_dir
-        #         / (
-        #             f"structure_{source_name}"
-        #             "_minus_target.npy"
-        #         ),
-        #     )
-
-        # if export_cfg.get(
-        #     "per_structure_maps",
-        #     True,
-        # ):
-        #     try:
-        #         write_ccp4_map(
-        #             source_density,
-        #             common_grid,
-        #             output_dir
-        #             / (
-        #                 f"structure_{source_name}"
-        #                 "_probability.ccp4"
-        #             ),
-        #         )
-
-        #     except Exception as exc:
-        #         logger.warning(
-        #             "[%s] Could not export structure CCP4 map: %s",
-        #             source_name,
-        #             exc,
-        #         )
-
     for family_id in sorted(
         pose_table[
             "global_family_id"
@@ -4516,30 +4679,6 @@ def analyse_glideem_campaign_landscape(
                 "_probability.npy"
             ),
         )
-
-        # if export_cfg.get(
-        #     "per_family_maps",
-        #     True,
-        # ):
-        #     try:
-        #         write_ccp4_map(
-        #             family_density,
-        #             common_grid,
-        #             output_dir
-        #             / (
-        #                 f"global_family_{int(family_id):03d}"
-        #                 "_probability.ccp4"
-        #             ),
-        #         )
-
-        #     except Exception as exc:
-        #         logger.warning(
-        #             "[Family %d] Could not export CCP4 map: %s",
-        #             int(
-        #                 family_id
-        #             ),
-        #             exc,
-        #         )
 
     # --------------------------------------------------
     # Between-structure Jensen-Shannon divergence
@@ -4705,5 +4844,9 @@ def analyse_glideem_campaign_landscape(
         "pocket_evidence": (
             pocket_evidence_results
         ),
+        "alignment_transforms": (
+            output_dir
+            / "receptor_alignment_transforms.csv"
+        ),        
     }
     
