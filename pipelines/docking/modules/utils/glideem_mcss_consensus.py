@@ -14,8 +14,9 @@ from modules.utils.glideem_helpers import (
     smiles_value,
 )
 
-from modules.utils.pymol_export import (
+from modules.utils.mcss_docking_helpers import (
     export_consensus_compound_pose,
+    export_combined_consensus_poses,
 )
 
 from pipeline.logger import setup_logger
@@ -128,7 +129,7 @@ def collect_mcss_docking_scores(
                 + 1
             )
 
-            mcss_pose_rank = (
+            compound_pose_index = (
                 pose_count_by_compound[
                     cid
                 ]
@@ -162,8 +163,8 @@ def collect_mcss_docking_scores(
                         st
                     ),
                     "glide_score": score,
-                    "mcss_pose_rank": int(
-                        mcss_pose_rank
+                    "compound_pose_index": int(
+                        compound_pose_index
                     ),
                     "poseviewer_ct_index": int(
                         ct_index
@@ -1066,6 +1067,13 @@ def analyse_mcss_consensus(
         )
     )
 
+    binding_site_cutoff = float(
+        config.get(
+            "binding_site_cutoff",
+            5.0,
+        )
+    )
+
     dock_input = collect_mcss_docking_scores(
         complex_jobs=complex_jobs,
         poseviewers=poseviewers,
@@ -1166,8 +1174,8 @@ def analyse_mcss_consensus(
                 compound_id_value=str(
                     row.compound_id
                 ),
-                selected_mcss_pose_rank=int(
-                    row.mcss_pose_rank
+                compound_pose_index=int(
+                    row.compound_pose_index
                 ),
                 reference_ligand=Path(
                     row.reference_ligand_path
@@ -1179,6 +1187,11 @@ def analyse_mcss_consensus(
                         f"{str(row.compound_id)}"
                     )
                 ),
+
+                binding_site_cutoff=(
+                    binding_site_cutoff
+                ),
+
                 metadata={
                     "consensus_rank": int(
                         row.consensus_rank
@@ -1222,6 +1235,46 @@ def analyse_mcss_consensus(
                 exc_info=True,
             )
 
+    # --------------------------------------------------
+    # Combined PyMOL bundle
+    #
+    # One selected consensus ligand + its associated receptor
+    # per ranked compound. No reference ligand is included.
+    # --------------------------------------------------
+
+    combined_pymol_dir = (
+        output_dir
+        / "consensus_pymol_combined"
+    )
+
+    combined_pymol_script = None
+
+    try:
+        combined_pymol_script = (
+            export_combined_consensus_poses(
+                selected_poses=selected_poses,
+                output_dir=(
+                    combined_pymol_dir
+                ),
+                binding_site_cutoff=(
+                    binding_site_cutoff
+                ),
+            )
+        )
+
+    except Exception as exc:
+        logger.warning(
+            "Combined consensus PyMOL export failed: %s",
+            exc,
+            exc_info=True,
+        )
+
+    else:
+        logger.info(
+            "Combined consensus PyMOL bundle generated: %s",
+            combined_pymol_script,
+        )
+
     logger.info(
         "Generated MCSS consensus ranking for %d compounds "
         "across %d structures and %d MCSS docks",
@@ -1254,4 +1307,8 @@ def analyse_mcss_consensus(
             / "mcss_consensus_selected_poses.csv"
         ),
         "pymol_scripts": pymol_scripts,
+
+        "combined_pymol_script": (
+            combined_pymol_script
+        ),
     }
