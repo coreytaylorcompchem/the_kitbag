@@ -727,24 +727,104 @@ def extract_cyp3a4_substrate_hybrid(text, threshold=0.5):
 
 def infer_metstab_matrix_with_context(record, assay_name=None):
     """
-    Infer microsome/hepatocyte/S9 matrix using record text plus assay bucket.
+    Infer microsome/hepatocyte/S9 matrix.
+
+    Evidence priority:
+      1. Unit denominator
+      2. Record-level assay description / standard type
+      3. Assay bucket name
+
+    The assay bucket is deliberately the weakest evidence because keyword
+    retrieval can place hepatocyte records in a Microsomal Stability bucket
+    and vice versa.
     """
-    text = " ".join([
-        str(assay_name or ""),
+    raw_unit = str(record.get("standard_units", "") or "")
+
+    unit = (
+        raw_unit
+        .lower()
+        .strip()
+        .replace("µ", "u")
+        .replace("μ", "u")
+        .replace("micro", "u")
+        .replace(" ", "")
+        .replace("*", "")
+        .replace("^", "")
+        .replace("(", "")
+        .replace(")", "")
+    )
+
+    # ---------------------------------------------------------
+    # 1. Unit denominator is the strongest matrix evidence
+    # ---------------------------------------------------------
+
+    hepatocyte_unit_patterns = [
+        "ul/min/10-6cells",
+        "ul/min/106cells",
+        "ul/min/1e6cells",
+        "ul/min/10e6cells",
+        "ul/min/millioncells",
+        "ul/min/106cell",
+        "ul/min/1e6cell",
+        "ulmin-110-6cells-1",
+        "ulmin-1106cells-1",
+        "ulmin-11e6cells-1",
+        "ul/106cells/min",
+        "ul/1e6cells/min",
+    ]
+
+    if (
+        any(pattern in unit for pattern in hepatocyte_unit_patterns)
+        or (
+            "cell" in unit
+            and any(volume in unit for volume in ["ul", "ml", "l"])
+            and "min" in unit
+        )
+    ):
+        return "hepatocyte"
+
+    microsome_unit_patterns = [
+        "ul/min/mg",
+        "ul/min/mgprotein",
+        "ul/min/mgmicrosomalprotein",
+        "ul/min/mgmicrosome",
+        "ulmin-1mg-1",
+        "ulmin-1mgprotein-1",
+        "ul/mg/min",
+        "ml/min/mg",
+        "mlmin-1mg-1",
+        "l/min/mg",
+        "lmin-1mg-1",
+    ]
+
+    if (
+        any(pattern in unit for pattern in microsome_unit_patterns)
+        or (
+            "mg" in unit
+            and any(volume in unit for volume in ["ul", "ml", "l"])
+            and "min" in unit
+        )
+    ):
+        return "microsome"
+
+    # ---------------------------------------------------------
+    # 2. Use record-specific context, without the bucket name
+    # ---------------------------------------------------------
+
+    record_text = " ".join([
         str(record.get("assay_description", "") or ""),
         str(record.get("standard_type", "") or ""),
-        str(record.get("standard_units", "") or ""),
         str(record.get("target_organism", "") or ""),
     ]).lower()
 
-    if any(x in text for x in [
+    if any(x in record_text for x in [
         "hepatocyte",
         "hepatocytes",
         "primary hepatocyte",
     ]):
         return "hepatocyte"
 
-    if any(x in text for x in [
+    if any(x in record_text for x in [
         "microsome",
         "microsomes",
         "microsomal",
@@ -756,14 +836,17 @@ def infer_metstab_matrix_with_context(record, assay_name=None):
     ]):
         return "microsome"
 
-    if any(x in text for x in [
+    if any(x in record_text for x in [
         "s9",
         "s9 fraction",
         "liver s9",
     ]):
         return "s9"
 
-    # Assay-name fallback
+    # ---------------------------------------------------------
+    # 3. Assay bucket is only a fallback
+    # ---------------------------------------------------------
+
     lname = str(assay_name or "").lower()
 
     if "microsomal" in lname or "microsome" in lname:
@@ -773,7 +856,6 @@ def infer_metstab_matrix_with_context(record, assay_name=None):
         return "hepatocyte"
 
     return None
-
 
 def extract_species_with_context(record):
     """
