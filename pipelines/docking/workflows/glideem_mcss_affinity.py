@@ -1725,6 +1725,13 @@ def run(config_path: str):
                         / "mcss"
                         / "consensus"
                     ),
+                    alignment_transforms_file=(
+                        output
+                        / "analysis"
+                        / "glideem"
+                        / "campaign_landscape"
+                        / "receptor_alignment_transforms.csv"
+                    ),
                     config=(
                         consensus_cfg
                     ),

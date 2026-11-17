@@ -1007,6 +1007,7 @@ def analyse_mcss_consensus(
     complex_jobs,
     poseviewers,
     output_dir: Path,
+    alignment_transforms_file: Path,
     config: dict,
 ):
     """
@@ -1024,6 +1025,24 @@ def analyse_mcss_consensus(
         parents=True,
         exist_ok=True,
     )
+
+    alignment_transforms_file = (
+        Path(
+            alignment_transforms_file
+        )
+        .expanduser()
+        .resolve()
+    )
+
+    if not alignment_transforms_file.is_file():
+        raise FileNotFoundError(
+            "Combined consensus PyMOL export requires the "
+            "campaign receptor-alignment transform table, "
+            f"but it was not found: {alignment_transforms_file}. "
+            "Rerun analyse_glideem_campaign_landscape to "
+            "generate it."
+        )
+
 
     top_ks = tuple(
         int(
@@ -1253,6 +1272,9 @@ def analyse_mcss_consensus(
         combined_pymol_script = (
             export_combined_consensus_poses(
                 selected_poses=selected_poses,
+                alignment_transforms_file=(
+                    alignment_transforms_file
+                ),
                 output_dir=(
                     combined_pymol_dir
                 ),

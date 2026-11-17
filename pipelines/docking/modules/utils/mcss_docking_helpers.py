@@ -3,6 +3,9 @@ from __future__ import annotations
 import csv
 import re
 
+import numpy as np
+import pandas as pd
+
 import json
 from pathlib import Path
 
@@ -10,6 +13,10 @@ from modules.utils.constants import element_colour_commands
 
 from modules.utils.glideem_helpers import (
     compound_id,
+)
+
+from modules.utils.glideem_campaign_analysis import (
+    transform_structure_copy,
 )
 
 from schrodinger import structure
@@ -610,8 +617,142 @@ def export_consensus_compound_pose(
         / "view_consensus_pose.pml",
     )
 
+def read_campaign_alignment_transforms(
+    alignment_transforms_file: Path,
+) -> dict:
+    """
+    Read campaign receptor-alignment transforms keyed by source name.
+    """
+    alignment_transforms_file = (
+        Path(
+            alignment_transforms_file
+        )
+        .expanduser()
+        .resolve()
+    )
+
+    if not alignment_transforms_file.is_file():
+        raise FileNotFoundError(
+            "Campaign receptor-alignment transform table "
+            f"not found: {alignment_transforms_file}"
+        )
+
+    table = pd.read_csv(
+        alignment_transforms_file
+    )
+
+    required_columns = {
+        "source_name",
+        "alignment_reference",
+        "rotation_00",
+        "rotation_01",
+        "rotation_02",
+        "rotation_10",
+        "rotation_11",
+        "rotation_12",
+        "rotation_20",
+        "rotation_21",
+        "rotation_22",
+        "translation_x",
+        "translation_y",
+        "translation_z",
+    }
+
+    missing_columns = (
+        required_columns
+        - set(
+            table.columns
+        )
+    )
+
+    if missing_columns:
+        raise RuntimeError(
+            "Campaign alignment-transform table is missing "
+            f"columns: {sorted(missing_columns)}"
+        )
+
+    if table[
+        "source_name"
+    ].duplicated().any():
+        raise RuntimeError(
+            "Campaign alignment-transform table contains "
+            "duplicate source_name values."
+        )
+
+    transforms = {}
+
+    for row in table.itertuples(
+        index=False
+    ):
+        rotation = np.asarray(
+            [
+                [
+                    row.rotation_00,
+                    row.rotation_01,
+                    row.rotation_02,
+                ],
+                [
+                    row.rotation_10,
+                    row.rotation_11,
+                    row.rotation_12,
+                ],
+                [
+                    row.rotation_20,
+                    row.rotation_21,
+                    row.rotation_22,
+                ],
+            ],
+            dtype=float,
+        )
+
+        translation = np.asarray(
+            [
+                row.translation_x,
+                row.translation_y,
+                row.translation_z,
+            ],
+            dtype=float,
+        )
+
+        if not (
+            np.all(
+                np.isfinite(
+                    rotation
+                )
+            )
+            and np.all(
+                np.isfinite(
+                    translation
+                )
+            )
+        ):
+            raise RuntimeError(
+                "Non-finite campaign transform for source "
+                f"{row.source_name!r}"
+            )
+
+        transforms[
+            str(
+                row.source_name
+            )
+        ] = {
+            "alignment_reference": str(
+                row.alignment_reference
+            ),
+            "rotation": rotation,
+            "translation": translation,
+        }
+
+    if not transforms:
+        raise RuntimeError(
+            "Campaign alignment-transform table is empty."
+        )
+
+    return transforms
+
 def export_combined_consensus_poses(
     selected_poses,
+    alignment_transforms_file: Path,
     output_dir: Path,
     binding_site_cutoff: float = 5.0,
 ) -> Path:
@@ -629,6 +770,7 @@ def export_combined_consensus_poses(
         source_name
         dock_name
     """
+    
     output_dir = (
         Path(
             output_dir
@@ -642,6 +784,36 @@ def export_combined_consensus_poses(
         exist_ok=True,
     )
 
+    transforms_by_source = (
+        read_campaign_alignment_transforms(
+            alignment_transforms_file
+        )
+    )
+
+    alignment_references = {
+        transform[
+            "alignment_reference"
+        ]
+        for transform in (
+            transforms_by_source.values()
+        )
+    }
+
+    if len(
+        alignment_references
+    ) != 1:
+        raise RuntimeError(
+            "Consensus export requires all campaign transforms "
+            "to use one alignment reference; found: "
+            f"{sorted(alignment_references)}"
+        )
+
+    alignment_reference = next(
+        iter(
+            alignment_references
+        )
+    )    
+
     commands = [
         "reinitialize",
         "bg_color white",
@@ -649,7 +821,9 @@ def export_combined_consensus_poses(
     ]
 
     group_objects = []
+    receptor_objects = []
     ligand_objects = []
+    export_rows = []
     
     exported_count = 0
 
@@ -737,15 +911,85 @@ def export_combined_consensus_poses(
                 selected_pose = st
                 break
 
+                # ----------------------------------------------
+        # Retrieve this structure's campaign transform
+        # ----------------------------------------------
+
+        source_name = str(
+            row.source_name
+        )
+
         if (
-            receptor is None
-            or selected_pose is None
+            source_name
+            not in transforms_by_source
         ):
-            continue
+            raise RuntimeError(
+                "No campaign alignment transform was found for "
+                f"source structure {source_name!r}. "
+                "The consensus ranking and campaign transform "
+                "table may come from different runs."
+            )
+
+        source_transform = (
+            transforms_by_source[
+                source_name
+            ]
+        )
+
+        rotation = source_transform[
+            "rotation"
+        ]
+
+        translation = source_transform[
+            "translation"
+        ]
+
+        # ----------------------------------------------
+        # Apply exactly the same rigid transform to the
+        # MCSS receptor and its selected ligand.
+        # ----------------------------------------------
+
+        aligned_receptor = (
+            transform_structure_copy(
+                input_structure=receptor,
+                rotation=rotation,
+                translation=translation,
+            )
+        )
+
+        aligned_selected_pose = (
+            transform_structure_copy(
+                input_structure=selected_pose,
+                rotation=rotation,
+                translation=translation,
+            )
+        )
+
+        aligned_receptor.title = (
+            f"{source_name}_aligned_to_"
+            f"{alignment_reference}"
+        )
+
+        aligned_selected_pose.title = (
+            f"consensus_rank{consensus_rank:03d}_"
+            f"{safe_id}_aligned_to_"
+            f"{alignment_reference}"
+        )
+
+        # ----------------------------------------------
+        # Construct unique filenames / PyMOL object names
+        # after the source structure is known.
+        # ----------------------------------------------
+
+        safe_source = safe_pymol_name(
+            source_name,
+            fallback="source",
+        )
 
         prefix = (
             f"rank{consensus_rank:03d}_"
-            f"{safe_id}"
+            f"{safe_id}_"
+            f"{safe_source}"
         )
 
         receptor_object = (
@@ -768,6 +1012,10 @@ def export_combined_consensus_poses(
             group_object
         )
 
+        receptor_objects.append(
+            receptor_object
+        )
+
         ligand_objects.append(
             ligand_object
         )
@@ -782,15 +1030,20 @@ def export_combined_consensus_poses(
             / f"{ligand_object}.pdb"
         )
 
+        # ----------------------------------------------
+        # Write the transformed structures, not the native
+        # PoseViewer coordinates.
+        # ----------------------------------------------
+
         write_structure(
-            receptor,
+            aligned_receptor,
             receptor_file,
         )
 
         write_structure(
-            selected_pose,
+            aligned_selected_pose,
             ligand_file,
-        )
+        )        
 
         carbon_colour = (
             carbon_colours[
@@ -868,6 +1121,41 @@ def export_combined_consensus_poses(
             ]
         )
 
+        export_rows.append(
+            {
+                "consensus_rank": (
+                    consensus_rank
+                ),
+                "compound_id": (
+                    compound_value
+                ),
+                "source_name": (
+                    source_name
+                ),
+                "dock_name": str(
+                    row.dock_name
+                ),
+                "compound_pose_index": (
+                    compound_pose_index
+                ),
+                "alignment_reference": (
+                    alignment_reference
+                ),
+                "receptor_object": (
+                    receptor_object
+                ),
+                "ligand_object": (
+                    ligand_object
+                ),
+                "receptor_file": (
+                    receptor_file.name
+                ),
+                "ligand_file": (
+                    ligand_file.name
+                ),
+            }
+        )        
+
         exported_count += 1
 
     if exported_count == 0:
@@ -891,11 +1179,25 @@ def export_combined_consensus_poses(
         ]
     )
 
-    for group_object in group_objects[
+    commands.extend(
+        [
+            "",
+            (
+                "# All selected compounds are shown in the common "
+                "campaign coordinate frame."
+            ),
+            (
+                "# Only the receptor associated with consensus "
+                "rank 1 is shown initially."
+            ),
+        ]
+    )
+
+    for receptor_object in receptor_objects[
         1:
     ]:
         commands.append(
-            f"disable {group_object}"
+            f"disable {receptor_object}"
         )
 
     commands.extend(
@@ -906,11 +1208,25 @@ def export_combined_consensus_poses(
                 "as individual PyMOL groups."
             ),
             "",
-            f"orient {first_ligand}",
-            f"zoom {first_ligand}, 8",
+            (
+                "select consensus_ligands, "
+                + " or ".join(
+                    ligand_objects
+                )
+            ),
+            "orient consensus_ligands",
+            "zoom consensus_ligands, 8",
             "",
         ]
     )
+
+    pd.DataFrame(
+        export_rows
+    ).to_csv(
+        output_dir
+        / "combined_consensus_pose_manifest.csv",
+        index=False,
+    )    
 
     script_file = write_pymol_script(
         commands,
