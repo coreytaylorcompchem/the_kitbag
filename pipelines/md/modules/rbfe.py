@@ -809,6 +809,7 @@ def openfe_gather_results(self):
         report,
         "-o",
         output_file,
+        "--allow-partial",
     ]
 
     subprocess.run(
