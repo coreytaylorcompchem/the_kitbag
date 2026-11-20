@@ -1002,6 +1002,106 @@ def save_compound_structure_heatmap(
         figure
     )
 
+def save_consensus_score_ranking_plot(
+    consensus: pd.DataFrame,
+    output_file: Path,
+    top_n: int,
+):
+    """
+    Plot the top compounds ordered by the primary
+    structure-balanced MCSS consensus score.
+    """
+    display = (
+        consensus
+        .head(top_n)
+        .sort_values(
+            "consensus_score",
+            ascending=True,
+        )
+        .copy()
+    )
+
+    figure_height = max(
+        6.0,
+        0.35 * len(display) + 2.0,
+    )
+
+    figure, axis = plt.subplots(
+        figsize=(
+            10.0,
+            figure_height,
+        )
+    )
+
+    bars = axis.barh(
+        np.arange(len(display)),
+        display["consensus_score"],
+        color="#0077B6",
+        alpha=0.85,
+    )
+
+    axis.set_yticks(
+        np.arange(len(display))
+    )
+
+    axis.set_yticklabels(
+        display["compound_id"]
+    )
+
+    axis.set_xlim(
+        0.0,
+        1.0,
+    )
+
+    axis.set_xlabel(
+        "Structure-balanced MCSS consensus score"
+    )
+
+    axis.set_ylabel(
+        "Compound"
+    )
+
+    axis.set_title(
+        "MCSS compound consensus ranking"
+    )
+
+    axis.grid(
+        axis="x",
+        linestyle=":",
+        linewidth=0.7,
+        alpha=0.5,
+    )
+
+    # Display the score at the end of each bar.
+    for bar, score in zip(
+        bars,
+        display["consensus_score"],
+    ):
+        axis.text(
+            min(
+                float(score) + 0.01,
+                0.98,
+            ),
+            bar.get_y() + bar.get_height() / 2.0,
+            f"{float(score):.3f}",
+            va="center",
+            ha=(
+                "right"
+                if float(score) > 0.94
+                else "left"
+            ),
+            fontsize=8,
+        )
+
+    figure.tight_layout()
+
+    figure.savefig(
+        output_file,
+        dpi=250,
+        bbox_inches="tight",
+    )
+
+    plt.close(figure)
 
 def analyse_mcss_consensus(
     complex_jobs,
@@ -1149,6 +1249,15 @@ def analyse_mcss_consensus(
         output_file=(
             output_dir
             / "mcss_consensus_structure_heatmap.png"
+        ),
+        top_n=top_n_plot,
+    )
+
+    save_consensus_score_ranking_plot(
+        consensus=consensus,
+        output_file=(
+            output_dir
+            / "mcss_consensus_score_ranking.png"
         ),
         top_n=top_n_plot,
     )
