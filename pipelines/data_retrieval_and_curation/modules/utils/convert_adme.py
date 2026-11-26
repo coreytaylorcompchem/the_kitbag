@@ -213,60 +213,64 @@ def convert_solubility(value, unit, smiles):
 
     return np.log10(mol_l)
 
-def infer_metstab_matrix_with_context(record, assay_name=None):
-    """
-    Infer whether a metabolic stability record is microsomal or hepatocyte.
+# def infer_metstab_matrix_with_context(record, assay_name=None):
+#     """
+#     Infer whether a metabolic stability record is microsomal or hepatocyte.
 
-    Returns:
-      - "microsome"
-      - "hepatocyte"
-      - None
-    """
-    text = " ".join([
-        str(assay_name or ""),
-        str(record.get("assay_description", "") or ""),
-        str(record.get("standard_type", "") or ""),
-        str(record.get("standard_units", "") or ""),
-        str(record.get("target_organism", "") or ""),
-    ]).lower()
+#     Returns:
+#       - "microsome"
+#       - "hepatocyte"
+#       - None
+#     """
+#     text = " ".join([
+#         str(assay_name or ""),
+#         str(record.get("assay_description", "") or ""),
+#         str(record.get("standard_type", "") or ""),
+#         str(record.get("standard_units", "") or ""),
+#         str(record.get("target_organism", "") or ""),
+#     ]).lower()
 
-    if any(x in text for x in [
-        "hepatocyte",
-        "hepatocytes",
-        "primary hepatocyte",
-    ]):
-        return "hepatocyte"
+#     if any(x in text for x in [
+#         "hepatocyte",
+#         "hepatocytes",
+#         "primary hepatocyte",
+#     ]):
+#         return "hepatocyte"
 
-    if any(x in text for x in [
-        "microsome",
-        "microsomes",
-        "microsomal",
-        "hlm",
-        "rlm",
-        "mlm",
-        "liver microsome",
-        "liver microsomes",
-    ]):
-        return "microsome"
+#     if any(x in text for x in [
+#         "microsome",
+#         "microsomes",
+#         "microsomal",
+#         "hlm",
+#         "rlm",
+#         "mlm",
+#         "liver microsome",
+#         "liver microsomes",
+#     ]):
+#         return "microsome"
 
-    if any(x in text for x in [
-        "s9",
-        "s9 fraction",
-        "liver s9",
-    ]):
-        return "s9"
+#     if any(x in text for x in [
+#         "s9",
+#         "s9 fraction",
+#         "liver s9",
+#     ]):
+#         return "s9"
 
-    lname = str(assay_name or "").lower()
+#     lname = str(assay_name or "").lower()
 
-    if "microsomal" in lname or "microsome" in lname:
-        return "microsome"
+#     if "microsomal" in lname or "microsome" in lname:
+#         return "microsome"
 
-    if "hepatocyte" in lname or "hepato" in lname:
-        return "hepatocyte"
+#     if "hepatocyte" in lname or "hepato" in lname:
+#         return "hepatocyte"
 
-    return None
+#     return None
 
 def normalise_unit_string(unit):
+    """
+    Normalise a unit string for matching while preserving the
+    distinction between positive and negative exponents.
+    """
     if unit is None:
         return ""
 
@@ -277,15 +281,245 @@ def normalise_unit_string(unit):
         .replace("µ", "u")
         .replace("μ", "u")
         .replace("micro", "u")
-        .replace(" ", "")
+        .replace("×", "x")
         .replace("*", "")
-        .replace("^", "-")
+        .replace(" ", "")
         .replace("(", "")
         .replace(")", "")
     )
 
+    # Normalise common Unicode superscripts.
+    u = (
+        u
+        .replace("⁶", "6")
+        .replace("⁻", "-")
+        .replace("⁻¹", "-1")
+    )
+
     return u
 
+def convert_unscaled_clint(value, unit):
+    """
+    Harmonise explicitly reported unscaled in-vitro intrinsic
+    clearance values.
+
+    Retained output representations
+    -------------------------------
+    Microsomal Clint:
+        uL/min/mg protein
+
+    Hepatocyte Clint:
+        uL/min/10^6 cells
+
+    Returns
+    -------
+    tuple
+        (value, canonical_unit, matrix)
+
+    Failed or ambiguous records return:
+        (None, None, None)
+
+    Important
+    ---------
+    This function does not:
+      - scale to mL/min/g liver
+      - scale to L/h/kg
+      - infer a missing denominator from assay text
+      - convert bare uL/min
+      - process absolute, hepatic, or systemic clearance
+    """
+    if value is None or unit is None:
+        return None, None, None
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None, None, None
+
+    if not np.isfinite(val) or val < 0:
+        return None, None, None
+
+    u = normalise_unit_string(unit)
+
+    # ---------------------------------------------------------
+    # Microsomal intrinsic clearance
+    # Canonical unit: uL/min/mg protein
+    # ---------------------------------------------------------
+
+    microsome_ul_patterns = {
+        "ul/min/mg",
+        "ul/min/mgprotein",
+        "ul/min/mgmicrosomalprotein",
+        "ul/min/mgmicrosome",
+        "ul/min/mgmicrosomes",
+        "ul/min/mgmicrosomalproteins",
+        "ul/min.mg",
+        "ul/mg/min",
+        "ul/mgmin",
+        "ulmin-1mg-1",
+        "ul.min-1.mg-1",
+        "ulmin-1mgprotein-1",
+        "ulmin-1mgmicrosomalprotein-1",
+        "ulmin-1mg-1protein",
+        "microl/min/mg",
+        "microl/min/mgprotein",
+    }
+
+    if u in microsome_ul_patterns:
+        return (
+            val,
+            "uL/min/mg protein",
+            "microsome",
+        )
+
+    # Allow minor variations only when all required denominator
+    # components are explicitly present.
+    if (
+        "ul" in u
+        and "min" in u
+        and "mg" in u
+        and "kg" not in u
+        and "cell" not in u
+    ):
+        return (
+            val,
+            "uL/min/mg protein",
+            "microsome",
+        )
+
+    # mL/min/mg -> uL/min/mg
+    microsome_ml_patterns = {
+        "ml/min/mg",
+        "ml/min/mgprotein",
+        "ml/min/mgmicrosomalprotein",
+        "mlmin-1mg-1",
+        "ml.min-1.mg-1",
+        "mlmin-1mgprotein-1",
+    }
+
+    if u in microsome_ml_patterns:
+        return (
+            val * 1000.0,
+            "uL/min/mg protein",
+            "microsome",
+        )
+
+    # L/min/mg -> uL/min/mg
+    microsome_l_patterns = {
+        "l/min/mg",
+        "l/min/mgprotein",
+        "l/min/mgmicrosomalprotein",
+        "lmin-1mg-1",
+        "l.min-1.mg-1",
+        "lmin-1mgprotein-1",
+    }
+
+    if u in microsome_l_patterns:
+        return (
+            val * 1_000_000.0,
+            "uL/min/mg protein",
+            "microsome",
+        )
+
+    # ---------------------------------------------------------
+    # Hepatocyte intrinsic clearance
+    # Canonical unit: uL/min/10^6 cells
+    # ---------------------------------------------------------
+
+    hepatocyte_ul_patterns = {
+        "ul/min/10^6cells",
+        "ul/min/10⁶cells",
+        "ul/min/106cells",
+        "ul/min/1e6cells",
+        "ul/min/10e6cells",
+        "ul/min/millioncells",
+        "ul/min/10^6cell",
+        "ul/min/106cell",
+        "ul/min/1e6cell",
+        "ulmin-1(10^6cells)-1",
+        "ulmin-110^6cells-1",
+        "ulmin-1106cells-1",
+        "ulmin-11e6cells-1",
+        "ul.min-1.10^6cells-1",
+        "ul.min-1.106cells-1",
+        "ul.min-1.1e6cells-1",
+        "ul/10^6cells/min",
+        "ul/106cells/min",
+        "ul/1e6cells/min",
+        "microl/min/10^6cells",
+        "microl/min/106cells",
+        "microl/min/1e6cells",
+    }
+
+    if u in hepatocyte_ul_patterns:
+        return (
+            val,
+            "uL/min/10^6 cells",
+            "hepatocyte",
+        )
+
+    # Permit variants only when the cell denominator is explicit.
+    if (
+        "ul" in u
+        and "min" in u
+        and "cell" in u
+        and any(
+            marker in u
+            for marker in {
+                "10^6",
+                "106",
+                "1e6",
+                "10e6",
+                "million",
+            }
+        )
+    ):
+        return (
+            val,
+            "uL/min/10^6 cells",
+            "hepatocyte",
+        )
+
+    # mL/min/10^6 cells -> uL/min/10^6 cells
+    if (
+        "ml" in u
+        and "min" in u
+        and "cell" in u
+        and any(
+            marker in u
+            for marker in {
+                "10^6",
+                "106",
+                "1e6",
+                "10e6",
+                "million",
+            }
+        )
+    ):
+        return (
+            val * 1000.0,
+            "uL/min/10^6 cells",
+            "hepatocyte",
+        )
+
+    # ---------------------------------------------------------
+    # Explicitly do not interpret bare volume/time units.
+    # ---------------------------------------------------------
+
+    if u in {
+        "ul/min",
+        "ulmin-1",
+        "ul.min-1",
+        "ml/min",
+        "mlmin-1",
+        "ml.min-1",
+        "l/min",
+        "lmin-1",
+        "l.min-1",
+    }:
+        return None, None, None
+
+    return None, None, None
 
 def convert_met_stab(value, unit):
     if value is None or unit is None:

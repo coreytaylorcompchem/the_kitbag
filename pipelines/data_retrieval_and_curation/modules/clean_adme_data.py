@@ -26,7 +26,7 @@ from pipeline.task_registry import register_task
 
 from modules.utils.convert_adme import (
     convert_permeability,
-    convert_met_stab,
+    convert_unscaled_clint,
     convert_ppb,
     convert_solubility,
     convert_logp_logd,
@@ -188,724 +188,6 @@ def harmonise_units(config, enriched=None):
                     r["standard_value"], r["standard_units"] = new_val, "log_unitless"
                     new_records.append(r)
 
-        # elif any(x in lname for x in metstab_assays):
-
-        #     metstab_scaling_cfg = (
-        #         config
-        #         .get("adme_scaling", {})
-        #         .get("metabolic_stability", {})
-        #     )
-
-        #     metstab_output_cfg = (
-        #         config
-        #         .get("adme_output", {})
-        #         .get("metabolic_stability", {})
-        #     )
-
-        #     include_related_endpoints = metstab_output_cfg.get(
-        #         "include_related_endpoints",
-        #         False
-        #     )
-
-        #     collapse_clearance_families_to_clint = metstab_output_cfg.get(
-        #         "collapse_clearance_families_to_clint",
-        #         True
-        #     )
-
-        #     keep_liver_normalised_source = metstab_output_cfg.get(
-        #         "keep_liver_normalised_source",
-        #         False
-        #     )
-
-        #     keep_absolute_clearance = metstab_output_cfg.get(
-        #         "keep_absolute_clearance",
-        #         False
-        #     )
-
-        #     keep_unscaled_clint_source = metstab_output_cfg.get(
-        #         "keep_unscaled_clint_source",
-        #         False
-        #     )
-
-        #     keep_unscaled_if_scaling_fails = metstab_output_cfg.get(
-        #         "keep_unscaled_if_scaling_fails",
-        #         False
-        #     )
-
-        #     enforce_assay_matrix = metstab_output_cfg.get(
-        #         "enforce_assay_matrix",
-        #         True
-        #     )
-
-        #     drop_reasons = Counter()
-        #     unit_counter = Counter()
-        #     stype_counter = Counter()
-        #     endpoint_family_counter = Counter()
-        #     system_counter = Counter()
-        #     matrix_counter = Counter()
-        #     converted_unit_counter = Counter()
-        #     relation_counter = Counter()
-
-        #     rejected_examples = []
-
-        #     def make_clint_record(
-        #         source_record,
-        #         value,
-        #         unit,
-        #         clint_scale,
-        #         species,
-        #         system,
-        #         matrix,
-        #         endpoint_family,
-        #         raw_endpoint_family,
-        #         derived,
-        #         source_value=None,
-        #         source_units=None,
-        #         parent_scale=None,
-        #     ):
-        #         scale_aliases = {
-        #             "unscaled": "unscaled_in_vitro",
-        #             "unscaled_in_vitro": "unscaled_in_vitro",
-
-        #             "liver_normalised_mL_min_g_liver": "liver_normalised",
-        #             "liver_normalised": "liver_normalised",
-
-        #             "scaled_L_h_kg": "body_normalised",
-        #             "body_normalised_L_h_kg": "body_normalised",
-        #             "body_normalised": "body_normalised",
-
-        #             "absolute_mL_min": "absolute",
-        #             "absolute": "absolute",
-        #         }
-
-        #         if clint_scale not in scale_aliases:
-        #             raise ValueError(
-        #                 f"Unsupported Clint scale label: {clint_scale!r}"
-        #             )
-
-        #         clint_scale = scale_aliases[clint_scale]
-
-        #         if parent_scale is not None:
-        #             parent_scale = scale_aliases.get(
-        #                 parent_scale,
-        #                 parent_scale,
-        #             )
-
-        #         rec = source_record.copy()
-
-        #         rec["standard_value"] = value
-        #         rec["standard_units"] = unit
-        #         rec["species"] = species
-        #         rec["metstab_system"] = system
-        #         rec["metstab_matrix"] = matrix or "unknown"
-        #         rec["metstab_endpoint_family"] = endpoint_family
-        #         rec["raw_metstab_endpoint_family"] = raw_endpoint_family
-
-        #         rec["clint_scale"] = clint_scale
-        #         rec["is_scaled_clint"] = clint_scale == "body_normalised"
-        #         rec["is_derived_scaled_clint"] = (
-        #             derived and clint_scale == "body_normalised"
-        #         )
-        #         rec["is_derived_clint"] = derived
-
-        #         rec["source_clint_value"] = source_value
-        #         rec["source_clint_units"] = source_units
-        #         rec["parent_clint_scale"] = parent_scale
-
-        #         return rec
-
-        #     for r in records:
-
-        #         unit_counter[str(r.get("standard_units"))] += 1
-        #         stype_counter[str(r.get("standard_type"))] += 1
-        #         relation_counter[str(r.get("relation"))] += 1
-
-        #         raw_endpoint_family = classify_metstab_endpoint_family(
-        #             r,
-        #             assay_name=assay_name
-        #         )
-
-        #         endpoint_family_counter[str(raw_endpoint_family)] += 1
-
-        #         if raw_endpoint_family is None:
-        #             drop_reasons["failed_endpoint_family_classification"] += 1
-        #             continue
-
-        #         endpoint_family = raw_endpoint_family
-
-        #         if collapse_clearance_families_to_clint:
-        #             if raw_endpoint_family in {
-        #                 "clint",
-        #                 "hepatic_clearance",
-        #                 "free_clearance",
-        #                 "other_clearance",
-        #             }:
-        #                 endpoint_family = "clint"
-
-        #         matrix = infer_metstab_matrix_with_context(
-        #             r,
-        #             assay_name=assay_name
-        #         )
-        #         matrix_counter[str(matrix)] += 1
-
-        #         expected_matrix = None
-
-        #         if enforce_assay_matrix:
-        #             assay_lname = assay_name.lower()
-
-        #             if "microsomal" in assay_lname or "microsome" in assay_lname:
-        #                 expected_matrix = "microsome"
-
-        #             elif "hepatocyte" in assay_lname or "hepato" in assay_lname:
-        #                 expected_matrix = "hepatocyte"
-
-        #             if expected_matrix is not None and matrix != expected_matrix:
-        #                 drop_reasons["failed_assay_matrix_filter"] += 1
-        #                 continue
-
-        #         species = extract_species_with_context(r)
-
-        #         system = detect_metstab_system(r.get("assay_description"))
-        #         system_counter[str(system)] += 1
-
-        #         if system != "in_vitro":
-        #             if matrix in {"microsome", "hepatocyte", "s9"}:
-        #                 system = "in_vitro"
-        #             else:
-        #                 drop_reasons["failed_in_vitro_context"] += 1
-        #                 continue
-
-        #         val = r.get("standard_value")
-        #         unit = r.get("standard_units")
-
-        #         if endpoint_family == "clint":
-
-        #             new_val, new_unit, scale_state = convert_met_stab(
-        #                 val,
-        #                 unit,
-        #             )
-
-        #             # Some ChEMBL records contain bare uL/min, with the denominator
-        #             # implied by the assay matrix.
-        #             if new_val is None:
-        #                 try:
-        #                     raw_val = float(val)
-        #                 except (TypeError, ValueError):
-        #                     raw_val = None
-
-        #                 u = (
-        #                     str(unit)
-        #                     .lower()
-        #                     .replace(" ", "")
-        #                     .replace("µ", "u")
-        #                     .replace("μ", "u")
-        #                     .replace("micro", "u")
-        #                     .strip()
-        #                     if unit is not None
-        #                     else ""
-        #                 )
-
-        #                 if (
-        #                     raw_val is not None
-        #                     and np.isfinite(raw_val)
-        #                     and u in {"ul/min", "ulmin-1", "ul.min-1"}
-        #                 ):
-        #                     if matrix == "microsome":
-        #                         new_val = raw_val
-        #                         new_unit = "uL/min/mg protein"
-        #                         scale_state = "unscaled"
-
-        #                     elif matrix == "hepatocyte":
-        #                         new_val = raw_val
-        #                         new_unit = "uL/min/10^6 cells"
-        #                         scale_state = "unscaled"
-
-        #             if new_val is None:
-        #                 drop_reasons["failed_convert_clint_or_clearance"] += 1
-
-        #                 if len(rejected_examples) < 100:
-        #                     rejected_examples.append({
-        #                         "reason": "failed_convert_clint_or_clearance",
-        #                         "endpoint_family": endpoint_family,
-        #                         "standard_type": r.get("standard_type"),
-        #                         "standard_units": r.get("standard_units"),
-        #                         "standard_value": r.get("standard_value"),
-        #                         "assay_description": r.get("assay_description"),
-        #                         "target_organism": r.get("target_organism"),
-        #                         "matrix": matrix,
-        #                         "system": system,
-        #                         "smiles": r.get("smiles"),
-        #                     })
-
-        #                 continue
-
-        #             converted_unit_counter[str(new_unit)] += 1
-
-        #             # ---------------------------------------------------------
-        #             # A. Source is assay-normalised in vitro Clint
-        #             # ---------------------------------------------------------
-        #             if scale_state == "unscaled":
-
-        #                 unscaled_record = make_clint_record(
-        #                     source_record=r,
-        #                     value=new_val,
-        #                     unit=new_unit,
-        #                     clint_scale="unscaled_in_vitro",
-        #                     species=species,
-        #                     system=system,
-        #                     matrix=matrix,
-        #                     endpoint_family=endpoint_family,
-        #                     raw_endpoint_family=raw_endpoint_family,
-        #                     derived=False,
-        #                     source_value=new_val,
-        #                     source_units=new_unit,
-        #                     parent_scale=None,
-        #                 )
-
-        #                 # Always retain the experimentally reported in vitro value.
-        #                 new_records.append(unscaled_record)
-
-        #                 liver_val, liver_unit = scale_clint_to_liver_normalised(
-        #                     value=new_val,
-        #                     canonical_unit=new_unit,
-        #                     matrix=matrix,
-        #                     species=species,
-        #                     scaling_cfg=metstab_scaling_cfg,
-        #                 )
-
-        #                 if liver_val is None:
-        #                     drop_reasons["failed_scale_to_liver_normalised_clint"] += 1
-        #                     continue
-
-        #                 liver_record = make_clint_record(
-        #                     source_record=r,
-        #                     value=liver_val,
-        #                     unit=liver_unit,
-        #                     clint_scale="liver_normalised",
-        #                     species=species,
-        #                     system=system,
-        #                     matrix=matrix,
-        #                     endpoint_family=endpoint_family,
-        #                     raw_endpoint_family=raw_endpoint_family,
-        #                     derived=True,
-        #                     source_value=new_val,
-        #                     source_units=new_unit,
-        #                     parent_scale="unscaled_in_vitro",
-        #                 )
-
-        #                 new_records.append(liver_record)
-
-        #                 body_val, body_unit = scale_liver_clint_to_l_h_kg(
-        #                     value=liver_val,
-        #                     canonical_unit=liver_unit,
-        #                     species=species,
-        #                     scaling_cfg=metstab_scaling_cfg,
-        #                 )
-
-        #                 if body_val is None:
-        #                     drop_reasons["failed_scale_to_body_normalised_clint"] += 1
-        #                     continue
-
-        #                 body_record = make_clint_record(
-        #                     source_record=r,
-        #                     value=body_val,
-        #                     unit=body_unit,
-        #                     clint_scale="body_normalised",
-        #                     species=species,
-        #                     system=system,
-        #                     matrix=matrix,
-        #                     endpoint_family=endpoint_family,
-        #                     raw_endpoint_family=raw_endpoint_family,
-        #                     derived=True,
-        #                     source_value=liver_val,
-        #                     source_units=liver_unit,
-        #                     parent_scale="liver_normalised",
-        #                 )
-
-        #                 new_records.append(body_record)
-
-        #             # ---------------------------------------------------------
-        #             # B. Source is already liver-normalised
-        #             # ---------------------------------------------------------
-        #             elif scale_state == "liver_normalised":
-
-        #                 liver_record = make_clint_record(
-        #                     source_record=r,
-        #                     value=new_val,
-        #                     unit=new_unit,
-        #                     clint_scale="liver_normalised",
-        #                     species=species,
-        #                     system=system,
-        #                     matrix=matrix,
-        #                     endpoint_family=endpoint_family,
-        #                     raw_endpoint_family=raw_endpoint_family,
-        #                     derived=False,
-        #                     source_value=new_val,
-        #                     source_units=new_unit,
-        #                     parent_scale=None,
-        #                 )
-
-        #                 new_records.append(liver_record)
-
-        #                 body_val, body_unit = scale_liver_clint_to_l_h_kg(
-        #                     value=new_val,
-        #                     canonical_unit=new_unit,
-        #                     species=species,
-        #                     scaling_cfg=metstab_scaling_cfg,
-        #                 )
-
-        #                 if body_val is None:
-        #                     drop_reasons["failed_scale_to_body_normalised_clint"] += 1
-        #                     continue
-
-        #                 body_record = make_clint_record(
-        #                     source_record=r,
-        #                     value=body_val,
-        #                     unit=body_unit,
-        #                     clint_scale="body_normalised",
-        #                     species=species,
-        #                     system=system,
-        #                     matrix=matrix,
-        #                     endpoint_family=endpoint_family,
-        #                     raw_endpoint_family=raw_endpoint_family,
-        #                     derived=True,
-        #                     source_value=new_val,
-        #                     source_units=new_unit,
-        #                     parent_scale="liver_normalised",
-        #                 )
-
-        #                 new_records.append(body_record)
-
-        #             # ---------------------------------------------------------
-        #             # C. Source is already body-weight-normalised
-        #             # ---------------------------------------------------------
-        #             elif scale_state == "scaled":
-
-        #                 body_record = make_clint_record(
-        #                     source_record=r,
-        #                     value=new_val,
-        #                     unit=new_unit,
-        #                     clint_scale="body_normalised",
-        #                     species=species,
-        #                     system=system,
-        #                     matrix=matrix,
-        #                     endpoint_family=endpoint_family,
-        #                     raw_endpoint_family=raw_endpoint_family,
-        #                     derived=False,
-        #                     source_value=new_val,
-        #                     source_units=new_unit,
-        #                     parent_scale=None,
-        #                 )
-
-        #                 new_records.append(body_record)
-
-        #             # ---------------------------------------------------------
-        #             # D. Absolute clearance cannot safely enter this lineage
-        #             # ---------------------------------------------------------
-        #             elif scale_state == "absolute":
-
-        #                 absolute_record = make_clint_record(
-        #                     source_record=r,
-        #                     value=new_val,
-        #                     unit=new_unit,
-        #                     clint_scale="absolute",
-        #                     species=species,
-        #                     system=system,
-        #                     matrix=matrix,
-        #                     endpoint_family=endpoint_family,
-        #                     raw_endpoint_family=raw_endpoint_family,
-        #                     derived=False,
-        #                     source_value=new_val,
-        #                     source_units=new_unit,
-        #                     parent_scale=None,
-        #                 )
-
-        #                 if keep_absolute_clearance:
-        #                     new_records.append(absolute_record)
-        #                 else:
-        #                     drop_reasons["skipped_absolute_clearance"] += 1
-
-        #             else:
-        #                 drop_reasons["unhandled_clint_scale_state"] += 1
-
-        #         elif endpoint_family == "t_half":
-
-        #             if not include_related_endpoints:
-        #                 drop_reasons["skipped_t_half_related_endpoint"] += 1
-        #                 continue
-
-        #             new_val, new_unit = convert_metstab_half_life(val, unit)
-
-        #             if new_val is None:
-        #                 drop_reasons["failed_convert_t_half"] += 1
-        #                 continue
-
-        #             converted_unit_counter[str(new_unit)] += 1
-
-        #             rec = r.copy()
-        #             rec["standard_value"] = new_val
-        #             rec["standard_units"] = new_unit
-        #             rec["species"] = species
-        #             rec["metstab_system"] = system
-        #             rec["metstab_matrix"] = matrix or "unknown"
-        #             rec["metstab_endpoint_family"] = "t_half"
-        #             rec["raw_metstab_endpoint_family"] = raw_endpoint_family
-        #             rec["clint_scale"] = "not_applicable"
-
-        #             new_records.append(rec)
-
-        #         elif endpoint_family == "percent_remaining":
-
-        #             if not include_related_endpoints:
-        #                 drop_reasons["skipped_percent_remaining_related_endpoint"] += 1
-        #                 continue
-
-        #             new_val, new_unit = convert_metstab_percent_remaining(val, unit)
-
-        #             if new_val is None:
-        #                 drop_reasons["failed_convert_percent_remaining"] += 1
-        #                 continue
-
-        #             converted_unit_counter[str(new_unit)] += 1
-
-        #             rec = r.copy()
-        #             rec["standard_value"] = new_val
-        #             rec["standard_units"] = new_unit
-        #             rec["species"] = species
-        #             rec["metstab_system"] = system
-        #             rec["metstab_matrix"] = matrix or "unknown"
-        #             rec["metstab_endpoint_family"] = "percent_remaining"
-        #             rec["raw_metstab_endpoint_family"] = raw_endpoint_family
-        #             rec["clint_scale"] = "not_applicable"
-
-        #             new_records.append(rec)
-
-        #         elif endpoint_family == "extraction_ratio":
-
-        #             if not include_related_endpoints:
-        #                 drop_reasons["skipped_extraction_ratio_related_endpoint"] += 1
-        #                 continue
-
-        #             new_val, new_unit = convert_extraction_ratio(val, unit)
-
-        #             if new_val is None:
-        #                 drop_reasons["failed_convert_extraction_ratio"] += 1
-        #                 continue
-
-        #             converted_unit_counter[str(new_unit)] += 1
-
-        #             rec = r.copy()
-        #             rec["standard_value"] = new_val
-        #             rec["standard_units"] = new_unit
-        #             rec["species"] = species
-        #             rec["metstab_system"] = system
-        #             rec["metstab_matrix"] = matrix or "unknown"
-        #             rec["metstab_endpoint_family"] = "extraction_ratio"
-        #             rec["raw_metstab_endpoint_family"] = raw_endpoint_family
-        #             rec["clint_scale"] = "not_applicable"
-
-        #             new_records.append(rec)
-
-        #         elif endpoint_family == "absolute_clearance":
-
-        #             if not include_related_endpoints and not keep_absolute_clearance:
-        #                 drop_reasons["skipped_absolute_clearance_related_endpoint"] += 1
-        #                 continue
-
-        #             new_val, new_unit = convert_absolute_clearance(val, unit)
-
-        #             if new_val is None:
-        #                 drop_reasons["failed_convert_absolute_clearance"] += 1
-        #                 continue
-
-        #             converted_unit_counter[str(new_unit)] += 1
-
-        #             rec = r.copy()
-        #             rec["standard_value"] = new_val
-        #             rec["standard_units"] = new_unit
-        #             rec["species"] = species
-        #             rec["metstab_system"] = system
-        #             rec["metstab_matrix"] = matrix or "unknown"
-        #             rec["metstab_endpoint_family"] = "absolute_clearance"
-        #             rec["raw_metstab_endpoint_family"] = raw_endpoint_family
-        #             rec["clint_scale"] = "absolute_mL_min"
-
-        #             new_records.append(rec)
-
-        #         else:
-        #             drop_reasons[f"unhandled_endpoint_family_{endpoint_family}"] += 1
-
-        #     # reconciled_records = []
-        #     # reconciliation_counter = Counter()
-
-        #     # for rec in new_records:
-
-        #     #     rec_endpoint_family = rec.get("metstab_endpoint_family")
-        #     #     rec_clint_scale = rec.get("clint_scale")
-
-        #     #     if rec_endpoint_family != "clint":
-        #     #         if include_related_endpoints:
-        #     #             reconciled_records.append(rec)
-        #     #             reconciliation_counter["kept_related_endpoint"] += 1
-        #     #         else:
-        #     #             reconciliation_counter["dropped_related_endpoint"] += 1
-        #     #         continue
-
-        #     #     if rec_clint_scale == "scaled_L_h_kg":
-        #     #         reconciled_records.append(rec)
-        #     #         reconciliation_counter["kept_scaled_clint"] += 1
-        #     #         continue
-
-        #     #     if rec_clint_scale in {
-        #     #         "unscaled",
-        #     #         "liver_normalised_mL_min_g_liver",
-        #     #     }:
-        #     #         scaled_val, scaled_unit = scale_clint_to_l_h_kg(
-        #     #             value=rec.get("standard_value"),
-        #     #             canonical_unit=rec.get("standard_units"),
-        #     #             matrix=rec.get("metstab_matrix"),
-        #     #             species=rec.get("species"),
-        #     #             scaling_cfg=metstab_scaling_cfg,
-        #     #         )
-
-        #     #         if scaled_val is not None:
-        #     #             scaled_rec = rec.copy()
-        #     #             scaled_rec["standard_value"] = scaled_val
-        #     #             scaled_rec["standard_units"] = scaled_unit
-        #     #             scaled_rec["clint_scale"] = "scaled_L_h_kg"
-        #     #             scaled_rec["is_scaled_clint"] = True
-        #     #             scaled_rec["is_derived_scaled_clint"] = True
-        #     #             scaled_rec["source_unscaled_value"] = rec.get("standard_value")
-        #     #             scaled_rec["source_unscaled_units"] = rec.get("standard_units")
-
-        #     #             reconciled_records.append(scaled_rec)
-        #     #             reconciliation_counter[f"converted_{rec_clint_scale}_to_scaled"] += 1
-
-        #     #         else:
-        #     #             reconciliation_counter[f"failed_to_scale_{rec_clint_scale}"] += 1
-
-        #     #             if keep_unscaled_if_scaling_fails:
-        #     #                 reconciled_records.append(rec)
-        #     #                 reconciliation_counter[f"kept_failed_{rec_clint_scale}"] += 1
-
-        #     #         continue
-
-        #     #     if rec_clint_scale == "absolute_mL_min":
-        #     #         if keep_absolute_clearance:
-        #     #             reconciled_records.append(rec)
-        #     #             reconciliation_counter["kept_absolute_clearance"] += 1
-        #     #         else:
-        #     #             reconciliation_counter["dropped_absolute_clearance"] += 1
-        #     #         continue
-
-        #     #     reconciliation_counter[f"dropped_unhandled_clint_scale_{rec_clint_scale}"] += 1
-
-        #     # new_records = reconciled_records
-
-        #     # logger.debug(
-        #     #     f"{assay_name}: Clint reconciliation counts = "
-        #     #     f"{dict(reconciliation_counter)}"
-        #     # )
-
-        #     allowed_clint_scales = {
-        #         "unscaled_in_vitro",
-        #         "liver_normalised",
-        #         "body_normalised",
-        #         "absolute",
-        #     }
-
-        #     expected_clint_units = {
-        #         ("microsome", "unscaled_in_vitro"): "uL/min/mg protein",
-        #         ("hepatocyte", "unscaled_in_vitro"): "uL/min/10^6 cells",
-        #         ("microsome", "liver_normalised"): "mL/min/g liver",
-        #         ("hepatocyte", "liver_normalised"): "mL/min/g liver",
-        #         ("microsome", "body_normalised"): "L/h/kg",
-        #         ("hepatocyte", "body_normalised"): "L/h/kg",
-        #         ("microsome", "absolute"): "mL/min",
-        #         ("hepatocyte", "absolute"): "mL/min",
-        #     }
-
-        #     validation_counter = Counter()
-        #     validation_errors = []
-
-        #     for rec in new_records:
-        #         endpoint = rec.get("metstab_endpoint_family")
-
-        #         if endpoint != "clint":
-        #             validation_counter["related_endpoint"] += 1
-        #             continue
-
-        #         scale = rec.get("clint_scale")
-        #         matrix_name = rec.get("metstab_matrix")
-        #         observed_unit = rec.get("standard_units")
-
-        #         if scale not in allowed_clint_scales:
-        #             validation_errors.append(
-        #                 f"unexpected clint_scale={scale!r}"
-        #             )
-        #             continue
-
-        #         expected_unit = expected_clint_units.get(
-        #             (matrix_name, scale)
-        #         )
-
-        #         if expected_unit is not None and observed_unit != expected_unit:
-        #             validation_errors.append(
-        #                 f"matrix={matrix_name!r}, "
-        #                 f"scale={scale!r}: expected unit "
-        #                 f"{expected_unit!r}, observed {observed_unit!r}"
-        #             )
-        #             continue
-
-        #         validation_counter[f"kept_{scale}"] += 1
-
-        #     if validation_errors:
-        #         examples = validation_errors[:20]
-
-        #         raise ValueError(
-        #             f"{assay_name}: invalid Clint records detected before "
-        #             f"dataset construction. Examples: {examples}"
-        #         )
-
-        #     logger.debug(
-        #         f"{assay_name}: Clint validation counts = "
-        #         f"{dict(validation_counter)}"
-        #     )
-
-        #     if new_records:
-        #         metstab_df_debug = pd.DataFrame(new_records)
-
-        #         if "clint_scale" in metstab_df_debug.columns:
-        #             logger.debug(
-        #                 f"{assay_name}: final Clint scale counts after reconciliation = "
-        #                 f"{metstab_df_debug['clint_scale'].value_counts(dropna=False).to_dict()}"
-        #             )
-
-        #         if "metstab_endpoint_family" in metstab_df_debug.columns:
-        #             logger.debug(
-        #                 f"{assay_name}: final endpoint family counts after reconciliation = "
-        #                 f"{metstab_df_debug['metstab_endpoint_family'].value_counts(dropna=False).to_dict()}"
-        #             )
-
-        #     logger.debug(f"{assay_name}: raw records = {len(records)}")
-        #     logger.debug(f"{assay_name}: kept records = {len(new_records)}")
-        #     logger.debug(f"{assay_name}: drop reasons = {dict(drop_reasons)}")
-        #     logger.debug(f"{assay_name}: endpoint families = {dict(endpoint_family_counter)}")
-        #     logger.debug(f"{assay_name}: top raw units = {unit_counter.most_common(30)}")
-        #     logger.debug(f"{assay_name}: top standard types = {stype_counter.most_common(30)}")
-        #     logger.debug(f"{assay_name}: detected systems = {dict(system_counter)}")
-        #     logger.debug(f"{assay_name}: detected matrices = {dict(matrix_counter)}")
-        #     logger.debug(f"{assay_name}: converted units = {dict(converted_unit_counter)}")
-        #     logger.debug(f"{assay_name}: relation counts = {relation_counter.most_common(20)}")
-
-        #     if rejected_examples:
-        #         reject_path = os.path.join(
-        #             output_dir,
-        #             f"{assay_name.replace(' ', '_')}_metstab_rejected_examples.csv"
-        #         )
-        #         pd.DataFrame(rejected_examples).to_csv(reject_path, index=False)
-        #         logger.info(f"{assay_name}: wrote rejected examples to {reject_path}")
-
         elif any(x in lname for x in metstab_assays):
 
             # =====================================================
@@ -940,7 +222,6 @@ def harmonise_units(config, enriched=None):
                 matrix=None,
                 endpoint_family=None,
                 converted_unit=None,
-                scale_state=None,
             ):
                 drop_reasons[reason] += 1
 
@@ -974,7 +255,7 @@ def harmonise_units(config, enriched=None):
                     "matrix": matrix,
                     "endpoint_family": endpoint_family,
                     "converted_unit": converted_unit,
-                    "scale_state": scale_state,
+                    # "scale_state": scale_state,
                 })
 
             for r in records:
@@ -1008,11 +289,17 @@ def harmonise_units(config, enriched=None):
                     continue
 
                 # ---------------------------------------------
-                # 2. Harmonise the reported unit.
+                # 2. Harmonise explicitly reported unscaled
+                #    intrinsic clearance.
+                #
+                # The converter returns:
+                #   - harmonised value
+                #   - canonical unit
+                #   - matrix implied by the denominator
                 # ---------------------------------------------
 
-                new_value, new_unit, scale_state = (
-                    convert_met_stab(
+                new_value, new_unit, matrix = (
+                    convert_unscaled_clint(
                         raw_value,
                         raw_unit,
                     )
@@ -1020,58 +307,49 @@ def harmonise_units(config, enriched=None):
 
                 if new_value is None:
                     record_rejection(
-                        reason="unrecognised_or_ambiguous_clint_unit",
+                        reason=(
+                            "not_explicitly_unit_resolved_"
+                            "unscaled_clint"
+                        ),
                         record=r,
                         endpoint_family=endpoint_family,
                     )
                     continue
 
-                # ---------------------------------------------
-                # 3. Keep unscaled in-vitro Clint only.
-                #
-                # Explicitly reject:
-                #   L/h/kg
-                #   mL/min/g liver
-                #   mL/min
-                #   other recognised representations
-                # ---------------------------------------------
+                # Defensive validation. Only these two biological
+                # representations may leave convert_unscaled_clint().
+                expected_unit_by_matrix = {
+                    "microsome": "uL/min/mg protein",
+                    "hepatocyte": "uL/min/10^6 cells",
+                }
 
-                if scale_state != "unscaled":
+                expected_unit = expected_unit_by_matrix.get(
+                    matrix
+                )
+
+                if expected_unit is None:
                     record_rejection(
                         reason=(
-                            "not_unscaled_clint_"
-                            f"{scale_state}"
+                            "unexpected_unscaled_clint_matrix_"
+                            f"{matrix}"
                         ),
                         record=r,
+                        matrix=matrix,
                         endpoint_family=endpoint_family,
                         converted_unit=new_unit,
-                        scale_state=scale_state,
                     )
                     continue
 
-                # ---------------------------------------------
-                # 4. Determine matrix from canonical denominator.
-                #
-                # This is stronger evidence than the broad
-                # retrieval bucket or assay description.
-                # ---------------------------------------------
-
-                if new_unit == "uL/min/mg protein":
-                    matrix = "microsome"
-
-                elif new_unit == "uL/min/10^6 cells":
-                    matrix = "hepatocyte"
-
-                else:
+                if new_unit != expected_unit:
                     record_rejection(
                         reason=(
-                            "unsupported_unscaled_clint_unit_"
-                            f"{new_unit}"
+                            "matrix_unit_mismatch_"
+                            f"{matrix}"
                         ),
                         record=r,
+                        matrix=matrix,
                         endpoint_family=endpoint_family,
                         converted_unit=new_unit,
-                        scale_state=scale_state,
                     )
                     continue
 
@@ -1099,6 +377,13 @@ def harmonise_units(config, enriched=None):
                 rec["standard_units"] = new_unit
 
                 rec["species"] = species
+                rec["species_from_assay_description"] = extract_species(
+                    r.get("assay_description")
+                )
+
+                rec["species_from_target_organism"] = extract_species(
+                    r.get("target_organism")
+                )                
                 rec["metstab_matrix"] = matrix
                 rec["metstab_endpoint_family"] = "clint"
                 rec["clint_representation"] = (
