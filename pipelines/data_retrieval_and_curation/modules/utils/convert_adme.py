@@ -268,32 +268,61 @@ def convert_solubility(value, unit, smiles):
 
 def normalise_unit_string(unit):
     """
-    Normalise a unit string for matching while preserving the
-    distinction between positive and negative exponents.
+    Normalise unit strings for matching while preserving biological
+    denominators and exponent signs.
     """
     if unit is None:
         return ""
 
     u = str(unit).lower().strip()
 
+    # Normalize Unicode characters first.
     u = (
         u
         .replace("µ", "u")
         .replace("μ", "u")
-        .replace("micro", "u")
+        .replace("−", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("⁻", "-")
+        .replace("¹", "1")
+        .replace("⁶", "6")
         .replace("×", "x")
-        .replace("*", "")
-        .replace(" ", "")
-        .replace("(", "")
-        .replace(")", "")
     )
 
-    # Normalise common Unicode superscripts.
+    # Normalize written-out volume units.
+    volume_replacements = {
+        "microliters": "ul",
+        "microlitres": "ul",
+        "microliter": "ul",
+        "microlitre": "ul",
+        "microl": "ul",
+        "milliliters": "ml",
+        "millilitres": "ml",
+        "milliliter": "ml",
+        "millilitre": "ml",
+    }
+
+    for old, new in volume_replacements.items():
+        u = u.replace(old, new)
+
+    # Normalize denominator words.
     u = (
         u
-        .replace("⁶", "6")
-        .replace("⁻", "-")
-        .replace("⁻¹", "-1")
+        .replace("millionsofcells", "1e6cells")
+        .replace("millioncells", "1e6cells")
+        .replace("millioncell", "1e6cells")
+        .replace("mgprot.", "mgprotein")
+        .replace("mgprot", "mgprotein")
+    )
+
+    # Strip formatting noise only after lexical normalization.
+    u = (
+        u
+        .replace(" ", "")
+        .replace("*", "")
+        .replace("(", "")
+        .replace(")", "")
     )
 
     return u

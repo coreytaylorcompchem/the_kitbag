@@ -67,7 +67,7 @@ from modules.utils.detect_adme import (
 
 from pipeline.logger import setup_logger
 
-logger = setup_logger(__name__, debug_mode=False, simple_format=True)
+logger = setup_logger(__name__, debug_mode=True, simple_format=True)
 
 # Assay categories
 permeability_assays = ["caco", "mdck", "pampa", "p-gp", "bcrp", "mrp"]
@@ -215,6 +215,23 @@ def harmonise_units(config, enriched=None):
 
             rejected_examples = []
 
+            stage_counts = Counter()
+
+            # Records rejected before Clint conversion.
+            rejected_non_clint_unit_counter = Counter()
+            rejected_non_clint_type_counter = Counter()
+
+            # Records classified as Clint but rejected by the
+            # strict reported-unscaled unit converter.
+            rejected_clint_unit_counter = Counter()
+            rejected_clint_type_counter = Counter()
+
+            # Raw units successfully harmonised as reported
+            # unscaled microsomal or hepatocyte Clint.
+            accepted_clint_unit_counter = Counter()
+
+            clint_preconversion_records = []
+
             def record_rejection(
                 reason,
                 record,
@@ -223,6 +240,12 @@ def harmonise_units(config, enriched=None):
                 endpoint_family=None,
                 converted_unit=None,
             ):
+                """
+                Count every rejection and retain up to 1000 example rows.
+
+                Summary tables are written only after all records in the
+                retrieval bucket have been processed.
+                """
                 drop_reasons[reason] += 1
 
                 if len(rejected_examples) >= 1000:
@@ -255,10 +278,11 @@ def harmonise_units(config, enriched=None):
                     "matrix": matrix,
                     "endpoint_family": endpoint_family,
                     "converted_unit": converted_unit,
-                    # "scale_state": scale_state,
                 })
 
             for r in records:
+
+                stage_counts["raw_records"] += 1
 
                 raw_value = r.get("standard_value")
                 raw_unit = r.get("standard_units")
@@ -277,7 +301,24 @@ def harmonise_units(config, enriched=None):
                     assay_name=assay_name,
                 )
 
+                stage_counts[
+                    f"classified_as_{endpoint_family}"
+                ] += 1                            
+
                 if endpoint_family != "clint":
+
+                    stage_counts[
+                        "rejected_not_clint"
+                    ] += 1
+
+                    rejected_non_clint_unit_counter[
+                        str(raw_unit)
+                    ] += 1
+
+                    rejected_non_clint_type_counter[
+                        str(raw_type)
+                    ] += 1
+
                     record_rejection(
                         reason=(
                             "not_intrinsic_clearance_"
@@ -287,6 +328,38 @@ def harmonise_units(config, enriched=None):
                         endpoint_family=endpoint_family,
                     )
                     continue
+
+                stage_counts[
+                    "clint_before_unit_filter"
+                ] += 1                
+
+                clint_preconversion_records.append({
+                    "retrieval_assay_bucket": assay_name,
+                    "activity_id": r.get("activity_id"),
+                    "activity_chembl_id":
+                        r.get("activity_chembl_id"),
+                    "assay_chembl_id":
+                        r.get("assay_chembl_id"),
+                    "document_chembl_id":
+                        r.get("document_chembl_id"),
+                    "smiles": r.get("smiles"),
+                    "standard_type": raw_type,
+                    "standard_value": raw_value,
+                    "standard_units": raw_unit,
+                    "relation": r.get("relation"),
+                    "assay_description":
+                        r.get("assay_description"),
+                    "target_organism":
+                        r.get("target_organism"),
+                    "species_from_description":
+                        extract_species(
+                            r.get("assay_description")
+                        ),
+                    "species_from_target":
+                        extract_species(
+                            r.get("target_organism")
+                        ),
+                })
 
                 # ---------------------------------------------
                 # 2. Harmonise explicitly reported unscaled
@@ -306,6 +379,19 @@ def harmonise_units(config, enriched=None):
                 )
 
                 if new_value is None:
+
+                    stage_counts[
+                        "failed_unscaled_unit_conversion"
+                    ] += 1
+
+                    rejected_clint_unit_counter[
+                        str(raw_unit)
+                    ] += 1
+
+                    rejected_clint_type_counter[
+                        str(raw_type)
+                    ] += 1
+
                     record_rejection(
                         reason=(
                             "not_explicitly_unit_resolved_"
@@ -328,6 +414,19 @@ def harmonise_units(config, enriched=None):
                 )
 
                 if expected_unit is None:
+
+                    stage_counts[
+                        "failed_matrix_unit_validation"
+                    ] += 1
+
+                    rejected_clint_unit_counter[
+                        str(raw_unit)
+                    ] += 1
+
+                    rejected_clint_type_counter[
+                        str(raw_type)
+                    ] += 1
+
                     record_rejection(
                         reason=(
                             "unexpected_unscaled_clint_matrix_"
@@ -341,6 +440,19 @@ def harmonise_units(config, enriched=None):
                     continue
 
                 if new_unit != expected_unit:
+
+                    stage_counts[
+                        "failed_matrix_unit_validation"
+                    ] += 1
+
+                    rejected_clint_unit_counter[
+                        str(raw_unit)
+                    ] += 1
+
+                    rejected_clint_type_counter[
+                        str(raw_type)
+                    ] += 1
+
                     record_rejection(
                         reason=(
                             "matrix_unit_mismatch_"
@@ -429,7 +541,135 @@ def harmonise_units(config, enriched=None):
                         str(raw_unit),
                     ])
 
+                stage_counts["retained_rows"] += 1
+                accepted_clint_unit_counter[str(raw_unit)] += 1
+
                 new_records.append(rec)
+
+            # -----------------------------------------------------
+            # Validate stage accounting before writing outputs.
+            # -----------------------------------------------------
+
+            classified_clint = stage_counts[
+                "classified_as_clint"
+            ]
+
+            converter_input = stage_counts[
+                "clint_before_unit_filter"
+            ]
+
+            failed_conversion = stage_counts[
+                "failed_unscaled_unit_conversion"
+            ]
+
+            failed_validation = stage_counts[
+                "failed_matrix_unit_validation"
+            ]
+
+            retained = stage_counts[
+                "retained_rows"
+            ]
+
+            if classified_clint != converter_input:
+                raise RuntimeError(
+                    f"{assay_name}: Clint classifier/converter "
+                    "count mismatch: "
+                    f"classified_as_clint={classified_clint:,}, "
+                    f"clint_before_unit_filter={converter_input:,}"
+                )
+
+            accounted_clint = (
+                failed_conversion
+                + failed_validation
+                + retained
+            )
+
+            if converter_input != accounted_clint:
+                raise RuntimeError(
+                    f"{assay_name}: incomplete Clint accounting: "
+                    f"converter_input={converter_input:,}, "
+                    f"failed_conversion={failed_conversion:,}, "
+                    f"failed_validation={failed_validation:,}, "
+                    f"retained={retained:,}, "
+                    f"accounted={accounted_clint:,}"
+                )
+
+            if len(clint_preconversion_records) != converter_input:
+                raise RuntimeError(
+                    f"{assay_name}: pre-conversion audit length "
+                    "does not match converter input: "
+                    f"audit_rows="
+                    f"{len(clint_preconversion_records):,}, "
+                    f"converter_input={converter_input:,}"
+                )
+
+            if len(new_records) != retained:
+                raise RuntimeError(
+                    f"{assay_name}: retained-record count mismatch: "
+                    f"new_records={len(new_records):,}, "
+                    f"retained_counter={retained:,}"
+                )
+
+            if clint_preconversion_records:
+
+                clint_preconversion_df = pd.DataFrame(
+                    clint_preconversion_records
+                )
+
+                clint_unit_summary = (
+                    clint_preconversion_df
+                    .groupby(
+                        [
+                            "standard_type",
+                            "standard_units",
+                        ],
+                        dropna=False,
+                    )
+                    .agg(
+                        rows=("standard_value", "size"),
+                        unique_smiles=("smiles", "nunique"),
+                        unique_assays=(
+                            "assay_chembl_id",
+                            "nunique",
+                        ),
+                    )
+                    .reset_index()
+                    .sort_values(
+                        "rows",
+                        ascending=False,
+                    )
+                )
+
+                clint_unit_summary.to_csv(
+                    os.path.join(
+                        output_dir,
+                        (
+                            f"{assay_name.replace(' ', '_')}"
+                            "_clint_preconversion_unit_summary.csv"
+                        ),
+                    ),
+                    index=False,
+                )                
+
+                clint_preconversion_path = os.path.join(
+                    output_dir,
+                    (
+                        f"{assay_name.replace(' ', '_')}"
+                        "_clint_preconversion.csv"
+                    ),
+                )
+
+                clint_preconversion_df.to_csv(
+                    clint_preconversion_path,
+                    index=False,
+                )
+
+                logger.info(
+                    f"{assay_name}: wrote "
+                    f"{len(clint_preconversion_df):,} "
+                    "pre-conversion Clint candidates to "
+                    f"{clint_preconversion_path}"
+                )                
 
             # -----------------------------------------------------
             # Save the harmonised long-form rows for this retrieval
@@ -561,6 +801,141 @@ def harmonise_units(config, enriched=None):
                     f"{assay_name}: wrote rejected metabolic-"
                     f"stability rows to {reject_path}"
                 )        
+
+            # -----------------------------------------------------
+            # Complete summaries. Unlike rejected_examples, these
+            # are not capped at 1000 rows because they are counters.
+            # -----------------------------------------------------
+
+            accepted_clint_unit_summary = pd.DataFrame(
+                list(accepted_clint_unit_counter.items()),
+                columns=["raw_unit", "count"],
+            )
+
+            if not accepted_clint_unit_summary.empty:
+                accepted_clint_unit_summary = (
+                    accepted_clint_unit_summary
+                    .sort_values(
+                        "count",
+                        ascending=False,
+                    )
+                )
+
+            accepted_clint_unit_summary.to_csv(
+                os.path.join(
+                    output_dir,
+                    (
+                        f"{assay_name.replace(' ', '_')}"
+                        "_accepted_clint_units.csv"
+                    ),
+                ),
+                index=False,
+            )
+
+            rejected_clint_unit_summary = pd.DataFrame(
+                list(rejected_clint_unit_counter.items()),
+                columns=["raw_unit", "count"],
+            )
+
+            if not rejected_clint_unit_summary.empty:
+                rejected_clint_unit_summary = (
+                    rejected_clint_unit_summary
+                    .sort_values(
+                        "count",
+                        ascending=False,
+                    )
+                )
+
+            rejected_clint_unit_summary.to_csv(
+                os.path.join(
+                    output_dir,
+                    (
+                        f"{assay_name.replace(' ', '_')}"
+                        "_rejected_clint_units.csv"
+                    ),
+                ),
+                index=False,
+            )
+
+            rejected_clint_type_summary = pd.DataFrame(
+                list(rejected_clint_type_counter.items()),
+                columns=["standard_type", "count"],
+            )
+
+            if not rejected_clint_type_summary.empty:
+                rejected_clint_type_summary = (
+                    rejected_clint_type_summary
+                    .sort_values(
+                        "count",
+                        ascending=False,
+                    )
+                )
+
+            rejected_clint_type_summary.to_csv(
+                os.path.join(
+                    output_dir,
+                    (
+                        f"{assay_name.replace(' ', '_')}"
+                        "_rejected_clint_standard_types.csv"
+                    ),
+                ),
+                index=False,
+            )
+
+            non_clint_unit_summary = pd.DataFrame(
+                list(rejected_non_clint_unit_counter.items()),
+                columns=["raw_unit", "count"],
+            )
+
+            if not non_clint_unit_summary.empty:
+                non_clint_unit_summary = (
+                    non_clint_unit_summary
+                    .sort_values(
+                        "count",
+                        ascending=False,
+                    )
+                )
+
+            non_clint_unit_summary.to_csv(
+                os.path.join(
+                    output_dir,
+                    (
+                        f"{assay_name.replace(' ', '_')}"
+                        "_non_clint_units.csv"
+                    ),
+                ),
+                index=False,
+            )
+
+            logger.info(
+                f"{assay_name}: stage counts = "
+                f"{dict(stage_counts)}"
+            )
+
+            logger.info(
+                f"{assay_name}: top accepted Clint raw units = "
+                f"{accepted_clint_unit_counter.most_common(30)}"
+            )
+
+            logger.info(
+                f"{assay_name}: top rejected Clint raw units = "
+                f"{rejected_clint_unit_counter.most_common(50)}"
+            )
+
+            logger.info(
+                f"{assay_name}: top rejected Clint standard types = "
+                f"{rejected_clint_type_counter.most_common(30)}"
+            )
+
+            logger.debug(
+                f"{assay_name}: top non-Clint raw units = "
+                f"{rejected_non_clint_unit_counter.most_common(30)}"
+            )
+
+            logger.debug(
+                f"{assay_name}: top non-Clint standard types = "
+                f"{rejected_non_clint_type_counter.most_common(30)}"
+            )        
 
         elif any(x in lname for x in ppb_assays):
             for r in records:
@@ -1361,14 +1736,6 @@ def build_multitask_dataset(config, cleaned=None):
                 group_cols.append(col)
 
         add_group_col("species")
-
-        add_group_col("metstab_matrix")
-        add_group_col("metstab_endpoint_family")
-        add_group_col("clint_scale")
-
-        # Include canonical units explicitly in every Type-A output column.
-        add_group_col("standard_units")
-
         add_group_col("permeability_system")
 
         if (
