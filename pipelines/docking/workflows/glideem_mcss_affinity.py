@@ -17,6 +17,10 @@ from modules.utils.glideem_plotting import (
     analyse_correlations,
 )
 
+from modules.utils.glideem_mcss_consensus import (
+    analyse_mcss_consensus,
+)
+
 from pipeline.task_registry import get_task
 from workflows import register_workflow
 
@@ -270,8 +274,13 @@ def run(config_path: str):
     }
 
     known_tasks = (
-        set(available_tasks)
-        | {"analyse_correlations"}
+        set(
+            available_tasks
+        )
+        | {
+            "analyse_correlations",
+            "analyse_mcss_consensus",
+        }
     )
 
     unknown_tasks = (
@@ -313,6 +322,7 @@ def run(config_path: str):
         "dock_mcss",
         "calculate_mmgbsa",
         "analyse_correlations",
+        "analyse_mcss_consensus",
         "export_mcss_pymol",
     }
 
@@ -326,6 +336,7 @@ def run(config_path: str):
             "dock_mcss",
             "calculate_mmgbsa",
             "analyse_correlations",
+            "analyse_mcss_consensus",
             "export_mcss_pymol",
         }
         & enabled_tasks
@@ -335,6 +346,7 @@ def run(config_path: str):
         {
             "calculate_mmgbsa",
             "analyse_correlations",
+            "analyse_mcss_consensus",
             "export_mcss_pymol",
         }
         & enabled_tasks
@@ -1672,6 +1684,85 @@ def run(config_path: str):
         else:
             logger.info(
                 "Docking/activity correlation "
+                "analysis completed"
+            )
+
+    # --------------------------------------------------
+    # Activity-independent MCSS consensus ranking
+    # --------------------------------------------------
+
+    consensus_results = None
+
+    if (
+        "analyse_mcss_consensus"
+        in enabled_tasks
+    ):
+        consensus_cfg = config.get(
+            "mcss_consensus",
+            {},
+        )
+
+        logger.info(
+            "Starting activity-independent MCSS consensus "
+            "analysis for %d available docking jobs",
+            len(
+                poseviewers
+            ),
+        )
+
+        try:
+            consensus_results = (
+                analyse_mcss_consensus(
+                    complex_jobs=(
+                        complex_jobs
+                    ),
+                    poseviewers=(
+                        poseviewers
+                    ),
+                    output_dir=(
+                        output
+                        / "analysis"
+                        / "mcss"
+                        / "consensus"
+                    ),
+                    alignment_transforms_file=(
+                        output
+                        / "analysis"
+                        / "glideem"
+                        / "campaign_landscape"
+                        / "receptor_alignment_transforms.csv"
+                    ),
+                    config=(
+                        consensus_cfg
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            logger.error(
+                "MCSS consensus analysis failed; "
+                "continuing workflow: %s",
+                exc,
+                exc_info=True,
+            )
+
+            failed_jobs.append(
+                {
+                    "job_name": (
+                        "mcss_consensus"
+                    ),
+                    "stage": (
+                        "mcss_consensus_analysis"
+                    ),
+                    "error": str(
+                        exc
+                    ),
+                }
+            )
+
+        else:
+            logger.info(
+                "Activity-independent MCSS consensus "
                 "analysis completed"
             )
 
