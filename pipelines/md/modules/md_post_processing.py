@@ -61,6 +61,51 @@ class MDPostProcessingWorkflow:
         for f in traj_files:
             logger.debug(f"  {f}")
         return traj_files
+    
+    def _prepare_chain_topology(self, topology, output_dir):
+        """
+        Create the chain-annotated PDB used for post-processing analyses
+        that do not require explicit bond connectivity.
+
+        The source PDB is not modified.
+        """
+
+        if not topology.lower().endswith(".pdb"):
+            raise ValueError(
+                "Chain topology must be a PDB file: "
+                f"{topology}"
+            )
+
+        topology_out = os.path.join(
+            output_dir,
+            "topology_no_conect.pdb",
+        )
+
+        if os.path.abspath(topology) == os.path.abspath(topology_out):
+            logger.info(
+                "Using existing chain topology: %s",
+                topology,
+            )
+            return topology
+
+        conect_count = 0
+
+        with open(topology, "r") as infile, open(topology_out, "w") as outfile:
+            for line in infile:
+                if line.startswith("CONECT"):
+                    conect_count += 1
+                    continue
+
+                outfile.write(line)
+
+        logger.info(
+            "Prepared chain topology: %s "
+            "(removed %d CONECT records)",
+            topology_out,
+            conect_count,
+        )
+
+        return topology_out
 
     def post_processing(self):
         post_cfg = self.config.get("post_processing", {})
@@ -121,22 +166,87 @@ class MDPostProcessingWorkflow:
 
         os.makedirs(output_dir, exist_ok=True)
 
-        # Determine topology and trajectory
-        topology = post_cfg.get("topology")
+        # --------------------------------------------------------------
+        # Determine topology and trajectory inputs
+        # --------------------------------------------------------------
+
+        source_topology = post_cfg.get("topology")
+        bonded_topology = post_cfg.get("bonded_topology")
         trajectory = post_cfg.get("trajectory")
 
-        if not topology:
+        if not source_topology:
             prep_cfg = self.config.get("prepare_system", {})
             prep_out = prep_cfg.get("output_trajectory", "output")
-            topology = os.path.join(prep_out, "topology.pdb")
+            source_topology = os.path.join(prep_out, "topology.pdb")
+
+        if not bonded_topology:
+            topology_dir = os.path.dirname(source_topology) or "."
+            psf_candidate = os.path.join(
+                topology_dir,
+                "topology.psf",
+            )
+
+            if os.path.exists(psf_candidate):
+                bonded_topology = psf_candidate
 
         if not trajectory:
             prod_cfg = self.config.get("production", {})
-            trajectory = prod_cfg.get("output_trajectory", os.path.join(output_dir, "trajectory.dcd"))
+            trajectory = prod_cfg.get(
+                "output_trajectory",
+                os.path.join(output_dir, "trajectory.dcd"),
+            )
+
+        # --------------------------------------------------------------
+        # Validate source files
+        # --------------------------------------------------------------
+
+        if not os.path.exists(source_topology):
+            raise FileNotFoundError(
+                f"Topology PDB not found: {source_topology}"
+            )
+
+        if bonded_topology and not os.path.exists(bonded_topology):
+            raise FileNotFoundError(
+                f"Bonded topology not found: {bonded_topology}"
+            )
+
+        # Create the PDB topology used by chain-ID-based analyses.
+        chain_topology = self._prepare_chain_topology(
+            topology=source_topology,
+            output_dir=output_dir,
+        )
+
+        # Preserve the old local name if most downstream tasks currently
+        # refer to `topology`.
+        topology = chain_topology
+
+        logger.info(
+            "Chain topology: %s",
+            chain_topology,
+        )
+
+        if bonded_topology:
+            logger.info(
+                "Bonded topology: %s",
+                bonded_topology,
+            )
+        else:
+            logger.warning(
+                "No bonded topology was found. Analyses requiring bonds "
+                "or molecular fragments cannot run."
+            )
 
         # Sanity checks
         if not os.path.exists(topology):
             raise FileNotFoundError(f"Topology file not found: {topology}")
+
+        # Prepare topology for post-processing.
+        # This creates a copy without CONECT records and leaves the
+        # original simulation topology untouched.
+        topology = self._prepare_chain_topology(
+            topology=topology,
+            output_dir=output_dir,
+        )
 
         # Collect all traj files
         trajectories = self._collect_trajectories(trajectory)
@@ -158,7 +268,7 @@ class MDPostProcessingWorkflow:
         if wrapped_trajectories:
             logger.info(f"Detected wrapped trajectories: {len(wrapped_trajectories)} file(s)")
         else:
-            logger.warning("No wrapped trajectories found; falling back to raw DCD (will break contact analyses if not already wrapped)")
+            logger.warning("No wrapped trajectories found; falling back to raw DCD (may break contact analyses if not already wrapped)")
 
         logger.info(f"Topology: {topology}")
         logger.info(f"Trajectories: {len(trajectories)} file(s)")
@@ -179,10 +289,17 @@ class MDPostProcessingWorkflow:
             logger.info("Next stage:: RMSD analysis...")
             rmsd_outdir = os.path.join(output_dir, "rmsd")
             os.makedirs(rmsd_outdir, exist_ok=True)
+            if not bonded_topology:
+                raise ValueError(
+                    "RMSD analysis requires a bonded topology because it applies "
+                    "MDAnalysis unwrap(). Set "
+                    "'post_processing.bonded_topology' to the matching PSF."
+                )
+
             rmsd_task = RMSDAnalysisTask(
                 topology=topology,
                 trajectory=trajectories,
-                analysis_components=post_cfg.get("analysis_components", []),
+                analysis_components=analysis_components,
                 start=start,
                 stop=stop,
                 step=step,
@@ -291,19 +408,38 @@ class MDPostProcessingWorkflow:
             results["protein_protein_interactions"] = task.run()
             
         if "clusters" in time_series:
-            logger.info("Next stage:: clustering analysis...")
-            cluster_outdir = os.path.join(output_dir, "clusters")
-            os.makedirs(cluster_outdir, exist_ok=True)
+            logger.info("Next stage:: cluster analysis...")
+
+            clusters_outdir = os.path.join(
+                output_dir,
+                "clusters"
+            )
+            os.makedirs(clusters_outdir, exist_ok=True)
+
+            cluster_cfg = post_cfg.get(
+                "clustering",
+                {}
+            )
 
             task = ClusterAnalysisTask(
                 topology=topology,
                 trajectory=trajectories,
-                selection="protein and backbone",
-                n_clusters=5,
+                selection=cluster_cfg.get(
+                    "selection",
+                    "protein and backbone"
+                ),
+                output_selection=cluster_cfg.get(
+                    "output_selection",
+                    "protein"
+                ),
+                n_clusters=cluster_cfg.get(
+                    "n_clusters",
+                    5
+                ),
                 start=start,
                 stop=stop,
                 step=step,
-                output_dir=cluster_outdir,
+                output_dir=clusters_outdir,
             )
 
             results["clusters"] = task.run()

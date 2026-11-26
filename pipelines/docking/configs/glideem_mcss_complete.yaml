@@ -1,0 +1,778 @@
+# =============================================================================
+# GlideEM -> MCSS docking -> campaign analysis workflow
+# =============================================================================
+#
+# This is an exhaustive example/reference configuration.
+#
+# The workflow list below determines which pipeline stages execute.
+# Existing outputs can be reused when force: false.
+#
+# Major analysis branches:
+#
+#   GlideEM pose generation
+#       -> per-structure pose analysis
+#       -> campaign pose-landscape analysis
+#       -> posterior ensemble-support analysis
+#       -> residue engagement evidence
+#
+#   GlideEM poses
+#       -> MCSS-constrained docking
+#       -> optional Prime MM-GBSA
+#       -> experimental affinity correlations
+#       -> activity-independent MCSS consensus ranking
+#
+# =============================================================================
+
+
+# =============================================================================
+# WORKFLOW
+# =============================================================================
+
+task: workflow
+
+workflow_name: glideem_mcss_affinity
+
+# All generated files are written beneath this directory.
+output_dir: output_glideem_mcss_affinity
+
+# false:
+#   Reuse existing outputs where the corresponding task supports reuse.
+#
+# true:
+#   Regenerate outputs where supported.
+#
+# Be cautious with force: true for expensive stages.
+force: false
+
+
+# -----------------------------------------------------------------------------
+# Enabled workflow stages
+# -----------------------------------------------------------------------------
+#
+# Comment out stages when you want to reuse existing outputs.
+#
+# Dependencies are handled by loading existing files where supported, but the
+# required upstream files must already exist.
+
+workflow:
+
+  # Ligand preparation.
+  # Can either run LigPrep or copy an already-prepared Maestro library.
+  - prepare_activity_ligands
+
+  # Extract experimental reference ligand from each input complex.
+  - extract_reference_ligand
+
+  # Protein Preparation Wizard for each receptor.
+  - prepare_glideem_receptor
+
+  # Cryo-EM-guided GlideEM pose generation.
+  - run_glideem
+
+  # Per-structure GlideEM pose clustering and diagnostics.
+  - analyse_glideem_poses
+
+  # Cross-structure summary of per-structure GlideEM ensembles.
+  - summarise_glideem_ensembles
+
+  # Aligned campaign-level pose landscape, posterior support,
+  # and residue engagement evidence.
+  - analyse_glideem_campaign_landscape
+
+  # Generate one Glide grid per usable GlideEM pose.
+  - build_glide_grid
+
+  # MCSS-constrained docking of the activity/design library.
+  - dock_mcss
+
+  # OPTIONAL and potentially expensive.
+  # Prime MM-GBSA rescoring of MCSS poses.
+  - calculate_mmgbsa
+
+  # Requires experimental activity values.
+  - analyse_correlations
+
+  # Activity-independent compound ranking across all MCSS docks.
+  - analyse_mcss_consensus
+
+  # Per-MCSS-dock PyMOL visualisation bundles.
+  - export_mcss_pymol
+
+
+# =============================================================================
+# INPUT DATA
+# =============================================================================
+
+inputs:
+
+  # CSV describing each cryo-EM/GlideEM structure.
+  #
+  # Required columns:
+  #   job_name
+  #   receptor
+  #   density_map
+  #   reference_ligand
+  #
+  # Optional:
+  #   reference_smiles
+  #
+  glideem_manifest: input/glideem_inputs.csv
+
+  # ---------------------------------------------------------------------------
+  # Activity/design compound library
+  # ---------------------------------------------------------------------------
+  #
+  # Route A: unprepared SDF
+  #
+  # activity_ligands: input/activity_compounds.sdf
+  #
+  # Route B: CSV containing SMILES
+  #
+  # activity_ligands: input/activity_compounds.csv
+  #
+  # Route C: already-prepared Maestro ligand library
+  #
+  activity_ligands: input/prepared_activity_compounds.maegz
+
+
+# =============================================================================
+# BACKEND
+# =============================================================================
+
+backend:
+
+  # Registered Kitbag backend.
+  name: schrodingerglideem
+
+  # Default Schrödinger job host.
+  #
+  # Individual stages below may override this.
+  host: localhost:1
+
+
+# =============================================================================
+# ACTIVITY LIGAND PREPARATION
+# =============================================================================
+
+ligprep:
+
+  # ---------------------------------------------------------------------------
+  # Input mode
+  # ---------------------------------------------------------------------------
+
+  # true:
+  #   activity_ligands must be .mae/.maegz.
+  #   The library is copied to the canonical pipeline LigPrep location.
+  #   LigPrep itself is NOT run.
+  #
+  # false:
+  #   activity_ligands must be SDF/SD or CSV and LigPrep is run.
+  #
+  already_prepared: true
+
+
+  # ---------------------------------------------------------------------------
+  # CSV input options
+  # ---------------------------------------------------------------------------
+  #
+  # Used only when:
+  #
+  #   already_prepared: false
+  #   activity_ligands: *.csv
+  #
+  smiles_column: SMILES
+  id_column: ID
+
+
+  # ---------------------------------------------------------------------------
+  # LigPrep chemistry settings
+  # ---------------------------------------------------------------------------
+  #
+  # Ignored when already_prepared: true.
+  #
+  pH: 7.4
+  pH_tolerance: 2.0
+
+  # Maximum generated protonation/stereochemical states.
+  max_states: 1
+
+
+# =============================================================================
+# GLIDEEM
+# =============================================================================
+
+glideem:
+
+  # Number of receptor/density-map systems processed concurrently.
+  #
+  # Keep conservative relative to available CPU resources and
+  # Schrödinger licensing.
+  max_parallel: 4
+
+  # Host used specifically for GlideEM jobs.
+  host: localhost:4
+
+  # Maximum requested GlideEM poses per structure.
+  nposes: 100
+
+  # Typical choice:
+  #   exhaustive
+  mode: exhaustive
+
+
+  # ---------------------------------------------------------------------------
+  # Receptor preparation
+  # ---------------------------------------------------------------------------
+
+  prepare_receptor:
+
+    # PropKa target pH.
+    pH: 7.4
+
+    # PrepWizard RMSD setting.
+    rmsd: 0.1
+
+
+# =============================================================================
+# PER-STRUCTURE GLIDEEM POSE ANALYSIS
+# =============================================================================
+
+glideem_analysis:
+
+  # Heavy-atom coordinate-frame RMSD cutoff used to define local
+  # pose clusters within one GlideEM ensemble.
+  #
+  # These local clusters subsequently contribute to estimation of
+  # effective sampling depth in the posterior analysis.
+  cluster_rmsd_cutoff: 2.0
+
+  # Generate per-structure GlideEM PyMOL ensemble.
+  export_pymol: true
+
+
+# =============================================================================
+# CAMPAIGN-LEVEL GLIDEEM LANDSCAPE ANALYSIS
+# =============================================================================
+
+glideem_campaign_analysis:
+
+
+  # ---------------------------------------------------------------------------
+  # Receptor alignment
+  # ---------------------------------------------------------------------------
+
+  alignment:
+
+    # Radius around the reference ligand used to define the receptor
+    # pocket participating in the structural alignment.
+    pocket_cutoff: 10.0
+
+    # Protein atom type used for structural alignment.
+    atom_name: CA
+
+    # Minimum number of corresponding pocket atoms required.
+    minimum_common_atoms: 20
+
+    # Candidate receptor chains shorter than this are ignored.
+    minimum_chain_length: 100
+
+    # Minimum sequence identity required to match receptor chains.
+    minimum_sequence_identity: 0.70
+
+    # Minimum fraction of the reference chain represented by the
+    # sequence alignment.
+    minimum_reference_coverage: 0.70
+
+    # Coordinate residual used by the robust Kabsch procedure for
+    # rejection of structural outliers.
+    coordinate_outlier_cutoff: 3.0
+
+    # Strongly recommended.
+    #
+    # job_name from glideem_manifest that defines the campaign reference
+    # coordinate system.
+    #
+    # The same transformations are persisted and subsequently reused for
+    # aligned MCSS consensus visualisations.
+    reference_structure: structure_51292
+
+
+  # ---------------------------------------------------------------------------
+  # Common campaign density grid
+  # ---------------------------------------------------------------------------
+
+  density:
+
+    # Grid spacing in Angstrom.
+    spacing: 0.75
+
+    # Padding around the complete aligned ligand ensemble in Angstrom.
+    padding: 4.0
+
+    # Gaussian width used when converting poses into spatial probability
+    # densities.
+    gaussian_sigma: 2.0
+
+
+  # ---------------------------------------------------------------------------
+  # First-level spatial clustering
+  # ---------------------------------------------------------------------------
+  #
+  # First-level families answer:
+  #
+  #     WHERE in the aligned pocket does the ligand sit?
+  #
+  # They are defined from aligned ligand-centroid distances.
+
+  clustering:
+
+    # scipy hierarchical clustering linkage.
+    #
+    # Current expected/default choice:
+    #   average
+    #
+    linkage_method: average
+
+    # Angstrom cutoff between aligned ligand centroids.
+    #
+    # Typical sensitivity range worth exploring:
+    #   2.0
+    #   2.5
+    #   3.0
+    #
+    centroid_distance_cutoff: 2.5
+
+
+  # ---------------------------------------------------------------------------
+  # Second-level orientation/contact clustering
+  # ---------------------------------------------------------------------------
+  #
+  # Second-level families answer:
+  #
+  #     HOW does the ligand sit within a spatial family?
+  #
+  # They combine molecular orientation and receptor-contact fingerprints.
+
+  second_level:
+
+    # General heavy-atom receptor contact cutoff in Angstrom.
+    #
+    # Useful sensitivity range:
+    #   4.0 - 5.0
+    #
+    contact_cutoff: 4.5
+
+    # Geometric polar-candidate distance.
+    #
+    # IMPORTANT:
+    # This identifies polar proximity, not a validated hydrogen bond.
+    #
+    polar_contact_cutoff: 3.5
+
+    # Relative contributions of orientation and receptor-contact similarity.
+    #
+    # They need not sum exactly to 1 in the current validation, but keeping
+    # them normalized makes interpretation easier.
+    #
+    orientation_weight: 0.40
+    contact_weight: 0.60
+
+    # Hierarchical distance used to split second-level modes.
+    #
+    # Useful sensitivity range:
+    #   0.35
+    #   0.45
+    #   0.55
+    #
+    subfamily_distance_cutoff: 0.45
+
+    # Below this anisotropy, principal-axis orientation carries little
+    # interpretable directional information.
+    minimum_axis_anisotropy: 0.15
+
+    # Retained for configuration/documentation if consumed by the current
+    # second-level implementation.
+    minimum_subfamily_size: 2
+
+    # Export aligned orientation/contact mode PyMOL visualisations.
+    export_pymol: true
+
+
+  # ---------------------------------------------------------------------------
+  # Bayesian/posterior ensemble-support analysis
+  # ---------------------------------------------------------------------------
+
+  ensemble_support:
+
+    enabled: true
+
+    # Monte Carlo posterior draws.
+    #
+    # 10,000 gives low Monte Carlo noise for ordinary posterior summaries.
+    n_draws: 10000
+
+    # Reproducible posterior sampling.
+    random_seed: 20261023
+
+    # Symmetric Dirichlet prior concentration.
+    #
+    # 0.5 is the current default/working prior.
+    #
+    # Useful sensitivity values:
+    #   0.25
+    #   0.50
+    #   1.00
+    #
+    dirichlet_alpha: 0.5
+
+
+    # -------------------------------------------------------------------------
+    # Within-structure effective sampling
+    # -------------------------------------------------------------------------
+    #
+    # Prevent large numbers of near-redundant GlideEM poses from being
+    # interpreted as the same number of independent observations.
+
+    effective_counts:
+
+      enabled: true
+
+      # Effective sample size derived from diversity of local GlideEM clusters.
+      method: inverse_simpson_local_clusters
+
+      # Lower bound on effective observation count.
+      minimum: 1.0
+
+
+    # -------------------------------------------------------------------------
+    # Cross-landscape redundancy sensitivity analysis
+    # -------------------------------------------------------------------------
+    #
+    # This operates on similarity between complete inferred binding-mode
+    # landscapes, not chemical similarity between ligands.
+
+    redundancy_adjustment:
+
+      method: js_similarity_kernel
+
+      # Determine kernel bandwidth from observed positive pairwise distances.
+      bandwidth: median_positive_distance
+
+      # Sensitivity analysis around the inferred kernel bandwidth.
+      sensitivity_multipliers:
+        - 0.5
+        - 1.0
+        - 2.0
+
+
+    # Support level used by ensemble-support reporting.
+    support_threshold: 0.10
+
+
+    # -------------------------------------------------------------------------
+    # Display
+    # -------------------------------------------------------------------------
+
+    display:
+
+      # Limit detailed subfamily posterior visualisations.
+      top_n_subfamilies: 20
+
+      # If supported by the current plotting implementation:
+      # suppress very low-support modes from detailed displays.
+      #
+      # minimum_median_support: 0.02
+
+
+  # ---------------------------------------------------------------------------
+  # Residue engagement evidence
+  # ---------------------------------------------------------------------------
+  #
+  # IMPORTANT:
+  # These categories describe STRUCTURAL EVIDENCE.
+  #
+  # They do NOT estimate:
+  #   - binding energy,
+  #   - affinity contribution,
+  #   - whether interacting with a residue improves potency,
+  #   - whether a low-support residue is inaccessible.
+  #
+  # Main continuous quantities:
+  #
+  #   engagement support
+  #       Sum_m P(mode) * P(residue contact | mode)
+  #
+  #   between-structure consistency
+  #       1 / (1 + CV)
+  #
+  #   replication
+  #       number of structures where residue-contact probability >= 0.10
+  #
+  #   mode specificity
+  #       fraction of weighted residue evidence contributed by the
+  #       dominant mode
+
+  pocket_evidence:
+
+    enabled: true
+
+
+    # -------------------------------------------------------------------------
+    # Engagement-support boundaries
+    # -------------------------------------------------------------------------
+
+    # High-support boundary.
+    #
+    # This is NOT by itself the definition of conserved engagement.
+    high_support_threshold: 0.60
+
+    # Moderate support used to distinguish meaningful replicated/mode-specific
+    # engagement from limited evidence.
+    moderate_support_threshold: 0.30
+
+    # Low-support boundary.
+    weak_support_threshold: 0.05
+
+
+    # -------------------------------------------------------------------------
+    # Cross-structure reproducibility
+    # -------------------------------------------------------------------------
+
+    # Conserved engagement requires sufficiently low between-structure
+    # coefficient of variation.
+    #
+    # CV <= 0.50 corresponds to:
+    #
+    #   consistency >= 1 / (1 + 0.50) = 0.667
+    #
+    maximum_low_variability_cv: 0.50
+
+    # Number of structure-level ensembles where contact probability must
+    # reach at least 10%.
+    minimum_supporting_structures: 2
+
+
+    # -------------------------------------------------------------------------
+    # Mode dependence
+    # -------------------------------------------------------------------------
+
+    # Residue classified as mode-specific when this fraction or more of the
+    # weighted contact evidence originates from one binding mode, assuming
+    # it does not already satisfy the conserved-engagement definition.
+    mode_specificity_threshold: 0.60
+
+
+    # -------------------------------------------------------------------------
+    # Display
+    # -------------------------------------------------------------------------
+
+    # Maximum modes reported per residue where applicable.
+    top_n_modes_per_residue: 5
+
+    # Residues included in ranked evidence/heatmap displays.
+    top_n_residues_plot: 40
+
+    # Export evidence classes onto the reference receptor for PyMOL.
+    export_pymol: true
+
+
+  # ---------------------------------------------------------------------------
+  # Campaign export
+  # ---------------------------------------------------------------------------
+
+  export:
+
+    # Combined aligned GlideEM pose archive.
+    aligned_poses: true
+
+    # Retained for compatibility with density-map export when enabled
+    # by the implementation.
+    per_structure_maps: true
+
+    per_family_maps: true
+
+    # Structure probability density minus campaign consensus.
+    difference_maps: true
+
+
+# =============================================================================
+# GLIDE GRID GENERATION
+# =============================================================================
+
+grid:
+
+  # Number of independent grids generated concurrently.
+  max_parallel: 32
+
+  host: localhost:1
+
+  # Glide grid dimensions.
+  innerbox: 10
+  outerbox: 30
+
+
+# =============================================================================
+# MCSS-CONSTRAINED GLIDE DOCKING
+# =============================================================================
+
+mcss:
+
+  # Number of MCSS docking calculations submitted concurrently.
+  #
+  # IMPORTANT:
+  # Keep compatible with available Glide license tokens.
+  # Very high concurrency can produce transient:
+  #
+  #   RESOURCE_EXHAUSTED
+  #   insufficient GLIDE_SP_DOCKING licenses
+  #
+  max_parallel: 32
+
+  host: localhost:1
+
+  # Glide precision.
+  #
+  # Current workflow typically uses:
+  #   SP
+  #
+  precision: SP
+
+  # Maximum number of reported docking results.
+  nreport: 10000
+
+  # Number of poses retained per compound before/after post-docking.
+  poses_per_ligand: 1
+  postdock_npose: 1
+
+
+# =============================================================================
+# PRIME MM-GBSA
+# =============================================================================
+
+mmgbsa:
+
+  host: localhost:1
+
+  # Number of independent Prime calculations submitted concurrently.
+  max_parallel: 32
+
+  # Optional if consumed by the backend/implementation.
+  #
+  # forcefield: OPLS4
+
+
+# =============================================================================
+# EXPERIMENTAL AFFINITY CORRELATION
+# =============================================================================
+#
+# Used by:
+#
+#   analyse_correlations
+#
+# The activity-independent MCSS consensus analysis does NOT use these values.
+
+analysis:
+
+  # Property present on the prepared ligand structures.
+  activity_column: i_csv_pEC50
+
+  # Minimum number of compound/activity pairs required before calculating
+  # Pearson, Spearman and Kendall correlations.
+  min_pairs: 5
+
+
+# =============================================================================
+# PER-DOCK MCSS PYMOL VISUALISATION
+# =============================================================================
+#
+# Used by:
+#
+#   export_mcss_pymol
+
+pymol:
+
+  # Number of top Glide-scoring compounds exported for each individual
+  # MCSS docking experiment.
+  top_n: 50
+
+  # Protein residues within this distance of displayed ligands are shown.
+  # Angstrom.
+  #
+  # Purely a visualisation parameter; does not affect docking or ranking.
+  binding_site_cutoff: 5.0
+
+
+# =============================================================================
+# ACTIVITY-INDEPENDENT MCSS CONSENSUS RANKING
+# =============================================================================
+#
+# Used by:
+#
+#   analyse_mcss_consensus
+#
+# This analysis deliberately ignores experimental potency.
+#
+# Ranking hierarchy:
+#
+#   compound GlideScore
+#       -> rank within individual MCSS dock
+#       -> percentile within individual MCSS dock
+#       -> median percentile within each cryo-EM structure
+#       -> equal-weight aggregation across cryo-EM structures
+#
+# This avoids comparing raw GlideScores directly across different grids and
+# prevents structures producing many GlideEM/MCSS docks from automatically
+# dominating the campaign-level ranking.
+
+mcss_consensus:
+
+  # ---------------------------------------------------------------------------
+  # Rank recurrence
+  # ---------------------------------------------------------------------------
+
+  # Per-dock ranks for which recurrence statistics are generated.
+  #
+  # NOTE:
+  # top 5 is assumed by the current primary sorting/reporting code.
+  # Keep 5 here unless that code is generalized.
+  #
+  top_ks:
+    - 1
+    - 5
+    - 10
+
+
+  # ---------------------------------------------------------------------------
+  # Summary displays
+  # ---------------------------------------------------------------------------
+
+  # Number of consensus-ranked compounds included in main plots.
+  top_n_plot: 30
+
+  # Number of compound IDs annotated on the consensus/coverage plot.
+  top_n_labels: 20
+
+
+  # ---------------------------------------------------------------------------
+  # Consensus PyMOL export
+  # ---------------------------------------------------------------------------
+
+  # Number of leading consensus compounds for which detailed individual
+  # PyMOL bundles are exported.
+  #
+  # The same selected compounds are also included in the combined aligned
+  # consensus PyMOL view.
+  top_n_pymol: 60
+
+  # Representative pose selection:
+  #
+  # Prefer docks where the compound ranks at or above this percentile.
+  # Among qualifying docks, select the pose with the best raw GlideScore.
+  #
+  # 0.90 = top 10% of compounds in that particular dock.
+  visualization_minimum_dock_percentile: 0.90
+
+  # Protein shell shown around selected consensus pose.
+  #
+  # Purely a PyMOL visualisation parameter.
+  binding_site_cutoff: 5.0

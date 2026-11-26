@@ -17,6 +17,10 @@ from modules.utils.glideem_plotting import (
     analyse_correlations,
 )
 
+from modules.utils.glideem_mcss_consensus import (
+    analyse_mcss_consensus,
+)
+
 from pipeline.task_registry import get_task
 from workflows import register_workflow
 
@@ -270,8 +274,13 @@ def run(config_path: str):
     }
 
     known_tasks = (
-        set(available_tasks)
-        | {"analyse_correlations"}
+        set(
+            available_tasks
+        )
+        | {
+            "analyse_correlations",
+            "analyse_mcss_consensus",
+        }
     )
 
     unknown_tasks = (
@@ -313,6 +322,7 @@ def run(config_path: str):
         "dock_mcss",
         "calculate_mmgbsa",
         "analyse_correlations",
+        "analyse_mcss_consensus",
         "export_mcss_pymol",
     }
 
@@ -326,6 +336,7 @@ def run(config_path: str):
             "dock_mcss",
             "calculate_mmgbsa",
             "analyse_correlations",
+            "analyse_mcss_consensus",
             "export_mcss_pymol",
         }
         & enabled_tasks
@@ -335,6 +346,7 @@ def run(config_path: str):
         {
             "calculate_mmgbsa",
             "analyse_correlations",
+            "analyse_mcss_consensus",
             "export_mcss_pymol",
         }
         & enabled_tasks
@@ -618,12 +630,55 @@ def run(config_path: str):
                 job_name,
             )
 
+            try:
+                analysis_result = (
+                    glideem_analysis_task(
+                        backend,
+                        None,
+                        config,
+                        archive=archive,
+                        glideem_csv=glideem_csv,
+                        job=row,
+                        cryoem_reference=(
+                            reference_ligand
+                        ),
+                        prepared_receptor=prepared,
+                        output_dir=(
+                            output
+                            / "analysis"
+                            / "glideem"
+                            / job_name
+                        ),
+                    )
+                )
+
+            except Exception as exc:
+                logger.error(
+                    "[%s] GlideEM pose analysis failed; "
+                    "continuing with downstream processing: %s",
+                    job_name,
+                    exc,
+                    exc_info=True,
+                )
+
+                structure_failures.append(
+                    {
+                        "job_name": job_name,
+                        "stage": "glideem_analysis",
+                        "error": str(exc),
+                    }
+                )
+
         # ------------------------------------------
-        # Load existing per-job GlideEM analysis
-        # when campaign analysis requires it
+        # Load existing per-job GlideEM analysis if
+        # a campaign consumer requires it but the
+        # per-job analysis task is disabled.
         # ------------------------------------------
 
         elif (
+            "summarise_glideem_ensembles"
+            in enabled_tasks
+            or
             "analyse_glideem_campaign_landscape"
             in enabled_tasks
         ):
@@ -661,17 +716,21 @@ def run(config_path: str):
             missing_files = [
                 path
                 for path in required_files
-                if not Path(path).is_file()
+                if not Path(
+                    path
+                ).is_file()
             ]
 
             if missing_files:
                 logger.warning(
                     "[%s] Existing GlideEM analysis is "
-                    "incomplete; unavailable for campaign "
-                    "analysis. Missing: %s",
+                    "incomplete; unavailable for downstream "
+                    "ensemble analysis. Missing: %s",
                     job_name,
                     ", ".join(
-                        str(path)
+                        str(
+                            path
+                        )
                         for path in missing_files
                     ),
                 )
@@ -733,48 +792,8 @@ def run(config_path: str):
 
                 logger.info(
                     "[%s] Loaded existing GlideEM analysis "
-                    "for campaign landscape analysis",
+                    "for downstream ensemble analysis",
                     job_name,
-                )
-
-
-            try:
-                analysis_result = (
-                    glideem_analysis_task(
-                        backend,
-                        None,
-                        config,
-                        archive=archive,
-                        glideem_csv=glideem_csv,
-                        job=row,
-                        cryoem_reference=(
-                            reference_ligand
-                        ),
-                        prepared_receptor=prepared,
-                        output_dir=(
-                            output
-                            / "analysis"
-                            / "glideem"
-                            / job_name
-                        ),
-                    )
-                )
-
-            except Exception as exc:
-                logger.error(
-                    "[%s] GlideEM pose analysis failed; "
-                    "continuing with downstream processing: %s",
-                    job_name,
-                    exc,
-                    exc_info=True,
-                )
-
-                structure_failures.append(
-                    {
-                        "job_name": job_name,
-                        "stage": "glideem_analysis",
-                        "error": str(exc),
-                    }
                 )
 
         # ------------------------------------------
@@ -1669,6 +1688,85 @@ def run(config_path: str):
             )
 
     # --------------------------------------------------
+    # Activity-independent MCSS consensus ranking
+    # --------------------------------------------------
+
+    consensus_results = None
+
+    if (
+        "analyse_mcss_consensus"
+        in enabled_tasks
+    ):
+        consensus_cfg = config.get(
+            "mcss_consensus",
+            {},
+        )
+
+        logger.info(
+            "Starting activity-independent MCSS consensus "
+            "analysis for %d available docking jobs",
+            len(
+                poseviewers
+            ),
+        )
+
+        try:
+            consensus_results = (
+                analyse_mcss_consensus(
+                    complex_jobs=(
+                        complex_jobs
+                    ),
+                    poseviewers=(
+                        poseviewers
+                    ),
+                    output_dir=(
+                        output
+                        / "analysis"
+                        / "mcss"
+                        / "consensus"
+                    ),
+                    alignment_transforms_file=(
+                        output
+                        / "analysis"
+                        / "glideem"
+                        / "campaign_landscape"
+                        / "receptor_alignment_transforms.csv"
+                    ),
+                    config=(
+                        consensus_cfg
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            logger.error(
+                "MCSS consensus analysis failed; "
+                "continuing workflow: %s",
+                exc,
+                exc_info=True,
+            )
+
+            failed_jobs.append(
+                {
+                    "job_name": (
+                        "mcss_consensus"
+                    ),
+                    "stage": (
+                        "mcss_consensus_analysis"
+                    ),
+                    "error": str(
+                        exc
+                    ),
+                }
+            )
+
+        else:
+            logger.info(
+                "Activity-independent MCSS consensus "
+                "analysis completed"
+            )
+
+    # --------------------------------------------------
     # MCSS PyMOL export
     # --------------------------------------------------
 
@@ -1689,11 +1787,11 @@ def run(config_path: str):
             )
         )
 
-        binding_site_cutoff = (
-            pymol_cfg.get(
-                "binding_site_cutoff"
-            )
-        )
+        # binding_site_cutoff = (
+        #     pymol_cfg.get(
+        #         "binding_site_cutoff"
+        #     )
+        # )
 
         logger.info(
             "Exporting top %d MCSS poses "
@@ -1739,6 +1837,11 @@ def run(config_path: str):
                         cryoem_reference
                     ),
                     top_n=top_n,
+                    output_dir=(
+                        output
+                        / "analysis"
+                        / "mcss"
+                    ),
                 )
 
             except Exception as exc:

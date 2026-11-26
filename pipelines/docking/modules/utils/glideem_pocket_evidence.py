@@ -714,15 +714,21 @@ def calculate_posterior_weighted_residue_evidence(
 
 def classify_residue_evidence(
     residue_table: pd.DataFrame,
-    robust_contact_probability: float,
-    moderate_contact_probability: float,
-    maximum_robust_cv: float,
-    minimum_supported_structures: int,
-    mode_specific_probability: float,
-    weak_campaign_support: float,
+    conserved_support_threshold: float,
+    moderate_support_threshold: float,
+    maximum_conserved_cv: float,
+    minimum_supporting_structures: int,
+    mode_specificity_threshold: float,
+    weak_support_threshold: float,
 ) -> pd.DataFrame:
     """
-    Classify structural evidence rather than medicinal-chemistry value.
+    Classify the strength and reproducibility of residue-engagement
+    evidence.
+
+    These categories describe structural evidence in the current
+    pose ensembles. They do not predict affinity contributions,
+    energetic favourability, or whether targeting a residue will
+    improve a compound.
     """
     result = residue_table.copy()
 
@@ -740,75 +746,103 @@ def classify_residue_evidence(
             row.n_supporting_structures_10pct
         )
 
-        cv = float(
-            row.structure_contact_cv
-        ) if np.isfinite(
-            row.structure_contact_cv
-        ) else np.inf
+        cv = (
+            float(
+                row.structure_contact_cv
+            )
+            if np.isfinite(
+                row.structure_contact_cv
+            )
+            else np.inf
+        )
 
-        specificity = float(
-            row.mode_specificity
-        ) if np.isfinite(
-            row.mode_specificity
-        ) else 0.0
+        specificity = (
+            float(
+                row.mode_specificity
+            )
+            if np.isfinite(
+                row.mode_specificity
+            )
+            else 0.0
+        )
 
         if (
             weighted_support
-            >= robust_contact_probability
+            >= conserved_support_threshold
             and supporting_structures
-            >= minimum_supported_structures
-            and cv <= maximum_robust_cv
+            >= minimum_supporting_structures
+            and cv
+            <= maximum_conserved_cv
         ):
-            category = "robust_opportunity"
+            category = (
+                "conserved_engagement"
+            )
 
             rationale = (
                 "High posterior-weighted contact support, "
-                "replicated across structures, with low "
-                "between-structure variability."
+                "replicated across structure-level ensembles, "
+                "with relatively low between-structure "
+                "variability."
             )
 
         elif (
             weighted_support
-            >= moderate_contact_probability
+            >= moderate_support_threshold
             and specificity
-            >= mode_specific_probability
+            >= mode_specificity_threshold
         ):
-            category = "mode_selective"
+            category = (
+                "mode_specific_engagement"
+            )
 
             rationale = (
-                "Meaningful contact support concentrated in "
-                "one orientation/contact mode."
+                "Meaningful contact evidence is concentrated "
+                "in one orientation/contact mode; interpretation "
+                "therefore depends strongly on support for that "
+                "mode."
             )
 
         elif (
             weighted_support
-            >= moderate_contact_probability
+            >= moderate_support_threshold
             and supporting_structures
-            >= minimum_supported_structures
+            >= minimum_supporting_structures
         ):
-            category = "plastic_opportunity"
+            category = (
+                "variable_engagement"
+            )
 
             rationale = (
-                "Contacted across structures, but with variable "
-                "probability or multiple supported modes."
+                "Meaningful contact evidence is reproduced "
+                "across structures, but its prevalence varies "
+                "between structure-level ensembles or supported "
+                "binding modes."
             )
 
         elif (
             weighted_support
-            <= weak_campaign_support
+            <= weak_support_threshold
         ):
-            category = "weak_or_unengaged"
+            category = (
+                "weakly_evidenced"
+            )
 
             rationale = (
-                "Little posterior-weighted evidence for contact."
+                "Little of the posterior-supported binding "
+                "landscape contacts this residue. This does not "
+                "establish that the residue is inaccessible or "
+                "energetically unfavourable."
             )
 
         else:
-            category = "uncertain_risk"
+            category = (
+                "limited_or_context_dependent"
+            )
 
             rationale = (
-                "Contact evidence is limited, variable, or "
-                "insufficiently replicated."
+                "Contact evidence is present but limited, "
+                "variable, insufficiently replicated, or below "
+                "the criteria for the stronger evidence classes."
             )
 
         categories.append(
@@ -826,6 +860,24 @@ def classify_residue_evidence(
     result[
         "classification_rationale"
     ] = rationales
+
+    result[
+        "engagement_support"
+    ] = result[
+        "posterior_weighted_contact_mean"
+    ]
+
+    result[
+        "between_structure_consistency"
+    ] = (
+        1.0
+        / (
+            1.0
+            + result[
+                "structure_contact_cv"
+            ]
+        )
+    )
 
     return result
 
@@ -921,14 +973,29 @@ def build_residue_mode_matrix(
 # Plots
 # ============================================================
 
-CATEGORY_COLOURS = {
-    "robust_opportunity": "#2b8cbe",
-    "plastic_opportunity": "#7bccc4",
-    "mode_selective": "#fdae61",
-    "uncertain_risk": "#d73027",
-    "weak_or_unengaged": "#bdbdbd",
+CATEGORY_ORDER = [
+    "conserved_engagement",
+    "variable_engagement",
+    "mode_specific_engagement",
+    "limited_or_context_dependent",
+    "weakly_evidenced",
+]
+
+CATEGORY_LABELS = {
+    "conserved_engagement": "Conserved engagement",
+    "variable_engagement": "Variable engagement",
+    "mode_specific_engagement": "Mode-specific engagement",
+    "limited_or_context_dependent": "Limited / context-dependent",
+    "weakly_evidenced": "Weakly evidenced",
 }
 
+CATEGORY_COLOURS = {
+    "conserved_engagement": "#00A651",          # vivid green
+    "variable_engagement": "#0077FF",           # vivid blue
+    "mode_specific_engagement": "#FFB000",      # vivid amber
+    "limited_or_context_dependent": "#8A2BE2",  # vivid purple
+    "weakly_evidenced": "#A6A6A6",              # neutral grey
+}
 
 def save_residue_evidence_plot(
     residue_table: pd.DataFrame,
@@ -1013,27 +1080,34 @@ def save_residue_evidence_plot(
         "Campaign structural evidence by pocket residue"
     )
 
+    displayed_categories = set(
+        display[
+            "evidence_category"
+        ]
+    )
+
     legend_handles = [
         plt.Line2D(
-            [
-                0,
-            ],
-            [
-                0,
-            ],
+            [0],
+            [0],
             marker="s",
             linestyle="",
-            markerfacecolor=colour,
-            markeredgecolor=colour,
+            markerfacecolor=(
+                CATEGORY_COLOURS[
+                    category
+                ]
+            ),
+            markeredgecolor="black",
+            markeredgewidth=0.5,
             markersize=9,
-            label=category.replace(
-                "_",
-                " ",
+            label=(
+                CATEGORY_LABELS[
+                    category
+                ]
             ),
         )
-        for category, colour in (
-            CATEGORY_COLOURS.items()
-        )
+        for category in CATEGORY_ORDER
+        if category in displayed_categories
     ]
 
     axis.legend(
@@ -1054,15 +1128,35 @@ def save_residue_evidence_plot(
     )
 
 
-def save_residue_opportunity_map(
+def save_residue_engagement_evidence_map(
     residue_table: pd.DataFrame,
     output_file: Path,
+    conserved_support_threshold: float,
+    maximum_conserved_cv: float,
 ):
     """
-    x: posterior-weighted contact support
-    y: between-structure consistency
-    colour: evidence category
-    size: posterior-weighted polar-candidate evidence
+    Plot residue-level engagement evidence.
+
+    x:
+        Posterior-weighted residue contact support across the
+        supported campaign binding-mode landscape.
+
+    y:
+        Consistency of contact prevalence across structure-level
+        ensembles, calculated as 1 / (1 + CV).
+
+    colour:
+        Structural-evidence category. Categories describe support,
+        replication, variability and mode dependence. They do not
+        represent affinity contributions or energetic favourability.
+
+    size:
+        Posterior-weighted geometric polar-proximity evidence.
+        This is not a validated hydrogen-bond probability.
+
+    The dashed lines show only the support and consistency criteria
+    that contribute to the conserved-engagement classification.
+    Other categories also depend on replication and mode specificity.
     """
     table = residue_table.copy()
 
@@ -1072,13 +1166,15 @@ def save_residue_opportunity_map(
             1.0
             + table[
                 "structure_contact_cv"
-            ].replace(
+            ]
+            .replace(
                 [
                     np.inf,
                     -np.inf,
                 ],
                 np.nan,
-            ).fillna(
+            )
+            .fillna(
                 10.0
             )
         )
@@ -1094,6 +1190,14 @@ def save_residue_opportunity_map(
         )
     )
 
+    conserved_consistency_threshold = (
+        1.0
+        / (
+            1.0
+            + maximum_conserved_cv
+        )
+    )
+
     figure, axis = plt.subplots(
         figsize=(
             10.0,
@@ -1101,9 +1205,18 @@ def save_residue_opportunity_map(
         )
     )
 
-    for category, group in table.groupby(
-        "evidence_category"
-    ):
+    # Draw categories in explicit evidence order so the legend
+    # follows the same order.
+    for category in CATEGORY_ORDER:
+        group = table[
+            table[
+                "evidence_category"
+            ] == category
+        ]
+
+        if group.empty:
+            continue
+
         indices = group.index
 
         axis.scatter(
@@ -1116,19 +1229,23 @@ def save_residue_opportunity_map(
             s=point_sizes.loc[
                 indices
             ],
-            color=CATEGORY_COLOURS.get(
-                category,
-                "#bdbdbd",
+            color=(
+                CATEGORY_COLOURS[
+                    category
+                ]
             ),
-            alpha=0.75,
-            label=category.replace(
-                "_",
-                " ",
+            alpha=0.88,
+            label=(
+                CATEGORY_LABELS[
+                    category
+                ]
             ),
             edgecolor="black",
-            linewidth=0.4,
+            linewidth=0.55,
+            zorder=3,
         )
 
+    # Label the highest-support residues.
     top_labels = (
         table
         .sort_values(
@@ -1155,19 +1272,90 @@ def save_residue_opportunity_map(
                 ],
             ),
             xytext=(
-                4,
-                4,
+                5,
+                5,
             ),
             textcoords="offset points",
             fontsize=8,
+            zorder=4,
         )
 
+    # Conserved-engagement boundaries.
+    axis.axvline(
+        conserved_support_threshold,
+        color="#4D4D4D",
+        linestyle="--",
+        linewidth=1.1,
+        alpha=0.75,
+        zorder=1,
+    )
+
+    axis.axhline(
+        conserved_consistency_threshold,
+        color="#4D4D4D",
+        linestyle="--",
+        linewidth=1.1,
+        alpha=0.75,
+        zorder=1,
+    )
+
+    # Label the vertical criterion near the bottom of the plot.
+    axis.annotate(
+        (
+            "High support criterion\n"
+            f"support >= {conserved_support_threshold:.2f}"
+        ),
+        xy=(
+            conserved_support_threshold,
+            0.02,
+        ),
+        xycoords=(
+            "data",
+            "axes fraction",
+        ),
+        xytext=(
+            5,
+            3,
+        ),
+        textcoords="offset points",
+        ha="left",
+        va="bottom",
+        fontsize=8,
+        color="#3D3D3D",
+        rotation=90,
+    )
+
+    # Label the horizontal criterion on the right side.
+    axis.annotate(
+        (
+            "High consistency criterion  "
+            f"{conserved_consistency_threshold:.2f}"
+        ),
+        xy=(
+            0.99,
+            conserved_consistency_threshold,
+        ),
+        xycoords=(
+            "axes fraction",
+            "data",
+        ),
+        xytext=(
+            -4,
+            5,
+        ),
+        textcoords="offset points",
+        ha="right",
+        va="bottom",
+        fontsize=8,
+        color="#3D3D3D",
+    )
+
     axis.set_xlabel(
-        "Posterior-weighted contact support"
+        "Posterior-weighted engagement support"
     )
 
     axis.set_ylabel(
-        "Between-structure consistency: 1 / (1 + CV)"
+        "Cross-structure engagement consistency"
     )
 
     axis.set_ylim(
@@ -1176,14 +1364,40 @@ def save_residue_opportunity_map(
     )
 
     axis.set_title(
-        "Pocket opportunity and uncertainty map"
+        "Residue engagement evidence across all cryo-em structures."
     )
 
     axis.legend(
         loc="best",
+        title="Evidence classification",
+        frameon=True,
     )
 
-    figure.tight_layout()
+    # Method annotation. This is intentionally separate from the
+    # threshold labels because the categories use more than x/y.
+    figure.text(
+        0.5,
+        0.01,
+        (
+            "Consistency = 1 / (1 + between-structure CV). "
+            "Dashed lines indicate high-support and high-consistency "
+            "boundaries. Evidence classes additionally consider "
+            "cross-structure replication and mode specificity."
+        ),
+        ha="center",
+        va="bottom",
+        fontsize=8,
+        color="#444444",
+    )
+
+    figure.tight_layout(
+        rect=(
+            0.0,
+            0.045,
+            1.0,
+            1.0,
+        )
+    )
 
     figure.savefig(
         output_file,
@@ -1751,44 +1965,44 @@ def run_pocket_evidence_analysis(
         exist_ok=True,
     )
 
-    robust_contact_probability = float(
+    conserved_support_threshold = float(
         config.get(
-            "robust_contact_probability",
-            0.60,
+            "conserved_support_threshold",
+            0.35,
         )
     )
 
-    moderate_contact_probability = float(
+    moderate_support_threshold = float(
         config.get(
-            "moderate_contact_probability",
-            0.30,
+            "moderate_support_threshold",
+            0.15,
         )
     )
 
-    maximum_robust_cv = float(
+    maximum_conserved_cv = float(
         config.get(
-            "maximum_robust_cv",
+            "maximum_conserved_cv",
             0.50,
         )
     )
 
-    minimum_supported_structures = int(
+    minimum_supporting_structures = int(
         config.get(
-            "minimum_supported_structures",
+            "minimum_supporting_structures",
             2,
         )
     )
 
-    mode_specific_probability = float(
+    mode_specificity_threshold = float(
         config.get(
-            "mode_specific_probability",
+            "mode_specificity_threshold",
             0.60,
         )
     )
 
-    weak_campaign_support = float(
+    weak_support_threshold = float(
         config.get(
-            "weak_campaign_support",
+            "weak_support_threshold",
             0.05,
         )
     )
@@ -1851,23 +2065,23 @@ def run_pocket_evidence_analysis(
 
     residue_evidence = classify_residue_evidence(
         residue_table=residue_evidence,
-        robust_contact_probability=(
-            robust_contact_probability
+        conserved_support_threshold=(
+            conserved_support_threshold
         ),
-        moderate_contact_probability=(
-            moderate_contact_probability
+        moderate_support_threshold=(
+            moderate_support_threshold
         ),
-        maximum_robust_cv=(
-            maximum_robust_cv
+        maximum_conserved_cv=(
+            maximum_conserved_cv
         ),
-        minimum_supported_structures=(
-            minimum_supported_structures
+        minimum_supporting_structures=(
+            minimum_supporting_structures
         ),
-        mode_specific_probability=(
-            mode_specific_probability
+        mode_specificity_threshold=(
+            mode_specificity_threshold
         ),
-        weak_campaign_support=(
-            weak_campaign_support
+        weak_support_threshold=(
+            weak_support_threshold
         ),
     )
 
@@ -1903,11 +2117,17 @@ def run_pocket_evidence_analysis(
         top_n=top_n_residues_plot,
     )
 
-    save_residue_opportunity_map(
+    save_residue_engagement_evidence_map(
         residue_table=residue_evidence,
         output_file=(
             output_dir
-            / "pocket_opportunity_map.png"
+            / "residue_engagement_evidence_map.png"
+        ),
+        conserved_support_threshold=(
+            conserved_support_threshold
+        ),
+        maximum_conserved_cv=(
+            maximum_conserved_cv
         ),
     )
 
@@ -1935,7 +2155,7 @@ def run_pocket_evidence_analysis(
 
     pymol_script = (
         output_dir
-        / "pocket_evidence.pml"
+        / "residue_engagement_evidence.pml"
     )
 
     if bool(
@@ -1962,9 +2182,9 @@ def run_pocket_evidence_analysis(
             output_dir
             / "mode_contact_probabilities.csv"
         ),
-        "opportunity_plot": (
+        "engagement_evidence_plot": (
             output_dir
-            / "pocket_opportunity_map.png"
+            / "residue_engagement_evidence_map.png"
         ),
         "residue_mode_heatmap": (
             output_dir
