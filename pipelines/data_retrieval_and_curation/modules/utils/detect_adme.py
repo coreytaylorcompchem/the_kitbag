@@ -812,22 +812,18 @@ def extract_cyp3a4_substrate_hybrid(text, threshold=0.5):
 
 def infer_metstab_matrix_with_context(record, assay_name=None):
     """
-    Infer the biological matrix of a metabolic-stability record.
+    Infer microsome/hepatocyte/S9 matrix.
 
     Evidence priority:
-      1. Explicit unit denominator
-      2. Record-level assay description and standard type
-      3. Retrieval bucket as a weak fallback
+      1. Unit denominator
+      2. Record-level assay description / standard type
+      3. Assay bucket name
 
-    Returns:
-      - "microsome"
-      - "hepatocyte"
-      - "s9"
-      - None
+    The assay bucket is deliberately the weakest evidence because keyword
+    retrieval can place hepatocyte records in a Microsomal Stability bucket
+    and vice versa.
     """
-    raw_unit = str(
-        record.get("standard_units", "") or ""
-    )
+    raw_unit = str(record.get("standard_units", "") or "")
 
     unit = (
         raw_unit
@@ -838,59 +834,75 @@ def infer_metstab_matrix_with_context(record, assay_name=None):
         .replace("micro", "u")
         .replace(" ", "")
         .replace("*", "")
+        .replace("^", "")
         .replace("(", "")
         .replace(")", "")
     )
 
     # ---------------------------------------------------------
-    # 1. Explicit unit denominator
+    # 1. Unit denominator is the strongest matrix evidence
     # ---------------------------------------------------------
 
-    cell_denominator = (
-        "cell" in unit
-        and any(
-            marker in unit
-            for marker in {
-                "10^6",
-                "10⁶",
-                "106",
-                "1e6",
-                "10e6",
-                "million",
-            }
-        )
-    )
+    hepatocyte_unit_patterns = [
+        "ul/min/10-6cells",
+        "ul/min/106cells",
+        "ul/min/1e6cells",
+        "ul/min/10e6cells",
+        "ul/min/millioncells",
+        "ul/min/106cell",
+        "ul/min/1e6cell",
+        "ulmin-110-6cells-1",
+        "ulmin-1106cells-1",
+        "ulmin-11e6cells-1",
+        "ul/106cells/min",
+        "ul/1e6cells/min",
+    ]
 
-    if cell_denominator:
+    if (
+        any(pattern in unit for pattern in hepatocyte_unit_patterns)
+        or (
+            "cell" in unit
+            and any(volume in unit for volume in ["ul", "ml", "l"])
+            and "min" in unit
+        )
+    ):
         return "hepatocyte"
 
-    protein_denominator = (
-        "mg" in unit
-        and "kg" not in unit
-        and any(
-            term in unit
-            for term in {
-                "protein",
-                "microsom",
-                "/mg",
-                "mg-1",
-            }
-        )
-    )
+    microsome_unit_patterns = [
+        "ul/min/mg",
+        "ul/min/mgprotein",
+        "ul/min/mgmicrosomalprotein",
+        "ul/min/mgmicrosome",
+        "ulmin-1mg-1",
+        "ulmin-1mgprotein-1",
+        "ul/mg/min",
+        "ml/min/mg",
+        "mlmin-1mg-1",
+        "l/min/mg",
+        "lmin-1mg-1",
+    ]
 
-    if protein_denominator:
+    if (
+        any(pattern in unit for pattern in microsome_unit_patterns)
+        or (
+            "mg" in unit
+            and any(volume in unit for volume in ["ul", "ml", "l"])
+            and "min" in unit
+        )
+    ):
         return "microsome"
 
     # ---------------------------------------------------------
-    # 2. Record-level context
+    # 2. Use record-specific context, without the bucket name
     # ---------------------------------------------------------
 
     record_text = " ".join([
         str(record.get("assay_description", "") or ""),
         str(record.get("standard_type", "") or ""),
+        str(record.get("target_organism", "") or ""),
     ]).lower()
 
-    if any(term in record_text for term in [
+    if any(x in record_text for x in [
         "hepatocyte",
         "hepatocytes",
         "primary hepatocyte",
@@ -900,7 +912,7 @@ def infer_metstab_matrix_with_context(record, assay_name=None):
     ]):
         return "hepatocyte"
 
-    if any(term in record_text for term in [
+    if any(x in record_text for x in [
         "microsome",
         "microsomes",
         "microsomal",
@@ -912,7 +924,9 @@ def infer_metstab_matrix_with_context(record, assay_name=None):
     ]):
         return "microsome"
 
-    if any(term in record_text for term in [
+    if any(x in record_text for x in [
+        "s9",
+        "s9 fraction",
         "liver s9",
         "s9 fraction",
         "s9",
@@ -920,10 +934,10 @@ def infer_metstab_matrix_with_context(record, assay_name=None):
         return "s9"
 
     # ---------------------------------------------------------
-    # 3. Weak retrieval-bucket fallback
+    # 3. Assay bucket is only a fallback
     # ---------------------------------------------------------
 
-    assay_text = str(assay_name or "").lower()
+    lname = str(assay_name or "").lower()
 
     if (
         "microsomal" in assay_text
@@ -938,7 +952,6 @@ def infer_metstab_matrix_with_context(record, assay_name=None):
         return "hepatocyte"
 
     return None
-
 
 def extract_species_with_context(record):
     """

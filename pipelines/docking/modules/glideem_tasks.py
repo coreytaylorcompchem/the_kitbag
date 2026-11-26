@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-import csv
+import shutil
 import math
 from collections import defaultdict
 from pathlib import Path
@@ -19,7 +18,6 @@ from matplotlib.patches import Patch
 from schrodinger import structure
 
 from scipy.cluster.hierarchy import (
-    dendrogram,
     fcluster,
     linkage,
 )
@@ -51,8 +49,9 @@ from modules.utils.glideem_plotting import (
     save_rmsd_heatmap,
 )
 
-from modules.utils.pymol_export import (
+from modules.utils.mcss_docking_helpers import (
     export_mcss_pose_bundle,
+    safe_pymol_name
 )
 
 from modules.utils.prime_mmgbsa_helpers import (
@@ -148,23 +147,163 @@ def prepare_activity_ligands(
         .lower()
     )
 
-    if input_suffix not in {
+    output_root = (
+        Path(
+            config[
+                "output_dir"
+            ]
+        )
+        .expanduser()
+        .resolve()
+    )
+
+    output_dir = (
+        output_root
+        / "ligprep"
+    )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    ligprep_cfg = config.get(
+        "ligprep",
+        {},
+    )
+
+    already_prepared = bool(
+        ligprep_cfg.get(
+            "already_prepared",
+            False,
+        )
+    )
+
+    output_file = (
+        output_dir
+        / "activity_ligands_ligprep.maegz"
+    )
+
+    source_record = (
+        output_dir
+        / "activity_ligands_source.txt"
+    )
+
+    # --------------------------------------------------
+    # Already-prepared ligand library
+    #
+    # Copy it into the canonical pipeline location without
+    # running LigPrep. Downstream tasks therefore continue
+    # to consume exactly the same filename regardless of
+    # preparation route.
+    # --------------------------------------------------
+
+    if already_prepared:
+        allowed_prepared_suffixes = {
+            ".mae",
+            ".maegz",
+        }
+
+        if (
+            input_suffix
+            not in allowed_prepared_suffixes
+        ):
+            raise ValueError(
+                "ligprep.already_prepared=true requires "
+                "a prepared Maestro ligand library "
+                "(.mae or .maegz); received: "
+                f"{input_path}"
+            )
+
+        can_reuse = (
+            output_file.is_file()
+            and output_file.stat().st_size > 0
+            and source_record.is_file()
+            and source_record.read_text().strip()
+            == str(
+                input_path
+            )
+            and not config.get(
+                "force",
+                False,
+            )
+        )
+
+        if can_reuse:
+            logger.info(
+                "Using existing copied prepared ligand "
+                "library: %s",
+                output_file,
+            )
+
+            return output_file
+
+        logger.info(
+            "Using pre-prepared activity ligand library; "
+            "LigPrep will not be run: %s",
+            input_path,
+        )
+
+        if (
+            input_path
+            == output_file
+        ):
+            logger.info(
+                "Prepared ligand library is already at "
+                "the canonical pipeline location: %s",
+                output_file,
+            )
+
+        else:
+            shutil.copy2(
+                input_path,
+                output_file,
+            )
+
+            logger.info(
+                "Copied prepared ligand library: "
+                "%s -> %s",
+                input_path,
+                output_file,
+            )
+
+        if (
+            not output_file.is_file()
+            or output_file.stat().st_size == 0
+        ):
+            raise RuntimeError(
+                "Failed to copy prepared activity ligand "
+                f"library to: {output_file}"
+            )
+
+        source_record.write_text(
+            str(
+                input_path
+            )
+            + "\n"
+        )
+
+        return output_file
+
+    # --------------------------------------------------
+    # Normal LigPrep route
+    # --------------------------------------------------
+
+    allowed_unprepared_suffixes = {
         ".sdf",
         ".sd",
         ".csv",
-    }:
+    }
+
+    if (
+        input_suffix
+        not in allowed_unprepared_suffixes
+    ):
         raise ValueError(
-            "activity_ligands must be an SDF or CSV file; "
+            "activity_ligands must be an SDF/SD or CSV "
+            "when LigPrep preparation is enabled; "
             f"received: {input_path}"
         )
-
-    output_root = Path(config["output_dir"]).expanduser().resolve()
-
-    output_dir = output_root / "ligprep"
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
 
     ligprep_cfg = config.get(
         "ligprep",
@@ -215,17 +354,17 @@ def prepare_activity_ligands(
             ligprep_input,
         )
 
-    output_file = (
-        output_dir /
-        "activity_ligands_ligprep.maegz"
-    )
+    # output_file = (
+    #     output_dir /
+    #     "activity_ligands_ligprep.maegz"
+    # )
 
-    # Reuse existing output unless explicitly forcing rerun
+    # # Reuse existing output unless explicitly forcing rerun
 
-    source_record = (
-        output_dir
-        / "activity_ligands_source.txt"
-    )
+    # source_record = (
+    #     output_dir
+    #     / "activity_ligands_source.txt"
+    # )
 
     can_reuse = (
         output_file.is_file()
@@ -259,10 +398,10 @@ def prepare_activity_ligands(
 
     #     return output_file
 
-    ligprep_cfg = config.get(
-        "ligprep",
-        {}
-    )
+    # ligprep_cfg = config.get(
+    #     "ligprep",
+    #     {}
+    # )
 
     pH = ligprep_cfg.get(
         "pH",
@@ -344,6 +483,13 @@ def prepare_activity_ligands(
             input_sdf=input_path,
             ligprep_file=output_file,
         )
+
+    source_record.write_text(
+        str(
+            input_path
+        )
+        + "\n"
+    )
 
     logger.info(
         f"LigPrep completed: {output_file}"
@@ -2208,6 +2354,16 @@ def export_mcss_pymol(
         )
     )
 
+    output_root = (
+        Path(
+            kwargs[
+                "output_dir"
+            ]
+        )
+        .expanduser()
+        .resolve()
+    )
+
     cryoem_reference = (
         Path(kwargs["cryoem_reference"])
         .expanduser()
@@ -2254,11 +2410,68 @@ def export_mcss_pymol(
             "PyMOL top_n must be at least 1."
         )
 
-    name = complex_job["name"]
+    name = str(
+        complex_job[
+            "name"
+        ]
+    )
+
+    source_name = str(
+        complex_job[
+            "source_name"
+        ]
+    )
+
+    # complex_job["name"] is expected to look like:
+    #
+    #     structure_51052_pose01
+    #
+    # while source_name is:
+    #
+    #     structure_51052
+    #
+    # Remove the source prefix to obtain:
+    #
+    #     pose01
+    prefix = (
+        source_name
+        + "_"
+    )
+
+    if name.startswith(
+        prefix
+    ):
+        pose_name = name[
+            len(
+                prefix
+            ):
+        ]
+
+    else:
+        # Defensive fallback in case a future complex-job naming
+        # convention does not begin with the source structure name.
+        pose_name = name
+
+    pose_name = safe_pymol_name(
+        pose_name,
+        fallback="pose",
+    )
 
     out_dir = (
-        poseviewer.parent
-        / "pymol"
+        output_root
+        / source_name
+        / f"{pose_name}_pymol"
+    )
+
+    out_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    logger.debug(
+        "[%s] MCSS PyMOL bundle directory: %s",
+        name,
+        out_dir,
     )
 
     receptor = None
@@ -2830,6 +3043,7 @@ def analyse_glideem_campaign_landscape(
 
     all_pose_records = []
     alignment_rows = []
+    alignment_transform_rows = []
     accepted_results = []
 
     # Aligned receptor structures used for visual QC of the
@@ -3006,6 +3220,132 @@ def analyse_glideem_campaign_landscape(
         fit_rmsd = robust_fit[
             "fit_rmsd"
         ]
+
+        rotation_array = np.asarray(
+            rotation,
+            dtype=float,
+        )
+
+        translation_array = np.asarray(
+            translation,
+            dtype=float,
+        ).reshape(
+            3
+        )
+
+        if rotation_array.shape != (
+            3,
+            3,
+        ):
+            raise RuntimeError(
+                f"[{source_name}] Campaign alignment rotation "
+                f"has invalid shape: {rotation_array.shape}"
+            )
+
+        if not (
+            np.all(
+                np.isfinite(
+                    rotation_array
+                )
+            )
+            and np.all(
+                np.isfinite(
+                    translation_array
+                )
+            )
+        ):
+            raise RuntimeError(
+                f"[{source_name}] Campaign alignment transform "
+                "contains non-finite values."
+            )
+
+        alignment_transform_rows.append(
+            {
+                "source_name": source_name,
+                "alignment_reference": reference_name,
+
+                "rotation_00": float(
+                    rotation_array[
+                        0,
+                        0,
+                    ]
+                ),
+                "rotation_01": float(
+                    rotation_array[
+                        0,
+                        1,
+                    ]
+                ),
+                "rotation_02": float(
+                    rotation_array[
+                        0,
+                        2,
+                    ]
+                ),
+                "rotation_10": float(
+                    rotation_array[
+                        1,
+                        0,
+                    ]
+                ),
+                "rotation_11": float(
+                    rotation_array[
+                        1,
+                        1,
+                    ]
+                ),
+                "rotation_12": float(
+                    rotation_array[
+                        1,
+                        2,
+                    ]
+                ),
+                "rotation_20": float(
+                    rotation_array[
+                        2,
+                        0,
+                    ]
+                ),
+                "rotation_21": float(
+                    rotation_array[
+                        2,
+                        1,
+                    ]
+                ),
+                "rotation_22": float(
+                    rotation_array[
+                        2,
+                        2,
+                    ]
+                ),
+
+                "translation_x": float(
+                    translation_array[
+                        0
+                    ]
+                ),
+                "translation_y": float(
+                    translation_array[
+                        1
+                    ]
+                ),
+                "translation_z": float(
+                    translation_array[
+                        2
+                    ]
+                ),
+
+                "fit_rmsd": float(
+                    fit_rmsd
+                ),
+
+                "n_retained_pocket_atoms": int(
+                    robust_fit[
+                        "n_retained_atoms"
+                    ]
+                ),
+            }
+        )        
 
         if source_name == reference_name:
             campaign_reference_chain_id = (
@@ -3370,6 +3710,82 @@ def analyse_glideem_campaign_landscape(
             "The selected reference receptor chain was not recorded "
             f"for campaign reference '{reference_name}'."
         )    
+
+    alignment_transforms_df = pd.DataFrame(
+        alignment_transform_rows
+    )
+
+    required_transform_columns = {
+        "source_name",
+        "alignment_reference",
+        "rotation_00",
+        "rotation_01",
+        "rotation_02",
+        "rotation_10",
+        "rotation_11",
+        "rotation_12",
+        "rotation_20",
+        "rotation_21",
+        "rotation_22",
+        "translation_x",
+        "translation_y",
+        "translation_z",
+    }
+
+    missing_transform_columns = (
+        required_transform_columns
+        - set(
+            alignment_transforms_df.columns
+        )
+    )
+
+    if missing_transform_columns:
+        raise RuntimeError(
+            "Campaign alignment-transform table is missing "
+            f"columns: {sorted(missing_transform_columns)}"
+        )
+
+    if alignment_transforms_df[
+        "source_name"
+    ].duplicated().any():
+        duplicate_sources = (
+            alignment_transforms_df.loc[
+                alignment_transforms_df[
+                    "source_name"
+                ].duplicated(
+                    keep=False
+                ),
+                "source_name",
+            ]
+            .astype(
+                str
+            )
+            .tolist()
+        )
+
+        raise RuntimeError(
+            "Campaign alignment-transform table contains "
+            "duplicate source structures: "
+            f"{duplicate_sources}"
+        )
+
+    alignment_transforms_file = (
+        output_dir
+        / "receptor_alignment_transforms.csv"
+    )
+
+    alignment_transforms_df.to_csv(
+        alignment_transforms_file,
+        index=False,
+    )
+
+    logger.info(
+        "Saved %d receptor alignment transforms: %s",
+        len(
+            alignment_transforms_df
+        ),
+        alignment_transforms_file,
+    )    
 
     alignment_df = pd.DataFrame(
         alignment_rows
@@ -4223,46 +4639,6 @@ def analyse_glideem_campaign_landscape(
                 ),
             )
 
-        # if export_cfg.get(
-        #     "difference_maps",
-        #     True,
-        # ):
-        #     difference = density_difference(
-        #         source_density,
-        #         target_density,
-        #     )
-
-        #     save_numpy_density(
-        #         difference,
-        #         output_dir
-        #         / (
-        #             f"structure_{source_name}"
-        #             "_minus_target.npy"
-        #         ),
-        #     )
-
-        # if export_cfg.get(
-        #     "per_structure_maps",
-        #     True,
-        # ):
-        #     try:
-        #         write_ccp4_map(
-        #             source_density,
-        #             common_grid,
-        #             output_dir
-        #             / (
-        #                 f"structure_{source_name}"
-        #                 "_probability.ccp4"
-        #             ),
-        #         )
-
-        #     except Exception as exc:
-        #         logger.warning(
-        #             "[%s] Could not export structure CCP4 map: %s",
-        #             source_name,
-        #             exc,
-        #         )
-
     for family_id in sorted(
         pose_table[
             "global_family_id"
@@ -4303,30 +4679,6 @@ def analyse_glideem_campaign_landscape(
                 "_probability.npy"
             ),
         )
-
-        # if export_cfg.get(
-        #     "per_family_maps",
-        #     True,
-        # ):
-        #     try:
-        #         write_ccp4_map(
-        #             family_density,
-        #             common_grid,
-        #             output_dir
-        #             / (
-        #                 f"global_family_{int(family_id):03d}"
-        #                 "_probability.ccp4"
-        #             ),
-        #         )
-
-        #     except Exception as exc:
-        #         logger.warning(
-        #             "[Family %d] Could not export CCP4 map: %s",
-        #             int(
-        #                 family_id
-        #             ),
-        #             exc,
-        #         )
 
     # --------------------------------------------------
     # Between-structure Jensen-Shannon divergence
@@ -4492,5 +4844,9 @@ def analyse_glideem_campaign_landscape(
         "pocket_evidence": (
             pocket_evidence_results
         ),
+        "alignment_transforms": (
+            output_dir
+            / "receptor_alignment_transforms.csv"
+        ),        
     }
     
