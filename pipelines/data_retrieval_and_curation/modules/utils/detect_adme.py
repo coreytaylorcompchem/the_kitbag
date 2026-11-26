@@ -257,6 +257,47 @@ def classify_permeability_system(record):
 
     return None, None
 
+def normalise_column_token(value):
+    """
+    Convert a grouping value or unit into a stable CSV column token.
+
+    Examples:
+        uL/min/mg protein  -> uL_min_mg_protein
+        uL/min/10^6 cells -> uL_min_1e6_cells
+        mL/min/g liver    -> mL_min_g_liver
+        L/h/kg            -> L_h_kg
+        10^-6 cm/s        -> 1e-6_cm_s
+    """
+    if value is None:
+        return "unknown"
+
+    token = str(value).strip()
+
+    replacements = {
+        "µ": "u",
+        "μ": "u",
+        "10^6": "1e6",
+        "10^-6": "1e-6",
+        "%": "percent",
+        "/": "_",
+        "\\": "_",
+        " ": "_",
+        ".": "_",
+        "-": "_",
+        "(": "",
+        ")": "",
+        "[": "",
+        "]": "",
+    }
+
+    for old, new in replacements.items():
+        token = token.replace(old, new)
+
+    token = re.sub(r"_+", "_", token)
+    token = token.strip("_")
+
+    return token or "unknown"
+
 def flatten_pivot_columns(df_pivot, assay_name):
     """
     Flatten MultiIndex columns from grouped assay pivots.
@@ -265,13 +306,39 @@ def flatten_pivot_columns(df_pivot, assay_name):
         (stat, group1, group2, ...)
 
     Produces:
-        assay_group1_group2_stat
+        assay_group1_group2_..._unit_stat
 
-    Example:
-        ("mean", "caco2", "AB")
-    ->
-        Caco-2_caco2_AB_mean
+    Importantly, if standard_units is included in group_cols,
+    the harmonised unit is retained explicitly in the final
+    multitask column name.
     """
+
+    def clean_token(x):
+        if x is None:
+            return None
+
+        x = str(x).strip()
+
+        if x in {"", "nan", "None"}:
+            return None
+
+        # Make units/model endpoint names column-safe.
+        x = (
+            x
+            .replace("µ", "u")
+            .replace("μ", "u")
+            .replace("10^6", "1e6")
+            .replace("10^-6", "1e-6")
+            .replace("/", "_")
+            .replace(" ", "_")
+        )
+
+        while "__" in x:
+            x = x.replace("__", "_")
+
+        return x.strip("_")
+
+    assay_token = clean_token(assay_name) or str(assay_name)
 
     new_cols = []
 
@@ -279,16 +346,34 @@ def flatten_pivot_columns(df_pivot, assay_name):
 
         # Non-MultiIndex fallback
         if not isinstance(col, tuple):
-            new_cols.append(f"{assay_name}_{col}")
+            token = clean_token(col)
+            new_cols.append(
+                f"{assay_token}_{token}"
+                if token
+                else assay_token
+            )
             continue
 
-        stat = col[0]
-        groups = [str(x) for x in col[1:] if x not in [None, "", "nan"]]
+        stat = clean_token(col[0])
 
-        label = "_".join([assay_name] + groups + [stat])
+        groups = [
+            token
+            for token in (
+                clean_token(x)
+                for x in col[1:]
+            )
+            if token is not None
+        ]
 
-        # cleanup accidental duplicates
-        label = label.replace("__", "_")
+        parts = [assay_token] + groups
+
+        if stat is not None:
+            parts.append(stat)
+
+        label = "_".join(parts)
+
+        while "__" in label:
+            label = label.replace("__", "_")
 
         new_cols.append(label)
 
@@ -337,9 +422,6 @@ def classify_bioavailability_record(record):
 
     return True
 
-import re
-
-
 def extract_inhibition_concentration(description):
     """
     Extract inhibitor test concentration from assay text.
@@ -375,9 +457,10 @@ def extract_inhibition_concentration(description):
     # ----------------------------------------
 
     pattern = re.compile(
-        r'([\d\.]+)\s*'
-        r'(nm|um|mm|micromolar|nanomolar|millimolar|umol/l|nmol/l|mmol/l)',
-        re.IGNORECASE
+        r"([0-9]*\.?[0-9]+)\s*"
+        r"(nm|um|mm|micromolar|nanomolar|millimolar|"
+        r"umol/l|nmol/l|mmol/l)",
+        re.IGNORECASE,
     )
 
     matches = pattern.findall(desc)
@@ -727,18 +810,348 @@ def extract_cyp3a4_substrate_hybrid(text, threshold=0.5):
 
 def infer_metstab_matrix_with_context(record, assay_name=None):
     """
-    Infer microsome/hepatocyte/S9 matrix.
+    Infer the biological matrix for a metabolic-stability record.
 
     Evidence priority:
-      1. Unit denominator
-      2. Record-level assay description / standard type
-      3. Assay bucket name
+      1. Explicit unit denominator
+      2. Record-level assay description and standard type
+      3. Retrieval bucket as a weak fallback
 
-    The assay bucket is deliberately the weakest evidence because keyword
-    retrieval can place hepatocyte records in a Microsomal Stability bucket
-    and vice versa.
+    Returns:
+      - "microsome"
+      - "hepatocyte"
+      - "s9"
+      - None
     """
-    raw_unit = str(record.get("standard_units", "") or "")
+    raw_unit = str(
+        record.get("standard_units", "") or ""
+    )
+
+    unit = (
+        raw_unit
+        .lower()
+        .strip()
+        .replace("µ", "u")
+        .replace("μ", "u")
+        .replace("−", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("⁻", "-")
+        .replace("¹", "1")
+        .replace("⁶", "6")
+        .replace("×", "x")
+    )
+
+    # Normalize written-out volume units.
+    volume_replacements = {
+        "microliters": "ul",
+        "microlitres": "ul",
+        "microliter": "ul",
+        "microlitre": "ul",
+        "microl": "ul",
+        "milliliters": "ml",
+        "millilitres": "ml",
+        "milliliter": "ml",
+        "millilitre": "ml",
+    }
+
+    for old, new in volume_replacements.items():
+        unit = unit.replace(old, new)
+
+    unit = (
+        unit
+        .replace("millionsofcells", "1e6cells")
+        .replace("millioncells", "1e6cells")
+        .replace("millioncell", "1e6cells")
+        .replace("mgprot.", "mgprotein")
+        .replace("mgprot", "mgprotein")
+        .replace(" ", "")
+        .replace("*", "")
+        .replace("(", "")
+        .replace(")", "")
+    )
+
+    # ---------------------------------------------------------
+    # 1. The unit denominator is the strongest matrix evidence.
+    # ---------------------------------------------------------
+
+    cell_count_markers = {
+        "10^6",
+        "106",
+        "1e6",
+        "10e6",
+        "million",
+    }
+
+    hepatocyte_denominator = (
+        "cell" in unit
+        and any(
+            marker in unit
+            for marker in cell_count_markers
+        )
+        and any(
+            volume in unit
+            for volume in {"ul", "ml", "l"}
+        )
+        and (
+            "min" in unit
+            or "hr" in unit
+            or "/h" in unit
+        )
+    )
+
+    if hepatocyte_denominator:
+        return "hepatocyte"
+
+    microsome_denominator = (
+        "mg" in unit
+        and "kg" not in unit
+        and "cell" not in unit
+        and any(
+            volume in unit
+            for volume in {"ul", "ml", "l"}
+        )
+        and (
+            "min" in unit
+            or "hr" in unit
+            or "/h" in unit
+        )
+    )
+
+    if microsome_denominator:
+        return "microsome"
+
+    # ---------------------------------------------------------
+    # 2. Use record-specific context without the retrieval bucket.
+    # ---------------------------------------------------------
+
+    record_text = " ".join([
+        str(record.get("assay_description", "") or ""),
+        str(record.get("standard_type", "") or ""),
+    ]).lower()
+
+    if any(term in record_text for term in [
+        "hepatocyte",
+        "hepatocytes",
+        "primary hepatocyte",
+        "cryopreserved hepatocyte",
+        "suspension hepatocyte",
+        "plated hepatocyte",
+    ]):
+        return "hepatocyte"
+
+    if any(term in record_text for term in [
+        "microsome",
+        "microsomes",
+        "microsomal",
+        "liver microsome",
+        "liver microsomes",
+        "hlm",
+        "rlm",
+        "mlm",
+    ]):
+        return "microsome"
+
+    if any(term in record_text for term in [
+        "liver s9",
+        "s9 fraction",
+        "s9",
+    ]):
+        return "s9"
+
+    # ---------------------------------------------------------
+    # 3. Retrieval bucket is only a fallback.
+    # ---------------------------------------------------------
+
+    assay_text = str(
+        assay_name or ""
+    ).lower()
+
+    if (
+        "microsomal" in assay_text
+        or "microsome" in assay_text
+    ):
+        return "microsome"
+
+    if (
+        "hepatocyte" in assay_text
+        or "hepato" in assay_text
+    ):
+        return "hepatocyte"
+
+    return None
+
+def infer_metstab_matrix_and_source(
+    record,
+    assay_name=None,
+):
+    """
+    Return:
+        (matrix, evidence_source)
+
+    evidence_source:
+      - "unit"
+      - "record_text"
+      - "assay_bucket"
+      - None
+    """
+    raw_unit = str(
+        record.get("standard_units", "") or ""
+    )
+
+    unit = (
+        raw_unit
+        .lower()
+        .replace("µ", "u")
+        .replace("μ", "u")
+        .replace(" ", "")
+        .replace("(", "")
+        .replace(")", "")
+    )
+
+    if (
+        "cell" in unit
+        and any(
+            marker in unit
+            for marker in {
+                "10^6",
+                "106",
+                "1e6",
+                "10e6",
+                "million",
+            }
+        )
+    ):
+        return "hepatocyte", "unit"
+
+    if (
+        "mg" in unit
+        and "kg" not in unit
+        and any(
+            volume in unit
+            for volume in {"ul", "ml", "l"}
+        )
+        and "min" in unit
+    ):
+        return "microsome", "unit"
+
+    record_text = " ".join([
+        str(record.get("assay_description", "") or ""),
+        str(record.get("standard_type", "") or ""),
+    ]).lower()
+
+    if any(term in record_text for term in [
+        "hepatocyte",
+        "hepatocytes",
+        "primary hepatocyte",
+        "cryopreserved hepatocyte",
+        "suspension hepatocyte",
+        "plated hepatocyte",
+    ]):
+        return "hepatocyte", "record_text"
+
+    if any(term in record_text for term in [
+        "microsome",
+        "microsomes",
+        "microsomal",
+        "liver microsome",
+        "liver microsomes",
+        "hlm",
+        "rlm",
+        "mlm",
+    ]):
+        return "microsome", "record_text"
+
+    if any(term in record_text for term in [
+        "liver s9",
+        "s9 fraction",
+    ]):
+        return "s9", "record_text"
+
+    assay_text = str(
+        assay_name or ""
+    ).lower()
+
+    if (
+        "microsomal" in assay_text
+        or "microsome" in assay_text
+    ):
+        return "microsome", "assay_bucket"
+
+    if (
+        "hepatocyte" in assay_text
+        or "hepato" in assay_text
+    ):
+        return "hepatocyte", "assay_bucket"
+
+    return None, None
+
+def extract_species_with_context(record):
+    """
+    Extract assay species using record-level evidence.
+
+    Priority:
+      1. assay_description
+      2. target_organism
+
+    If the two fields identify different species, return "unknown"
+    rather than silently selecting one.
+    """
+    description_species = extract_species(
+        record.get("assay_description")
+    )
+
+    organism_species = extract_species(
+        record.get("target_organism")
+    )
+
+    # Description is usually closer to the actual experimental
+    # microsomal/hepatocyte matrix.
+    if (
+        description_species != "unknown"
+        and organism_species == "unknown"
+    ):
+        return description_species
+
+    if (
+        description_species == "unknown"
+        and organism_species != "unknown"
+    ):
+        return organism_species
+
+    if (
+        description_species != "unknown"
+        and organism_species != "unknown"
+    ):
+        if description_species == organism_species:
+            return description_species
+
+        # Conflicting species evidence should be audited rather
+        # than assigned automatically.
+        return "unknown"
+
+    return "unknown"
+
+
+def classify_metstab_endpoint_family(record, assay_name=None):
+    """
+    Classify metabolic-stability records without using the broad
+    retrieval bucket as proof of endpoint identity.
+
+    The current baseline is intentionally conservative because only
+    reported, explicitly unit-resolved unscaled Clint is retained.
+    """
+    desc = normalise_text(
+        record.get("assay_description")
+    )
+
+    stype = normalise_text(
+        record.get("standard_type")
+    )
+
+    raw_unit = str(
+        record.get("standard_units", "") or ""
+    )
 
     unit = (
         raw_unit
@@ -749,255 +1162,236 @@ def infer_metstab_matrix_with_context(record, assay_name=None):
         .replace("micro", "u")
         .replace(" ", "")
         .replace("*", "")
-        .replace("^", "")
         .replace("(", "")
         .replace(")", "")
     )
 
-    # ---------------------------------------------------------
-    # 1. Unit denominator is the strongest matrix evidence
-    # ---------------------------------------------------------
+    record_text = f"{desc} {stype}"
 
-    hepatocyte_unit_patterns = [
-        "ul/min/10-6cells",
-        "ul/min/106cells",
-        "ul/min/1e6cells",
-        "ul/min/10e6cells",
-        "ul/min/millioncells",
-        "ul/min/106cell",
-        "ul/min/1e6cell",
-        "ulmin-110-6cells-1",
-        "ulmin-1106cells-1",
-        "ulmin-11e6cells-1",
-        "ul/106cells/min",
-        "ul/1e6cells/min",
-    ]
-
-    if (
-        any(pattern in unit for pattern in hepatocyte_unit_patterns)
-        or (
-            "cell" in unit
-            and any(volume in unit for volume in ["ul", "ml", "l"])
-            and "min" in unit
-        )
-    ):
-        return "hepatocyte"
-
-    microsome_unit_patterns = [
-        "ul/min/mg",
-        "ul/min/mgprotein",
-        "ul/min/mgmicrosomalprotein",
-        "ul/min/mgmicrosome",
-        "ulmin-1mg-1",
-        "ulmin-1mgprotein-1",
-        "ul/mg/min",
-        "ml/min/mg",
-        "mlmin-1mg-1",
-        "l/min/mg",
-        "lmin-1mg-1",
-    ]
-
-    if (
-        any(pattern in unit for pattern in microsome_unit_patterns)
-        or (
-            "mg" in unit
-            and any(volume in unit for volume in ["ul", "ml", "l"])
-            and "min" in unit
-        )
-    ):
-        return "microsome"
+    # Explicit activity type is stronger evidence than incidental
+    # wording in the assay description.
+    if stype in {
+        "clint",
+        "cl int",
+        "intrinsic clearance",
+    }:
+        return "clint"    
 
     # ---------------------------------------------------------
-    # 2. Use record-specific context, without the bucket name
+    # 1. Exclude inhibition and concentration endpoints.
     # ---------------------------------------------------------
 
-    record_text = " ".join([
-        str(record.get("assay_description", "") or ""),
-        str(record.get("standard_type", "") or ""),
-        str(record.get("target_organism", "") or ""),
-    ]).lower()
-
-    if any(x in record_text for x in [
-        "hepatocyte",
-        "hepatocytes",
-        "primary hepatocyte",
-    ]):
-        return "hepatocyte"
-
-    if any(x in record_text for x in [
-        "microsome",
-        "microsomes",
-        "microsomal",
-        "hlm",
-        "rlm",
-        "mlm",
-        "liver microsome",
-        "liver microsomes",
-    ]):
-        return "microsome"
-
-    if any(x in record_text for x in [
-        "s9",
-        "s9 fraction",
-        "liver s9",
-    ]):
-        return "s9"
-
-    # ---------------------------------------------------------
-    # 3. Assay bucket is only a fallback
-    # ---------------------------------------------------------
-
-    lname = str(assay_name or "").lower()
-
-    if "microsomal" in lname or "microsome" in lname:
-        return "microsome"
-
-    if "hepatocyte" in lname or "hepato" in lname:
-        return "hepatocyte"
-
-    return None
-
-def extract_species_with_context(record):
-    """
-    Try target_organism first, then assay_description.
-    The old pattern used `target_organism or assay_description`, which can miss
-    species if target_organism is present but uninformative.
-    """
-    species = extract_species(record.get("target_organism"))
-
-    if species == "unknown":
-        species = extract_species(record.get("assay_description"))
-
-    return species
-
-
-def classify_metstab_endpoint_family(record, assay_name=None):
-    """
-    Classify metabolic stability-related records into endpoint families.
-
-    Families:
-      - clint
-      - t_half
-      - percent_remaining
-      - hepatic_clearance
-      - extraction_ratio
-      - free_clearance
-      - absolute_clearance
-      - other_clearance
-      - None
-    """
-    desc = normalise_text(record.get("assay_description"))
-    stype = normalise_text(record.get("standard_type"))
-    unit = normalise_text(record.get("standard_units"))
-    assay = normalise_text(assay_name)
-
-    combined = f"{assay} {desc} {stype} {unit}"
-
-    # -----------------------------
-    # Exclude obvious concentration/inhibition endpoints
-    # unless they are clearly also a stability endpoint.
-    # -----------------------------
-    inhibition_like = any(x in combined for x in [
+    inhibition_types = {
         "ic50",
         "ec50",
         "ki",
         "kd",
-        "tdi",
+        "inhibition",
+        "percent inhibition",
+    }
+
+    inhibition_text = any(term in record_text for term in [
         "inhibition",
         "inhibitor",
-        "inh",
+        "time dependent inhibition",
+        "time-dependent inhibition",
+        "tdi",
+        "mechanism based inhibition",
+        "mechanism-based inhibition",
     ])
 
-    if inhibition_like and not any(x in combined for x in [
-        "stability",
-        "remaining",
-        "depletion",
-        "half life",
-        "t1/2",
-        "clearance",
-        "clint",
-    ]):
+    if stype in inhibition_types:
         return None
 
-    # -----------------------------
-    # Half-life
-    # -----------------------------
+    if inhibition_text:
+        return None
+
+    # ---------------------------------------------------------
+    # 2. Related metabolic-stability endpoints.
+    # They are classified for auditing but will be rejected by
+    # the simplified task because they are not Clint.
+    # ---------------------------------------------------------
+
     if (
-        stype in {"t1/2", "half life", "half-life"}
-        or "t1/2" in combined
-        or "half life" in combined
-        or "half-life" in combined
+        stype in {
+            "t1/2",
+            "t 1/2",
+            "half life",
+            "half-life",
+        }
+        or any(term in record_text for term in [
+            "half life",
+            "half-life",
+            "t1/2",
+        ])
     ):
         return "t_half"
 
-    # -----------------------------
-    # Extraction ratio
-    # -----------------------------
     if (
-        stype in {"erh", "extraction ratio", "hepatic extraction ratio"}
-        or "extraction ratio" in combined
-        or "hepatic extraction" in combined
+        "%" in raw_unit
+        and any(term in record_text for term in [
+            "remaining",
+            "percent remaining",
+            "stability",
+            "substrate depletion",
+            "depletion",
+        ])
+    ):
+        return "percent_remaining"
+
+    if (
+        stype in {
+            "erh",
+            "extraction ratio",
+            "hepatic extraction ratio",
+        }
+        or any(term in record_text for term in [
+            "extraction ratio",
+            "hepatic extraction",
+        ])
     ):
         return "extraction_ratio"
 
-    # -----------------------------
-    # Hepatic clearance
-    # -----------------------------
-    if stype in {"clh", "clh(app)", "qh"}:
+    # ---------------------------------------------------------
+    # 3. Explicit non-Clint clearance families.
+    # ---------------------------------------------------------
+
+    if (
+        stype in {
+            "clh",
+            "clh app",
+            "clh(app)",
+            "qh",
+            "hepatic clearance",
+        }
+        or any(term in record_text for term in [
+            "hepatic clearance",
+            "liver clearance",
+        ])
+    ):
         return "hepatic_clearance"
 
-    # -----------------------------
-    # Free clearance
-    # -----------------------------
-    if stype in {"cl free", "clfree", "unbound clearance", "free clearance"}:
+    if (
+        stype in {
+            "cl free",
+            "clfree",
+            "unbound clearance",
+            "free clearance",
+            "clint u",
+            "clint,u",
+        }
+        or any(term in record_text for term in [
+            "unbound clearance",
+            "free clearance",
+            "clint u",
+            "clint,u",
+        ])
+    ):
         return "free_clearance"
 
-    # -----------------------------
-    # Intrinsic clearance / Clint
-    # -----------------------------
+    in_vivo_clearance = any(term in record_text for term in [
+        "plasma clearance",
+        "blood clearance",
+        "systemic clearance",
+        "total clearance",
+        "whole body clearance",
+        "renal clearance",
+        "urinary clearance",
+        "oral clearance",
+        "apparent clearance",
+        "cl f",
+        "clt f",
+        "pharmacokinetic",
+        "in vivo",
+        "intravenous clearance",
+        "iv clearance",
+    ])
+
+    if in_vivo_clearance:
+        return "other_clearance"
+
+    # ---------------------------------------------------------
+    # 4. Explicit intrinsic clearance.
+    # ---------------------------------------------------------
+
     if (
-        stype in {"clint", "intrinsic clearance"}
-        or "clint" in combined
-        or "intrinsic clearance" in combined
+        stype in {
+            "clint",
+            "cl int",
+            "intrinsic clearance",
+        }
+        or any(term in record_text for term in [
+            "intrinsic clearance",
+            "clint",
+        ])
     ):
         return "clint"
 
-    # Standard_type=CL can include several clearance types.
-    # We let the converter/unit decide whether it is scaled/liver-normalised/etc.
+    # ---------------------------------------------------------
+    # 5. Generic CL is accepted as Clint only when:
+    #
+    #   a. the unit has an explicit microsomal or cellular
+    #      denominator; or
+    #   b. the record text explicitly identifies an in-vitro
+    #      metabolic matrix and contains clearance/depletion
+    #      language.
+    # ---------------------------------------------------------
+
     if stype in {"cl", "clearance"}:
-        return "clint"
 
-    # -----------------------------
-    # Percent remaining / stability
-    # -----------------------------
-    percent_like_unit = "%" in str(record.get("standard_units", ""))
+        explicit_microsomal_unit = (
+            "min" in unit
+            and "mg" in unit
+            and "kg" not in unit
+        )
 
-    stability_like = any(x in combined for x in [
-        "stability",
-        "stabilty",  # common typo seen in logs
-        "remaining",
-        "percent remaining",
-        "% remaining",
-        "depletion",
-        "substrate depletion",
-        "drug degradation",
-        "drug metabolism",
-    ])
+        explicit_hepatocyte_unit = (
+            "min" in unit
+            and "cell" in unit
+            and any(
+                marker in unit
+                for marker in {
+                    "10^6",
+                    "10⁶",
+                    "106",
+                    "1e6",
+                    "10e6",
+                    "million",
+                }
+            )
+        )
 
-    if percent_like_unit and stability_like:
-        return "percent_remaining"
+        if (
+            explicit_microsomal_unit
+            or explicit_hepatocyte_unit
+        ):
+            return "clint"
 
-    # -----------------------------
-    # Absolute clearance-like values
-    # -----------------------------
-    # These are useful but should not be mixed with L/h/kg.
-    if unit in {"ml/min", "l/min", "ul/min"}:
-        return "absolute_clearance"
+        matrix_text = any(term in record_text for term in [
+            "microsome",
+            "microsomes",
+            "microsomal",
+            "hepatocyte",
+            "hepatocytes",
+            "liver s9",
+            "s9 fraction",
+        ])
 
-    # -----------------------------
-    # Generic clearance fallback
-    # -----------------------------
-    if "clearance" in combined:
+        clearance_text = any(term in record_text for term in [
+            "clearance",
+            "substrate depletion",
+        ])
+
+        if matrix_text and clearance_text:
+            return "clint"
+
+        return "other_clearance"
+
+    # ---------------------------------------------------------
+    # 6. Generic fallback.
+    # ---------------------------------------------------------
+
+    if "clearance" in record_text:
         return "other_clearance"
 
     return None
