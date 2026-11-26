@@ -579,16 +579,21 @@ def convert_met_stab(value, unit):
     ]):
         return val * 60.0, "L/h/kg", "scaled"
 
-    if any(p in u for p in [
+    body_normalised_ml_units = {
         "ml/min/kg",
         "mlmin-1kg-1",
         "ml.min-1.kg-1",
         "mlkg-1min-1",
         "ml/min.kg",
         "ml/min.kg-1",
-        "ml/min/kg",
-    ]):
-        return val * 60.0 / 1000.0, "L/h/kg", "scaled"
+    }
+
+    if u in body_normalised_ml_units:
+        return (
+            val * 60.0 / 1000.0,
+            "L/h/kg",
+            "scaled",
+        )
 
     if any(p in u for p in [
         "ul/min/kg",
@@ -598,7 +603,7 @@ def convert_met_stab(value, unit):
     ]):
         return val * 60.0 / 1_000_000.0, "L/h/kg", "scaled"
 
-    if any(p in u for p in [
+    liver_normalised_units = {
         "ml/min/g",
         "ml/min/gliver",
         "mlmin-1g-1",
@@ -606,8 +611,16 @@ def convert_met_stab(value, unit):
         "ml/min.g",
         "mlg-1min-1",
         "ml/g/min",
-    ]):
-        return val, "mL/min/g liver", "liver_normalised"
+        "ml.min-1.g-1liver",
+        "ml/min/gofliver",
+    }
+
+    if u in liver_normalised_units:
+        return (
+            val,
+            "mL/min/g liver",
+            "liver_normalised",
+        )
 
     if any(p in u for p in [
         "ul/min/mg",
@@ -624,8 +637,18 @@ def convert_met_stab(value, unit):
     ]):
         return val, "uL/min/mg protein", "unscaled"
 
-    if "ul" in u and "min" in u and "mg" in u:
-        return val, "uL/min/mg protein", "unscaled"
+    if (
+        "ul" in u
+        and "min" in u
+        and "mg" in u
+        and "kg" not in u
+        and "cell" not in u
+    ):
+        return (
+            val,
+            "uL/min/mg protein",
+            "unscaled",
+        )
 
     if any(p in u for p in [
         "ml/min/mg",
@@ -641,24 +664,56 @@ def convert_met_stab(value, unit):
     ]):
         return val * 1_000_000.0, "uL/min/mg protein", "unscaled"
 
-    if any(p in u for p in [
-        "ul/min/10-6cells",
+    hepatocyte_unscaled_units = {
+        "ul/min/10^6cells",
         "ul/min/106cells",
         "ul/min/1e6cells",
         "ul/min/10e6cells",
-        "ulmin-110-6cells-1",
-        "ul.min-1.10-6cells-1",
+        "ul/min/millioncells",
+        "ul/min/10^6cell",
+        "ul/min/106cell",
+        "ul/min/1e6cell",
+        "ulmin-110^6cells-1",
+        "ulmin-1106cells-1",
+        "ulmin-11e6cells-1",
+        "ul.min-1.10^6cells-1",
         "ul.min-1.106cells-1",
         "ul.min-1.1e6cells-1",
-        "ul/min/millioncells",
-        "ulmin-1millioncells-1",
+        "ul/10^6cells/min",
         "ul/106cells/min",
         "ul/1e6cells/min",
-    ]):
-        return val, "uL/min/10^6 cells", "unscaled"
+    }
 
-    if "ul" in u and "min" in u and "cell" in u:
-        return val, "uL/min/10^6 cells", "unscaled"
+    if u in hepatocyte_unscaled_units:
+        return (
+            val,
+            "uL/min/10^6 cells",
+            "unscaled",
+        )
+
+    if (
+        "ul" in u
+        and "min" in u
+        and "cell" in u
+        and any(
+            marker in u
+            for marker in {
+                "10^6",
+                "106",
+                "1e6",
+                "10e6",
+                "million",
+            }
+        )
+    ):
+        return (
+            val,
+            "uL/min/10^6 cells",
+            "unscaled",
+        )
+
+    # if "ul" in u and "min" in u and "cell" in u:
+    #     return val, "uL/min/10^6 cells", "unscaled"
 
     if u in {"ml/min", "mlmin-1", "ml.min-1"}:
         return val, "mL/min", "absolute"
